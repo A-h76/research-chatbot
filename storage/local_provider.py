@@ -7,6 +7,7 @@ to a signed, time-limited URL back to this same Flask server: the token
 expiry, and a route in server.py trusts any request bearing a valid token
 instead of checking session auth — that's what makes it usable the same
 way a real presigned URL is (no cookies required)."""
+
 import contextlib
 import os
 import shutil
@@ -52,8 +53,7 @@ class LocalProvider:
         path = self._path(key)
         if not os.path.exists(path):
             return None
-        return ObjectInfo(key=key, size=os.path.getsize(path),
-                          etag=md5_file_b64(path))
+        return ObjectInfo(key=key, size=os.path.getsize(path), etag=md5_file_b64(path))
 
     def list_keys(self, prefix=""):
         for name in os.listdir(self.root_dir):
@@ -70,8 +70,7 @@ class LocalProvider:
         return f"{self.base_url}/api/uploads/local-get/{key}?token={token}"
 
     def presigned_put_url(self, key, mime, expires_in=600, content_md5_b64=None):
-        token = self._signer.dumps({"key": key, "mime": mime,
-                                    "max_age": expires_in})
+        token = self._signer.dumps({"key": key, "mime": mime, "max_age": expires_in})
         return f"{self.base_url}/api/uploads/local-put/{key}?token={token}"
 
     def verify_token(self, token: str, max_age: int = 3600) -> dict:
@@ -81,8 +80,10 @@ class LocalProvider:
             raise ValueError("invalid or expired upload token") from e
 
     def create_multipart_upload(self, key, mime):
-        raise NotImplementedError("local provider has no part-size limit; "
-                                  "use a single presigned_put_url instead")
+        raise NotImplementedError(
+            "local provider has no part-size limit; "
+            "use a single presigned_put_url instead"
+        )
 
     def presigned_part_url(self, key, upload_id, part_number, expires_in=3600):
         raise NotImplementedError

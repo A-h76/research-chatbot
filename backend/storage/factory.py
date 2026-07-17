@@ -2,6 +2,7 @@
 and returns the matching backend. Same fallback shape as the real
 storage/ package's own provider selection (and DATABASE_URL defaulting
 to SQLite): no R2 config present, no explicit choice -> local."""
+
 import os
 
 from .interface import StorageBackend

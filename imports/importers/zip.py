@@ -6,6 +6,7 @@ import zipfile
 class ZipImporter:
     """Recursively pulls readable text out of an archive's members,
     dispatching each member back through the registry."""
+
     extensions = (".zip",)
     supports_locators = False
 
@@ -31,10 +32,14 @@ class ZipImporter:
             for info in zf.infolist():
                 member = info.filename
                 base = os.path.basename(member)
-                if info.is_dir() or not base or base.startswith(".") \
-                        or "__MACOSX" in member:
+                if (
+                    info.is_dir()
+                    or not base
+                    or base.startswith(".")
+                    or "__MACOSX" in member
+                ):
                     continue
-                if info.file_size > 25 * 1024 * 1024:          # skip huge members
+                if info.file_size > 25 * 1024 * 1024:  # skip huge members
                     continue
                 try:
                     data = zf.read(info)
@@ -45,9 +50,11 @@ class ZipImporter:
                 try:
                     with os.fdopen(fd, "wb") as tf:
                         tf.write(data)
-                    sub = (self.extract(tmp, None, member, depth + 1)
-                           if ext.lower() == ".zip"
-                           else extract_text(tmp, None, member))
+                    sub = (
+                        self.extract(tmp, None, member, depth + 1)
+                        if ext.lower() == ".zip"
+                        else extract_text(tmp, None, member)
+                    )
                 finally:
                     try:
                         os.remove(tmp)

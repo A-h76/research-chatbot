@@ -1,6 +1,7 @@
 """Self-check for the storage package — no framework, no fixtures.
 Run: python -m storage.test_storage
 """
+
 import os
 import shutil
 import tempfile
@@ -31,9 +32,11 @@ def test_checksum_is_deterministic_and_content_sensitive():
 def test_local_provider_round_trip():
     d = tempfile.mkdtemp()
     try:
-        provider = LocalProvider(root_dir=os.path.join(d, "blobs"),
-                                 secret_key="test-secret",
-                                 base_url="http://localhost:5000")
+        provider = LocalProvider(
+            root_dir=os.path.join(d, "blobs"),
+            secret_key="test-secret",
+            base_url="http://localhost:5000",
+        )
         src = os.path.join(d, "src.txt")
         _write(src, b"paper contents")
 
@@ -53,15 +56,16 @@ def test_local_provider_round_trip():
 
 
 def test_local_provider_signed_tokens_round_trip_and_expire():
-    provider = LocalProvider(root_dir=tempfile.mkdtemp(), secret_key="s",
-                             base_url="http://localhost:5000")
+    provider = LocalProvider(
+        root_dir=tempfile.mkdtemp(), secret_key="s", base_url="http://localhost:5000"
+    )
     url = provider.presigned_put_url("k.pdf", "application/pdf", expires_in=600)
     token = url.split("token=")[1]
     payload = provider.verify_token(token, max_age=600)
     assert payload["key"] == "k.pdf"
 
     try:
-        provider.verify_token(token, max_age=-1)   # any age is > -1 seconds
+        provider.verify_token(token, max_age=-1)  # any age is > -1 seconds
         assert False, "expected expired token to raise"
     except ValueError:
         pass
@@ -90,8 +94,9 @@ def test_sweep_temp_dir_removes_only_stale_files():
 
 
 def test_garbage_collect_deletes_given_keys():
-    provider = LocalProvider(root_dir=tempfile.mkdtemp(), secret_key="s",
-                             base_url="http://localhost:5000")
+    provider = LocalProvider(
+        root_dir=tempfile.mkdtemp(), secret_key="s", base_url="http://localhost:5000"
+    )
     src = tempfile.mktemp()
     _write(src, b"x")
     provider.upload("orphan.pdf", src)
@@ -103,25 +108,26 @@ def test_garbage_collect_deletes_given_keys():
 
 
 def test_reconcile_finds_orphans_and_missing_without_deleting_by_default():
-    provider = LocalProvider(root_dir=tempfile.mkdtemp(), secret_key="s",
-                             base_url="http://localhost:5000")
+    provider = LocalProvider(
+        root_dir=tempfile.mkdtemp(), secret_key="s", base_url="http://localhost:5000"
+    )
     src = tempfile.mktemp()
     _write(src, b"x")
-    provider.upload("a.pdf", src)   # in storage
-    provider.upload("b.pdf", src)   # in storage AND referenced by "DB"
+    provider.upload("a.pdf", src)  # in storage
+    provider.upload("b.pdf", src)  # in storage AND referenced by "DB"
 
-    known_keys = {"b.pdf", "c.pdf"}   # c.pdf: DB row, object missing from storage
+    known_keys = {"b.pdf", "c.pdf"}  # c.pdf: DB row, object missing from storage
 
     report = reconcile(provider, known_keys, dry_run=True)
     assert report.orphaned_keys == ["a.pdf"]
     assert report.missing_keys == ["c.pdf"]
     assert report.deleted == []
-    assert provider.head("a.pdf") is not None   # dry-run: nothing removed
+    assert provider.head("a.pdf") is not None  # dry-run: nothing removed
 
     report2 = reconcile(provider, known_keys, dry_run=False)
     assert report2.deleted == ["a.pdf"]
-    assert provider.head("a.pdf") is None        # apply: orphan actually removed
-    assert provider.head("b.pdf") is not None    # known key untouched
+    assert provider.head("a.pdf") is None  # apply: orphan actually removed
+    assert provider.head("b.pdf") is not None  # known key untouched
 
 
 if __name__ == "__main__":

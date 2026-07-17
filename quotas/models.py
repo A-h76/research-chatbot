@@ -19,6 +19,7 @@ model needs server.py's actual Base (the specific declarative registry
 __main__, so importing "server" back from a module it reaches into would
 re-execute the whole file under a second identity.
 """
+
 from datetime import datetime, timezone
 
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
@@ -29,8 +30,10 @@ def create_usage_log_model(Base):
         __tablename__ = "usage_logs"
         id = Column(Integer, primary_key=True)
         user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-        action = Column(String(30), nullable=False)   # upload | ai_query | export | ...
-        amount = Column(Integer, default=0)            # bytes or tokens — meaning depends on action
+        action = Column(String(30), nullable=False)  # upload | ai_query | export | ...
+        amount = Column(
+            Integer, default=0
+        )  # bytes or tokens — meaning depends on action
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     return UsageLog

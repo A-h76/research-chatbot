@@ -9,6 +9,7 @@ class DocxImporter:
         """NUL-sentinel section markers from headings — \\x00SEC<n>:<heading>\\x00
         so chunk_document() can record which section each chunk belongs to."""
         import docx
+
         d = docx.Document(path)
         parts = []
         sec_idx = 0

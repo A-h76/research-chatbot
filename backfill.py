@@ -4,13 +4,16 @@ against a database that has real `files` rows but empty new tables.
 Every section is idempotent (checks for existing rows before inserting),
 so an accidental second run is a no-op, not a duplicate-data bug.
 """
+
 import os
 import json
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 load_dotenv()
-url = (os.environ.get("DATABASE_URL") or "sqlite:///chat_dev.db").replace("postgres://", "postgresql://", 1)
+url = (os.environ.get("DATABASE_URL") or "sqlite:///chat_dev.db").replace(
+    "postgres://", "postgresql://", 1
+)
 engine = create_engine(url, pool_pre_ping=True)
 
 # Prompt templates copied verbatim from server.py's module-level prompt
@@ -39,7 +42,6 @@ Fields:
 Document excerpt (first 3 000 chars):
 {excerpt}
 """,
-
     "paper_analysis": """You are an expert research analyst. Analyse the paper below and return ONLY a JSON object — no markdown fences, no prose outside the object.
 
 Each key maps to the content described. Use null when a section genuinely does not apply (e.g. no dataset for a pure theory paper). Never fabricate details not present in the text.
@@ -63,7 +65,6 @@ Keys and what to put in them:
 Paper text (first {max_chars} characters):
 {text}
 """,
-
     "compare": """You are an expert research analyst comparing multiple academic papers.
 
 Given the structured analyses of {n} papers below, produce a JSON object with the following keys. Use null for any section that genuinely cannot be answered from the provided analyses. Never fabricate. Be specific.
@@ -82,7 +83,6 @@ Keys:
 Papers (as structured analyses):
 {analyses}
 """,
-
     "gap_finder": """You are an expert research analyst identifying gaps, open questions, and opportunities across a set of academic papers.
 
 Given the structured analyses of {n} papers, produce a JSON object with the keys below. Base every finding strictly on the provided content — never fabricate gaps, assumptions, or ideas. If you are uncertain, say so rather than inventing something.
@@ -103,12 +103,13 @@ Keys:
 Papers (as structured analyses):
 {analyses}
 """,
-
-    "chat_system": ("You are Personal AI, a helpful assistant specialised in academic "
-                    "research and thesis writing, but able to help with anything. "
-                    "Use markdown. Be precise with citations and honest about "
-                    "uncertainty. When you used web search results or document excerpts, "
-                    "cite the sources inline."),
+    "chat_system": (
+        "You are Personal AI, a helpful assistant specialised in academic "
+        "research and thesis writing, but able to help with anything. "
+        "Use markdown. Be precise with citations and honest about "
+        "uncertainty. When you used web search results or document excerpts, "
+        "cite the sources inline."
+    ),
 }
 
 MODELS = {
@@ -155,49 +156,73 @@ with engine.begin() as conn:
     # prompt_versions: version 1 = today's literal prompt text, active.
     prompt_ids = {}
     for name, template in PROMPTS.items():
-        row = conn.execute(text("SELECT id FROM prompt_versions WHERE name = :n AND version = 1"),
-                           {"n": name}).first()
+        row = conn.execute(
+            text("SELECT id FROM prompt_versions WHERE name = :n AND version = 1"),
+            {"n": name},
+        ).first()
         if row:
             prompt_ids[name] = row[0]
             print(f"SKIP  prompt_versions.{name} v1 already seeded")
             continue
-        prompt_ids[name] = conn.execute(text("""
+        prompt_ids[name] = conn.execute(
+            text("""
             INSERT INTO prompt_versions (name, version, template, is_active)
             VALUES (:n, 1, :t, true) RETURNING id
-        """), {"n": name, "t": template}).scalar()
+        """),
+            {"n": name, "t": template},
+        ).scalar()
         print(f"OK    prompt_versions.{name} v1 seeded (id={prompt_ids[name]})")
 
     # model_versions: version 1 = today's .env model choices, active.
     model_ids = {}
     for logical_name, provider_model_id in MODELS.items():
-        row = conn.execute(text("SELECT id FROM model_versions WHERE logical_name = :n AND version = 1"),
-                           {"n": logical_name}).first()
+        row = conn.execute(
+            text(
+                "SELECT id FROM model_versions WHERE logical_name = :n AND version = 1"
+            ),
+            {"n": logical_name},
+        ).first()
         if row:
             model_ids[logical_name] = row[0]
             print(f"SKIP  model_versions.{logical_name} v1 already seeded")
             continue
-        model_ids[logical_name] = conn.execute(text("""
+        model_ids[logical_name] = conn.execute(
+            text("""
             INSERT INTO model_versions (logical_name, provider_model_id, version, is_active)
             VALUES (:n, :m, 1, true) RETURNING id
-        """), {"n": logical_name, "m": provider_model_id}).scalar()
-        print(f"OK    model_versions.{logical_name} v1 seeded "
-             f"(id={model_ids[logical_name]}, model={provider_model_id})")
+        """),
+            {"n": logical_name, "m": provider_model_id},
+        ).scalar()
+        print(
+            f"OK    model_versions.{logical_name} v1 seeded "
+            f"(id={model_ids[logical_name]}, model={provider_model_id})"
+        )
 
     # pipeline_versions: version 1 = the bundle the seeds above represent.
-    if conn.execute(text("SELECT count(*) FROM pipeline_versions WHERE version = 1")).scalar() == 0:
-        conn.execute(text("""
+    if (
+        conn.execute(
+            text("SELECT count(*) FROM pipeline_versions WHERE version = 1")
+        ).scalar()
+        == 0
+    ):
+        conn.execute(
+            text("""
             INSERT INTO pipeline_versions
                 (version, importer_registry_version, chunking_params,
                  embed_model_version_id, utility_model_version_id, prompt_versions, is_active)
             VALUES (1, 'v1', :chunking, :embed_id, :utility_id, :prompts, true)
-        """), {
-            "chunking": json.dumps({"size": 1500, "overlap": 200}),
-            "embed_id": model_ids["embed_model"],
-            "utility_id": model_ids["utility_model"],
-            "prompts": json.dumps(prompt_ids),
-        })
+        """),
+            {
+                "chunking": json.dumps({"size": 1500, "overlap": 200}),
+                "embed_id": model_ids["embed_model"],
+                "utility_id": model_ids["utility_model"],
+                "prompts": json.dumps(prompt_ids),
+            },
+        )
         print("OK    pipeline_versions v1 seeded")
     else:
         print("SKIP  pipeline_versions v1 already seeded")
 
-print("\nai_usage_ledger, outbox_events, feature_flags: left empty — no backfill for any of them.")
+print(
+    "\nai_usage_ledger, outbox_events, feature_flags: left empty — no backfill for any of them."
+)

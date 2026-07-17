@@ -11,6 +11,7 @@ based on the *original* STORAGE_PROVIDER env var, and this backend
 should mean "R2, specifically" regardless of what that currently
 resolves to.
 """
+
 import os
 import tempfile
 from typing import BinaryIO, Optional
@@ -23,9 +24,11 @@ from .interface import StorageBackend
 def _r2_config_from_env():
     bucket = os.environ.get("R2_BUCKET", "")
     endpoint = os.environ.get("R2_ENDPOINT") or (
-        f"https://{os.environ.get('R2_ACCOUNT_ID', '')}.r2.cloudflarestorage.com")
+        f"https://{os.environ.get('R2_ACCOUNT_ID', '')}.r2.cloudflarestorage.com"
+    )
     return dict(
-        bucket=bucket, endpoint=endpoint,
+        bucket=bucket,
+        endpoint=endpoint,
         access_key=os.environ.get("R2_ACCESS_KEY_ID", ""),
         secret_key=os.environ.get("R2_SECRET_ACCESS_KEY", ""),
     )
@@ -35,7 +38,9 @@ class R2Backend(StorageBackend):
     def __init__(self, provider: Optional[R2Provider] = None):
         self._provider = provider or R2Provider(**_r2_config_from_env())
 
-    def upload(self, file_obj: BinaryIO, key: str, content_type: Optional[str] = None) -> str:
+    def upload(
+        self, file_obj: BinaryIO, key: str, content_type: Optional[str] = None
+    ) -> str:
         # The real provider's upload() takes a local path (it's built
         # for the app's actual flow: save-then-upload, never bytes in
         # memory) — bridge with a throwaway temp file rather than
@@ -64,5 +69,8 @@ class R2Backend(StorageBackend):
 
     def generate_presigned_url(self, key: str, expires_in: int = 3600) -> str:
         return self._provider.presigned_get_url(
-            key, filename=os.path.basename(key),
-            mime="application/octet-stream", expires_in=expires_in)
+            key,
+            filename=os.path.basename(key),
+            mime="application/octet-stream",
+            expires_in=expires_in,
+        )

@@ -5,6 +5,7 @@ Deliberately DB-agnostic: this module only knows about bytes and keys, never
 about SQLAlchemy models — the caller (server.py, where the models live)
 queries the DB and passes in plain keys/sets, so storage/ stays testable
 without a database and there's no circular import back into server.py."""
+
 import os
 import time
 from dataclasses import dataclass, field
@@ -20,6 +21,7 @@ class StorageManager:
 
     def new_key(self, ext: str) -> str:
         import uuid
+
         return uuid.uuid4().hex + (ext or "")
 
 
@@ -30,13 +32,15 @@ def get_default_manager(local_dir: str, base_url: str) -> StorageManager:
     bucket = os.environ.get("R2_BUCKET", "")
     account_id = os.environ.get("R2_ACCOUNT_ID", "")
     endpoint = os.environ.get("R2_ENDPOINT") or (
-        f"https://{account_id}.r2.cloudflarestorage.com" if account_id else "")
+        f"https://{account_id}.r2.cloudflarestorage.com" if account_id else ""
+    )
 
     use_r2 = provider_choice == "r2" or (not provider_choice and bucket and endpoint)
 
     if use_r2:
         provider = R2Provider(
-            bucket=bucket, endpoint=endpoint,
+            bucket=bucket,
+            endpoint=endpoint,
             access_key=os.environ.get("R2_ACCESS_KEY_ID", ""),
             secret_key=os.environ.get("R2_SECRET_ACCESS_KEY", ""),
         )
@@ -93,13 +97,14 @@ def garbage_collect(provider: StorageProvider, stale_keys: list[str]) -> GCRepor
 # ------------------------------------------------------------- reconciliation
 @dataclass
 class ReconcileReport:
-    orphaned_keys: list[str] = field(default_factory=list)   # in storage, no DB row
-    missing_keys: list[str] = field(default_factory=list)    # DB row, not in storage
-    deleted: list[str] = field(default_factory=list)         # orphans actually removed
+    orphaned_keys: list[str] = field(default_factory=list)  # in storage, no DB row
+    missing_keys: list[str] = field(default_factory=list)  # DB row, not in storage
+    deleted: list[str] = field(default_factory=list)  # orphans actually removed
 
 
-def reconcile(provider: StorageProvider, known_keys: set[str],
-             dry_run: bool = True) -> ReconcileReport:
+def reconcile(
+    provider: StorageProvider, known_keys: set[str], dry_run: bool = True
+) -> ReconcileReport:
     """Compare what's actually in storage against what the DB references.
     Defaults to dry-run: this can find real drift either direction, but
     deleting orphans is destructive, so it only happens when explicitly

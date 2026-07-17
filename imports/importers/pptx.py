@@ -7,6 +7,7 @@ class PptxImporter:
 
     def extract(self, path, mime, name):
         from pptx import Presentation
+
         prs = Presentation(path)
         parts = []
         for i, slide in enumerate(prs.slides, 1):

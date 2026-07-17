@@ -3,6 +3,7 @@ chain with an ordered list of Importers. External contract is unchanged:
 extract_text(path, mime, name) still returns a plain string ('' = no
 readable text, '[...]' = a bracketed note, or the extracted text), so
 every existing call site in server.py works without modification."""
+
 from .importers.pdf import PdfImporter
 from .importers.docx import DocxImporter
 from .importers.pptx import PptxImporter
@@ -45,6 +46,6 @@ def extract_text(path: str, mime: str, name: str) -> str:
         importer = resolve(lower, mime)
         if importer:
             return importer.extract(path, mime, name)
-        return sniff_text(path)          # unknown extension: try as text
+        return sniff_text(path)  # unknown extension: try as text
     except Exception as e:
         return f"[extraction failed: {e}]"

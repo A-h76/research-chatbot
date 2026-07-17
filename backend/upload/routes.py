@@ -23,6 +23,7 @@ reaches into importing "server" back re-executes the whole file under a
 second module identity and recurses. Same pattern as every module in
 auth/ and quotas/.
 """
+
 import json
 import logging
 import uuid
@@ -33,13 +34,23 @@ from auth.decorators import jwt_required
 from quotas.service import QuotaExceededError
 
 from .validation import (
-    validate_extension, validate_size, safe_filename, ValidationError,
+    validate_extension,
+    validate_size,
+    safe_filename,
+    ValidationError,
 )
 
 
-def create_documents_blueprint(*, SessionLocal, UserFile, UploadBatch,
-                               UploadJob, OutboxEvent, quota_service,
-                               storage_backend):
+def create_documents_blueprint(
+    *,
+    SessionLocal,
+    UserFile,
+    UploadBatch,
+    UploadJob,
+    OutboxEvent,
+    quota_service,
+    storage_backend,
+):
     bp = Blueprint("documents", __name__, url_prefix="/api/documents")
     log = logging.getLogger(__name__)
 
@@ -57,7 +68,7 @@ def create_documents_blueprint(*, SessionLocal, UserFile, UploadBatch,
         except ValidationError as e:
             return jsonify({"error": e.code, "message": e.message}), 400
 
-        f.stream.seek(0, 2)   # SEEK_END — size without touching disk
+        f.stream.seek(0, 2)  # SEEK_END — size without touching disk
         size = f.stream.tell()
         f.stream.seek(0)
 
@@ -69,11 +80,16 @@ def create_documents_blueprint(*, SessionLocal, UserFile, UploadBatch,
         try:
             quota_service.check_storage_quota(user_id, size)
         except QuotaExceededError as e:
-            return jsonify({
-                "error": "storage_quota_exceeded",
-                "message": f"Storage quota exceeded: {e.used + size} bytes "
-                           f"would exceed the {e.limit} byte limit",
-            }), 403
+            return (
+                jsonify(
+                    {
+                        "error": "storage_quota_exceeded",
+                        "message": f"Storage quota exceeded: {e.used + size} bytes "
+                        f"would exceed the {e.limit} byte limit",
+                    }
+                ),
+                403,
+            )
         except ValueError:
             return jsonify({"error": "not_found", "message": "User not found"}), 404
 
@@ -83,30 +99,51 @@ def create_documents_blueprint(*, SessionLocal, UserFile, UploadBatch,
         try:
             storage_backend.upload(f.stream, key, content_type=f.mimetype)
         except Exception:
-            return jsonify({"error": "storage_unavailable",
-                            "message": "Could not store the file, try again"}), 502
+            return (
+                jsonify(
+                    {
+                        "error": "storage_unavailable",
+                        "message": "Could not store the file, try again",
+                    }
+                ),
+                502,
+            )
 
         db = SessionLocal()
         try:
             batch = UploadBatch(user_id=user_id, source="api_documents", file_count=1)
             db.add(batch)
-            db.flush()   # assigns batch.id
+            db.flush()  # assigns batch.id
 
-            uf = UserFile(user_id=user_id, name=filename[:300], mime=f.mimetype,
-                         kind="document", path=key, size=size)
+            uf = UserFile(
+                user_id=user_id,
+                name=filename[:300],
+                mime=f.mimetype,
+                kind="document",
+                path=key,
+                size=size,
+            )
             db.add(uf)
-            db.flush()   # assigns uf.id
+            db.flush()  # assigns uf.id
 
-            job = UploadJob(upload_batch_id=batch.id, file_id=uf.id, user_id=user_id,
-                            job_type="import", status="pending")
+            job = UploadJob(
+                upload_batch_id=batch.id,
+                file_id=uf.id,
+                user_id=user_id,
+                job_type="import",
+                status="pending",
+            )
             db.add(job)
-            db.flush()   # assigns job.id
+            db.flush()  # assigns job.id
 
-            db.add(OutboxEvent(
-                aggregate_type="upload_job", aggregate_id=job.id,
-                event_type="job.enqueued",
-                payload=json.dumps({"file_id": uf.id}),
-            ))
+            db.add(
+                OutboxEvent(
+                    aggregate_type="upload_job",
+                    aggregate_id=job.id,
+                    event_type="job.enqueued",
+                    payload=json.dumps({"file_id": uf.id}),
+                )
+            )
 
             db.commit()
 
@@ -120,14 +157,20 @@ def create_documents_blueprint(*, SessionLocal, UserFile, UploadBatch,
             try:
                 quota_service.increment_storage(user_id, size)
             except Exception:
-                log.warning("quota increment_storage failed for user %s", user_id,
-                           exc_info=True)
+                log.warning(
+                    "quota increment_storage failed for user %s", user_id, exc_info=True
+                )
 
-            return jsonify({
-                "document_id": uf.id,
-                "status": "PENDING",
-                "message": "Upload successful, processing started",
-            }), 201
+            return (
+                jsonify(
+                    {
+                        "document_id": uf.id,
+                        "status": "PENDING",
+                        "message": "Upload successful, processing started",
+                    }
+                ),
+                201,
+            )
         except Exception:
             db.rollback()
             try:

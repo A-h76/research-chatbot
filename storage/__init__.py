@@ -8,16 +8,25 @@ this package required zero changes at any existing call site. New code
 `storage_manager` / `sweep_temp_dir` / `garbage_collect` / `reconcile`
 directly instead.
 """
+
 import os
 
-from .manager import (StorageManager, get_default_manager, sweep_temp_dir,
-                      garbage_collect, reconcile, GCReport, ReconcileReport)
+from .manager import (
+    StorageManager,
+    get_default_manager,
+    sweep_temp_dir,
+    garbage_collect,
+    reconcile,
+    GCReport,
+    ReconcileReport,
+)
 from .provider import ObjectInfo, UploadPart
 from .checksum import sha256_file, md5_file_b64
 
 _LOCAL_DIR = os.environ.get(
     "LOCAL_STORAGE_DIR",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "storage_data"))
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "storage_data"),
+)
 _BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000")
 
 storage_manager = get_default_manager(local_dir=_LOCAL_DIR, base_url=_BASE_URL)

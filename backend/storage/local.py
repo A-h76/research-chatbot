@@ -15,6 +15,7 @@ UPLOAD_DIR (server.py's throwaway-temp-file directory, flat UUID-named
 files) because everything this backend writes goes into a dated
 subfolder, never the root, so the two can never collide on a filename.
 """
+
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,8 +23,9 @@ from typing import BinaryIO, Optional
 
 from .interface import StorageBackend
 
-DEFAULT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "..", "..", "uploads")
+DEFAULT_ROOT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "uploads"
+)
 
 
 class LocalBackend(StorageBackend):
@@ -45,7 +47,9 @@ class LocalBackend(StorageBackend):
             return path
         return None
 
-    def upload(self, file_obj: BinaryIO, key: str, content_type: Optional[str] = None) -> str:
+    def upload(
+        self, file_obj: BinaryIO, key: str, content_type: Optional[str] = None
+    ) -> str:
         dest = self._dated_path(key)
         with open(dest, "wb") as f:
             f.write(file_obj.read())

@@ -1,6 +1,7 @@
 """Self-check for the Import Engine — no framework, no fixtures.
 Run: python -m imports.test_imports
 """
+
 import os
 import shutil
 import tempfile
@@ -29,7 +30,7 @@ def test_legacy_office_returns_a_note_not_an_error():
     d = tempfile.mkdtemp()
     try:
         p = os.path.join(d, "thesis.doc")
-        _write(p, "not actually parsed")   # content is irrelevant — .doc is never opened
+        _write(p, "not actually parsed")  # content is irrelevant — .doc is never opened
         result = extract_text(p, "application/msword", "thesis.doc")
         assert result.startswith("[") and result.endswith("]")
         assert "re-save it as .docx" in result

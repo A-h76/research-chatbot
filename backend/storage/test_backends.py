@@ -10,6 +10,7 @@ integration bug) — skipped automatically if R2 isn't configured.
 
 Run: pytest backend/storage/test_backends.py -v
 """
+
 import io
 import os
 
@@ -34,6 +35,7 @@ def test_local_upload_returns_key(local_backend):
 def test_local_upload_creates_dated_subfolder(local_backend, tmp_path):
     local_backend.upload(io.BytesIO(b"data"), "report.pdf")
     from datetime import datetime, timezone
+
     today = datetime.now(timezone.utc)
     expected = tmp_path / f"{today:%Y}" / f"{today:%m}" / f"{today:%d}" / "report.pdf"
     assert expected.exists()
@@ -60,7 +62,7 @@ def test_local_delete_removes_file(local_backend):
 
 
 def test_local_delete_missing_key_does_not_raise(local_backend):
-    local_backend.delete("never-existed.txt")   # best-effort, no error
+    local_backend.delete("never-existed.txt")  # best-effort, no error
 
 
 def test_local_generate_presigned_url_is_file_uri(local_backend):
@@ -120,7 +122,9 @@ def test_r2_backend_real_upload_download_delete_round_trip():
     content = b"real R2 round trip via the compat layer"
 
     try:
-        returned_key = backend.upload(io.BytesIO(content), key, content_type="text/plain")
+        returned_key = backend.upload(
+            io.BytesIO(content), key, content_type="text/plain"
+        )
         assert returned_key == key
 
         downloaded = backend.download(key)

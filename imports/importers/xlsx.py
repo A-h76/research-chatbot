@@ -7,6 +7,7 @@ class XlsxImporter:
 
     def extract(self, path, mime, name):
         import openpyxl
+
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         try:
             parts = []

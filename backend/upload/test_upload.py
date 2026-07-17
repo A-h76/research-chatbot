@@ -6,14 +6,23 @@ is the point, not just asserting a mock was called.
 
 Run: pytest backend/upload/test_upload.py -v
 """
+
 import io
 from datetime import timedelta
 
 import pytest
 from flask import Flask
 from flask_jwt_extended import JWTManager
-from sqlalchemy import (create_engine, Column, Integer, BigInteger, String,
-                        DateTime, ForeignKey, select)
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    BigInteger,
+    String,
+    DateTime,
+    ForeignKey,
+    select,
+)
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from auth.jwt_utils import create_jwt
@@ -25,9 +34,10 @@ from backend.upload.validation import validate_size, validate_extension, Validat
 
 class FakeStorageBackend:
     """Records calls instead of touching R2/disk."""
+
     def __init__(self, fail=False):
         self.fail = fail
-        self.uploaded = []   # (key, content_type, bytes)
+        self.uploaded = []  # (key, content_type, bytes)
         self.deleted = []
 
     def upload(self, file_obj, key, content_type=None):
@@ -48,7 +58,9 @@ def env():
     class User(Base):
         __tablename__ = "users"
         id = Column(Integer, primary_key=True)
-        storage_limit_bytes = Column(BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES)
+        storage_limit_bytes = Column(
+            BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES
+        )
         monthly_token_used = Column(Integer, default=0)
         monthly_token_limit = Column(Integer, default=QuotaService.DEFAULT_TOKEN_LIMIT)
         quota_reset_at = Column(DateTime, nullable=True)
@@ -107,23 +119,36 @@ def env():
     storage_backend = FakeStorageBackend()
 
     app = Flask(__name__)
-    app.config.update(JWT_SECRET_KEY="test-secret-at-least-32-bytes-long-for-hs256",
-                      JWT_ACCESS_TOKEN_EXPIRES=timedelta(minutes=15),
-                      JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=30))
+    app.config.update(
+        JWT_SECRET_KEY="test-secret-at-least-32-bytes-long-for-hs256",
+        JWT_ACCESS_TOKEN_EXPIRES=timedelta(minutes=15),
+        JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=30),
+    )
     JWTManager(app)
-    app.register_blueprint(create_documents_blueprint(
-        SessionLocal=SessionLocal, UserFile=UserFile, UploadBatch=UploadBatch,
-        UploadJob=UploadJob, OutboxEvent=OutboxEvent, quota_service=quota_service,
-        storage_backend=storage_backend,
-    ))
+    app.register_blueprint(
+        create_documents_blueprint(
+            SessionLocal=SessionLocal,
+            UserFile=UserFile,
+            UploadBatch=UploadBatch,
+            UploadJob=UploadJob,
+            OutboxEvent=OutboxEvent,
+            quota_service=quota_service,
+            storage_backend=storage_backend,
+        )
+    )
 
     with app.app_context():
         access, _ = create_jwt(1)
 
     return {
-        "client": app.test_client(), "access": access, "SessionLocal": SessionLocal,
-        "StorageUsage": StorageUsage, "UserFile": UserFile, "UploadJob": UploadJob,
-        "OutboxEvent": OutboxEvent, "storage_backend": storage_backend,
+        "client": app.test_client(),
+        "access": access,
+        "SessionLocal": SessionLocal,
+        "StorageUsage": StorageUsage,
+        "UserFile": UserFile,
+        "UploadJob": UploadJob,
+        "OutboxEvent": OutboxEvent,
+        "storage_backend": storage_backend,
     }
 
 
@@ -133,8 +158,12 @@ def _auth(token):
 
 def _upload(client, token, filename="paper.pdf", content=b"%PDF-1.4 fake pdf bytes"):
     data = {"file": (io.BytesIO(content), filename)}
-    return client.post("/api/documents/upload", data=data,
-                       headers=_auth(token), content_type="multipart/form-data")
+    return client.post(
+        "/api/documents/upload",
+        data=data,
+        headers=_auth(token),
+        content_type="multipart/form-data",
+    )
 
 
 # ------------------------------------------------------------ success path
@@ -153,9 +182,12 @@ def test_successful_upload_writes_file_row_and_enqueues_job(env):
 
     db = env["SessionLocal"]()
     uf = db.get(env["UserFile"], doc_id)
-    job = db.execute(select(env["UploadJob"]).where(env["UploadJob"].file_id == doc_id)).scalar_one()
-    event = db.execute(select(env["OutboxEvent"])
-                       .where(env["OutboxEvent"].aggregate_id == job.id)).scalar_one()
+    job = db.execute(
+        select(env["UploadJob"]).where(env["UploadJob"].file_id == doc_id)
+    ).scalar_one()
+    event = db.execute(
+        select(env["OutboxEvent"]).where(env["OutboxEvent"].aggregate_id == job.id)
+    ).scalar_one()
     db.close()
 
     assert uf.name == "paper.pdf"
@@ -198,16 +230,22 @@ def test_rejects_empty_file(env):
 
 
 def test_no_file_in_request(env):
-    resp = env["client"].post("/api/documents/upload", headers=_auth(env["access"]),
-                              content_type="multipart/form-data", data={})
+    resp = env["client"].post(
+        "/api/documents/upload",
+        headers=_auth(env["access"]),
+        content_type="multipart/form-data",
+        data={},
+    )
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "no_file"
 
 
 def test_requires_jwt(env):
-    resp = env["client"].post("/api/documents/upload",
-                              data={"file": (io.BytesIO(b"x"), "a.txt")},
-                              content_type="multipart/form-data")
+    resp = env["client"].post(
+        "/api/documents/upload",
+        data={"file": (io.BytesIO(b"x"), "a.txt")},
+        content_type="multipart/form-data",
+    )
     assert resp.status_code == 401
 
 
@@ -219,7 +257,7 @@ def test_validate_size_rejects_over_limit():
 
 def test_validate_extension_allows_all_four_spec_types():
     for name in ("paper.pdf", "book.epub", "report.docx", "notes.txt"):
-        validate_extension(name)   # no raise
+        validate_extension(name)  # no raise
 
 
 # ------------------------------------------------------------ quota

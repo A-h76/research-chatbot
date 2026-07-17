@@ -10,6 +10,7 @@ path), never duplicated here — see this task's own note on why
 `storage_used_bytes` was deliberately not added to User. Only the
 per-user *limit* is new.
 """
+
 from datetime import datetime, timezone, timedelta
 
 
@@ -17,20 +18,28 @@ class QuotaExceededError(Exception):
     """Raised by check_storage_quota()/check_token_quota() — a plain
     domain exception, not tied to Flask; callers decide the HTTP
     response (403, etc.)."""
+
     def __init__(self, message, kind, used, limit):
         super().__init__(message)
-        self.kind = kind          # "storage" | "tokens"
+        self.kind = kind  # "storage" | "tokens"
         self.used = used
         self.limit = limit
 
 
 class QuotaService:
-    DEFAULT_STORAGE_LIMIT_BYTES = 1_000_000_000   # ~1GB, free tier
-    DEFAULT_TOKEN_LIMIT = 100_000                  # free tier, per month
+    DEFAULT_STORAGE_LIMIT_BYTES = 1_000_000_000  # ~1GB, free tier
+    DEFAULT_TOKEN_LIMIT = 100_000  # free tier, per month
     RESET_PERIOD = timedelta(days=30)
 
-    def __init__(self, SessionLocal, User, StorageUsage, UsageLog, select,
-                now_fn=lambda: datetime.now(timezone.utc)):
+    def __init__(
+        self,
+        SessionLocal,
+        User,
+        StorageUsage,
+        UsageLog,
+        select,
+        now_fn=lambda: datetime.now(timezone.utc),
+    ):
         self.SessionLocal = SessionLocal
         self.User = User
         self.StorageUsage = StorageUsage
@@ -85,7 +94,10 @@ class QuotaService:
             if projected > limit:
                 raise QuotaExceededError(
                     f"storage quota exceeded: {projected} > {limit} bytes",
-                    kind="storage", used=current, limit=limit)
+                    kind="storage",
+                    used=current,
+                    limit=limit,
+                )
         finally:
             db.close()
 
@@ -100,7 +112,10 @@ class QuotaService:
             if projected > limit:
                 raise QuotaExceededError(
                     f"token quota exceeded: {projected} > {limit}",
-                    kind="tokens", used=used, limit=limit)
+                    kind="tokens",
+                    used=used,
+                    limit=limit,
+                )
         finally:
             db.close()
 
@@ -119,7 +134,7 @@ class QuotaService:
         row / db session of their own to fold it into."""
         db = self.SessionLocal()
         try:
-            self._get_user(db, user_id)   # raises if the user doesn't exist
+            self._get_user(db, user_id)  # raises if the user doesn't exist
             usage = db.get(self.StorageUsage, user_id)
             if not usage:
                 usage = self.StorageUsage(user_id=user_id, bytes_used=0, file_count=0)
@@ -137,7 +152,9 @@ class QuotaService:
             user = self._get_user(db, user_id)
             self._ensure_reset(db, user)
             user.monthly_token_used = (user.monthly_token_used or 0) + tokens_used
-            db.add(self.UsageLog(user_id=user_id, action="ai_query", amount=tokens_used))
+            db.add(
+                self.UsageLog(user_id=user_id, action="ai_query", amount=tokens_used)
+            )
             db.commit()
         finally:
             db.close()
@@ -158,13 +175,21 @@ class QuotaService:
                 "storage": {
                     "used_bytes": storage_used,
                     "limit_bytes": storage_limit,
-                    "percent": round(100 * storage_used / storage_limit, 2) if storage_limit else 0.0,
+                    "percent": (
+                        round(100 * storage_used / storage_limit, 2)
+                        if storage_limit
+                        else 0.0
+                    ),
                 },
                 "tokens": {
                     "used": token_used,
                     "limit": token_limit,
-                    "percent": round(100 * token_used / token_limit, 2) if token_limit else 0.0,
-                    "reset_at": user.quota_reset_at.isoformat() if user.quota_reset_at else None,
+                    "percent": (
+                        round(100 * token_used / token_limit, 2) if token_limit else 0.0
+                    ),
+                    "reset_at": (
+                        user.quota_reset_at.isoformat() if user.quota_reset_at else None
+                    ),
                 },
             }
         finally:

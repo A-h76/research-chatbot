@@ -3,6 +3,7 @@ Uses a minimal standalone Flask app (not server.py — avoids needing a
 DB/OAuth/R2 just to test token verification).
 Run: python -m auth.test_auth
 """
+
 from datetime import timedelta
 
 from flask import Flask, g, jsonify

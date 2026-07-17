@@ -1,17 +1,21 @@
 """Pure validation helpers for POST /api/documents/upload — no Flask/DB
 imports, so these are unit-testable without a request context."""
+
 import os
 
 from werkzeug.utils import secure_filename
 
 ALLOWED_EXTENSIONS = {".pdf", ".epub", ".docx", ".txt"}
 DEFAULT_MAX_UPLOAD_MB = 50
-MAX_DOCUMENT_UPLOAD_MB = int(os.environ.get("MAX_DOCUMENT_UPLOAD_MB", str(DEFAULT_MAX_UPLOAD_MB)))
+MAX_DOCUMENT_UPLOAD_MB = int(
+    os.environ.get("MAX_DOCUMENT_UPLOAD_MB", str(DEFAULT_MAX_UPLOAD_MB))
+)
 
 
 class ValidationError(Exception):
     """.code is machine-readable (goes in the JSON error field), .message
     is the human-readable string returned alongside it."""
+
     def __init__(self, code, message):
         super().__init__(message)
         self.code = code
@@ -24,7 +28,8 @@ def validate_extension(filename: str) -> str:
         raise ValidationError(
             "unsupported_type",
             f"Unsupported file type '{ext or '(none)'}'. "
-            f"Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
+            f"Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
     return ext
 
 

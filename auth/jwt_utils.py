@@ -7,6 +7,7 @@ Requires an active Flask app/request context (JWTManager(app) configured
 in server.py) — these functions read app.config at call time via
 flask_jwt_extended, they don't take an app reference themselves.
 """
+
 from flask_jwt_extended import create_access_token, create_refresh_token, decode_token
 
 
@@ -25,7 +26,9 @@ def create_jwt(user_id, additional_claims=None):
     server.py, not per call."""
     identity = str(user_id)
     access = create_access_token(identity=identity, additional_claims=additional_claims)
-    refresh = create_refresh_token(identity=identity, additional_claims=additional_claims)
+    refresh = create_refresh_token(
+        identity=identity, additional_claims=additional_claims
+    )
     return access, refresh
 
 

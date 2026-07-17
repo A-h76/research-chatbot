@@ -1,4 +1,5 @@
 """Cloudflare R2 (S3-compatible) object storage provider."""
+
 import contextlib
 import logging
 import os
@@ -45,8 +46,9 @@ class R2Provider:
             if e.response.get("Error", {}).get("Code") in ("404", "NoSuchKey"):
                 return None
             raise
-        return ObjectInfo(key=key, size=resp["ContentLength"],
-                          etag=resp.get("ETag", "").strip('"'))
+        return ObjectInfo(
+            key=key, size=resp["ContentLength"], etag=resp.get("ETag", "").strip('"')
+        )
 
     def list_keys(self, prefix=""):
         paginator = self._client.get_paginator("list_objects_v2")
@@ -68,46 +70,68 @@ class R2Provider:
                 pass
 
     def presigned_get_url(self, key, filename, mime, expires_in=300):
-        return self._client.generate_presigned_url("get_object", Params={
-            "Bucket": self.bucket, "Key": key,
-            "ResponseContentType": mime or "application/octet-stream",
-            "ResponseContentDisposition": f'attachment; filename="{filename}"',
-        }, ExpiresIn=expires_in)
+        return self._client.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": self.bucket,
+                "Key": key,
+                "ResponseContentType": mime or "application/octet-stream",
+                "ResponseContentDisposition": f'attachment; filename="{filename}"',
+            },
+            ExpiresIn=expires_in,
+        )
 
     def presigned_put_url(self, key, mime, expires_in=600, content_md5_b64=None):
-        params = {"Bucket": self.bucket, "Key": key,
-                  "ContentType": mime or "application/octet-stream"}
+        params = {
+            "Bucket": self.bucket,
+            "Key": key,
+            "ContentType": mime or "application/octet-stream",
+        }
         if content_md5_b64:
             # R2/S3 reject the upload with 400 if the bytes it receives
             # don't hash to this — integrity is enforced *during* upload,
             # not just checked after the fact.
             params["ContentMD5"] = content_md5_b64
         return self._client.generate_presigned_url(
-            "put_object", Params=params, ExpiresIn=expires_in)
+            "put_object", Params=params, ExpiresIn=expires_in
+        )
 
     def create_multipart_upload(self, key, mime):
         resp = self._client.create_multipart_upload(
-            Bucket=self.bucket, Key=key,
-            ContentType=mime or "application/octet-stream")
+            Bucket=self.bucket, Key=key, ContentType=mime or "application/octet-stream"
+        )
         return resp["UploadId"]
 
     def presigned_part_url(self, key, upload_id, part_number, expires_in=3600):
-        return self._client.generate_presigned_url("upload_part", Params={
-            "Bucket": self.bucket, "Key": key,
-            "UploadId": upload_id, "PartNumber": part_number,
-        }, ExpiresIn=expires_in)
+        return self._client.generate_presigned_url(
+            "upload_part",
+            Params={
+                "Bucket": self.bucket,
+                "Key": key,
+                "UploadId": upload_id,
+                "PartNumber": part_number,
+            },
+            ExpiresIn=expires_in,
+        )
 
     def complete_multipart_upload(self, key, upload_id, parts: list[UploadPart]):
         self._client.complete_multipart_upload(
-            Bucket=self.bucket, Key=key, UploadId=upload_id,
-            MultipartUpload={"Parts": [
-                {"PartNumber": p.part_number, "ETag": p.etag} for p in parts
-            ]})
+            Bucket=self.bucket,
+            Key=key,
+            UploadId=upload_id,
+            MultipartUpload={
+                "Parts": [{"PartNumber": p.part_number, "ETag": p.etag} for p in parts]
+            },
+        )
 
     def abort_multipart_upload(self, key, upload_id):
         try:
             self._client.abort_multipart_upload(
-                Bucket=self.bucket, Key=key, UploadId=upload_id)
+                Bucket=self.bucket, Key=key, UploadId=upload_id
+            )
         except Exception:
-            logging.exception("R2Provider.abort_multipart_upload failed "
-                              "for key=%s upload_id=%s", key, upload_id)
+            logging.exception(
+                "R2Provider.abort_multipart_upload failed " "for key=%s upload_id=%s",
+                key,
+                upload_id,
+            )

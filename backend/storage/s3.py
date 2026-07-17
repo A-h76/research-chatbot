@@ -6,6 +6,7 @@ API calls anywhere in it) — R2 is just what its constructor defaults
 point at. Passing a standard AWS endpoint (or none, letting boto3 use
 its own AWS default) makes the exact same class talk to real S3.
 """
+
 import os
 from typing import BinaryIO, Optional
 
@@ -19,8 +20,8 @@ def _s3_config_from_env():
         bucket=os.environ.get("AWS_S3_BUCKET", ""),
         # None (not an R2-style forced endpoint) — boto3 resolves the
         # correct regional AWS S3 endpoint on its own from the region.
-        endpoint=os.environ.get("AWS_S3_ENDPOINT") or
-                f"https://s3.{os.environ.get('AWS_REGION', 'us-east-1')}.amazonaws.com",
+        endpoint=os.environ.get("AWS_S3_ENDPOINT")
+        or f"https://s3.{os.environ.get('AWS_REGION', 'us-east-1')}.amazonaws.com",
         access_key=os.environ.get("AWS_ACCESS_KEY_ID", ""),
         secret_key=os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
     )
@@ -29,5 +30,6 @@ def _s3_config_from_env():
 class S3Backend(R2Backend):
     """Identical behavior to R2Backend — the only difference is which
     env vars configure the underlying R2Provider instance."""
+
     def __init__(self, provider: Optional[R2Provider] = None):
         super().__init__(provider or R2Provider(**_s3_config_from_env()))

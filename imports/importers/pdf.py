@@ -10,6 +10,7 @@ class PdfImporter:
         with \\x00PAGE<n>\\x00 so chunk_document() can annotate every chunk
         with its 1-based page number."""
         import fitz  # PyMuPDF
+
         doc = fitz.open(path)
         try:
             parts = []

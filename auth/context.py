@@ -6,6 +6,7 @@ second time under a separate module identity and re-execute the whole
 thing — see auth/magic_link.py's module docstring for the full
 explanation of the same issue, hit and fixed there first.
 """
+
 from flask import session, request
 
 from .jwt_utils import decode_jwt, JWTError
@@ -40,13 +41,13 @@ def create_get_current_user(SessionLocal, User):
         # 2. Bearer JWT
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
-            token = auth_header[len("Bearer "):]
+            token = auth_header[len("Bearer ") :]
             try:
                 claims = decode_jwt(token)
             except JWTError:
                 return None
             if claims.get("type") != "access":
-                return None   # a refresh token must never authenticate a request
+                return None  # a refresh token must never authenticate a request
             try:
                 user_id = int(claims.get("sub"))
             except (TypeError, ValueError):

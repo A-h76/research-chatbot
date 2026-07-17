@@ -13,6 +13,7 @@ recursing. Passing the handful of things this module needs explicitly
 avoids that entirely, and is a cleaner dependency direction anyway
 (Constitution Principle 9) than reaching into another module's globals.
 """
+
 import re
 
 from flask import Blueprint, request, session, jsonify
@@ -22,9 +23,19 @@ TOKEN_MAX_AGE_SECONDS = 15 * 60
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-def create_magic_link_blueprint(*, secret_key, limiter, email_service,
-                                SessionLocal, User, select, ALLOWED_EMAILS,
-                                APP_BASE_URL, create_jwt, log_security_event):
+def create_magic_link_blueprint(
+    *,
+    secret_key,
+    limiter,
+    email_service,
+    SessionLocal,
+    User,
+    select,
+    ALLOWED_EMAILS,
+    APP_BASE_URL,
+    create_jwt,
+    log_security_event,
+):
     bp = Blueprint("magic_link", __name__, url_prefix="/auth/magic-link")
     serializer = URLSafeTimedSerializer(secret_key, salt="magic-link")
 
@@ -48,10 +59,12 @@ def create_magic_link_blueprint(*, secret_key, limiter, email_service,
         # an attacker enumerate valid/allowlisted addresses. The allowlist
         # check below controls whether an email is sent, not what the
         # caller is told.
-        generic_response = jsonify({
-            "ok": True,
-            "detail": "If that email is allowed to sign in, a login link has been sent.",
-        })
+        generic_response = jsonify(
+            {
+                "ok": True,
+                "detail": "If that email is allowed to sign in, a login link has been sent.",
+            }
+        )
 
         if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
             log_security_event("magic_link_denied", email=email)
@@ -64,8 +77,12 @@ def create_magic_link_blueprint(*, secret_key, limiter, email_service,
             f'<p><a href="{verify_url}">Sign in</a></p>'
             f"<p>If you didn't request this, you can ignore this email.</p>"
         )
-        email_service.send(to=email, subject="Your sign-in link",
-                           html=html, text=f"Sign in: {verify_url}")
+        email_service.send(
+            to=email,
+            subject="Your sign-in link",
+            html=html,
+            text=f"Sign in: {verify_url}",
+        )
         return generic_response
 
     @bp.route("/verify", methods=["POST"])
@@ -94,7 +111,9 @@ def create_magic_link_blueprint(*, secret_key, limiter, email_service,
 
         db = SessionLocal()
         try:
-            user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+            user = db.execute(
+                select(User).where(User.email == email)
+            ).scalar_one_or_none()
             if not user:
                 user = User(email=email, name=email, auth_provider="magic")
                 db.add(user)
@@ -105,14 +124,16 @@ def create_magic_link_blueprint(*, secret_key, limiter, email_service,
             access, refresh = create_jwt(user.id)
             session["jwt"] = {"access": access, "refresh": refresh}
 
-            return jsonify({
-                "ok": True,
-                "user_id": user.id,
-                "access_token": access,
-                "refresh_token": refresh,
-            })
+            return jsonify(
+                {
+                    "ok": True,
+                    "user_id": user.id,
+                    "access_token": access,
+                    "refresh_token": refresh,
+                }
+            )
         finally:
             db.close()
 
-    bp._serializer = serializer   # exposed for tests only
+    bp._serializer = serializer  # exposed for tests only
     return bp

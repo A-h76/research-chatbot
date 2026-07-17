@@ -5,7 +5,7 @@ def sniff_text(path: str, max_bytes: int = 2_000_000) -> str:
         raw = f.read(max_bytes)
     if not raw:
         return ""
-    if b"\x00" in raw[:8192]:          # NUL byte => almost certainly binary
+    if b"\x00" in raw[:8192]:  # NUL byte => almost certainly binary
         return ""
     try:
         return raw.decode("utf-8")

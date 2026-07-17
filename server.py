@@ -4,6 +4,7 @@ Flask + Google OAuth + Postgres/SQLite + OpenAI Responses API (streaming)
 + Projects + selective memory + auto titles + web search
 + File uploads (PDF/Word/image/text) + vision + RAG + citation manager.
 """
+
 import os
 import io
 import json
@@ -20,16 +21,40 @@ from functools import wraps
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import click
 import storage
-from flask import (Flask, request, session, redirect, url_for, jsonify,
-                   render_template, Response, send_from_directory, send_file,
-                   abort)
+from flask import (
+    Flask,
+    request,
+    session,
+    redirect,
+    url_for,
+    jsonify,
+    render_template,
+    Response,
+    send_from_directory,
+    send_file,
+    abort,
+)
 from authlib.integrations.flask_client import OAuth
-from sqlalchemy import (create_engine, Column, Integer, BigInteger, String, Text, Float,
-                        Boolean, DateTime, ForeignKey, select, delete, text as sqltext)
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    BigInteger,
+    String,
+    Text,
+    Float,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    select,
+    delete,
+    text as sqltext,
+)
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from quotas import QuotaService, QuotaExceededError, create_usage_log_model
 from openai import OpenAI
@@ -46,14 +71,20 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 # When set, visiting /login automatically signs in as a local dev user.
 # NEVER set this in production.
 DEV_AUTO_LOGIN = os.environ.get("DEV_AUTO_LOGIN", "")
-ALLOWED_EMAILS = [e.strip().lower() for e in
-                  os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()]
+ALLOWED_EMAILS = [
+    e.strip().lower()
+    for e in os.environ.get("ALLOWED_EMAILS", "").split(",")
+    if e.strip()
+]
 
 DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "gpt-5-mini")
 UTILITY_MODEL = os.environ.get("UTILITY_MODEL", "gpt-4o-mini")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "text-embedding-3-small")
-FALLBACK_MODELS = [m.strip() for m in os.environ.get(
-    "MODELS", "gpt-5-mini,gpt-5,gpt-4o,gpt-4o-mini").split(",") if m.strip()]
+FALLBACK_MODELS = [
+    m.strip()
+    for m in os.environ.get("MODELS", "gpt-5-mini,gpt-5,gpt-4o,gpt-4o-mini").split(",")
+    if m.strip()
+]
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)  # only used for throwaway temp files now
@@ -70,10 +101,12 @@ JOB_STATUS_CACHE_TTL_SECONDS = 3600
 # logging in development when no API key is configured.
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "Personal AI <onboarding@resend.dev>")
-SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "")   # where tickets are routed
+SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "")  # where tickets are routed
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000")
-IS_PRODUCTION = os.environ.get("FLASK_ENV", "").lower() == "production" or \
-    os.environ.get("APP_ENV", "").lower() == "production"
+IS_PRODUCTION = (
+    os.environ.get("FLASK_ENV", "").lower() == "production"
+    or os.environ.get("APP_ENV", "").lower() == "production"
+)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
@@ -96,17 +129,23 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 # not re-solved here, just not made worse by a second silent fallback).
 app.config.update(
     JWT_SECRET_KEY=os.environ.get("JWT_SECRET_KEY", app.secret_key),
-    JWT_ACCESS_TOKEN_EXPIRES=timedelta(minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MIN", "15"))),
-    JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "30"))),
+    JWT_ACCESS_TOKEN_EXPIRES=timedelta(
+        minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MIN", "15"))
+    ),
+    JWT_REFRESH_TOKEN_EXPIRES=timedelta(
+        days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "30"))
+    ),
     JWT_ALGORITHM="HS256",
 )
 from flask_jwt_extended import JWTManager
+
 jwt_manager = JWTManager(app)
 from auth import create_jwt, decode_jwt, JWTError, create_get_current_user
 
 # ------------------------------------------------------------------ logging
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 security_log = logging.getLogger("security")
 email_log = logging.getLogger("email")
 
@@ -134,23 +173,37 @@ class EmailService:
         if not self.enabled:
             email_log.info(
                 "[dev email - not sent]\n  to: %s\n  subject: %s\n  body:\n%s",
-                ", ".join(recipients), subject, text or _html_to_text(html))
+                ", ".join(recipients),
+                subject,
+                text or _html_to_text(html),
+            )
             return True
-        payload = {"from": self.sender, "to": recipients,
-                   "subject": subject, "html": html}
+        payload = {
+            "from": self.sender,
+            "to": recipients,
+            "subject": subject,
+            "html": html,
+        }
         if text:
             payload["text"] = text
         if reply_to:
             payload["reply_to"] = reply_to
         try:
             import requests
+
             resp = requests.post(
                 "https://api.resend.com/emails",
-                headers={"Authorization": f"Bearer {self.api_key}",
-                         "Content-Type": "application/json"},
-                json=payload, timeout=15)
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=15,
+            )
             if resp.status_code >= 400:
-                email_log.error("Resend error %s: %s", resp.status_code, resp.text[:300])
+                email_log.error(
+                    "Resend error %s: %s", resp.status_code, resp.text[:300]
+                )
                 return False
             return True
         except Exception as e:
@@ -160,6 +213,7 @@ class EmailService:
 
 def _html_to_text(html):
     import re
+
     return re.sub(r"<[^>]+>", "", html or "").strip()
 
 
@@ -172,9 +226,13 @@ from flask_limiter.util import get_remote_address
 
 # Opt-in per-route limits (no global throttle so normal chat use is unaffected).
 # Uses in-memory storage — switch to redis:// for multi-process production.
-limiter = Limiter(key_func=get_remote_address, app=app,
-                  default_limits=[], storage_uri="memory://",
-                  strategy="fixed-window")
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri="memory://",
+    strategy="fixed-window",
+)
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -194,10 +252,23 @@ def csrf_protect():
         log_security_event("csrf_blocked", path=request.path, origin=src_host)
         return jsonify({"error": "csrf_origin_mismatch"}), 403
 
+
 # ------------------------------------------------------------------ dynamic model list
-_EXCLUDE = ("embedding", "whisper", "tts", "audio", "realtime", "image",
-            "sora", "moderation", "transcribe", "davinci", "babbage",
-            "instruct", "dall-e")
+_EXCLUDE = (
+    "embedding",
+    "whisper",
+    "tts",
+    "audio",
+    "realtime",
+    "image",
+    "sora",
+    "moderation",
+    "transcribe",
+    "davinci",
+    "babbage",
+    "instruct",
+    "dall-e",
+)
 _INCLUDE_PREFIX = ("gpt-", "chatgpt-", "o1", "o3", "o4", "chat-latest")
 _model_cache = {"ts": 0.0, "models": []}
 _model_lock = threading.Lock()
@@ -221,16 +292,23 @@ def supports_temperature(model):
 
 def get_models(force=False):
     with _model_lock:
-        if not force and _model_cache["models"] and \
-                time.time() - _model_cache["ts"] < 600:
+        if (
+            not force
+            and _model_cache["models"]
+            and time.time() - _model_cache["ts"] < 600
+        ):
             return _model_cache["models"]
         try:
             raw = client.models.list().data
             models = sorted(
-                (m.id for m in raw
-                 if m.id.startswith(_INCLUDE_PREFIX)
-                 and not any(x in m.id for x in _EXCLUDE)),
-                key=lambda mid: next((-m.created for m in raw if m.id == mid), 0))
+                (
+                    m.id
+                    for m in raw
+                    if m.id.startswith(_INCLUDE_PREFIX)
+                    and not any(x in m.id for x in _EXCLUDE)
+                ),
+                key=lambda mid: next((-m.created for m in raw if m.id == mid), 0),
+            )
             if models:
                 _model_cache.update(ts=time.time(), models=models)
                 return models
@@ -264,7 +342,9 @@ class User(Base):
     # (below) is already the live, actively-maintained source of truth;
     # only the per-user *limit* is new (today's check is one global
     # MAX_STORAGE_MB env var, not configurable per user).
-    storage_limit_bytes = Column(BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES)
+    storage_limit_bytes = Column(
+        BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES
+    )
     monthly_token_used = Column(Integer, default=0)
     monthly_token_limit = Column(Integer, default=QuotaService.DEFAULT_TOKEN_LIMIT)
     quota_reset_at = Column(DateTime, nullable=True)
@@ -276,7 +356,7 @@ class Project(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     name = Column(String(100), nullable=False)
     emoji = Column(String(16), default="📁")
-    description = Column(Text, default="")      # what this research project is about
+    description = Column(Text, default="")  # what this research project is about
     instructions = Column(Text, default="")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -296,21 +376,27 @@ class Conversation(Base):
     reasoning_effort = Column(String(20), nullable=True)
     memory_enabled = Column(Integer, default=1)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
-    messages = relationship("Message", back_populates="conversation",
-                            cascade="all, delete-orphan", order_by="Message.id")
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    messages = relationship(
+        "Message",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="Message.id",
+    )
 
 
 class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True)
-    conversation_id = Column(Integer, ForeignKey("conversations.id"),
-                             nullable=False)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
     role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
-    sources = Column(Text)          # JSON list of web sources
-    attachments = Column(Text)      # JSON list [{id,name,mime,kind}]
+    sources = Column(Text)  # JSON list of web sources
+    attachments = Column(Text)  # JSON list [{id,name,mime,kind}]
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     conversation = relationship("Conversation", back_populates="messages")
 
@@ -333,8 +419,8 @@ class UserFile(Base):
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)
     name = Column(String(300), nullable=False)
     mime = Column(String(120))
-    kind = Column(String(20))       # image | document
-    path = Column(String(500))      # on-disk path
+    kind = Column(String(20))  # image | document
+    path = Column(String(500))  # on-disk path
     size = Column(Integer, default=0)
     text_len = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -343,13 +429,13 @@ class UserFile(Base):
     # `name` stays the raw filename; `title` is the extracted paper title so
     # the library can show "Attention Is All You Need" instead of "1706.pdf".
     title = Column(String(500), default="")
-    authors = Column(String(1000), default="")     # "Vaswani, A.; Shazeer, N."
+    authors = Column(String(1000), default="")  # "Vaswani, A.; Shazeer, N."
     year = Column(String(10), default="")
     venue = Column(String(300), default="")
     doi = Column(String(200), default="")
     abstract = Column(Text, default="")
     reading_status = Column(String(20), default="unread")  # unread|reading|read
-    tags = Column(Text, default="[]")              # JSON list[str], user-set
+    tags = Column(Text, default="[]")  # JSON list[str], user-set
     content_hash = Column(String(64), default="")  # sha256 of extracted text
     meta_status = Column(String(20), default="pending")  # pending|done|failed
 
@@ -357,26 +443,28 @@ class UserFile(Base):
     # identity used for duplicate detection and post-upload integrity checks.
     checksum_sha256 = Column(String(64), nullable=True)
 
-    chunks = relationship("Chunk", cascade="all, delete-orphan",
-                          back_populates="file")
+    chunks = relationship("Chunk", cascade="all, delete-orphan", back_populates="file")
 
 
 class UploadSession(Base):
     """Tracks a presigned/multipart upload between 'client asked for a URL'
     and 'client confirmed the bytes landed' — before a UserFile row exists.
     Expired/abandoned sessions are what garbage collection cleans up."""
+
     __tablename__ = "upload_sessions"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)
-    key = Column(String(300), nullable=False)          # storage object key
-    name = Column(String(300), nullable=False)          # original filename
+    key = Column(String(300), nullable=False)  # storage object key
+    name = Column(String(300), nullable=False)  # original filename
     mime = Column(String(120))
     size_expected = Column(Integer, default=0)
     checksum_sha256 = Column(String(64), nullable=True)  # client-claimed, pre-upload
-    upload_id = Column(String(300), nullable=True)       # multipart only
-    status = Column(String(20), default="pending")       # pending|uploaded|confirmed|expired|aborted
+    upload_id = Column(String(300), nullable=True)  # multipart only
+    status = Column(
+        String(20), default="pending"
+    )  # pending|uploaded|confirmed|expired|aborted
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -385,12 +473,13 @@ class UploadBatch(Base):
     at once). Nothing creates these yet — today's upload routes handle one
     file per request — so this stays empty until a bulk-upload entry point
     exists; the FK on UploadJob is nullable for exactly that reason."""
+
     __tablename__ = "upload_batches"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)
-    source = Column(String(20), default="library")   # library|chat_composer|folder_drop
+    source = Column(String(20), default="library")  # library|chat_composer|folder_drop
     file_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -401,21 +490,29 @@ class UploadJob(Base):
     SKIP LOCKED, claims, executes, and marks done/failed. Written by
     upload_file()'s transactional outbox and by worker.py itself when
     chaining follow-on stages — see processing-pipeline-architecture.md."""
+
     __tablename__ = "upload_jobs"
     id = Column(Integer, primary_key=True)
     upload_batch_id = Column(Integer, ForeignKey("upload_batches.id"), nullable=True)
     file_id = Column(Integer, ForeignKey("files.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    job_type = Column(String(30), nullable=False)     # import|extract_metadata|paper_analysis
-    status = Column(String(20), default="pending")    # pending|running|done|failed
+    job_type = Column(
+        String(30), nullable=False
+    )  # import|extract_metadata|paper_analysis
+    status = Column(String(20), default="pending")  # pending|running|done|failed
     attempts = Column(Integer, default=0)
-    run_after = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # due time; backoff pushes this out
+    run_after = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )  # due time; backoff pushes this out
     last_error = Column(Text, nullable=True)
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 
 class StorageUsage(Base):
@@ -423,12 +520,16 @@ class StorageUsage(Base):
     every upload/delete, not a periodic rollup, because quota enforcement
     (production-hardening.md §4) needs a synchronous answer before
     accepting a new file, not yesterday's number."""
+
     __tablename__ = "storage_usage"
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     bytes_used = Column(Integer, default=0)
     file_count = Column(Integer, default=0)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 
 UsageLog = create_usage_log_model(Base)
@@ -442,13 +543,19 @@ class ImportSession(Base):
     real checkpoints here until the Step Runner (processing-pipeline-
     architecture.md §5, §10) exists. Created now so that work has a table
     to land in without a later migration."""
+
     __tablename__ = "import_sessions"
     id = Column(Integer, primary_key=True)
-    upload_job_id = Column(Integer, ForeignKey("upload_jobs.id"), nullable=False, unique=True)
-    stage = Column(String(20), default="extract")     # extract|chunk|embed
-    checkpoint = Column(Text, default="{}")           # JSON
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    upload_job_id = Column(
+        Integer, ForeignKey("upload_jobs.id"), nullable=False, unique=True
+    )
+    stage = Column(String(20), default="extract")  # extract|chunk|embed
+    checkpoint = Column(Text, default="{}")  # JSON
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 
 class OutboxEvent(Base):
@@ -460,13 +567,14 @@ class OutboxEvent(Base):
     aggregate_id is polymorphic (aggregate_type says which table it points
     into); no FK, enforced by the writer inserting both rows in one
     transaction, not by the schema."""
+
     __tablename__ = "outbox_events"
     id = Column(Integer, primary_key=True)
-    aggregate_type = Column(String(30), nullable=False)   # 'upload_job' | ...
+    aggregate_type = Column(String(30), nullable=False)  # 'upload_job' | ...
     aggregate_id = Column(Integer, nullable=False)
-    event_type = Column(String(50), nullable=False)       # 'job.enqueued' | ...
-    payload = Column(Text, nullable=False)                 # JSON
-    status = Column(String(20), default="pending")          # pending|dispatched|failed
+    event_type = Column(String(50), nullable=False)  # 'job.enqueued' | ...
+    payload = Column(Text, nullable=False)  # JSON
+    status = Column(String(20), default="pending")  # pending|dispatched|failed
     dispatched_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -475,6 +583,7 @@ class ModelVersion(Base):
     """Our own versioning of a model choice — so "which model produced
     this row" survives an env var change. Seeded by backfill.py's Task 3
     pass (default_model/utility_model/embed_model, version 1, active)."""
+
     __tablename__ = "model_versions"
     id = Column(Integer, primary_key=True)
     logical_name = Column(String(50), nullable=False)
@@ -492,11 +601,12 @@ class AIUsageLedger(Base):
     extract_metadata, and paper_analysis paths only — see worker.py's
     docstring notes for what isn't covered yet (chat, memory extraction,
     titles, compare, gap-finder, writing assistant)."""
+
     __tablename__ = "ai_usage_ledger"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     upload_job_id = Column(Integer, ForeignKey("upload_jobs.id"), nullable=True)
-    kind = Column(String(30), nullable=False)   # embedding|metadata|analysis|...
+    kind = Column(String(30), nullable=False)  # embedding|metadata|analysis|...
     model_version_id = Column(Integer, ForeignKey("model_versions.id"), nullable=False)
     prompt_tokens = Column(Integer, default=0)
     completion_tokens = Column(Integer, default=0)
@@ -510,7 +620,7 @@ class Chunk(Base):
     file_id = Column(Integer, ForeignKey("files.id"), nullable=False)
     idx = Column(Integer, default=0)
     content = Column(Text, nullable=False)
-    embedding = Column(Text)        # JSON list of floats (null = keyword only)
+    embedding = Column(Text)  # JSON list of floats (null = keyword only)
     # Locators so Paper Chat can cite "p. 4 · §Methodology" rather than just
     # the filename. Nullable: chunks from formats without page structure
     # (and every chunk written by the pre-1.0 code) simply have no locator.
@@ -527,7 +637,7 @@ class Citation(Base):
     authors = Column(String(500), default="")
     title = Column(String(500), default="")
     year = Column(String(10), default="")
-    venue = Column(String(300), default="")   # journal / conference / publisher
+    venue = Column(String(300), default="")  # journal / conference / publisher
     doi = Column(String(200), default="")
     url = Column(String(600), default="")
     notes = Column(Text, default="")
@@ -540,15 +650,16 @@ class SupportRequest(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     email = Column(String(320), nullable=False)
     subject = Column(String(300), default="")
-    category = Column(String(50), default="general")   # bug|feature|general|account
+    category = Column(String(50), default="general")  # bug|feature|general|account
     message = Column(Text, nullable=False)
-    status = Column(String(30), default="open")        # open|in_progress|closed
+    status = Column(String(30), default="open")  # open|in_progress|closed
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 # ══════════════════════════════════════════════════════════════════════════
 # RESEARCH WORKSPACE — v1.0 models
 # ══════════════════════════════════════════════════════════════════════════
+
 
 class PaperAnalysis(Base):
     """Cached structured analysis of one paper. One row per file.
@@ -557,32 +668,37 @@ class PaperAnalysis(Base):
     re-uploaded unchanged we reuse the analysis instead of paying for another
     model call. Regeneration happens only when the hash changes or the user
     explicitly asks for a refresh."""
+
     __tablename__ = "paper_analyses"
     id = Column(Integer, primary_key=True)
     file_id = Column(Integer, ForeignKey("files.id"), nullable=False, unique=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    status = Column(String(20), default="pending")   # pending|running|done|failed
+    status = Column(String(20), default="pending")  # pending|running|done|failed
     error = Column(Text, default="")
     content_hash = Column(String(64), default="")
     model = Column(String(100), default="")
-    data = Column(Text, default="")                  # JSON: ANALYSIS_FIELDS
+    data = Column(Text, default="")  # JSON: ANALYSIS_FIELDS
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 
 class DerivedAnalysis(Base):
     """Cached multi-paper output — comparison ('compare') or gap analysis
     ('gaps'). Keyed by a hash of the sorted file-id set so the same selection
     never regenerates."""
+
     __tablename__ = "derived_analyses"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
-    kind = Column(String(20), nullable=False)        # compare|gaps
+    kind = Column(String(20), nullable=False)  # compare|gaps
     selection_hash = Column(String(64), nullable=False)
-    file_ids = Column(Text, default="[]")            # JSON list[int]
-    data = Column(Text, default="")                  # JSON
+    file_ids = Column(Text, default="[]")  # JSON list[int]
+    data = Column(Text, default="")  # JSON
     model = Column(String(100), default="")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -596,8 +712,11 @@ class Note(Base):
     title = Column(String(300), default="")
     content = Column(Text, default="")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 
 class SearchIndex(Base):
@@ -606,17 +725,21 @@ class SearchIndex(Base):
     Papers are NOT indexed here — their `Chunk` rows already carry embeddings
     and are searched directly, which keeps a single source of truth per
     document and avoids duplicating a paper's vectors."""
+
     __tablename__ = "search_index"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
-    kind = Column(String(20), nullable=False)        # note|citation|chat
-    ref_id = Column(Integer, nullable=False)         # id in the source table
+    kind = Column(String(20), nullable=False)  # note|citation|chat
+    ref_id = Column(Integer, nullable=False)  # id in the source table
     title = Column(String(400), default="")
     snippet = Column(Text, default="")
-    embedding = Column(Text)                         # JSON list[float] | null
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    embedding = Column(Text)  # JSON list[float] | null
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 
 Base.metadata.create_all(engine)
@@ -715,6 +838,7 @@ def login_required(f):
                 return jsonify({"error": "not_authenticated"}), 401
             return redirect(url_for("login_page"))
         return f(*args, **kwargs)
+
     return wrapper
 
 
@@ -734,10 +858,12 @@ def login_page():
                 select(User).where(User.email == dev_email)
             ).scalar_one_or_none()
             if not user:
-                user = User(email=dev_email, name="Dev User", picture="", auth_provider="dev")
+                user = User(
+                    email=dev_email, name="Dev User", picture="", auth_provider="dev"
+                )
                 db.add(user)
                 db.commit()
-            session["user_id"]    = user.id
+            session["user_id"] = user.id
             session["user_email"] = user.email
             access, refresh = create_jwt(user.id)
             session["jwt"] = {"access": access, "refresh": refresh}
@@ -749,7 +875,8 @@ def login_page():
     return render_template(
         "login.html",
         oauth_ready=bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
-        error=None)
+        error=None,
+    )
 
 
 @app.route("/auth/google")
@@ -764,11 +891,23 @@ def auth_callback():
     info = token.get("userinfo") or {}
     email = (info.get("email") or "").lower()
     if not email:
-        return render_template("login.html", oauth_ready=True,
-                               error="Could not read your Google account email."), 403
+        return (
+            render_template(
+                "login.html",
+                oauth_ready=True,
+                error="Could not read your Google account email.",
+            ),
+            403,
+        )
     if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
-        return render_template("login.html", oauth_ready=True,
-                               error="Access denied — this account is not allowed."), 403
+        return (
+            render_template(
+                "login.html",
+                oauth_ready=True,
+                error="Access denied — this account is not allowed.",
+            ),
+            403,
+        )
     db = SessionLocal()
     try:
         user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
@@ -800,13 +939,20 @@ def logout():
 @app.route("/api/dev-login", methods=["POST"])
 def dev_login():
     """Sign in as the local dev user without Google OAuth.
-    
+
     Only works when DEV_AUTO_LOGIN is set in the environment.
     Returns 403 in production / when DEV_AUTO_LOGIN is not set.
     """
     if not DEV_AUTO_LOGIN:
-        return jsonify({"error": "dev_login_disabled",
-                        "detail": "Set DEV_AUTO_LOGIN=1 in your .env file to use this endpoint."}), 403
+        return (
+            jsonify(
+                {
+                    "error": "dev_login_disabled",
+                    "detail": "Set DEV_AUTO_LOGIN=1 in your .env file to use this endpoint.",
+                }
+            ),
+            403,
+        )
     db = SessionLocal()
     try:
         dev_email = "dev@localhost"
@@ -817,7 +963,7 @@ def dev_login():
             user = User(email=dev_email, name="Dev User", picture="")
             db.add(user)
             db.commit()
-        session["user_id"]    = user.id
+        session["user_id"] = user.id
         session["user_email"] = user.email
         access, refresh = create_jwt(user.id)
         session["jwt"] = {"access": access, "refresh": refresh}
@@ -834,12 +980,21 @@ def dev_login():
 # whole file under a second module identity and recurse. See
 # auth/magic_link.py's module docstring for the full explanation.
 from auth.magic_link import create_magic_link_blueprint
-app.register_blueprint(create_magic_link_blueprint(
-    secret_key=app.secret_key, limiter=limiter, email_service=email_service,
-    SessionLocal=SessionLocal, User=User, select=select,
-    ALLOWED_EMAILS=ALLOWED_EMAILS, APP_BASE_URL=APP_BASE_URL,
-    create_jwt=create_jwt, log_security_event=log_security_event,
-))
+
+app.register_blueprint(
+    create_magic_link_blueprint(
+        secret_key=app.secret_key,
+        limiter=limiter,
+        email_service=email_service,
+        SessionLocal=SessionLocal,
+        User=User,
+        select=select,
+        ALLOWED_EMAILS=ALLOWED_EMAILS,
+        APP_BASE_URL=APP_BASE_URL,
+        create_jwt=create_jwt,
+        log_security_event=log_security_event,
+    )
+)
 
 # POST /api/documents/upload — Bearer-JWT-authenticated upload entry point
 # alongside the existing session-based POST /api/files. Reuses UserFile/
@@ -848,14 +1003,23 @@ app.register_blueprint(create_magic_link_blueprint(
 from backend.upload.validation import MAX_DOCUMENT_UPLOAD_MB
 from backend.upload.routes import create_documents_blueprint
 from backend.storage import get_storage_backend
+
 # Flask rejects an over-limit request body before any route code runs —
 # this route's own limit must not be shadowed by the app-wide one.
-app.config["MAX_CONTENT_LENGTH"] = max(MAX_FILE_MB, MAX_DOCUMENT_UPLOAD_MB) * 1024 * 1024
-app.register_blueprint(create_documents_blueprint(
-    SessionLocal=SessionLocal, UserFile=UserFile, UploadBatch=UploadBatch,
-    UploadJob=UploadJob, OutboxEvent=OutboxEvent, quota_service=quota_service,
-    storage_backend=get_storage_backend(),
-))
+app.config["MAX_CONTENT_LENGTH"] = (
+    max(MAX_FILE_MB, MAX_DOCUMENT_UPLOAD_MB) * 1024 * 1024
+)
+app.register_blueprint(
+    create_documents_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        UploadBatch=UploadBatch,
+        UploadJob=UploadJob,
+        OutboxEvent=OutboxEvent,
+        quota_service=quota_service,
+        storage_backend=get_storage_backend(),
+    )
+)
 
 # Unified user lookup — session first, Bearer JWT second, None if
 # neither. A helper for routes that should accept either auth method;
@@ -879,6 +1043,7 @@ get_current_user = create_get_current_user(SessionLocal, User)
 # others) have consistently deferred until there's a real one.
 # ══════════════════════════════════════════════════════════════════════════
 
+
 @app.route("/api/auth/jwt")
 @login_required
 def get_session_jwt():
@@ -892,10 +1057,11 @@ def get_session_jwt():
     if stored:
         try:
             decode_jwt(stored["access"])
-            return jsonify({"access_token": stored["access"],
-                            "refresh_token": stored["refresh"]})
+            return jsonify(
+                {"access_token": stored["access"], "refresh_token": stored["refresh"]}
+            )
         except JWTError:
-            pass   # expired/invalid — fall through and mint a fresh pair
+            pass  # expired/invalid — fall through and mint a fresh pair
     access, refresh = create_jwt(session["user_id"])
     session["jwt"] = {"access": access, "refresh": refresh}
     return jsonify({"access_token": access, "refresh_token": refresh})
@@ -917,8 +1083,12 @@ def refresh_jwt():
     except JWTError:
         return jsonify({"error": "invalid_refresh_token"}), 401
     if claims.get("type") != "refresh":
-        return jsonify({"error": "invalid_refresh_token",
-                        "detail": "not a refresh token"}), 401
+        return (
+            jsonify(
+                {"error": "invalid_refresh_token", "detail": "not a refresh token"}
+            ),
+            401,
+        )
     try:
         user_id = int(claims.get("sub"))
     except (TypeError, ValueError):
@@ -956,6 +1126,7 @@ def pdf_page_images(path, max_pages=6, zoom=2.0):
     """Rasterise the first pages of a PDF to PNG data-URLs (for scanned PDFs
     with no text layer, so the vision model can still read them)."""
     import fitz  # PyMuPDF
+
     urls = []
     doc = fitz.open(path)
     try:
@@ -978,14 +1149,16 @@ def chunk_text(text, size=1500, overlap=200):
         return []
     chunks, i = [], 0
     while i < len(text):
-        chunks.append(text[i:i + size])
+        chunks.append(text[i : i + size])
         i += size - overlap
     return chunks[:400]
 
 
 import re as _re
+
 _PAGE_RE = _re.compile(r"\x00PAGE(\d+)\x00")
-_SEC_RE  = _re.compile(r"\x00SEC\d+:([^\x00]*)\x00")
+_SEC_RE = _re.compile(r"\x00SEC\d+:([^\x00]*)\x00")
+
 
 def chunk_document(text, size=1500, overlap=200):
     """Sentinel-aware chunker for PDFs and DOCX files.
@@ -1010,7 +1183,7 @@ def chunk_document(text, size=1500, overlap=200):
     # ── pass 1: build a sentinel-stripped clean text plus a position map ──
     # pos_map[clean_pos] = (page, section) at the time we wrote that char
     clean_chars = []
-    pos_meta = []          # parallel list: meta at each clean char position
+    pos_meta = []  # parallel list: meta at each clean char position
     cur_page = None
     cur_section = None
     idx = 0
@@ -1019,7 +1192,7 @@ def chunk_document(text, size=1500, overlap=200):
     while idx < n:
         # Check for sentinel starting here
         page_m = _PAGE_RE.match(text, idx)
-        sec_m  = _SEC_RE.match(text, idx)
+        sec_m = _SEC_RE.match(text, idx)
         if page_m:
             cur_page = int(page_m.group(1))
             idx = page_m.end()
@@ -1044,11 +1217,13 @@ def chunk_document(text, size=1500, overlap=200):
     while i < total:
         end = min(i + size, total)
         page, section = pos_meta[i] if i < len(pos_meta) else (None, None)
-        chunks.append({
-            "content": clean[i:end],
-            "page":    page,
-            "section": section,
-        })
+        chunks.append(
+            {
+                "content": clean[i:end],
+                "page": page,
+                "section": section,
+            }
+        )
         i += size - overlap
 
     return chunks[:400]  # safety cap
@@ -1064,8 +1239,7 @@ def embed_texts(texts, user_id=None):
         out = []
         total_tokens = 0
         for i in range(0, len(texts), 64):
-            resp = client.embeddings.create(model=EMBED_MODEL,
-                                            input=texts[i:i + 64])
+            resp = client.embeddings.create(model=EMBED_MODEL, input=texts[i : i + 64])
             out.extend([d.embedding for d in resp.data])
             total_tokens += getattr(resp.usage, "prompt_tokens", 0) or 0
         if user_id:
@@ -1090,8 +1264,7 @@ def keyword_score(query, text):
     return sum(1 for w in q if w in t) / len(q)
 
 
-def rag_retrieve(user_id, conversation_id, project_id, query,
-                 top_k=6, file_id=None):
+def rag_retrieve(user_id, conversation_id, project_id, query, top_k=6, file_id=None):
     """Top chunks from files scoped to this conversation or its project.
 
     When file_id is given the retrieval is hard-scoped to that single file —
@@ -1101,22 +1274,35 @@ def rag_retrieve(user_id, conversation_id, project_id, query,
     try:
         if file_id:
             # Hard-scope: retrieve only from the specified paper
-            files = db.execute(select(UserFile).where(
-                UserFile.id == file_id,
-                UserFile.user_id == user_id,
-            )).scalars().all()
+            files = (
+                db.execute(
+                    select(UserFile).where(
+                        UserFile.id == file_id,
+                        UserFile.user_id == user_id,
+                    )
+                )
+                .scalars()
+                .all()
+            )
         else:
-            files = db.execute(select(UserFile).where(
-                UserFile.user_id == user_id)).scalars().all()
-            files = [f for f in files if
-                     (f.conversation_id == conversation_id) or
-                     (project_id and f.project_id == project_id)]
+            files = (
+                db.execute(select(UserFile).where(UserFile.user_id == user_id))
+                .scalars()
+                .all()
+            )
+            files = [
+                f
+                for f in files
+                if (f.conversation_id == conversation_id)
+                or (project_id and f.project_id == project_id)
+            ]
         if not files:
             return []
         fids = [f.id for f in files]
         fnames = {f.id: f.name for f in files}
-        chunks = db.execute(select(Chunk).where(
-            Chunk.file_id.in_(fids))).scalars().all()
+        chunks = (
+            db.execute(select(Chunk).where(Chunk.file_id.in_(fids))).scalars().all()
+        )
         if not chunks:
             return []
         q_emb = embed_texts([query])[0]
@@ -1136,7 +1322,7 @@ def rag_retrieve(user_id, conversation_id, project_id, query,
             if s <= 0:
                 continue
             entry = {
-                "file":    fnames.get(c.file_id, "file"),
+                "file": fnames.get(c.file_id, "file"),
                 "content": c.content[:2000],
             }
             # Attach locators when present so the model can cite specifically
@@ -1161,9 +1347,13 @@ def web_search(query, max_results=5):
     try:
         with DDGS() as ddgs:
             for r in ddgs.text(query, max_results=max_results):
-                out.append({"title": r.get("title", ""),
-                            "url": r.get("href") or r.get("url", ""),
-                            "snippet": r.get("body", "")})
+                out.append(
+                    {
+                        "title": r.get("title", ""),
+                        "url": r.get("href") or r.get("url", ""),
+                        "snippet": r.get("body", ""),
+                    }
+                )
     except Exception as e:
         out.append({"title": "search error", "url": "", "snippet": str(e)})
     return out
@@ -1172,9 +1362,11 @@ def web_search(query, max_results=5):
 TOOL_WEB_SEARCH = {
     "type": "function",
     "name": "web_search",
-    "description": ("Search the web for current or factual information "
-                    "(news, papers, prices, dates, anything after your "
-                    "knowledge cutoff or that you are unsure about)."),
+    "description": (
+        "Search the web for current or factual information "
+        "(news, papers, prices, dates, anything after your "
+        "knowledge cutoff or that you are unsure about)."
+    ),
     "parameters": {
         "type": "object",
         "properties": {"query": {"type": "string"}},
@@ -1184,10 +1376,12 @@ TOOL_WEB_SEARCH = {
 TOOL_SAVE_CITATION = {
     "type": "function",
     "name": "save_citation",
-    "description": ("Save an academic reference to the user's citation "
-                    "manager. Use when the user asks to save/cite a paper, "
-                    "or when they clearly want to keep a reference found "
-                    "via search."),
+    "description": (
+        "Save an academic reference to the user's citation "
+        "manager. Use when the user asks to save/cite a paper, "
+        "or when they clearly want to keep a reference found "
+        "via search."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
@@ -1236,9 +1430,13 @@ def responses_text(prompt, json_mode=False, kind=None, user_id=None):
     resp = client.responses.create(**kwargs)
     if kind and user_id:
         usage = getattr(resp, "usage", None)
-        _log_ai_usage(user_id, kind, "utility_model",
-                     getattr(usage, "input_tokens", 0) or 0,
-                     getattr(usage, "output_tokens", 0) or 0)
+        _log_ai_usage(
+            user_id,
+            kind,
+            "utility_model",
+            getattr(usage, "input_tokens", 0) or 0,
+            getattr(usage, "output_tokens", 0) or 0,
+        )
     return resp.output_text
 
 
@@ -1284,8 +1482,12 @@ def _extract_meta_from_text(text: str, user_id=None) -> dict:
     empty dict so the caller can degrade gracefully."""
     excerpt = text[:3000]
     try:
-        raw = responses_text(_META_PROMPT.format(excerpt=excerpt), json_mode=True,
-                             kind="metadata", user_id=user_id)
+        raw = responses_text(
+            _META_PROMPT.format(excerpt=excerpt),
+            json_mode=True,
+            kind="metadata",
+            user_id=user_id,
+        )
         data = json.loads(raw)
     except Exception:
         return {}
@@ -1293,7 +1495,11 @@ def _extract_meta_from_text(text: str, user_id=None) -> dict:
     clean = {}
     for key in ("title", "authors", "year", "venue", "doi", "abstract", "keywords"):
         val = data.get(key)
-        clean[key] = str(val).strip() if val and str(val).strip() not in ("null", "None", "") else None
+        clean[key] = (
+            str(val).strip()
+            if val and str(val).strip() not in ("null", "None", "")
+            else None
+        )
     return clean
 
 
@@ -1333,7 +1539,7 @@ def _apply_metadata(file_id: int, text: str, content_hash: str, job_id=None) -> 
             return
 
         uf.content_hash = content_hash
-        uf.meta_status  = "done"
+        uf.meta_status = "done"
         if meta.get("title"):
             uf.title = meta["title"][:500]
         if meta.get("authors"):
@@ -1364,9 +1570,10 @@ def _apply_metadata(file_id: int, text: str, content_hash: str, job_id=None) -> 
         except Exception:
             pass
         if not owns_job:
-            raise   # let the queue worker's own try/except apply retry/backoff
+            raise  # let the queue worker's own try/except apply retry/backoff
         logging.getLogger(__name__).warning(
-            "metadata extraction failed for file %s: %s", file_id, exc)
+            "metadata extraction failed for file %s: %s", file_id, exc
+        )
     finally:
         db.close()
 
@@ -1393,20 +1600,20 @@ def extract_metadata_sync(file_id: int, text: str, content_hash: str) -> None:
 # "null" is the correct answer when a section genuinely doesn't exist in the
 # paper (e.g. a theory paper has no Dataset section).
 ANALYSIS_FIELDS = [
-    "executive_summary",   # 3–5 sentence plain-English overview
+    "executive_summary",  # 3–5 sentence plain-English overview
     "abstract_explained",  # abstract rewritten for a smart non-specialist
     "research_objective",  # what the paper is trying to achieve
-    "problem_statement",   # the gap or problem it addresses
-    "methodology",         # how the study was conducted
-    "dataset",             # data used; null if not applicable
-    "experiments",         # key experiments or evaluations run
-    "results",             # main quantitative/qualitative findings
-    "key_contributions",   # list of specific, novel contributions
-    "strengths",           # what the paper does well
-    "limitations",         # weaknesses, threats to validity, open questions
-    "future_work",         # directions the authors or community should pursue
-    "keywords",            # 5–10 technical keywords
-    "important_terms",     # glossary: {term: one-line definition}
+    "problem_statement",  # the gap or problem it addresses
+    "methodology",  # how the study was conducted
+    "dataset",  # data used; null if not applicable
+    "experiments",  # key experiments or evaluations run
+    "results",  # main quantitative/qualitative findings
+    "key_contributions",  # list of specific, novel contributions
+    "strengths",  # what the paper does well
+    "limitations",  # weaknesses, threats to validity, open questions
+    "future_work",  # directions the authors or community should pursue
+    "keywords",  # 5–10 technical keywords
+    "important_terms",  # glossary: {term: one-line definition}
 ]
 
 _ANALYSIS_PROMPT = """You are an expert research analyst. Analyse the paper below and return ONLY a JSON object — no markdown fences, no prose outside the object.
@@ -1433,10 +1640,12 @@ Paper text (first {max_chars} characters):
 {text}
 """
 
-_ANALYSIS_MAX_CHARS = 12_000   # covers most papers; keeps prompt cost bounded
+_ANALYSIS_MAX_CHARS = 12_000  # covers most papers; keeps prompt cost bounded
 
 
-def _run_paper_analysis(file_id: int, text: str, content_hash: str, job_id=None) -> None:
+def _run_paper_analysis(
+    file_id: int, text: str, content_hash: str, job_id=None
+) -> None:
     """Background worker: generate and persist the 14-field paper analysis.
 
     Idempotent on content_hash: if the stored hash matches and status=='done'
@@ -1454,8 +1663,9 @@ def _run_paper_analysis(file_id: int, text: str, content_hash: str, job_id=None)
         ).scalar_one_or_none()
 
         if pa is None:
-            pa = PaperAnalysis(file_id=file_id,
-                               user_id=db.get(UserFile, file_id).user_id)
+            pa = PaperAnalysis(
+                file_id=file_id, user_id=db.get(UserFile, file_id).user_id
+            )
             db.add(pa)
             db.commit()
 
@@ -1466,19 +1676,26 @@ def _run_paper_analysis(file_id: int, text: str, content_hash: str, job_id=None)
         if owns_job:
             job_id = _start_upload_job(db, pa.user_id, file_id, "paper_analysis")
         pa.status = "running"
-        pa.error  = ""
+        pa.error = ""
         db.commit()
 
         prompt = _ANALYSIS_PROMPT.format(
             max_chars=_ANALYSIS_MAX_CHARS,
             text=text[:_ANALYSIS_MAX_CHARS],
         )
-        raw = responses_text(prompt, json_mode=True, kind="analysis", user_id=pa.user_id)
+        raw = responses_text(
+            prompt, json_mode=True, kind="analysis", user_id=pa.user_id
+        )
         data = json.loads(raw)
 
         # Normalise: ensure array fields are lists, terms dict is a dict
-        for arr_field in ("key_contributions", "strengths", "limitations",
-                          "future_work", "keywords"):
+        for arr_field in (
+            "key_contributions",
+            "strengths",
+            "limitations",
+            "future_work",
+            "keywords",
+        ):
             v = data.get(arr_field)
             if isinstance(v, str):
                 data[arr_field] = [v] if v else []
@@ -1495,11 +1712,11 @@ def _run_paper_analysis(file_id: int, text: str, content_hash: str, job_id=None)
         if pa is None:
             return
 
-        pa.status       = "done"
+        pa.status = "done"
         pa.content_hash = content_hash
-        pa.model        = UTILITY_MODEL
-        pa.data         = json.dumps(data, ensure_ascii=False)
-        pa.error        = ""
+        pa.model = UTILITY_MODEL
+        pa.data = json.dumps(data, ensure_ascii=False)
+        pa.error = ""
         db.commit()
         if owns_job:
             _finish_upload_job(db, job_id, ok=True)
@@ -1511,22 +1728,24 @@ def _run_paper_analysis(file_id: int, text: str, content_hash: str, job_id=None)
             ).scalar_one_or_none()
             if pa2:
                 pa2.status = "failed"
-                pa2.error  = str(exc)[:500]
+                pa2.error = str(exc)[:500]
                 db.commit()
             if owns_job:
                 _finish_upload_job(db, job_id, ok=False, error=exc)
         except Exception:
             pass
         if not owns_job:
-            raise   # let the queue worker's own try/except apply retry/backoff
+            raise  # let the queue worker's own try/except apply retry/backoff
         logging.getLogger(__name__).warning(
-            "paper analysis failed for file %s: %s", file_id, exc)
+            "paper analysis failed for file %s: %s", file_id, exc
+        )
     finally:
         db.close()
 
 
-def trigger_paper_analysis(file_id: int, text: str,
-                           content_hash: str, sync: bool = False) -> None:
+def trigger_paper_analysis(
+    file_id: int, text: str, content_hash: str, sync: bool = False
+) -> None:
     """Fire paper analysis in a background thread (or inline when sync=True)."""
     if sync:
         _run_paper_analysis(file_id, text, content_hash)
@@ -1547,12 +1766,12 @@ def _analysis_to_dict(pa: PaperAnalysis) -> dict:
         except Exception:
             pass
     return {
-        "file_id":      pa.file_id,
-        "status":       pa.status,
-        "error":        pa.error or "",
-        "model":        pa.model or "",
-        "updated_at":   pa.updated_at.isoformat() if pa.updated_at else None,
-        "data":         data,
+        "file_id": pa.file_id,
+        "status": pa.status,
+        "error": pa.error or "",
+        "model": pa.model or "",
+        "updated_at": pa.updated_at.isoformat() if pa.updated_at else None,
+        "data": data,
     }
 
 
@@ -1562,42 +1781,47 @@ def _file_to_dict(x: UserFile) -> dict:
     Centralising this means every route (upload, list, patch, …) returns
     exactly the same shape and there is one place to add fields."""
     return {
-        "id":              x.id,
-        "name":            x.name,
-        "kind":            x.kind,
-        "size":            x.size,
-        "project_id":      x.project_id,
+        "id": x.id,
+        "name": x.name,
+        "kind": x.kind,
+        "size": x.size,
+        "project_id": x.project_id,
         "conversation_id": x.conversation_id,
-        "chunks":          len(x.chunks),
+        "chunks": len(x.chunks),
         # ── research metadata ──
-        "title":           x.title or "",
-        "authors":         x.authors or "",
-        "year":            x.year or "",
-        "venue":           x.venue or "",
-        "doi":             x.doi or "",
-        "abstract":        x.abstract or "",
-        "reading_status":  x.reading_status or "unread",
-        "tags":            json.loads(x.tags) if x.tags else [],
-        "meta_status":     x.meta_status or "pending",
-        "created_at":      x.created_at.isoformat() if x.created_at else None,
+        "title": x.title or "",
+        "authors": x.authors or "",
+        "year": x.year or "",
+        "venue": x.venue or "",
+        "doi": x.doi or "",
+        "abstract": x.abstract or "",
+        "reading_status": x.reading_status or "unread",
+        "tags": json.loads(x.tags) if x.tags else [],
+        "meta_status": x.meta_status or "pending",
+        "created_at": x.created_at.isoformat() if x.created_at else None,
     }
 
 
 def extract_memories(user_id, project_id, convo_messages):
     db = SessionLocal()
     try:
-        existing = [m.fact for m in db.execute(
-            select(Memory).where(Memory.user_id == user_id)).scalars()]
+        existing = [
+            m.fact
+            for m in db.execute(
+                select(Memory).where(Memory.user_id == user_id)
+            ).scalars()
+        ]
         transcript = "\n".join(
-            f"{m['role']}: {str(m['content'])[:500]}" for m in convo_messages[-10:])
+            f"{m['role']}: {str(m['content'])[:500]}" for m in convo_messages[-10:]
+        )
         text = responses_text(
             MEMORY_PROMPT.format(known=json.dumps(existing), transcript=transcript),
-            json_mode=True)
+            json_mode=True,
+        )
         facts = json.loads(text).get("facts", [])
         for f in facts[:5]:
             if f and f not in existing:
-                db.add(Memory(user_id=user_id, project_id=project_id,
-                              fact=f[:1000]))
+                db.add(Memory(user_id=user_id, project_id=project_id, fact=f[:1000]))
         db.commit()
     except Exception:
         db.rollback()
@@ -1610,7 +1834,8 @@ def generate_title(first_user_msg, first_reply):
         t = responses_text(
             "Write a short title (2-5 words, no quotes, no punctuation at the "
             "end) for a chat that starts like this:\n"
-            f"user: {str(first_user_msg)[:400]}\nassistant: {first_reply[:400]}")
+            f"user: {str(first_user_msg)[:400]}\nassistant: {first_reply[:400]}"
+        )
         return (t or "").strip().strip('"')[:60] or None
     except Exception:
         return None
@@ -1651,18 +1876,30 @@ def build_paper_chat_prompt(user, paper):
     if paper.venue:
         meta.append(f"Venue: {paper.venue}")
     return header + "\n\n" + body + "\n\n" + "\n".join(meta)
+
+
 def build_system_prompt(user, project, memory_enabled=True):
     global_mems, proj_mems = [], []
     if memory_enabled:
         db = SessionLocal()
         try:
-            global_mems = [m.fact for m in db.execute(
-                select(Memory).where(Memory.user_id == user.id,
-                                     Memory.project_id.is_(None))).scalars()]
+            global_mems = [
+                m.fact
+                for m in db.execute(
+                    select(Memory).where(
+                        Memory.user_id == user.id, Memory.project_id.is_(None)
+                    )
+                ).scalars()
+            ]
             if project:
-                proj_mems = [m.fact for m in db.execute(
-                    select(Memory).where(Memory.user_id == user.id,
-                                         Memory.project_id == project.id)).scalars()]
+                proj_mems = [
+                    m.fact
+                    for m in db.execute(
+                        select(Memory).where(
+                            Memory.user_id == user.id, Memory.project_id == project.id
+                        )
+                    ).scalars()
+                ]
         finally:
             db.close()
 
@@ -1673,21 +1910,27 @@ def build_system_prompt(user, project, memory_enabled=True):
         "uncertainty. When you used web search results or document excerpts, "
         "cite the sources inline.",
         f"The user's name is {user.name}.",
-        f"Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}."]
+        f"Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}.",
+    ]
     if user.custom_instructions:
-        parts.append("The user's custom instructions (always follow):\n" +
-                     user.custom_instructions)
+        parts.append(
+            "The user's custom instructions (always follow):\n"
+            + user.custom_instructions
+        )
     if project:
         parts.append(f'Current project: "{project.name}".')
         if project.instructions:
-            parts.append("Project instructions from the user:\n" +
-                         project.instructions)
+            parts.append("Project instructions from the user:\n" + project.instructions)
     if global_mems:
-        parts.append("Things you remember about the user:\n" +
-                     "\n".join(f"- {m}" for m in global_mems))
+        parts.append(
+            "Things you remember about the user:\n"
+            + "\n".join(f"- {m}" for m in global_mems)
+        )
     if proj_mems:
-        parts.append("Things you remember in this project:\n" +
-                     "\n".join(f"- {m}" for m in proj_mems))
+        parts.append(
+            "Things you remember in this project:\n"
+            + "\n".join(f"- {m}" for m in proj_mems)
+        )
     return "\n\n".join(parts)
 
 
@@ -1698,10 +1941,16 @@ def api_me():
     db = SessionLocal()
     try:
         user = db.get(User, session["user_id"])
-        return jsonify({"id": user.id, "name": user.name, "email": user.email,
-                        "picture": user.picture or "",
-                        "custom_instructions": user.custom_instructions or "",
-                        "default_model": DEFAULT_MODEL})
+        return jsonify(
+            {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "picture": user.picture or "",
+                "custom_instructions": user.custom_instructions or "",
+                "default_model": DEFAULT_MODEL,
+            }
+        )
     finally:
         db.close()
 
@@ -1729,13 +1978,17 @@ def api_models():
 
 
 # ------------------------------------------------------------------ API: files
-IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp")   # vision-API formats
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp")  # vision-API formats
 MAX_UPLOAD_BYTES = MAX_FILE_MB * 1024 * 1024
 
 # ---- storage architecture: presigned/multipart upload config -------------
-MULTIPART_THRESHOLD_BYTES = int(os.environ.get("MULTIPART_THRESHOLD_MB", "25")) * 1024 * 1024
+MULTIPART_THRESHOLD_BYTES = (
+    int(os.environ.get("MULTIPART_THRESHOLD_MB", "25")) * 1024 * 1024
+)
 UPLOAD_PART_BYTES = int(os.environ.get("UPLOAD_PART_SIZE_MB", "8")) * 1024 * 1024
-UPLOAD_SESSION_TTL_SECONDS = int(os.environ.get("UPLOAD_SESSION_TTL_MINUTES", "60")) * 60
+UPLOAD_SESSION_TTL_SECONDS = (
+    int(os.environ.get("UPLOAD_SESSION_TTL_MINUTES", "60")) * 60
+)
 
 
 def _find_duplicate_file(db, user_id, checksum):
@@ -1746,10 +1999,15 @@ def _find_duplicate_file(db, user_id, checksum):
     otherwise guarantees."""
     if not checksum:
         return None
-    existing = db.execute(
-        select(UserFile).where(UserFile.user_id == user_id,
-                               UserFile.checksum_sha256 == checksum)
-    ).scalars().first()
+    existing = (
+        db.execute(
+            select(UserFile).where(
+                UserFile.user_id == user_id, UserFile.checksum_sha256 == checksum
+            )
+        )
+        .scalars()
+        .first()
+    )
     if not existing:
         return None
     # A DB row whose object has since gone missing from storage (deleted
@@ -1765,8 +2023,13 @@ def _start_upload_job(db, user_id, file_id, job_type):
     still-synchronous/threading-based processing — it is the foundation a
     future queue (processing-pipeline-architecture.md) reads from, not a
     queue itself; execution here is unchanged, only observed."""
-    job = UploadJob(user_id=user_id, file_id=file_id, job_type=job_type,
-                    status="running", started_at=datetime.now(timezone.utc))
+    job = UploadJob(
+        user_id=user_id,
+        file_id=file_id,
+        job_type=job_type,
+        status="running",
+        started_at=datetime.now(timezone.utc),
+    )
     db.add(job)
     db.commit()
     return job.id
@@ -1790,15 +2053,23 @@ def _enqueue_job(db, user_id, file_id, job_type, upload_batch_id=None):
     so the queue worker can chain follow-on stages (import -> extract_
     metadata -> paper_analysis) the same way instead of spawning threads.
     Does not commit: caller folds this into its own transaction."""
-    job = UploadJob(upload_batch_id=upload_batch_id, file_id=file_id,
-                    user_id=user_id, job_type=job_type, status="pending")
+    job = UploadJob(
+        upload_batch_id=upload_batch_id,
+        file_id=file_id,
+        user_id=user_id,
+        job_type=job_type,
+        status="pending",
+    )
     db.add(job)
-    db.flush()   # assigns job.id
-    db.add(OutboxEvent(
-        aggregate_type="upload_job", aggregate_id=job.id,
-        event_type="job.enqueued",
-        payload=json.dumps({"file_id": file_id}),
-    ))
+    db.flush()  # assigns job.id
+    db.add(
+        OutboxEvent(
+            aggregate_type="upload_job",
+            aggregate_id=job.id,
+            event_type="job.enqueued",
+            payload=json.dumps({"file_id": file_id}),
+        )
+    )
     return job.id
 
 
@@ -1819,13 +2090,17 @@ def _get_redis():
         return _redis_client
     try:
         import redis as redis_lib
-        client = redis_lib.from_url(REDIS_URL, socket_connect_timeout=2, socket_timeout=2,
-                                    decode_responses=True)
+
+        client = redis_lib.from_url(
+            REDIS_URL, socket_connect_timeout=2, socket_timeout=2, decode_responses=True
+        )
         client.ping()
         _redis_client = client
         return _redis_client
     except Exception:
-        logging.getLogger(__name__).warning("Redis unavailable — job-status cache disabled")
+        logging.getLogger(__name__).warning(
+            "Redis unavailable — job-status cache disabled"
+        )
         return None
 
 
@@ -1840,15 +2115,20 @@ def _set_job_status_cache(job_id, status, progress, updated_at, user_id):
         return
     key = f"job:{job_id}:status"
     try:
-        r.hset(key, mapping={
-            "status": status,
-            "progress": progress,
-            "updated_at": updated_at.isoformat() if updated_at else "",
-            "user_id": user_id,
-        })
+        r.hset(
+            key,
+            mapping={
+                "status": status,
+                "progress": progress,
+                "updated_at": updated_at.isoformat() if updated_at else "",
+                "user_id": user_id,
+            },
+        )
         r.expire(key, JOB_STATUS_CACHE_TTL_SECONDS)
     except Exception:
-        logging.getLogger(__name__).warning("job-status cache write failed", exc_info=True)
+        logging.getLogger(__name__).warning(
+            "job-status cache write failed", exc_info=True
+        )
 
 
 def _get_job_status_cache(job_id):
@@ -1859,7 +2139,9 @@ def _get_job_status_cache(job_id):
         data = r.hgetall(f"job:{job_id}:status")
         return data or None
     except Exception:
-        logging.getLogger(__name__).warning("job-status cache read failed", exc_info=True)
+        logging.getLogger(__name__).warning(
+            "job-status cache read failed", exc_info=True
+        )
         return None
 
 
@@ -1867,8 +2149,8 @@ def _get_job_status_cache(job_id):
 # when OpenAI changes pricing, same approach devops-observability.md §3
 # recommends over integrating a billing API for this scale of app.
 _PRICE_PER_1K_TOKENS = {
-    "gpt-4o-mini":            {"prompt": 0.00015, "completion": 0.0006},
-    "gpt-5-mini":             {"prompt": 0.00025, "completion": 0.002},
+    "gpt-4o-mini": {"prompt": 0.00015, "completion": 0.0006},
+    "gpt-5-mini": {"prompt": 0.00025, "completion": 0.002},
     "text-embedding-3-small": {"prompt": 0.00002, "completion": 0.0},
 }
 
@@ -1881,10 +2163,16 @@ def _get_active_model_version_id(logical_name):
     actual AI call over missing cost-tracking metadata."""
     db = SessionLocal()
     try:
-        row = db.execute(
-            select(ModelVersion).where(ModelVersion.logical_name == logical_name,
-                                       ModelVersion.is_active == True)  # noqa: E712 (SQLAlchemy needs == True, not `is True`, for a Column comparison)
-        ).scalars().first()
+        row = (
+            db.execute(
+                select(ModelVersion).where(
+                    ModelVersion.logical_name == logical_name,
+                    ModelVersion.is_active == True,
+                )  # noqa: E712 (SQLAlchemy needs == True, not `is True`, for a Column comparison)
+            )
+            .scalars()
+            .first()
+        )
         return row.id if row else None
     finally:
         db.close()
@@ -1906,13 +2194,19 @@ def _log_ai_usage(user_id, kind, logical_model_name, prompt_tokens, completion_t
             mv = db.get(ModelVersion, model_version_id)
             prices = _PRICE_PER_1K_TOKENS.get(mv.provider_model_id) if mv else None
             if prices:
-                cost = (prompt_tokens / 1000) * prices["prompt"] + \
-                       (completion_tokens / 1000) * prices["completion"]
-            db.add(AIUsageLedger(
-                user_id=user_id, kind=kind, model_version_id=model_version_id,
-                prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                cost_usd=cost,
-            ))
+                cost = (prompt_tokens / 1000) * prices["prompt"] + (
+                    completion_tokens / 1000
+                ) * prices["completion"]
+            db.add(
+                AIUsageLedger(
+                    user_id=user_id,
+                    kind=kind,
+                    model_version_id=model_version_id,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    cost_usd=cost,
+                )
+            )
             db.commit()
         finally:
             db.close()
@@ -1956,16 +2250,23 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
     try:
         lower = name.lower()
         text = extract_text(path, mime, name)
-        is_note = bool(text) and text.startswith("[") and text.endswith("]") \
+        is_note = (
+            bool(text)
+            and text.startswith("[")
+            and text.endswith("]")
             and len(text) < 400
+        )
         note = None
         n_chunks = 0
 
         if not text:
             # No readable text — e.g. a scanned/image PDF or a binary blob.
             uf.text_len = 0
-            note = "scanned_pdf" if (lower.endswith(".pdf") or
-                                     "pdf" in (mime or "")) else "no_text"
+            note = (
+                "scanned_pdf"
+                if (lower.endswith(".pdf") or "pdf" in (mime or ""))
+                else "no_text"
+            )
         elif is_note:
             uf.text_len = 0
             note = text.strip("[]")
@@ -1974,26 +2275,38 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
             # Use the locator-aware chunker for PDFs and DOCX so every chunk
             # knows its page / section; fall back to plain chunking for
             # everything else (pptx, xlsx, txt …).
-            is_locatable = (lower.endswith(".pdf") or "pdf" in (mime or "") or
-                            lower.endswith(".docx"))
+            is_locatable = (
+                lower.endswith(".pdf")
+                or "pdf" in (mime or "")
+                or lower.endswith(".docx")
+            )
             if is_locatable:
                 doc_chunks = chunk_document(text)
                 pieces = [c["content"] for c in doc_chunks]
                 embs = embed_texts(pieces, user_id=uf.user_id) if pieces else []
                 for i, (ch_dict, e) in enumerate(zip(doc_chunks, embs)):
-                    db.add(Chunk(
-                        file_id=uf.id, idx=i,
-                        content=ch_dict["content"],
-                        embedding=json.dumps(e) if e else None,
-                        page=ch_dict.get("page"),
-                        section=ch_dict.get("section"),
-                    ))
+                    db.add(
+                        Chunk(
+                            file_id=uf.id,
+                            idx=i,
+                            content=ch_dict["content"],
+                            embedding=json.dumps(e) if e else None,
+                            page=ch_dict.get("page"),
+                            section=ch_dict.get("section"),
+                        )
+                    )
             else:
                 pieces = chunk_text(text)
                 embs = embed_texts(pieces, user_id=uf.user_id) if pieces else []
                 for i, (p, e) in enumerate(zip(pieces, embs)):
-                    db.add(Chunk(file_id=uf.id, idx=i, content=p,
-                                 embedding=json.dumps(e) if e else None))
+                    db.add(
+                        Chunk(
+                            file_id=uf.id,
+                            idx=i,
+                            content=p,
+                            embedding=json.dumps(e) if e else None,
+                        )
+                    )
             n_chunks = len(pieces)
         db.commit()
 
@@ -2014,8 +2327,8 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
             if on_processed:
                 on_processed(uf.id, text, h)
             else:
-                extract_metadata(uf.id, text, h)          # M3: bibliographic fields
-                trigger_paper_analysis(uf.id, text, h)    # M4: 14-field analysis
+                extract_metadata(uf.id, text, h)  # M3: bibliographic fields
+                trigger_paper_analysis(uf.id, text, h)  # M4: 14-field analysis
 
         if owns_job:
             _finish_upload_job(db, job_id, ok=True)
@@ -2024,7 +2337,7 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
         if owns_job:
             _finish_upload_job(db, job_id, ok=False, error=exc)
         else:
-            raise   # let the queue worker's own try/except apply retry/backoff
+            raise  # let the queue worker's own try/except apply retry/backoff
 
 
 @app.route("/api/files", methods=["POST"])
@@ -2066,8 +2379,12 @@ def upload_file():
             os.remove(path)
         except OSError:
             pass
-        return jsonify({"error": "too_large",
-                        "detail": f"Max file size is {MAX_FILE_MB} MB"}), 400
+        return (
+            jsonify(
+                {"error": "too_large", "detail": f"Max file size is {MAX_FILE_MB} MB"}
+            ),
+            400,
+        )
 
     checksum = storage.sha256_file(path)
     uid = session["user_id"]
@@ -2099,30 +2416,48 @@ def upload_file():
         # one), so this just groups a single file under its own batch.
         batch = db.get(UploadBatch, batch_id) if batch_id else None
         if not batch or batch.user_id != uid:
-            batch = UploadBatch(user_id=uid, project_id=project_id,
-                                conversation_id=conversation_id,
-                                source="library", file_count=0)
+            batch = UploadBatch(
+                user_id=uid,
+                project_id=project_id,
+                conversation_id=conversation_id,
+                source="library",
+                file_count=0,
+            )
             db.add(batch)
-            db.flush()   # assigns batch.id without committing yet
+            db.flush()  # assigns batch.id without committing yet
         batch.file_count = (batch.file_count or 0) + 1
 
         usage = db.get(StorageUsage, uid)
         already_used = usage.bytes_used if usage else 0
         if already_used + size > MAX_STORAGE_MB * 1024 * 1024:
-            db.rollback()   # undoes the batch insert/increment above too
+            db.rollback()  # undoes the batch insert/increment above too
             try:
                 os.remove(path)
             except OSError:
                 pass
-            return jsonify({"error": "storage_quota_exceeded",
-                            "detail": f"Storage limit is {MAX_STORAGE_MB} MB"}), 403
+            return (
+                jsonify(
+                    {
+                        "error": "storage_quota_exceeded",
+                        "detail": f"Storage limit is {MAX_STORAGE_MB} MB",
+                    }
+                ),
+                403,
+            )
 
-        uf = UserFile(user_id=uid, project_id=project_id,
-                      conversation_id=conversation_id, name=name[:300],
-                      mime=f.mimetype, kind=kind, path=disk_name, size=size,
-                      checksum_sha256=checksum)
+        uf = UserFile(
+            user_id=uid,
+            project_id=project_id,
+            conversation_id=conversation_id,
+            name=name[:300],
+            mime=f.mimetype,
+            kind=kind,
+            path=disk_name,
+            size=size,
+            checksum_sha256=checksum,
+        )
         db.add(uf)
-        db.flush()   # assigns uf.id
+        db.flush()  # assigns uf.id
 
         # Images never went through the import pipeline (no extraction/
         # chunking/embedding applies — they're sent as vision input at
@@ -2130,17 +2465,25 @@ def upload_file():
         # _process_document(...)` guard. No job, no event, for an image.
         job_id = None
         if kind == "document":
-            job = UploadJob(upload_batch_id=batch.id, file_id=uf.id, user_id=uid,
-                            job_type="import", status="pending")
+            job = UploadJob(
+                upload_batch_id=batch.id,
+                file_id=uf.id,
+                user_id=uid,
+                job_type="import",
+                status="pending",
+            )
             db.add(job)
-            db.flush()   # assigns job.id
+            db.flush()  # assigns job.id
             job_id = job.id
 
-            db.add(OutboxEvent(
-                aggregate_type="upload_job", aggregate_id=job.id,
-                event_type="job.enqueued",
-                payload=json.dumps({"file_id": uf.id}),
-            ))
+            db.add(
+                OutboxEvent(
+                    aggregate_type="upload_job",
+                    aggregate_id=job.id,
+                    event_type="job.enqueued",
+                    payload=json.dumps({"file_id": uf.id}),
+                )
+            )
 
         _adjust_storage_usage(db, uid, delta_bytes=size, delta_files=1)
 
@@ -2171,13 +2514,15 @@ def job_status(job_id):
     if cached:
         if int(cached.get("user_id", 0)) != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
-        return jsonify({
-            "job_id": job_id,
-            "status": cached.get("status"),
-            "progress": int(cached.get("progress") or 0),
-            "updated_at": cached.get("updated_at") or None,
-            "cached": True,
-        })
+        return jsonify(
+            {
+                "job_id": job_id,
+                "status": cached.get("status"),
+                "progress": int(cached.get("progress") or 0),
+                "updated_at": cached.get("updated_at") or None,
+                "cached": True,
+            }
+        )
 
     db = SessionLocal()
     try:
@@ -2189,13 +2534,15 @@ def job_status(job_id):
         # — 100 once done, 0 otherwise is what's honestly available today.
         progress = 100 if job.status == "done" else 0
         _set_job_status_cache(job_id, job.status, progress, job.updated_at, job.user_id)
-        return jsonify({
-            "job_id": job_id,
-            "status": job.status,
-            "progress": progress,
-            "updated_at": job.updated_at.isoformat() if job.updated_at else None,
-            "cached": False,
-        })
+        return jsonify(
+            {
+                "job_id": job_id,
+                "status": job.status,
+                "progress": progress,
+                "updated_at": job.updated_at.isoformat() if job.updated_at else None,
+                "cached": False,
+            }
+        )
     finally:
         db.close()
 
@@ -2216,6 +2563,7 @@ def job_status(job_id):
 # /api/files POST above) — this is the backend half of that migration.
 # ══════════════════════════════════════════════════════════════════════════
 
+
 @app.route("/api/uploads/presign", methods=["POST"])
 @login_required
 def presign_upload():
@@ -2230,8 +2578,12 @@ def presign_upload():
     if not name or size <= 0:
         return jsonify({"error": "invalid_request"}), 400
     if size > MAX_UPLOAD_BYTES:
-        return jsonify({"error": "too_large",
-                        "detail": f"Max file size is {MAX_FILE_MB} MB"}), 400
+        return (
+            jsonify(
+                {"error": "too_large", "detail": f"Max file size is {MAX_FILE_MB} MB"}
+            ),
+            400,
+        )
 
     db = SessionLocal()
     try:
@@ -2246,10 +2598,17 @@ def presign_upload():
         key = storage.storage_manager.new_key(os.path.splitext(name.lower())[1])
         use_multipart = provider.supports_multipart and size > MULTIPART_THRESHOLD_BYTES
 
-        us = UploadSession(user_id=session["user_id"], project_id=project_id,
-                           conversation_id=conversation_id, key=key,
-                           name=name[:300], mime=mime, size_expected=size,
-                           checksum_sha256=checksum, status="pending")
+        us = UploadSession(
+            user_id=session["user_id"],
+            project_id=project_id,
+            conversation_id=conversation_id,
+            key=key,
+            name=name[:300],
+            mime=mime,
+            size_expected=size,
+            checksum_sha256=checksum,
+            status="pending",
+        )
         db.add(us)
         db.commit()
 
@@ -2258,17 +2617,30 @@ def presign_upload():
             us.upload_id = upload_id
             db.commit()
             part_count = math.ceil(size / UPLOAD_PART_BYTES)
-            parts = [{"part_number": i + 1,
-                      "url": provider.presigned_part_url(key, upload_id, i + 1)}
-                     for i in range(part_count)]
-            return jsonify({"mode": "multipart", "session_id": us.id, "key": key,
-                            "upload_id": upload_id, "part_size": UPLOAD_PART_BYTES,
-                            "parts": parts})
+            parts = [
+                {
+                    "part_number": i + 1,
+                    "url": provider.presigned_part_url(key, upload_id, i + 1),
+                }
+                for i in range(part_count)
+            ]
+            return jsonify(
+                {
+                    "mode": "multipart",
+                    "session_id": us.id,
+                    "key": key,
+                    "upload_id": upload_id,
+                    "part_size": UPLOAD_PART_BYTES,
+                    "parts": parts,
+                }
+            )
 
         put_url = provider.presigned_put_url(
-            key, mime, expires_in=UPLOAD_SESSION_TTL_SECONDS)
-        return jsonify({"mode": "single", "session_id": us.id, "key": key,
-                        "put_url": put_url})
+            key, mime, expires_in=UPLOAD_SESSION_TTL_SECONDS
+        )
+        return jsonify(
+            {"mode": "single", "session_id": us.id, "key": key, "put_url": put_url}
+        )
     finally:
         db.close()
 
@@ -2289,9 +2661,13 @@ def complete_multipart_upload_route():
         provider = storage.storage_manager.provider
         try:
             provider.complete_multipart_upload(
-                us.key, us.upload_id,
-                [storage.UploadPart(part_number=p["part_number"], etag=p["etag"])
-                 for p in parts])
+                us.key,
+                us.upload_id,
+                [
+                    storage.UploadPart(part_number=p["part_number"], etag=p["etag"])
+                    for p in parts
+                ],
+            )
         except Exception:
             logging.exception("multipart complete failed for session %s", session_id)
             provider.abort_multipart_upload(us.key, us.upload_id)
@@ -2356,18 +2732,29 @@ def confirm_upload():
 
         lower = us.name.lower()
         kind = "image" if lower.endswith(IMAGE_EXT) else "document"
-        uf = UserFile(user_id=session["user_id"], project_id=us.project_id,
-                      conversation_id=us.conversation_id, name=us.name,
-                      mime=us.mime, kind=kind, path=us.key, size=info.size,
-                      checksum_sha256=us.checksum_sha256)
+        uf = UserFile(
+            user_id=session["user_id"],
+            project_id=us.project_id,
+            conversation_id=us.conversation_id,
+            name=us.name,
+            mime=us.mime,
+            kind=kind,
+            path=us.key,
+            size=info.size,
+            checksum_sha256=us.checksum_sha256,
+        )
         db.add(uf)
         us.status = "confirmed"
-        _adjust_storage_usage(db, session["user_id"], delta_bytes=info.size, delta_files=1)
+        _adjust_storage_usage(
+            db, session["user_id"], delta_bytes=info.size, delta_files=1
+        )
         db.commit()
 
         note = None
         if kind == "document":
-            with provider.local_copy(us.key, suffix=os.path.splitext(lower)[1]) as local_path:
+            with provider.local_copy(
+                us.key, suffix=os.path.splitext(lower)[1]
+            ) as local_path:
                 note = _process_document(db, uf, local_path, us.name, us.mime)
 
         db3 = SessionLocal()
@@ -2393,8 +2780,9 @@ def local_upload_put(key):
     if not hasattr(provider, "verify_token"):
         return jsonify({"error": "not_supported"}), 404
     try:
-        payload = provider.verify_token(request.args.get("token", ""),
-                                        max_age=UPLOAD_SESSION_TTL_SECONDS)
+        payload = provider.verify_token(
+            request.args.get("token", ""), max_age=UPLOAD_SESSION_TTL_SECONDS
+        )
     except ValueError:
         return jsonify({"error": "invalid_token"}), 403
     if payload.get("key") != key:
@@ -2424,18 +2812,25 @@ def local_upload_get(key):
         return jsonify({"error": "invalid_token"}), 403
     if payload.get("key") != key:
         return jsonify({"error": "invalid_token"}), 403
-    return send_file(provider.path_for(key), mimetype=payload.get("mime"),
-                     download_name=payload.get("name"), as_attachment=True)
+    return send_file(
+        provider.path_for(key),
+        mimetype=payload.get("mime"),
+        download_name=payload.get("name"),
+        as_attachment=True,
+    )
 
 
 # ------------------------------------------------------------------ storage maintenance CLI
 # Run with `flask --app server sweep-temp` / `gc-storage` / `reconcile-storage`.
 
+
 @app.cli.command("sweep-temp")
 def sweep_temp_cmd():
     """Delete stray files left in UPLOAD_DIR by a request that crashed
     before its own cleanup ran."""
-    removed = storage.sweep_temp_dir(UPLOAD_DIR, max_age_seconds=UPLOAD_SESSION_TTL_SECONDS)
+    removed = storage.sweep_temp_dir(
+        UPLOAD_DIR, max_age_seconds=UPLOAD_SESSION_TTL_SECONDS
+    )
     click.echo(f"sweep-temp: removed {len(removed)} stale temp file(s)")
 
 
@@ -2446,33 +2841,49 @@ def gc_storage_cmd():
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=UPLOAD_SESSION_TTL_SECONDS)
     db = SessionLocal()
     try:
-        stale = db.execute(
-            select(UploadSession).where(
-                UploadSession.status.in_(["pending", "uploaded"]),
-                UploadSession.created_at < cutoff)
-        ).scalars().all()
+        stale = (
+            db.execute(
+                select(UploadSession).where(
+                    UploadSession.status.in_(["pending", "uploaded"]),
+                    UploadSession.created_at < cutoff,
+                )
+            )
+            .scalars()
+            .all()
+        )
         report = storage.garbage_collect(
-            storage.storage_manager.provider, [s.key for s in stale])
+            storage.storage_manager.provider, [s.key for s in stale]
+        )
         for s in stale:
             s.status = "expired"
         db.commit()
-        click.echo(f"gc-storage: {len(report.deleted)} deleted, "
-                   f"{len(report.failed)} failed, {len(stale)} session(s) expired")
+        click.echo(
+            f"gc-storage: {len(report.deleted)} deleted, "
+            f"{len(report.failed)} failed, {len(stale)} session(s) expired"
+        )
     finally:
         db.close()
 
 
 @app.cli.command("reconcile-storage")
-@click.option("--apply", is_flag=True,
-             help="Actually delete orphaned objects (default: dry-run report only).")
+@click.option(
+    "--apply",
+    is_flag=True,
+    help="Actually delete orphaned objects (default: dry-run report only).",
+)
 def reconcile_storage_cmd(apply):
     """Compare what's actually in storage against what the DB references."""
     db = SessionLocal()
     try:
-        known_keys = {row[0] for row in db.execute(select(UserFile.path)).all() if row[0]}
-        report = storage.reconcile(storage.storage_manager.provider, known_keys,
-                                   dry_run=not apply)
-        click.echo(f"orphaned: {len(report.orphaned_keys)}  missing: {len(report.missing_keys)}")
+        known_keys = {
+            row[0] for row in db.execute(select(UserFile.path)).all() if row[0]
+        }
+        report = storage.reconcile(
+            storage.storage_manager.provider, known_keys, dry_run=not apply
+        )
+        click.echo(
+            f"orphaned: {len(report.orphaned_keys)}  missing: {len(report.missing_keys)}"
+        )
         for k in report.orphaned_keys:
             click.echo(f"  orphan   {k}")
         for k in report.missing_keys:
@@ -2486,6 +2897,7 @@ def reconcile_storage_cmd(apply):
 # ══════════════════════════════════════════════════════════════════════════
 # RESEARCH WORKSPACE — Milestone 5: Knowledge Library API
 # ══════════════════════════════════════════════════════════════════════════
+
 
 @app.route("/api/files", methods=["GET"])
 @login_required
@@ -2512,16 +2924,16 @@ def list_files():
 
     # ── parse params ─────────────────────────────────────────────────────
     project_id_raw = args.get("project_id")
-    kind           = args.get("kind", "").strip().lower() or None
+    kind = args.get("kind", "").strip().lower() or None
     reading_status = args.get("reading_status", "").strip().lower() or None
-    meta_status    = args.get("meta_status",    "").strip().lower() or None
-    tags_filter    = args.getlist("tag")           # multi-value
-    q              = args.get("q", "").strip().lower() or None
-    sort           = args.get("sort", "recent").strip().lower()
-    order          = args.get("order", "").strip().lower()  # "" → auto
+    meta_status = args.get("meta_status", "").strip().lower() or None
+    tags_filter = args.getlist("tag")  # multi-value
+    q = args.get("q", "").strip().lower() or None
+    sort = args.get("sort", "recent").strip().lower()
+    order = args.get("order", "").strip().lower()  # "" → auto
     try:
-        limit  = max(1, min(500, int(args.get("limit",  200))))
-        offset = max(0,          int(args.get("offset",   0)))
+        limit = max(1, min(500, int(args.get("limit", 200))))
+        offset = max(0, int(args.get("offset", 0)))
     except (TypeError, ValueError):
         limit, offset = 200, 0
 
@@ -2567,46 +2979,59 @@ def list_files():
                     ftags = {t.lower() for t in json.loads(f.tags or "[]")}
                 except Exception:
                     ftags = set()
-                if wanted <= ftags:      # all wanted tags must be present
+                if wanted <= ftags:  # all wanted tags must be present
                     filtered.append(f)
             files = filtered
 
         # ── full-text search (Python-side) ───────────────────────────────
         if q:
             words = q.split()
+
             def _matches(f):
-                haystack = " ".join(filter(None, [
-                    f.name, f.title, f.authors, f.venue,
-                    f.abstract[:500] if f.abstract else "",
-                    " ".join(json.loads(f.tags or "[]")),
-                ])).lower()
+                haystack = " ".join(
+                    filter(
+                        None,
+                        [
+                            f.name,
+                            f.title,
+                            f.authors,
+                            f.venue,
+                            f.abstract[:500] if f.abstract else "",
+                            " ".join(json.loads(f.tags or "[]")),
+                        ],
+                    )
+                ).lower()
                 return all(w in haystack for w in words)
+
             files = [f for f in files if _matches(f)]
 
         # ── sort ─────────────────────────────────────────────────────────
         SORT_KEYS = {
-            "recent":         lambda f: f.created_at or datetime.min,
-            "title":          lambda f: (f.title or f.name or "").lower(),
-            "authors":        lambda f: (f.authors or "").lower(),
-            "year":           lambda f: f.year or "",
+            "recent": lambda f: f.created_at or datetime.min,
+            "title": lambda f: (f.title or f.name or "").lower(),
+            "authors": lambda f: (f.authors or "").lower(),
+            "year": lambda f: f.year or "",
             "reading_status": lambda f: {"reading": 0, "unread": 1, "read": 2}.get(
-                                            f.reading_status or "unread", 1),
-            "size":           lambda f: f.size or 0,
+                f.reading_status or "unread", 1
+            ),
+            "size": lambda f: f.size or 0,
         }
-        key_fn  = SORT_KEYS.get(sort, SORT_KEYS["recent"])
+        key_fn = SORT_KEYS.get(sort, SORT_KEYS["recent"])
         reverse = (order == "desc") if order else sort in ("recent", "size")
-        files   = sorted(files, key=key_fn, reverse=reverse)
+        files = sorted(files, key=key_fn, reverse=reverse)
 
         # ── pagination ───────────────────────────────────────────────────
         total = len(files)
-        page  = files[offset: offset + limit]
+        page = files[offset : offset + limit]
 
-        return jsonify({
-            "total":  total,
-            "offset": offset,
-            "limit":  limit,
-            "items":  [_file_to_dict(x) for x in page],
-        })
+        return jsonify(
+            {
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [_file_to_dict(x) for x in page],
+            }
+        )
     finally:
         db.close()
 
@@ -2687,7 +3112,7 @@ def library_stats():
                 pass
 
         files = db.execute(q_stmt).scalars().all()
-        docs   = [f for f in files if f.kind == "document"]
+        docs = [f for f in files if f.kind == "document"]
         images = [f for f in files if f.kind == "image"]
 
         rs_counts: dict[str, int] = {"unread": 0, "reading": 0, "read": 0}
@@ -2705,13 +3130,17 @@ def library_stats():
 
         # Analysis counts — query PaperAnalysis for the relevant file ids
         doc_ids = [f.id for f in docs]
-        analyses_done    = 0
+        analyses_done = 0
         analyses_pending = 0
         if doc_ids:
-            pas = db.execute(
-                select(PaperAnalysis).where(PaperAnalysis.file_id.in_(doc_ids))
-            ).scalars().all()
-            analyses_done    = sum(1 for p in pas if p.status == "done")
+            pas = (
+                db.execute(
+                    select(PaperAnalysis).where(PaperAnalysis.file_id.in_(doc_ids))
+                )
+                .scalars()
+                .all()
+            )
+            analyses_done = sum(1 for p in pas if p.status == "done")
             analyses_pending = sum(1 for p in pas if p.status in ("pending", "running"))
 
         top_tags = sorted(
@@ -2719,16 +3148,18 @@ def library_stats():
             key=lambda x: -x["count"],
         )[:5]
 
-        return jsonify({
-            "total_papers":     len(docs),
-            "total_images":     len(images),
-            "unread":           rs_counts["unread"],
-            "reading":          rs_counts["reading"],
-            "read":             rs_counts["read"],
-            "analysis_done":    analyses_done,
-            "analysis_pending": analyses_pending,
-            "top_tags":         top_tags,
-        })
+        return jsonify(
+            {
+                "total_papers": len(docs),
+                "total_images": len(images),
+                "unread": rs_counts["unread"],
+                "reading": rs_counts["reading"],
+                "read": rs_counts["read"],
+                "analysis_done": analyses_done,
+                "analysis_pending": analyses_pending,
+                "top_tags": top_tags,
+            }
+        )
     finally:
         db.close()
 
@@ -2736,6 +3167,7 @@ def library_stats():
 # ══════════════════════════════════════════════════════════════════════════
 # RESEARCH WORKSPACE — Milestone 8: Dashboard API
 # ══════════════════════════════════════════════════════════════════════════
+
 
 @app.route("/api/dashboard", methods=["GET"])
 @login_required
@@ -2755,13 +3187,13 @@ def dashboard():
       projects        – [{id,name,emoji,paper_count,chat_count}]
     """
     uid = session["user_id"]
-    db  = SessionLocal()
+    db = SessionLocal()
     try:
         # ── Files ───────────────────────────────────────────────────────────
-        all_files = db.execute(
-            select(UserFile).where(UserFile.user_id == uid)
-        ).scalars().all()
-        docs   = [f for f in all_files if f.kind == "document"]
+        all_files = (
+            db.execute(select(UserFile).where(UserFile.user_id == uid)).scalars().all()
+        )
+        docs = [f for f in all_files if f.kind == "document"]
         rs_cnt = {"unread": 0, "reading": 0, "read": 0}
         tag_cnt: dict[str, int] = {}
         for f in docs:
@@ -2777,14 +3209,14 @@ def dashboard():
 
         def _paper_brief(f):
             return {
-                "id":             f.id,
-                "name":           f.name,
-                "title":          f.title or "",
-                "authors":        f.authors or "",
-                "year":           f.year or "",
+                "id": f.id,
+                "name": f.name,
+                "title": f.title or "",
+                "authors": f.authors or "",
+                "year": f.year or "",
                 "reading_status": f.reading_status or "unread",
-                "meta_status":    f.meta_status or "pending",
-                "created_at":     f.created_at.isoformat() if f.created_at else None,
+                "meta_status": f.meta_status or "pending",
+                "created_at": f.created_at.isoformat() if f.created_at else None,
             }
 
         # Sort by created_at descending for recent papers
@@ -2793,7 +3225,7 @@ def dashboard():
             key=lambda f: f.created_at or datetime.min,
             reverse=True,
         )
-        recent_papers  = [_paper_brief(f) for f in sorted_docs[:5]]
+        recent_papers = [_paper_brief(f) for f in sorted_docs[:5]]
         current_papers = [
             _paper_brief(f)
             for f in sorted_docs
@@ -2807,45 +3239,53 @@ def dashboard():
 
         library = {
             "total_papers": len(docs),
-            "unread":       rs_cnt["unread"],
-            "reading":      rs_cnt["reading"],
-            "read":         rs_cnt["read"],
-            "top_tags":     top_tags,
+            "unread": rs_cnt["unread"],
+            "reading": rs_cnt["reading"],
+            "read": rs_cnt["read"],
+            "top_tags": top_tags,
         }
 
         # ── Conversations ────────────────────────────────────────────────────
-        convos = db.execute(
-            select(Conversation)
-            .where(Conversation.user_id == uid)
-            .order_by(Conversation.updated_at.desc())
-        ).scalars().all()
+        convos = (
+            db.execute(
+                select(Conversation)
+                .where(Conversation.user_id == uid)
+                .order_by(Conversation.updated_at.desc())
+            )
+            .scalars()
+            .all()
+        )
         recent_chats = [
             {
-                "id":         c.id,
-                "title":      c.title or "Untitled chat",
+                "id": c.id,
+                "title": c.title or "Untitled chat",
                 "updated_at": c.updated_at.isoformat() if c.updated_at else None,
-                "file_id":    c.file_id,
+                "file_id": c.file_id,
                 "project_id": c.project_id,
             }
             for c in convos[:5]
         ]
 
         # ── Citations ────────────────────────────────────────────────────────
-        cites = db.execute(
-            select(Citation)
-            .where(Citation.user_id == uid)
-            .order_by(Citation.created_at.desc())
-        ).scalars().all()
+        cites = (
+            db.execute(
+                select(Citation)
+                .where(Citation.user_id == uid)
+                .order_by(Citation.created_at.desc())
+            )
+            .scalars()
+            .all()
+        )
         recent_citations = [
             {"id": c.id, "title": c.title, "authors": c.authors, "year": c.year}
             for c in cites[:5]
         ]
 
         # ── Projects ─────────────────────────────────────────────────────────
-        projects = db.execute(
-            select(Project).where(Project.user_id == uid)
-        ).scalars().all()
-        file_proj_cnt  = {}
+        projects = (
+            db.execute(select(Project).where(Project.user_id == uid)).scalars().all()
+        )
+        file_proj_cnt = {}
         for f in docs:
             if f.project_id:
                 file_proj_cnt[f.project_id] = file_proj_cnt.get(f.project_id, 0) + 1
@@ -2856,23 +3296,25 @@ def dashboard():
 
         projects_out = [
             {
-                "id":          p.id,
-                "name":        p.name,
-                "emoji":       p.emoji,
+                "id": p.id,
+                "name": p.name,
+                "emoji": p.emoji,
                 "paper_count": file_proj_cnt.get(p.id, 0),
-                "chat_count":  convo_proj_cnt.get(p.id, 0),
+                "chat_count": convo_proj_cnt.get(p.id, 0),
             }
             for p in projects
         ]
 
-        return jsonify({
-            "library":          library,
-            "recent_papers":    recent_papers,
-            "current_papers":   current_papers,
-            "recent_chats":     recent_chats,
-            "recent_citations": recent_citations,
-            "projects":         projects_out,
-        })
+        return jsonify(
+            {
+                "library": library,
+                "recent_papers": recent_papers,
+                "current_papers": current_papers,
+                "recent_chats": recent_chats,
+                "recent_citations": recent_citations,
+                "projects": projects_out,
+            }
+        )
     finally:
         db.close()
 
@@ -2950,9 +3392,16 @@ def get_analysis(fid):
             return jsonify({"error": "not_found"}), 404
 
         if uf.kind == "image" or uf.text_len == 0:
-            return jsonify({"file_id": fid, "status": "none",
-                            "error": "no text content", "model": "", "data": {},
-                            "updated_at": None})
+            return jsonify(
+                {
+                    "file_id": fid,
+                    "status": "none",
+                    "error": "no text content",
+                    "model": "",
+                    "data": {},
+                    "updated_at": None,
+                }
+            )
 
         pa = db.execute(
             select(PaperAnalysis).where(PaperAnalysis.file_id == fid)
@@ -2961,7 +3410,7 @@ def get_analysis(fid):
         if pa is None:
             # No record yet — start analysis now and return pending
             uf2 = db.get(UserFile, fid)
-            h   = uf2.content_hash or ""
+            h = uf2.content_hash or ""
             if h:
                 text = ""
             else:
@@ -2972,8 +3421,16 @@ def get_analysis(fid):
                 uf2.content_hash = h
                 db.commit()
             trigger_paper_analysis(fid, text, h)
-            return jsonify({"file_id": fid, "status": "pending", "error": "",
-                            "model": "", "data": {}, "updated_at": None})
+            return jsonify(
+                {
+                    "file_id": fid,
+                    "status": "pending",
+                    "error": "",
+                    "model": "",
+                    "data": {},
+                    "updated_at": None,
+                }
+            )
 
         return jsonify(_analysis_to_dict(pa))
     finally:
@@ -3003,12 +3460,12 @@ def refresh_analysis(fid):
         ).scalar_one_or_none()
         if pa:
             pa.content_hash = ""
-            pa.status       = "pending"
+            pa.status = "pending"
             db.commit()
 
         with storage.local_copy(uf.path) as local_path:
             text = extract_text(local_path, uf.mime, uf.name)
-        h    = _sha256(text) if text else ""
+        h = _sha256(text) if text else ""
         trigger_paper_analysis(fid, text, h)
         return jsonify({"ok": True, "status": "running"})
     finally:
@@ -3023,8 +3480,9 @@ def file_raw(fid):
         x = db.get(UserFile, fid)
         if not x or x.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
-        url = storage.presigned_url(x.path, x.name,
-                                    x.mime or "application/octet-stream")
+        url = storage.presigned_url(
+            x.path, x.name, x.mime or "application/octet-stream"
+        )
         return redirect(url)
     finally:
         db.close()
@@ -3040,8 +3498,9 @@ def delete_file(fid):
             return jsonify({"error": "not_found"}), 404
         storage.delete(x.path)
         db.delete(x)
-        _adjust_storage_usage(db, session["user_id"],
-                              delta_bytes=-(x.size or 0), delta_files=-1)
+        _adjust_storage_usage(
+            db, session["user_id"], delta_bytes=-(x.size or 0), delta_files=-1
+        )
         db.commit()
         return jsonify({"ok": True})
     finally:
@@ -3052,14 +3511,15 @@ def delete_file(fid):
 # RESEARCH WORKSPACE — Milestone 10: Notes API
 # ══════════════════════════════════════════════════════════════════════════
 
+
 def _note_to_dict(n):
     """Serialise a Note row to the public API shape."""
     return {
-        "id":         n.id,
-        "title":      n.title  or "",
-        "content":    n.content or "",
+        "id": n.id,
+        "title": n.title or "",
+        "content": n.content or "",
         "project_id": n.project_id,
-        "file_id":    n.file_id,
+        "file_id": n.file_id,
         "created_at": n.created_at.isoformat() if n.created_at else None,
         "updated_at": n.updated_at.isoformat() if n.updated_at else None,
     }
@@ -3081,11 +3541,11 @@ def list_notes():
     args = request.args
 
     project_id_raw = args.get("project_id")
-    file_id_raw    = args.get("file_id",    type=int)
-    q              = args.get("q",  "").strip().lower() or None
+    file_id_raw = args.get("file_id", type=int)
+    q = args.get("q", "").strip().lower() or None
     try:
-        limit  = max(1, min(500, int(args.get("limit",  200))))
-        offset = max(0,          int(args.get("offset",   0)))
+        limit = max(1, min(500, int(args.get("limit", 200))))
+        offset = max(0, int(args.get("offset", 0)))
     except (TypeError, ValueError):
         limit, offset = 200, 0
 
@@ -3110,19 +3570,22 @@ def list_notes():
         # Full-text search (Python side for SQLite portability)
         if q:
             notes = [
-                n for n in notes
+                n
+                for n in notes
                 if q in (n.title or "").lower() or q in (n.content or "").lower()
             ]
 
         total = len(notes)
-        page  = notes[offset: offset + limit]
+        page = notes[offset : offset + limit]
 
-        return jsonify({
-            "total":  total,
-            "offset": offset,
-            "limit":  limit,
-            "items":  [_note_to_dict(n) for n in page],
-        })
+        return jsonify(
+            {
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "items": [_note_to_dict(n) for n in page],
+            }
+        )
     finally:
         db.close()
 
@@ -3139,16 +3602,20 @@ def create_note():
       file_id     int   – attach to a paper (nullable)
     """
     data = request.get_json(silent=True) or {}
-    uid  = session["user_id"]
+    uid = session["user_id"]
 
     content = str(data.get("content") or "").strip()
     if not content:
-        return jsonify({"error": "content_required",
-                        "detail": "Note content cannot be empty."}), 400
+        return (
+            jsonify(
+                {"error": "content_required", "detail": "Note content cannot be empty."}
+            ),
+            400,
+        )
 
-    title      = str(data.get("title")   or "")[:300]
+    title = str(data.get("title") or "")[:300]
     project_id = data.get("project_id")
-    file_id    = data.get("file_id")
+    file_id = data.get("file_id")
 
     db = SessionLocal()
     try:
@@ -3164,10 +3631,15 @@ def create_note():
             if not f or f.user_id != uid:
                 file_id = None
             elif not project_id and f.project_id:
-                project_id = f.project_id   # inherit from paper
+                project_id = f.project_id  # inherit from paper
 
-        n = Note(user_id=uid, title=title, content=content[:50000],
-                 project_id=project_id, file_id=file_id)
+        n = Note(
+            user_id=uid,
+            title=title,
+            content=content[:50000],
+            project_id=project_id,
+            file_id=file_id,
+        )
         db.add(n)
         db.commit()
         return jsonify(_note_to_dict(n)), 201
@@ -3193,13 +3665,13 @@ def get_note(nid):
 def update_note(nid):
     """Update title and/or content of a note. Returns the full updated note."""
     data = request.get_json(silent=True) or {}
-    db   = SessionLocal()
+    db = SessionLocal()
     try:
         n = db.get(Note, nid)
         if not n or n.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
         if "title" in data:
-            n.title   = str(data["title"]   or "")[:300]
+            n.title = str(data["title"] or "")[:300]
         if "content" in data:
             n.content = str(data["content"] or "")[:50000]
         # Allow re-scoping
@@ -3279,12 +3751,16 @@ def apa_entry(c) -> str:
         # More than 20 authors: first 19, ellipsis, last
         author_str = ", ".join(raw_authors[:19]) + ", ... " + raw_authors[-1]
 
-    year_part  = f"({c.year}). " if c.year else ""
-    title_part = f"{c.title}. "  if c.title else ""
+    year_part = f"({c.year}). " if c.year else ""
+    title_part = f"{c.title}. " if c.title else ""
     venue_part = f"*{c.venue}*. " if c.venue else ""
-    doi_part   = f"https://doi.org/{c.doi}" if c.doi else (c.url or "")
+    doi_part = f"https://doi.org/{c.doi}" if c.doi else (c.url or "")
 
-    return f"{author_str}. {year_part}{title_part}{venue_part}{doi_part}".strip().rstrip(".")
+    return (
+        f"{author_str}. {year_part}{title_part}{venue_part}{doi_part}".strip().rstrip(
+            "."
+        )
+    )
 
 
 def ieee_entry(c) -> str:
@@ -3314,9 +3790,9 @@ def ieee_entry(c) -> str:
         author_str = _to_ieee_name(raw_authors[0]) + " et al."
 
     title_part = f'"{c.title}," ' if c.title else ""
-    venue_part = f"*{c.venue}*, "  if c.venue else ""
-    year_part  = f"{c.year}. "     if c.year else ""
-    doi_part   = f"doi: {c.doi}"   if c.doi else (c.url or "")
+    venue_part = f"*{c.venue}*, " if c.venue else ""
+    year_part = f"{c.year}. " if c.year else ""
+    doi_part = f"doi: {c.doi}" if c.doi else (c.url or "")
 
     return f"{author_str}, {title_part}{venue_part}{year_part}{doi_part}".strip()
 
@@ -3333,18 +3809,18 @@ def format_citation(c, fmt: str = "bibtex") -> str:
 def _citation_to_dict(c, fmt: str = "bibtex") -> dict:
     """Unified serialiser for Citation rows."""
     return {
-        "id":         c.id,
-        "authors":    c.authors or "",
-        "title":      c.title   or "",
-        "year":       c.year    or "",
-        "venue":      c.venue   or "",
-        "doi":        c.doi     or "",
-        "url":        c.url     or "",
-        "notes":      c.notes   or "",
+        "id": c.id,
+        "authors": c.authors or "",
+        "title": c.title or "",
+        "year": c.year or "",
+        "venue": c.venue or "",
+        "doi": c.doi or "",
+        "url": c.url or "",
+        "notes": c.notes or "",
         "project_id": c.project_id,
-        "bibtex":     bibtex_entry(c),
-        "apa":        apa_entry(c),
-        "ieee":       ieee_entry(c),
+        "bibtex": bibtex_entry(c),
+        "apa": apa_entry(c),
+        "ieee": ieee_entry(c),
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
 
@@ -3352,6 +3828,7 @@ def _citation_to_dict(c, fmt: str = "bibtex") -> dict:
 # ══════════════════════════════════════════════════════════════════════════
 # RESEARCH WORKSPACE — Milestone 13: Citation Manager (APA/IEEE/BibTeX)
 # ══════════════════════════════════════════════════════════════════════════
+
 
 @app.route("/api/citations", methods=["GET"])
 @login_required
@@ -3362,7 +3839,7 @@ def list_citations():
       project_id  int   – scope to one project (0 = unassigned)
       q           str   – substring search in title/authors/venue
     """
-    uid  = session["user_id"]
+    uid = session["user_id"]
     args = request.args
     project_id_raw = args.get("project_id")
     q = args.get("q", "").strip().lower() or None
@@ -3380,10 +3857,13 @@ def list_citations():
                 pass
         cits = db.execute(stmt.order_by(Citation.created_at.desc())).scalars().all()
         if q:
-            cits = [c for c in cits
-                    if q in (c.title or "").lower()
-                    or q in (c.authors or "").lower()
-                    or q in (c.venue or "").lower()]
+            cits = [
+                c
+                for c in cits
+                if q in (c.title or "").lower()
+                or q in (c.authors or "").lower()
+                or q in (c.venue or "").lower()
+            ]
         return jsonify([_citation_to_dict(c) for c in cits])
     finally:
         db.close()
@@ -3402,15 +3882,17 @@ def create_citation():
             p = db.get(Project, project_id)
             if not p or p.user_id != uid:
                 project_id = None
-        c = Citation(user_id=uid,
-                     project_id=project_id,
-                     authors=str(d.get("authors", ""))[:500],
-                     title=str(d.get("title",   ""))[:500],
-                     year=str(d.get("year",     ""))[:10],
-                     venue=str(d.get("venue",   ""))[:300],
-                     doi=str(d.get("doi",       ""))[:200],
-                     url=str(d.get("url",       ""))[:600],
-                     notes=str(d.get("notes",   ""))[:2000])
+        c = Citation(
+            user_id=uid,
+            project_id=project_id,
+            authors=str(d.get("authors", ""))[:500],
+            title=str(d.get("title", ""))[:500],
+            year=str(d.get("year", ""))[:10],
+            venue=str(d.get("venue", ""))[:300],
+            doi=str(d.get("doi", ""))[:200],
+            url=str(d.get("url", ""))[:600],
+            notes=str(d.get("notes", ""))[:2000],
+        )
         db.add(c)
         db.commit()
         return jsonify(_citation_to_dict(c)), 201
@@ -3435,15 +3917,22 @@ def get_citation(cid):
 @login_required
 def update_citation(cid):
     """Edit any field of an existing citation. Returns full updated dict."""
-    d   = request.get_json(silent=True) or {}
+    d = request.get_json(silent=True) or {}
     uid = session["user_id"]
-    db  = SessionLocal()
+    db = SessionLocal()
     try:
         c = db.get(Citation, cid)
         if not c or c.user_id != uid:
             return jsonify({"error": "not_found"}), 404
-        for field, maxlen in (("authors",500),("title",500),("year",10),
-                               ("venue",300),("doi",200),("url",600),("notes",2000)):
+        for field, maxlen in (
+            ("authors", 500),
+            ("title", 500),
+            ("year", 10),
+            ("venue", 300),
+            ("doi", 200),
+            ("url", 600),
+            ("notes", 2000),
+        ):
             if field in d:
                 setattr(c, field, str(d[field] or "")[:maxlen])
         if "project_id" in d:
@@ -3486,21 +3975,28 @@ def citation_from_paper(fid):
     title already exists for this user, returns the existing one.
     """
     uid = session["user_id"]
-    db  = SessionLocal()
+    db = SessionLocal()
     try:
         uf = db.get(UserFile, fid)
         if not uf or uf.user_id != uid:
             return jsonify({"error": "not_found"}), 404
         if not uf.title:
-            return jsonify({"error": "no_metadata",
-                            "detail": "This paper has no extracted title yet. "
-                                      "Wait for metadata extraction to complete."}), 400
+            return (
+                jsonify(
+                    {
+                        "error": "no_metadata",
+                        "detail": "This paper has no extracted title yet. "
+                        "Wait for metadata extraction to complete.",
+                    }
+                ),
+                400,
+            )
 
         # Idempotency: don't duplicate if already saved
         existing = db.execute(
             select(Citation).where(
                 Citation.user_id == uid,
-                Citation.title   == uf.title,
+                Citation.title == uf.title,
             )
         ).scalar_one_or_none()
         if existing:
@@ -3510,15 +4006,15 @@ def citation_from_paper(fid):
         project_id = body.get("project_id") or uf.project_id
 
         c = Citation(
-            user_id    = uid,
-            project_id = project_id,
-            title      = uf.title[:500],
-            authors    = (uf.authors or "")[:500],
-            year       = (uf.year   or "")[:10],
-            venue      = (uf.venue  or "")[:300],
-            doi        = (uf.doi    or "")[:200],
-            url        = (f"https://doi.org/{uf.doi}" if uf.doi else "")[:600],
-            notes      = "",
+            user_id=uid,
+            project_id=project_id,
+            title=uf.title[:500],
+            authors=(uf.authors or "")[:500],
+            year=(uf.year or "")[:10],
+            venue=(uf.venue or "")[:300],
+            doi=(uf.doi or "")[:200],
+            url=(f"https://doi.org/{uf.doi}" if uf.doi else "")[:600],
+            notes="",
         )
         db.add(c)
         db.commit()
@@ -3536,8 +4032,8 @@ def export_citations():
       format      str   – "bibtex" (default) | "apa" | "ieee"
       project_id  int   – scope to one project
     """
-    uid    = session["user_id"]
-    fmt    = request.args.get("format", "bibtex").lower()
+    uid = session["user_id"]
+    fmt = request.args.get("format", "bibtex").lower()
     project_id_raw = request.args.get("project_id")
 
     db = SessionLocal()
@@ -3555,17 +4051,20 @@ def export_citations():
 
         if fmt in ("apa", "ieee"):
             lines = [format_citation(c, fmt) for c in cits]
-            blob  = "\n\n".join(lines)
-            mime  = "text/plain"
+            blob = "\n\n".join(lines)
+            mime = "text/plain"
             fname = f"references-{fmt}.txt"
         else:
-            blob  = "\n\n".join(bibtex_entry(c) for c in cits)
-            mime  = "application/x-bibtex"
+            blob = "\n\n".join(bibtex_entry(c) for c in cits)
+            mime = "application/x-bibtex"
             fname = "references.bib"
 
-        return send_file(io.BytesIO(blob.encode("utf-8")),
-                         mimetype=mime, as_attachment=True,
-                         download_name=fname)
+        return send_file(
+            io.BytesIO(blob.encode("utf-8")),
+            mimetype=mime,
+            as_attachment=True,
+            download_name=fname,
+        )
     finally:
         db.close()
 
@@ -3576,12 +4075,27 @@ def export_citations():
 def list_projects():
     db = SessionLocal()
     try:
-        projs = db.execute(select(Project)
-                           .where(Project.user_id == session["user_id"])
-                           .order_by(Project.created_at)).scalars().all()
-        return jsonify([{"id": p.id, "name": p.name, "emoji": p.emoji,
-                         "description":  p.description  or "",
-                         "instructions": p.instructions or ""} for p in projs])
+        projs = (
+            db.execute(
+                select(Project)
+                .where(Project.user_id == session["user_id"])
+                .order_by(Project.created_at)
+            )
+            .scalars()
+            .all()
+        )
+        return jsonify(
+            [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "emoji": p.emoji,
+                    "description": p.description or "",
+                    "instructions": p.instructions or "",
+                }
+                for p in projs
+            ]
+        )
     finally:
         db.close()
 
@@ -3595,15 +4109,24 @@ def create_project():
         return jsonify({"error": "name_required"}), 400
     db = SessionLocal()
     try:
-        p = Project(user_id=session["user_id"], name=name,
-                    emoji=(data.get("emoji") or "📁")[:16],
-                    description=(data.get("description") or "")[:2000],
-                    instructions=(data.get("instructions") or "")[:4000])
+        p = Project(
+            user_id=session["user_id"],
+            name=name,
+            emoji=(data.get("emoji") or "📁")[:16],
+            description=(data.get("description") or "")[:2000],
+            instructions=(data.get("instructions") or "")[:4000],
+        )
         db.add(p)
         db.commit()
-        return jsonify({"id": p.id, "name": p.name, "emoji": p.emoji,
-                        "description": p.description or "",
-                        "instructions": p.instructions})
+        return jsonify(
+            {
+                "id": p.id,
+                "name": p.name,
+                "emoji": p.emoji,
+                "description": p.description or "",
+                "instructions": p.instructions,
+            }
+        )
     finally:
         db.close()
 
@@ -3611,6 +4134,7 @@ def create_project():
 # ══════════════════════════════════════════════════════════════════════════
 # RESEARCH WORKSPACE — Milestone 9: Project detail + scoped stats
 # ══════════════════════════════════════════════════════════════════════════
+
 
 @app.route("/api/projects/<int:pid>", methods=["GET"])
 @login_required
@@ -3621,28 +4145,42 @@ def get_project(pid):
     requiring the frontend to aggregate from multiple list queries.
     """
     uid = session["user_id"]
-    db  = SessionLocal()
+    db = SessionLocal()
     try:
         p = db.get(Project, pid)
         if not p or p.user_id != uid:
             return jsonify({"error": "not_found"}), 404
 
         # Scoped counts
-        paper_count = db.execute(
-            select(UserFile).where(UserFile.user_id == uid,
-                                   UserFile.project_id == pid,
-                                   UserFile.kind == "document")
-        ).scalars().all()
+        paper_count = (
+            db.execute(
+                select(UserFile).where(
+                    UserFile.user_id == uid,
+                    UserFile.project_id == pid,
+                    UserFile.kind == "document",
+                )
+            )
+            .scalars()
+            .all()
+        )
 
-        chat_count = db.execute(
-            select(Conversation).where(Conversation.user_id == uid,
-                                       Conversation.project_id == pid)
-        ).scalars().all()
+        chat_count = (
+            db.execute(
+                select(Conversation).where(
+                    Conversation.user_id == uid, Conversation.project_id == pid
+                )
+            )
+            .scalars()
+            .all()
+        )
 
-        memory_count = db.execute(
-            select(Memory).where(Memory.user_id == uid,
-                                 Memory.project_id == pid)
-        ).scalars().all()
+        memory_count = (
+            db.execute(
+                select(Memory).where(Memory.user_id == uid, Memory.project_id == pid)
+            )
+            .scalars()
+            .all()
+        )
 
         # Reading status breakdown for papers in this project
         rs_counts = {"unread": 0, "reading": 0, "read": 0}
@@ -3651,22 +4189,24 @@ def get_project(pid):
             if rs in rs_counts:
                 rs_counts[rs] += 1
 
-        return jsonify({
-            "id":           p.id,
-            "name":         p.name,
-            "emoji":        p.emoji,
-            "description":  p.description  or "",
-            "instructions": p.instructions or "",
-            "created_at":   p.created_at.isoformat() if p.created_at else None,
-            "stats": {
-                "papers":   len(paper_count),
-                "chats":    len(chat_count),
-                "memories": len(memory_count),
-                "unread":   rs_counts["unread"],
-                "reading":  rs_counts["reading"],
-                "read":     rs_counts["read"],
-            },
-        })
+        return jsonify(
+            {
+                "id": p.id,
+                "name": p.name,
+                "emoji": p.emoji,
+                "description": p.description or "",
+                "instructions": p.instructions or "",
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+                "stats": {
+                    "papers": len(paper_count),
+                    "chats": len(chat_count),
+                    "memories": len(memory_count),
+                    "unread": rs_counts["unread"],
+                    "reading": rs_counts["reading"],
+                    "read": rs_counts["read"],
+                },
+            }
+        )
     finally:
         db.close()
 
@@ -3689,9 +4229,15 @@ def update_project(pid):
         if "instructions" in data:
             p.instructions = str(data["instructions"])[:4000]
         db.commit()
-        return jsonify({"id": p.id, "name": p.name, "emoji": p.emoji,
-                        "description": p.description or "",
-                        "instructions": p.instructions or ""})
+        return jsonify(
+            {
+                "id": p.id,
+                "name": p.name,
+                "emoji": p.emoji,
+                "description": p.description or "",
+                "instructions": p.instructions or "",
+            }
+        )
     finally:
         db.close()
 
@@ -3704,11 +4250,11 @@ def delete_project(pid):
         p = db.get(Project, pid)
         if not p or p.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
-        for c in db.execute(select(Conversation)
-                            .where(Conversation.project_id == pid)).scalars():
+        for c in db.execute(
+            select(Conversation).where(Conversation.project_id == pid)
+        ).scalars():
             c.project_id = None
-        for m in db.execute(select(Memory)
-                            .where(Memory.project_id == pid)).scalars():
+        for m in db.execute(select(Memory).where(Memory.project_id == pid)).scalars():
             db.delete(m)
         db.delete(p)
         db.commit()
@@ -3722,13 +4268,27 @@ def delete_project(pid):
 def list_conversations():
     db = SessionLocal()
     try:
-        convos = db.execute(
-            select(Conversation)
-            .where(Conversation.user_id == session["user_id"])
-            .order_by(Conversation.updated_at.desc())).scalars().all()
-        return jsonify([{"id": c.id, "title": c.title, "model": c.model,
-                         "project_id": c.project_id,
-                         "file_id": c.file_id} for c in convos])
+        convos = (
+            db.execute(
+                select(Conversation)
+                .where(Conversation.user_id == session["user_id"])
+                .order_by(Conversation.updated_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        return jsonify(
+            [
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "model": c.model,
+                    "project_id": c.project_id,
+                    "file_id": c.file_id,
+                }
+                for c in convos
+            ]
+        )
     finally:
         db.close()
 
@@ -3751,9 +4311,13 @@ def apply_conversation_settings(c, data):
 
 
 def conversation_settings_json(c):
-    return {"temperature": c.temperature,
-            "reasoning_effort": c.reasoning_effort,
-            "memory_enabled": bool(c.memory_enabled) if c.memory_enabled is not None else True}
+    return {
+        "temperature": c.temperature,
+        "reasoning_effort": c.reasoning_effort,
+        "memory_enabled": (
+            bool(c.memory_enabled) if c.memory_enabled is not None else True
+        ),
+    }
 
 
 @app.route("/api/conversations", methods=["POST"])
@@ -3764,7 +4328,7 @@ def create_conversation():
     if model not in get_models():
         model = DEFAULT_MODEL
     project_id = data.get("project_id")
-    file_id    = data.get("file_id")        # M7: paper chat
+    file_id = data.get("file_id")  # M7: paper chat
     db = SessionLocal()
     try:
         if project_id:
@@ -3783,20 +4347,30 @@ def create_conversation():
                 if not project_id and uf.project_id:
                     project_id = uf.project_id
 
-        c = Conversation(user_id=session["user_id"], model=model,
-                         project_id=project_id, file_id=file_id)
+        c = Conversation(
+            user_id=session["user_id"],
+            model=model,
+            project_id=project_id,
+            file_id=file_id,
+        )
         # Give paper chats a meaningful title immediately so the sidebar shows
         # something useful before the first AI turn generates an auto-title.
         if paper_title and file_id:
             c.title = f"Chat: {paper_title}"[:200]
-            c.title_generated = 0   # let the first turn overwrite with a better one
+            c.title_generated = 0  # let the first turn overwrite with a better one
         apply_conversation_settings(c, data)
         db.add(c)
         db.commit()
-        return jsonify({"id": c.id, "title": c.title, "model": c.model,
-                        "project_id": c.project_id,
-                        "file_id": c.file_id,
-                        **conversation_settings_json(c)})
+        return jsonify(
+            {
+                "id": c.id,
+                "title": c.title,
+                "model": c.model,
+                "project_id": c.project_id,
+                "file_id": c.file_id,
+                **conversation_settings_json(c),
+            }
+        )
     finally:
         db.close()
 
@@ -3809,15 +4383,28 @@ def get_conversation(cid):
         c = db.get(Conversation, cid)
         if not c or c.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
-        return jsonify({
-            "id": c.id, "title": c.title, "model": c.model,
-            "project_id": c.project_id,
-            "file_id": c.file_id,           # M7: paper chat scope
-            **conversation_settings_json(c),
-            "messages": [{"id": m.id, "role": m.role, "content": m.content,
-                          "sources": json.loads(m.sources) if m.sources else [],
-                          "attachments": json.loads(m.attachments) if m.attachments else []}
-                         for m in c.messages]})
+        return jsonify(
+            {
+                "id": c.id,
+                "title": c.title,
+                "model": c.model,
+                "project_id": c.project_id,
+                "file_id": c.file_id,  # M7: paper chat scope
+                **conversation_settings_json(c),
+                "messages": [
+                    {
+                        "id": m.id,
+                        "role": m.role,
+                        "content": m.content,
+                        "sources": json.loads(m.sources) if m.sources else [],
+                        "attachments": (
+                            json.loads(m.attachments) if m.attachments else []
+                        ),
+                    }
+                    for m in c.messages
+                ],
+            }
+        )
     finally:
         db.close()
 
@@ -3862,8 +4449,11 @@ def _purge_conversation(db, convo):
     """Delete a conversation, its messages (ORM cascade), and its
     conversation-only files/embeddings. Files also attached to a project are
     kept (just detached from the chat)."""
-    for uf in db.execute(select(UserFile).where(
-            UserFile.conversation_id == convo.id)).scalars().all():
+    for uf in (
+        db.execute(select(UserFile).where(UserFile.conversation_id == convo.id))
+        .scalars()
+        .all()
+    ):
         if uf.project_id:
             uf.conversation_id = None
         else:
@@ -3904,8 +4494,9 @@ def bulk_delete_conversations():
         for c in convos:
             _purge_conversation(db, c)
         db.commit()
-        log_security_event("chats_deleted", user=uid, count=len(convos),
-                           all=bool(data.get("all")))
+        log_security_event(
+            "chats_deleted", user=uid, count=len(convos), all=bool(data.get("all"))
+        )
         return jsonify({"ok": True, "deleted": len(convos)})
     finally:
         db.close()
@@ -3913,8 +4504,12 @@ def bulk_delete_conversations():
 
 # ------------------------------------------------------------------ export
 def _role_label(role):
-    return {"user": "You", "assistant": "Assistant",
-            "developer": "System", "system": "System"}.get(role, role.title())
+    return {
+        "user": "You",
+        "assistant": "Assistant",
+        "developer": "System",
+        "system": "System",
+    }.get(role, role.title())
 
 
 def _collect_export(db, uid, conversation_id=None):
@@ -3924,48 +4519,90 @@ def _collect_export(db, uid, conversation_id=None):
     convos = db.execute(q.order_by(Conversation.created_at)).scalars().all()
     data = []
     for c in convos:
-        msgs = [{
-            "role": m.role,
-            "content": m.content,
-            "created_at": m.created_at.isoformat() if m.created_at else None,
-            "attachments": json.loads(m.attachments) if m.attachments else [],
-            "sources": json.loads(m.sources) if m.sources else [],
-        } for m in c.messages]
-        data.append({"id": c.id, "title": c.title or "Untitled",
-                     "model": c.model,
-                     "created_at": c.created_at.isoformat() if c.created_at else None,
-                     "messages": msgs})
-    cites = db.execute(select(Citation).where(Citation.user_id == uid)
-                       .order_by(Citation.created_at)).scalars().all()
-    cite_list = [{"authors": ct.authors, "title": ct.title, "year": ct.year,
-                  "venue": ct.venue, "doi": ct.doi, "url": ct.url}
-                 for ct in cites]
+        msgs = [
+            {
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+                "attachments": json.loads(m.attachments) if m.attachments else [],
+                "sources": json.loads(m.sources) if m.sources else [],
+            }
+            for m in c.messages
+        ]
+        data.append(
+            {
+                "id": c.id,
+                "title": c.title or "Untitled",
+                "model": c.model,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "messages": msgs,
+            }
+        )
+    cites = (
+        db.execute(
+            select(Citation)
+            .where(Citation.user_id == uid)
+            .order_by(Citation.created_at)
+        )
+        .scalars()
+        .all()
+    )
+    cite_list = [
+        {
+            "authors": ct.authors,
+            "title": ct.title,
+            "year": ct.year,
+            "venue": ct.venue,
+            "doi": ct.doi,
+            "url": ct.url,
+        }
+        for ct in cites
+    ]
     return data, cite_list
 
 
 def _fmt_cite(ct):
-    bits = [b for b in [ct.get("authors"), f"({ct['year']})" if ct.get("year") else "",
-                        ct.get("title"), ct.get("venue"), ct.get("doi"),
-                        ct.get("url")] if b]
+    bits = [
+        b
+        for b in [
+            ct.get("authors"),
+            f"({ct['year']})" if ct.get("year") else "",
+            ct.get("title"),
+            ct.get("venue"),
+            ct.get("doi"),
+            ct.get("url"),
+        ]
+        if b
+    ]
     return ". ".join(bits)
 
 
 def _export_markdown(data, cites, user, plain=False):
     b = "" if plain else "**"
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    lines = [f"{'' if plain else '# '}Chat export — {user['name']}",
-             f"Exported {stamp}", ""]
+    lines = [
+        f"{'' if plain else '# '}Chat export — {user['name']}",
+        f"Exported {stamp}",
+        "",
+    ]
     for c in data:
-        lines += ["", f"{'' if plain else '## '}{c['title']}",
-                  f"{c['created_at']} · {c['model']}", ""]
+        lines += [
+            "",
+            f"{'' if plain else '## '}{c['title']}",
+            f"{c['created_at']} · {c['model']}",
+            "",
+        ]
         for m in c["messages"]:
             if m["role"] == "developer":
                 continue
             who = _role_label(m["role"])
             att = ""
             if m["attachments"]:
-                att = " (attached: " + ", ".join(
-                    a.get("name", "") for a in m["attachments"]) + ")"
+                att = (
+                    " (attached: "
+                    + ", ".join(a.get("name", "") for a in m["attachments"])
+                    + ")"
+                )
             lines += [f"{b}{who}{att}:{b}", "", m["content"], ""]
     if cites:
         lines += ["", f"{'' if plain else '## '}Citations", ""]
@@ -3975,6 +4612,7 @@ def _export_markdown(data, cites, user, plain=False):
 
 def _export_docx(data, cites, user):
     import docx
+
     d = docx.Document()
     d.add_heading(f"Chat export — {user['name']}", 0)
     d.add_paragraph(datetime.now(timezone.utc).strftime("Exported %Y-%m-%d %H:%M UTC"))
@@ -4005,7 +4643,8 @@ def _export_docx(data, cites, user):
 def _text_to_pdf(title, body):
     """Simple word-wrapped, paginated PDF built with PyMuPDF (no extra deps)."""
     import fitz
-    W, H, margin, fs, lh = 595.0, 842.0, 50.0, 10.0, 14.0    # A4
+
+    W, H, margin, fs, lh = 595.0, 842.0, 50.0, 10.0, 14.0  # A4
     font = fitz.Font("helv")
     max_w = W - 2 * margin
     doc = fitz.open()
@@ -4040,8 +4679,12 @@ def _text_to_pdf(title, body):
         try:
             page.insert_text((margin, y), txt, fontsize=size, fontname="helv")
         except Exception:
-            page.insert_text((margin, y), txt.encode("latin-1", "replace").decode("latin-1"),
-                             fontsize=size, fontname="helv")
+            page.insert_text(
+                (margin, y),
+                txt.encode("latin-1", "replace").decode("latin-1"),
+                fontsize=size,
+                fontname="helv",
+            )
         y += step
     out = doc.tobytes()
     doc.close()
@@ -4072,30 +4715,53 @@ def export_data():
     title = f"Chat export — {uinfo['name']}"
 
     if fmt == "json":
-        payload = json.dumps({"user": uinfo,
-                              "exported_at": datetime.now(timezone.utc).isoformat(),
-                              "conversations": data, "citations": cites},
-                             ensure_ascii=False, indent=2).encode("utf-8")
+        payload = json.dumps(
+            {
+                "user": uinfo,
+                "exported_at": datetime.now(timezone.utc).isoformat(),
+                "conversations": data,
+                "citations": cites,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ).encode("utf-8")
         return _download(payload, base + ".json", "application/json")
     if fmt in ("md", "markdown"):
-        return _download(_export_markdown(data, cites, uinfo).encode("utf-8"),
-                         base + ".md", "text/markdown")
+        return _download(
+            _export_markdown(data, cites, uinfo).encode("utf-8"),
+            base + ".md",
+            "text/markdown",
+        )
     if fmt == "txt":
-        return _download(_export_markdown(data, cites, uinfo, plain=True).encode("utf-8"),
-                         base + ".txt", "text/plain")
+        return _download(
+            _export_markdown(data, cites, uinfo, plain=True).encode("utf-8"),
+            base + ".txt",
+            "text/plain",
+        )
     if fmt == "docx":
-        return _download(_export_docx(data, cites, uinfo), base + ".docx",
-                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        return _download(
+            _export_docx(data, cites, uinfo),
+            base + ".docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
     if fmt == "pdf":
         body = _export_markdown(data, cites, uinfo, plain=True)
         return _download(_text_to_pdf(title, body), base + ".pdf", "application/pdf")
-    return jsonify({"error": "bad_format",
-                    "detail": "format must be json|md|txt|docx|pdf"}), 400
+    return (
+        jsonify(
+            {"error": "bad_format", "detail": "format must be json|md|txt|docx|pdf"}
+        ),
+        400,
+    )
 
 
 def _download(payload, filename, mimetype):
-    return send_file(io.BytesIO(payload), mimetype=mimetype,
-                     as_attachment=True, download_name=filename)
+    return send_file(
+        io.BytesIO(payload),
+        mimetype=mimetype,
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 # ------------------------------------------------------------------ delete account
@@ -4110,12 +4776,16 @@ def delete_account():
         if not user:
             return jsonify({"error": "not_found"}), 404
         # Files (chunks + on-disk blobs)
-        for uf in db.execute(select(UserFile).where(
-                UserFile.user_id == uid)).scalars().all():
+        for uf in (
+            db.execute(select(UserFile).where(UserFile.user_id == uid)).scalars().all()
+        ):
             _remove_file_row(db, uf)
         # Conversations (messages cascade), memories, citations, projects
-        for conv in db.execute(select(Conversation).where(
-                Conversation.user_id == uid)).scalars().all():
+        for conv in (
+            db.execute(select(Conversation).where(Conversation.user_id == uid))
+            .scalars()
+            .all()
+        ):
             db.delete(conv)
         db.execute(delete(Memory).where(Memory.user_id == uid))
         db.execute(delete(Citation).where(Citation.user_id == uid))
@@ -4135,22 +4805,27 @@ SUPPORT_CATEGORIES = {"general", "bug", "feature", "account"}
 
 def _valid_email(e):
     import re
+
     return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", e or ""))
 
 
 def _support_ack_html(ticket_id, subject, message):
-    return (f"<p>Thanks for reaching out to Personal AI. We've logged your "
-            f"message and will get back to you soon.</p>"
-            f"<p><b>Ticket:</b> #{ticket_id}<br><b>Subject:</b> "
-            f"{subject or '(none)'}</p><hr>"
-            f"<p style='white-space:pre-wrap;color:#555'>{message}</p>")
+    return (
+        f"<p>Thanks for reaching out to Personal AI. We've logged your "
+        f"message and will get back to you soon.</p>"
+        f"<p><b>Ticket:</b> #{ticket_id}<br><b>Subject:</b> "
+        f"{subject or '(none)'}</p><hr>"
+        f"<p style='white-space:pre-wrap;color:#555'>{message}</p>"
+    )
 
 
 def _support_notify_html(ticket_id, email, category, subject, message):
-    return (f"<p>New support request <b>#{ticket_id}</b></p>"
-            f"<p><b>From:</b> {email}<br><b>Category:</b> {category}<br>"
-            f"<b>Subject:</b> {subject or '(none)'}</p><hr>"
-            f"<p style='white-space:pre-wrap'>{message}</p>")
+    return (
+        f"<p>New support request <b>#{ticket_id}</b></p>"
+        f"<p><b>From:</b> {email}<br><b>Category:</b> {category}<br>"
+        f"<b>Subject:</b> {subject or '(none)'}</p><hr>"
+        f"<p style='white-space:pre-wrap'>{message}</p>"
+    )
 
 
 @app.route("/api/support", methods=["POST"])
@@ -4166,32 +4841,47 @@ def submit_support():
     if category not in SUPPORT_CATEGORIES:
         category = "general"
     if not _valid_email(email):
-        return jsonify({"error": "invalid_email",
-                        "detail": "A valid email is required."}), 400
+        return (
+            jsonify({"error": "invalid_email", "detail": "A valid email is required."}),
+            400,
+        )
     if len(message) < 5:
-        return jsonify({"error": "empty_message",
-                        "detail": "Please describe your issue."}), 400
+        return (
+            jsonify(
+                {"error": "empty_message", "detail": "Please describe your issue."}
+            ),
+            400,
+        )
     message = message[:5000]
 
     db = SessionLocal()
     try:
-        sr = SupportRequest(user_id=uid, email=email, subject=subject,
-                            category=category, message=message)
+        sr = SupportRequest(
+            user_id=uid,
+            email=email,
+            subject=subject,
+            category=category,
+            message=message,
+        )
         db.add(sr)
         db.commit()
         ticket_id = sr.id
     finally:
         db.close()
 
-    email_service.send(email, f"We received your message (#{ticket_id})",
-                       _support_ack_html(ticket_id, subject, message),
-                       reply_to=SUPPORT_EMAIL or None)
+    email_service.send(
+        email,
+        f"We received your message (#{ticket_id})",
+        _support_ack_html(ticket_id, subject, message),
+        reply_to=SUPPORT_EMAIL or None,
+    )
     if SUPPORT_EMAIL:
         email_service.send(
             SUPPORT_EMAIL,
             f"[{category}] {subject or 'New support request'} (#{ticket_id})",
             _support_notify_html(ticket_id, email, category, subject, message),
-            reply_to=email)
+            reply_to=email,
+        )
     log_security_event("support_submitted", ticket=ticket_id, category=category)
     return jsonify({"ok": True, "ticket": ticket_id})
 
@@ -4201,13 +4891,27 @@ def submit_support():
 def list_memories():
     db = SessionLocal()
     try:
-        mems = db.execute(select(Memory)
-                          .where(Memory.user_id == session["user_id"])
-                          .order_by(Memory.created_at.desc())).scalars().all()
-        return jsonify([{"id": m.id, "fact": m.fact,
-                         "project_id": m.project_id,
-                         "importance": m.importance,
-                         "created_at": m.created_at.isoformat()} for m in mems])
+        mems = (
+            db.execute(
+                select(Memory)
+                .where(Memory.user_id == session["user_id"])
+                .order_by(Memory.created_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        return jsonify(
+            [
+                {
+                    "id": m.id,
+                    "fact": m.fact,
+                    "project_id": m.project_id,
+                    "importance": m.importance,
+                    "created_at": m.created_at.isoformat(),
+                }
+                for m in mems
+            ]
+        )
     finally:
         db.close()
 
@@ -4226,9 +4930,15 @@ def update_memory(mid):
         if "importance" in data:
             m.importance = max(1, min(5, int(data["importance"])))
         db.commit()
-        return jsonify({"id": m.id, "fact": m.fact, "project_id": m.project_id,
-                        "importance": m.importance,
-                        "created_at": m.created_at.isoformat()})
+        return jsonify(
+            {
+                "id": m.id,
+                "fact": m.fact,
+                "project_id": m.project_id,
+                "importance": m.importance,
+                "created_at": m.created_at.isoformat(),
+            }
+        )
     finally:
         db.close()
 
@@ -4265,13 +4975,16 @@ def run_tool(name, args, user_id, project_id):
     if name == "save_citation":
         db = SessionLocal()
         try:
-            c = Citation(user_id=user_id, project_id=project_id,
-                         authors=str(args.get("authors", ""))[:500],
-                         title=str(args.get("title", ""))[:500],
-                         year=str(args.get("year", ""))[:10],
-                         venue=str(args.get("venue", ""))[:300],
-                         doi=str(args.get("doi", ""))[:200],
-                         url=str(args.get("url", ""))[:600])
+            c = Citation(
+                user_id=user_id,
+                project_id=project_id,
+                authors=str(args.get("authors", ""))[:500],
+                title=str(args.get("title", ""))[:500],
+                year=str(args.get("year", ""))[:10],
+                venue=str(args.get("venue", ""))[:300],
+                doi=str(args.get("doi", ""))[:200],
+                url=str(args.get("url", ""))[:600],
+            )
             db.add(c)
             db.commit()
             return json.dumps({"saved": True, "id": c.id}), []
@@ -4297,8 +5010,7 @@ def chat():
         convo = db.get(Conversation, cid) if cid else None
         if not convo or convo.user_id != user_id:
             return jsonify({"error": "conversation_not_found"}), 404
-        model = data.get("model") if data.get("model") in get_models() \
-            else convo.model
+        model = data.get("model") if data.get("model") in get_models() else convo.model
         project = db.get(Project, convo.project_id) if convo.project_id else None
 
         atts = []
@@ -4308,9 +5020,16 @@ def chat():
                 x.conversation_id = convo.id
                 if convo.project_id and not x.project_id:
                     x.project_id = convo.project_id
-                atts.append({"id": x.id, "name": x.name, "mime": x.mime,
-                             "kind": x.kind, "path": x.path,
-                             "text_len": x.text_len})
+                atts.append(
+                    {
+                        "id": x.id,
+                        "name": x.name,
+                        "mime": x.mime,
+                        "kind": x.kind,
+                        "path": x.path,
+                        "text_len": x.text_len,
+                    }
+                )
 
         if regenerate:
             msgs = list(convo.messages)
@@ -4320,12 +5039,23 @@ def chat():
         else:
             if not user_message and not atts:
                 return jsonify({"error": "empty_message"}), 400
-            db.add(Message(
-                conversation_id=convo.id, role="user",
-                content=user_message or "(see attached files)",
-                attachments=json.dumps([{k: a[k] for k in
-                                         ("id", "name", "mime", "kind")}
-                                        for a in atts]) if atts else None))
+            db.add(
+                Message(
+                    conversation_id=convo.id,
+                    role="user",
+                    content=user_message or "(see attached files)",
+                    attachments=(
+                        json.dumps(
+                            [
+                                {k: a[k] for k in ("id", "name", "mime", "kind")}
+                                for a in atts
+                            ]
+                        )
+                        if atts
+                        else None
+                    ),
+                )
+            )
             convo.model = model
             db.commit()
 
@@ -4338,10 +5068,12 @@ def chat():
                 names = ", ".join(a["name"] for a in m_atts)
                 content = f"[attached files: {names}]\n{content}"
             history.append({"role": m.role, "content": content})
-        memory_enabled = bool(convo.memory_enabled) if convo.memory_enabled is not None else True
+        memory_enabled = (
+            bool(convo.memory_enabled) if convo.memory_enabled is not None else True
+        )
         temperature = convo.temperature
         reasoning_effort = convo.reasoning_effort
-        paper_file_id = convo.file_id          # M7: paper chat scope (may be None)
+        paper_file_id = convo.file_id  # M7: paper chat scope (may be None)
 
         # M7: if this is a paper chat, use a focused system prompt and
         # hard-scope retrieval to the single paper.
@@ -4350,7 +5082,7 @@ def chat():
             if paper and paper.user_id == user_id:
                 system_prompt = build_paper_chat_prompt(user, paper)
             else:
-                paper_file_id = None          # safety: invalid file, fall back
+                paper_file_id = None  # safety: invalid file, fall back
                 system_prompt = build_system_prompt(user, project, memory_enabled)
         else:
             system_prompt = build_system_prompt(user, project, memory_enabled)
@@ -4372,26 +5104,30 @@ def chat():
             img_atts = [a for a in atts if a["kind"] == "image"]
 
             # The user turn we're answering — multimodal images attach here.
-            user_idx = max((i for i, m in enumerate(input_items)
-                            if m["role"] == "user"), default=None)
+            user_idx = max(
+                (i for i, m in enumerate(input_items) if m["role"] == "user"),
+                default=None,
+            )
 
             # M7: paper chat hard-scopes RAG to the single paper file
-            excerpts = rag_retrieve(user_id, convo_id, project_id,
-                                    last_query[:500],
-                                    file_id=paper_file_id)
+            excerpts = rag_retrieve(
+                user_id, convo_id, project_id, last_query[:500], file_id=paper_file_id
+            )
             if excerpts:
                 yield sse("status", {"text": "Reading your documents…"})
-                input_items.append({
-                    "role": "developer",
-                    "content": (
-                        "Relevant excerpts from the user's uploaded documents.\n"
-                        "Each excerpt may include 'page' (1-based PDF page) and/or "
-                        "'section' (heading the excerpt falls under). "
-                        "When citing, be specific: prefer 'p. 4, §Methodology' over "
-                        "just the filename. If no locator is present, cite by filename.\n"
-                        + json.dumps(excerpts, ensure_ascii=False)
-                    ),
-                })
+                input_items.append(
+                    {
+                        "role": "developer",
+                        "content": (
+                            "Relevant excerpts from the user's uploaded documents.\n"
+                            "Each excerpt may include 'page' (1-based PDF page) and/or "
+                            "'section' (heading the excerpt falls under). "
+                            "When citing, be specific: prefer 'p. 4, §Methodology' over "
+                            "just the filename. If no locator is present, cite by filename.\n"
+                            + json.dumps(excerpts, ensure_ascii=False)
+                        ),
+                    }
+                )
 
             # Deliver each attached document's content to the model. Small docs
             # go in whole; large ones get a generous head (RAG excerpts above
@@ -4403,19 +5139,29 @@ def chat():
                 with storage.local_copy(a["path"]) as local_path:
                     txt = extract_text(local_path, a["mime"], a["name"])
                     has_text = bool(txt) and not (
-                        txt.startswith("[") and txt.endswith("]") and len(txt) < 400)
+                        txt.startswith("[") and txt.endswith("]") and len(txt) < 400
+                    )
                     if has_text:
-                        body = txt if len(txt) <= INLINE_DOC_CHARS else (
-                            txt[:INLINE_DOC_CHARS] +
-                            f"\n\n[…truncated {len(txt) - INLINE_DOC_CHARS} more "
-                            "characters; see the excerpts above for the rest.]")
-                        input_items.append({
-                            "role": "developer",
-                            "content": f"Full text of attached file "
-                                       f"'{a['name']}':\n{body}"})
+                        body = (
+                            txt
+                            if len(txt) <= INLINE_DOC_CHARS
+                            else (
+                                txt[:INLINE_DOC_CHARS]
+                                + f"\n\n[…truncated {len(txt) - INLINE_DOC_CHARS} more "
+                                "characters; see the excerpts above for the rest.]"
+                            )
+                        )
+                        input_items.append(
+                            {
+                                "role": "developer",
+                                "content": f"Full text of attached file "
+                                f"'{a['name']}':\n{body}",
+                            }
+                        )
                         continue
-                    is_pdf = a["name"].lower().endswith(".pdf") or \
-                        "pdf" in (a["mime"] or "")
+                    is_pdf = a["name"].lower().endswith(".pdf") or "pdf" in (
+                        a["mime"] or ""
+                    )
                     pages = []
                     if is_pdf:
                         try:
@@ -4424,24 +5170,33 @@ def chat():
                             pages = []
                 if pages:
                     vision_urls.extend(pages)
-                    input_items.append({
-                        "role": "developer",
-                        "content": f"The attached PDF '{a['name']}' has no text "
-                                   f"layer (scanned). Its first {len(pages)} "
-                                   "page image(s) are attached to the user's "
-                                   "message — read them to answer."})
+                    input_items.append(
+                        {
+                            "role": "developer",
+                            "content": f"The attached PDF '{a['name']}' has no text "
+                            f"layer (scanned). Its first {len(pages)} "
+                            "page image(s) are attached to the user's "
+                            "message — read them to answer.",
+                        }
+                    )
                 else:
-                    reason = (txt.strip("[]") if txt else
-                              "no readable text could be extracted (it may be "
-                              "empty, encrypted, or an unsupported binary "
-                              "format)")
-                    input_items.append({
-                        "role": "developer",
-                        "content": f"The attached file '{a['name']}' could not "
-                                   f"be parsed: {reason}. Do not fabricate its "
-                                   "contents — tell the user what happened and "
-                                   "suggest a fix (re-export as PDF/DOCX/XLSX or "
-                                   "paste the text)."})
+                    reason = (
+                        txt.strip("[]")
+                        if txt
+                        else "no readable text could be extracted (it may be "
+                        "empty, encrypted, or an unsupported binary "
+                        "format)"
+                    )
+                    input_items.append(
+                        {
+                            "role": "developer",
+                            "content": f"The attached file '{a['name']}' could not "
+                            f"be parsed: {reason}. Do not fabricate its "
+                            "contents — tell the user what happened and "
+                            "suggest a fix (re-export as PDF/DOCX/XLSX or "
+                            "paste the text).",
+                        }
+                    )
 
             for a in img_atts:
                 try:
@@ -4452,8 +5207,7 @@ def chat():
 
             if vision_urls and user_idx is not None and not regenerate:
                 base = input_items[user_idx]
-                text_part = base["content"] if isinstance(base["content"], str) \
-                    else ""
+                text_part = base["content"] if isinstance(base["content"], str) else ""
                 content = [{"type": "input_text", "text": text_part}]
                 for url in vision_urls[:16]:
                     content.append({"type": "input_image", "image_url": url})
@@ -4463,10 +5217,13 @@ def chat():
                 yield sse("status", {"text": "Searching the web…"})
                 results = web_search(last_query[:300])
                 sources.extend(results)
-                input_items.append({
-                    "role": "developer",
-                    "content": "Web search results (cite these):\n" +
-                               json.dumps(results, ensure_ascii=False)})
+                input_items.append(
+                    {
+                        "role": "developer",
+                        "content": "Web search results (cite these):\n"
+                        + json.dumps(results, ensure_ascii=False),
+                    }
+                )
 
             # Paper chat: disable all external search so the AI cannot pull
             # content from outside the uploaded document.
@@ -4478,9 +5235,14 @@ def chat():
                     tools.append(TOOL_WEB_SEARCH)
 
             for _round in range(4):
-                kwargs = dict(model=model, instructions=system_prompt,
-                              input=input_items, stream=True, store=False,
-                              tools=tools)
+                kwargs = dict(
+                    model=model,
+                    instructions=system_prompt,
+                    input=input_items,
+                    stream=True,
+                    store=False,
+                    tools=tools,
+                )
                 if temperature is not None and supports_temperature(model):
                     kwargs["temperature"] = temperature
                 if reasoning_effort and supports_reasoning_effort(model):
@@ -4497,38 +5259,61 @@ def chat():
                         final = event.response
                     elif et == "response.failed":
                         raise RuntimeError(
-                            getattr(getattr(event.response, "error", None),
-                                    "message", "response failed"))
+                            getattr(
+                                getattr(event.response, "error", None),
+                                "message",
+                                "response failed",
+                            )
+                        )
 
-                calls = [it for it in (final.output if final else [])
-                         if getattr(it, "type", "") == "function_call"]
+                calls = [
+                    it
+                    for it in (final.output if final else [])
+                    if getattr(it, "type", "") == "function_call"
+                ]
                 if calls:
                     for c in calls:
-                        input_items.append({
-                            "type": "function_call", "call_id": c.call_id,
-                            "name": c.name, "arguments": c.arguments})
+                        input_items.append(
+                            {
+                                "type": "function_call",
+                                "call_id": c.call_id,
+                                "name": c.name,
+                                "arguments": c.arguments,
+                            }
+                        )
                         try:
                             args = json.loads(c.arguments)
                         except Exception:
                             args = {}
-                        label = ("Searching: " + args.get("query", "") + "…"
-                                 if c.name == "web_search"
-                                 else "Saving citation…")
+                        label = (
+                            "Searching: " + args.get("query", "") + "…"
+                            if c.name == "web_search"
+                            else "Saving citation…"
+                        )
                         yield sse("status", {"text": label})
                         output, src = run_tool(c.name, args, user_id, project_id)
                         sources.extend(src)
-                        input_items.append({
-                            "type": "function_call_output",
-                            "call_id": c.call_id, "output": output})
+                        input_items.append(
+                            {
+                                "type": "function_call_output",
+                                "call_id": c.call_id,
+                                "output": output,
+                            }
+                        )
                     continue
                 break
 
             new_title = None
             dbi = SessionLocal()
             try:
-                dbi.add(Message(conversation_id=convo_id, role="assistant",
-                                content=full_text,
-                                sources=json.dumps(sources) if sources else None))
+                dbi.add(
+                    Message(
+                        conversation_id=convo_id,
+                        role="assistant",
+                        content=full_text,
+                        sources=json.dumps(sources) if sources else None,
+                    )
+                )
                 c2 = dbi.get(Conversation, convo_id)
                 c2.updated_at = datetime.now(timezone.utc)
                 if needs_title and full_text:
@@ -4547,37 +5332,48 @@ def chat():
 
             if memory_enabled:
                 snapshot = history + [{"role": "assistant", "content": full_text}]
-                threading.Thread(target=extract_memories,
-                                 args=(user_id, project_id, snapshot),
-                                 daemon=True).start()
+                threading.Thread(
+                    target=extract_memories,
+                    args=(user_id, project_id, snapshot),
+                    daemon=True,
+                ).start()
 
         except Exception as e:
             msg = str(e)
             if "invalid_api_key" in msg or "Incorrect API key" in msg:
-                msg = "Your OpenAI API key seems invalid — check OPENAI_API_KEY in .env."
+                msg = (
+                    "Your OpenAI API key seems invalid — check OPENAI_API_KEY in .env."
+                )
             elif "insufficient_quota" in msg:
                 msg = "Your OpenAI account is out of credit."
             elif "does not exist" in msg or "model_not_found" in msg:
-                msg = f"Model '{model}' isn't available — pick another from the dropdown."
+                msg = (
+                    f"Model '{model}' isn't available — pick another from the dropdown."
+                )
             elif "image" in msg.lower() and "support" in msg.lower():
-                msg = (f"Model '{model}' doesn't support images — "
-                       "switch to a vision model like gpt-4o or gpt-5.")
+                msg = (
+                    f"Model '{model}' doesn't support images — "
+                    "switch to a vision model like gpt-4o or gpt-5."
+                )
             yield sse("error", {"text": msg})
 
-    return Response(generate(), mimetype="text/event-stream",
-                    headers={"Cache-Control": "no-cache",
-                             "X-Accel-Buffering": "no"})
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════
 # RESEARCH WORKSPACE — Milestone 14: Semantic Search
 # ══════════════════════════════════════════════════════════════════════════
 
+
 def _cosine(a: list, b: list) -> float:
     """Safe cosine similarity — returns 0.0 on zero-length vectors."""
-    dot  = sum(x * y for x, y in zip(a, b))
-    na   = sum(x * x for x in a) ** 0.5
-    nb   = sum(x * x for x in b) ** 0.5
+    dot = sum(x * y for x, y in zip(a, b))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(x * x for x in b) ** 0.5
     return dot / (na * nb) if na and nb else 0.0
 
 
@@ -4622,10 +5418,10 @@ def semantic_search():
       section     str|null   (paper chunks only)
       file_name   str|null   (paper chunks only)
     """
-    data       = request.get_json(silent=True) or {}
-    uid        = session["user_id"]
-    q          = str(data.get("q") or "").strip()
-    kinds      = data.get("kinds") or ["paper", "note", "citation", "chat"]
+    data = request.get_json(silent=True) or {}
+    uid = session["user_id"]
+    q = str(data.get("q") or "").strip()
+    kinds = data.get("kinds") or ["paper", "note", "citation", "chat"]
     project_id = data.get("project_id")
     try:
         limit = max(1, min(50, int(data.get("limit", 20))))
@@ -4633,8 +5429,15 @@ def semantic_search():
         limit = 20
 
     if len(q) < 2:
-        return jsonify({"error": "query_too_short",
-                        "detail": "Query must be at least 2 characters."}), 400
+        return (
+            jsonify(
+                {
+                    "error": "query_too_short",
+                    "detail": "Query must be at least 2 characters.",
+                }
+            ),
+            400,
+        )
 
     # Try to embed the query; fall back to keyword-only if embedding fails
     query_emb = None
@@ -4644,25 +5447,27 @@ def semantic_search():
         pass
 
     results = []
-    db      = SessionLocal()
+    db = SessionLocal()
     try:
         # ── Papers (via Chunk rows) ──────────────────────────────────────────
         if "paper" in kinds:
             # Collect file ids visible to this user (optionally scoped to project)
             file_stmt = select(UserFile).where(
                 UserFile.user_id == uid,
-                UserFile.kind    == "document",
+                UserFile.kind == "document",
             )
             if project_id is not None:
                 file_stmt = file_stmt.where(UserFile.project_id == project_id)
-            files      = db.execute(file_stmt).scalars().all()
-            file_ids   = [f.id for f in files]
-            file_map   = {f.id: f for f in files}
+            files = db.execute(file_stmt).scalars().all()
+            file_ids = [f.id for f in files]
+            file_map = {f.id: f for f in files}
 
             if file_ids:
-                chunks = db.execute(
-                    select(Chunk).where(Chunk.file_id.in_(file_ids))
-                ).scalars().all()
+                chunks = (
+                    db.execute(select(Chunk).where(Chunk.file_id.in_(file_ids)))
+                    .scalars()
+                    .all()
+                )
                 for ch in chunks:
                     if query_emb and ch.embedding:
                         try:
@@ -4674,20 +5479,22 @@ def semantic_search():
                         score = _keyword_score(q, ch.content)
                     if score < 0.15:
                         continue
-                    uf    = file_map.get(ch.file_id)
+                    uf = file_map.get(ch.file_id)
                     title = (uf.title or uf.name) if uf else "Paper"
-                    results.append({
-                        "kind":      "paper",
-                        "ref_id":    ch.file_id,
-                        "chunk_id":  ch.id,
-                        "title":     title,
-                        "snippet":   ch.content[:300],
-                        "score":     round(score, 4),
-                        "url":       f"/papers/{ch.file_id}",
-                        "page":      ch.page,
-                        "section":   ch.section,
-                        "file_name": uf.name if uf else None,
-                    })
+                    results.append(
+                        {
+                            "kind": "paper",
+                            "ref_id": ch.file_id,
+                            "chunk_id": ch.id,
+                            "title": title,
+                            "snippet": ch.content[:300],
+                            "score": round(score, 4),
+                            "url": f"/papers/{ch.file_id}",
+                            "page": ch.page,
+                            "section": ch.section,
+                            "file_name": uf.name if uf else None,
+                        }
+                    )
 
         # ── Notes ───────────────────────────────────────────────────────────
         if "note" in kinds:
@@ -4696,21 +5503,23 @@ def semantic_search():
                 note_stmt = note_stmt.where(Note.project_id == project_id)
             notes = db.execute(note_stmt).scalars().all()
             for n in notes:
-                text  = (n.title or "") + " " + (n.content or "")
+                text = (n.title or "") + " " + (n.content or "")
                 score = _keyword_score(q, text)
                 if score < 0.20:
                     continue
-                results.append({
-                    "kind":    "note",
-                    "ref_id":  n.id,
-                    "title":   n.title or "Untitled note",
-                    "snippet": (n.content or "")[:300],
-                    "score":   round(score, 4),
-                    "url":     "/notes",
-                    "page":    None,
-                    "section": None,
-                    "file_name": None,
-                })
+                results.append(
+                    {
+                        "kind": "note",
+                        "ref_id": n.id,
+                        "title": n.title or "Untitled note",
+                        "snippet": (n.content or "")[:300],
+                        "score": round(score, 4),
+                        "url": "/notes",
+                        "page": None,
+                        "section": None,
+                        "file_name": None,
+                    }
+                )
 
         # ── Citations ────────────────────────────────────────────────────────
         if "citation" in kinds:
@@ -4719,21 +5528,23 @@ def semantic_search():
                 cit_stmt = cit_stmt.where(Citation.project_id == project_id)
             cits = db.execute(cit_stmt).scalars().all()
             for c in cits:
-                text  = " ".join(filter(None, [c.title, c.authors, c.venue, c.notes]))
+                text = " ".join(filter(None, [c.title, c.authors, c.venue, c.notes]))
                 score = _keyword_score(q, text)
                 if score < 0.20:
                     continue
-                results.append({
-                    "kind":    "citation",
-                    "ref_id":  c.id,
-                    "title":   c.title or "Untitled",
-                    "snippet": f"{c.authors} ({c.year}) — {c.venue}".strip(" —"),
-                    "score":   round(score, 4),
-                    "url":     "/citations",
-                    "page":    None,
-                    "section": None,
-                    "file_name": None,
-                })
+                results.append(
+                    {
+                        "kind": "citation",
+                        "ref_id": c.id,
+                        "title": c.title or "Untitled",
+                        "snippet": f"{c.authors} ({c.year}) — {c.venue}".strip(" —"),
+                        "score": round(score, 4),
+                        "url": "/citations",
+                        "page": None,
+                        "section": None,
+                        "file_name": None,
+                    }
+                )
 
         # ── Chat messages ────────────────────────────────────────────────────
         if "chat" in kinds:
@@ -4742,13 +5553,13 @@ def semantic_search():
                 .join(Conversation, Message.conversation_id == Conversation.id)
                 .where(
                     Conversation.user_id == uid,
-                    Message.role         == "assistant",
+                    Message.role == "assistant",
                 )
             )
             if project_id is not None:
                 msg_stmt = msg_stmt.where(Conversation.project_id == project_id)
             rows = db.execute(msg_stmt.limit(2000)).all()
-            seen_convos: set[int] = set()   # max 1 result per conversation
+            seen_convos: set[int] = set()  # max 1 result per conversation
             for msg, convo in rows:
                 if convo.id in seen_convos:
                     continue
@@ -4756,17 +5567,19 @@ def semantic_search():
                 if score < 0.25:
                     continue
                 seen_convos.add(convo.id)
-                results.append({
-                    "kind":    "chat",
-                    "ref_id":  convo.id,
-                    "title":   convo.title or "Untitled chat",
-                    "snippet": (msg.content or "")[:300],
-                    "score":   round(score, 4),
-                    "url":     f"/c/{convo.id}",
-                    "page":    None,
-                    "section": None,
-                    "file_name": None,
-                })
+                results.append(
+                    {
+                        "kind": "chat",
+                        "ref_id": convo.id,
+                        "title": convo.title or "Untitled chat",
+                        "snippet": (msg.content or "")[:300],
+                        "score": round(score, 4),
+                        "url": f"/c/{convo.id}",
+                        "page": None,
+                        "section": None,
+                        "file_name": None,
+                    }
+                )
 
     finally:
         db.close()
@@ -4782,11 +5595,13 @@ def semantic_search():
             seen_papers.add(r["ref_id"])
         deduped.append(r)
 
-    return jsonify({
-        "q":       q,
-        "total":   len(deduped),
-        "results": deduped[:limit],
-    })
+    return jsonify(
+        {
+            "q": q,
+            "total": len(deduped),
+            "results": deduped[:limit],
+        }
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -4812,7 +5627,7 @@ Papers (as structured analyses):
 {analyses}
 """
 
-_COMPARE_MAX_ANALYSES_CHARS = 20_000   # generous but bounded
+_COMPARE_MAX_ANALYSES_CHARS = 20_000  # generous but bounded
 
 
 def _selection_hash(file_ids: list[int]) -> str:
@@ -4829,18 +5644,19 @@ def _derived_to_dict(da: DerivedAnalysis) -> dict:
         except Exception:
             pass
     return {
-        "id":             da.id,
-        "kind":           da.kind,
-        "file_ids":       json.loads(da.file_ids) if da.file_ids else [],
-        "status":         "done" if data else "pending",
-        "data":           data,
-        "model":          da.model or "",
-        "created_at":     da.created_at.isoformat() if da.created_at else None,
+        "id": da.id,
+        "kind": da.kind,
+        "file_ids": json.loads(da.file_ids) if da.file_ids else [],
+        "status": "done" if data else "pending",
+        "data": data,
+        "model": da.model or "",
+        "created_at": da.created_at.isoformat() if da.created_at else None,
     }
 
 
-def _run_comparison(derived_id: int, analyses_payload: str,
-                    file_ids: list[int]) -> None:
+def _run_comparison(
+    derived_id: int, analyses_payload: str, file_ids: list[int]
+) -> None:
     """Background worker: call the model and store the comparison result."""
     db = SessionLocal()
     try:
@@ -4852,12 +5668,18 @@ def _run_comparison(derived_id: int, analyses_payload: str,
             n=len(file_ids),
             analyses=analyses_payload[:_COMPARE_MAX_ANALYSES_CHARS],
         )
-        raw  = responses_text(prompt, json_mode=True)
+        raw = responses_text(prompt, json_mode=True)
         data = json.loads(raw)
 
         # Normalise array fields
-        for arr_key in ("similarities", "differences", "common_datasets",
-                        "agreements", "contradictions", "research_trends"):
+        for arr_key in (
+            "similarities",
+            "differences",
+            "common_datasets",
+            "agreements",
+            "contradictions",
+            "research_trends",
+        ):
             v = data.get(arr_key)
             if not isinstance(v, list):
                 data[arr_key] = [v] if v and isinstance(v, str) else []
@@ -4867,17 +5689,18 @@ def _run_comparison(derived_id: int, analyses_payload: str,
         da = db.get(DerivedAnalysis, derived_id)
         if not da:
             return
-        da.data  = json.dumps(data, ensure_ascii=False)
+        da.data = json.dumps(data, ensure_ascii=False)
         da.model = UTILITY_MODEL
         db.commit()
 
     except Exception as exc:
         logging.getLogger(__name__).warning(
-            "comparison failed for derived_id=%s: %s", derived_id, exc)
+            "comparison failed for derived_id=%s: %s", derived_id, exc
+        )
         try:
             da2 = db.get(DerivedAnalysis, derived_id)
             if da2:
-                da2.data  = json.dumps({"error": str(exc)})
+                da2.data = json.dumps({"error": str(exc)})
                 da2.model = ""
                 db.commit()
         except Exception:
@@ -4907,25 +5730,33 @@ def compare_papers():
 
     Polling: GET /api/analysis/compare/<id>
     """
-    data       = request.get_json(silent=True) or {}
-    uid        = session["user_id"]
-    file_ids   = [int(i) for i in (data.get("file_ids") or []) if i]
+    data = request.get_json(silent=True) or {}
+    uid = session["user_id"]
+    file_ids = [int(i) for i in (data.get("file_ids") or []) if i]
     project_id = data.get("project_id")
-    force      = bool(data.get("force"))
+    force = bool(data.get("force"))
 
     if len(file_ids) < 2:
-        return jsonify({"error": "too_few",
-                        "detail": "Select at least 2 papers to compare."}), 400
+        return (
+            jsonify(
+                {"error": "too_few", "detail": "Select at least 2 papers to compare."}
+            ),
+            400,
+        )
     if len(file_ids) > 10:
-        return jsonify({"error": "too_many",
-                        "detail": "Maximum 10 papers per comparison."}), 400
+        return (
+            jsonify(
+                {"error": "too_many", "detail": "Maximum 10 papers per comparison."}
+            ),
+            400,
+        )
 
     db = SessionLocal()
     try:
         # Validate ownership + collect ready analyses
-        valid_ids   = []
-        skipped     = []
-        paper_blobs = {}   # file_id -> {title, analysis_data}
+        valid_ids = []
+        skipped = []
+        paper_blobs = {}  # file_id -> {title, analysis_data}
 
         for fid in file_ids:
             uf = db.get(UserFile, fid)
@@ -4936,33 +5767,42 @@ def compare_papers():
                 select(PaperAnalysis).where(PaperAnalysis.file_id == fid)
             ).scalar_one_or_none()
             if not pa or pa.status != "done":
-                skipped.append({"id": fid,
-                                 "name": uf.title or uf.name,
-                                 "reason": "analysis_not_ready"})
+                skipped.append(
+                    {
+                        "id": fid,
+                        "name": uf.title or uf.name,
+                        "reason": "analysis_not_ready",
+                    }
+                )
                 continue
             valid_ids.append(fid)
             paper_blobs[fid] = {
-                "title":    uf.title or uf.name,
-                "authors":  uf.authors or "",
-                "year":     uf.year    or "",
+                "title": uf.title or uf.name,
+                "authors": uf.authors or "",
+                "year": uf.year or "",
                 "analysis": json.loads(pa.data) if pa.data else {},
             }
 
         if len(valid_ids) < 2:
-            return jsonify({
-                "error":   "too_few_ready",
-                "detail":  "At least 2 papers need a completed analysis. "
-                           "Try again after analysis finishes.",
-                "skipped": skipped,
-            }), 400
+            return (
+                jsonify(
+                    {
+                        "error": "too_few_ready",
+                        "detail": "At least 2 papers need a completed analysis. "
+                        "Try again after analysis finishes.",
+                        "skipped": skipped,
+                    }
+                ),
+                400,
+            )
 
         sel_hash = _selection_hash(valid_ids)
 
         # Cache check
         existing = db.execute(
             select(DerivedAnalysis).where(
-                DerivedAnalysis.user_id        == uid,
-                DerivedAnalysis.kind           == "compare",
+                DerivedAnalysis.user_id == uid,
+                DerivedAnalysis.kind == "compare",
                 DerivedAnalysis.selection_hash == sel_hash,
             )
         ).scalar_one_or_none()
@@ -4974,24 +5814,23 @@ def compare_papers():
 
         # Build analyses payload for the prompt
         blobs_text = json.dumps(
-            [paper_blobs[fid] for fid in valid_ids],
-            ensure_ascii=False, indent=1
+            [paper_blobs[fid] for fid in valid_ids], ensure_ascii=False, indent=1
         )
 
         # Create or reset the DerivedAnalysis row
         if existing:
-            existing.data  = ""
+            existing.data = ""
             existing.model = ""
             existing.file_ids = json.dumps(valid_ids)
             db.commit()
             da_id = existing.id
         else:
             da = DerivedAnalysis(
-                user_id        = uid,
-                project_id     = project_id,
-                kind           = "compare",
-                selection_hash = sel_hash,
-                file_ids       = json.dumps(valid_ids),
+                user_id=uid,
+                project_id=project_id,
+                kind="compare",
+                selection_hash=sel_hash,
+                file_ids=json.dumps(valid_ids),
             )
             db.add(da)
             db.commit()
@@ -5004,14 +5843,16 @@ def compare_papers():
             daemon=True,
         ).start()
 
-        return jsonify({
-            "id":      da_id,
-            "kind":    "compare",
-            "status":  "running",
-            "file_ids": valid_ids,
-            "skipped": skipped,
-            "data":    {},
-        })
+        return jsonify(
+            {
+                "id": da_id,
+                "kind": "compare",
+                "status": "running",
+                "file_ids": valid_ids,
+                "skipped": skipped,
+                "data": {},
+            }
+        )
     finally:
         db.close()
 
@@ -5074,8 +5915,9 @@ Papers (as structured analyses):
 _GAP_MAX_ANALYSES_CHARS = 20_000
 
 
-def _run_gap_finder(derived_id: int, analyses_payload: str,
-                    file_ids: list[int]) -> None:
+def _run_gap_finder(
+    derived_id: int, analyses_payload: str, file_ids: list[int]
+) -> None:
     """Background worker: call the model and store gap analysis result."""
     db = SessionLocal()
     try:
@@ -5087,7 +5929,7 @@ def _run_gap_finder(derived_id: int, analyses_payload: str,
             n=len(file_ids),
             analyses=analyses_payload[:_GAP_MAX_ANALYSES_CHARS],
         )
-        raw  = responses_text(prompt, json_mode=True)
+        raw = responses_text(prompt, json_mode=True)
         data = json.loads(raw)
 
         # Enforce the disclaimer regardless of what the model returned
@@ -5099,9 +5941,13 @@ def _run_gap_finder(derived_id: int, analyses_payload: str,
 
         # Normalise all array fields
         for arr_key in (
-            "underexplored_topics", "missing_experiments", "open_questions",
-            "methodological_gaps", "dataset_gaps",
-            "potential_thesis_ideas", "future_opportunities",
+            "underexplored_topics",
+            "missing_experiments",
+            "open_questions",
+            "methodological_gaps",
+            "dataset_gaps",
+            "potential_thesis_ideas",
+            "future_opportunities",
         ):
             v = data.get(arr_key)
             if not isinstance(v, list):
@@ -5110,17 +5956,18 @@ def _run_gap_finder(derived_id: int, analyses_payload: str,
         da = db.get(DerivedAnalysis, derived_id)
         if not da:
             return
-        da.data  = json.dumps(data, ensure_ascii=False)
+        da.data = json.dumps(data, ensure_ascii=False)
         da.model = UTILITY_MODEL
         db.commit()
 
     except Exception as exc:
         logging.getLogger(__name__).warning(
-            "gap finder failed for derived_id=%s: %s", derived_id, exc)
+            "gap finder failed for derived_id=%s: %s", derived_id, exc
+        )
         try:
             da2 = db.get(DerivedAnalysis, derived_id)
             if da2:
-                da2.data  = json.dumps({"error": str(exc)})
+                da2.data = json.dumps({"error": str(exc)})
                 da2.model = ""
                 db.commit()
         except Exception:
@@ -5145,23 +5992,26 @@ def find_gaps():
       - kind = 'gaps' (separate cache from comparison)
       - background thread; poll GET /api/analysis/gaps/<id>
     """
-    data       = request.get_json(silent=True) or {}
-    uid        = session["user_id"]
-    file_ids   = [int(i) for i in (data.get("file_ids") or []) if i]
+    data = request.get_json(silent=True) or {}
+    uid = session["user_id"]
+    file_ids = [int(i) for i in (data.get("file_ids") or []) if i]
     project_id = data.get("project_id")
-    force      = bool(data.get("force"))
+    force = bool(data.get("force"))
 
     if len(file_ids) < 2:
-        return jsonify({"error": "too_few",
-                        "detail": "Select at least 2 papers."}), 400
+        return jsonify({"error": "too_few", "detail": "Select at least 2 papers."}), 400
     if len(file_ids) > 10:
-        return jsonify({"error": "too_many",
-                        "detail": "Maximum 10 papers per gap analysis."}), 400
+        return (
+            jsonify(
+                {"error": "too_many", "detail": "Maximum 10 papers per gap analysis."}
+            ),
+            400,
+        )
 
     db = SessionLocal()
     try:
-        valid_ids   = []
-        skipped     = []
+        valid_ids = []
+        skipped = []
         paper_blobs = {}
 
         for fid in file_ids:
@@ -5173,31 +6023,40 @@ def find_gaps():
                 select(PaperAnalysis).where(PaperAnalysis.file_id == fid)
             ).scalar_one_or_none()
             if not pa or pa.status != "done":
-                skipped.append({"id": fid,
-                                 "name": uf.title or uf.name,
-                                 "reason": "analysis_not_ready"})
+                skipped.append(
+                    {
+                        "id": fid,
+                        "name": uf.title or uf.name,
+                        "reason": "analysis_not_ready",
+                    }
+                )
                 continue
             valid_ids.append(fid)
             paper_blobs[fid] = {
-                "title":    uf.title or uf.name,
-                "authors":  uf.authors or "",
-                "year":     uf.year    or "",
+                "title": uf.title or uf.name,
+                "authors": uf.authors or "",
+                "year": uf.year or "",
                 "analysis": json.loads(pa.data) if pa.data else {},
             }
 
         if len(valid_ids) < 2:
-            return jsonify({
-                "error":   "too_few_ready",
-                "detail":  "At least 2 papers need a completed analysis.",
-                "skipped": skipped,
-            }), 400
+            return (
+                jsonify(
+                    {
+                        "error": "too_few_ready",
+                        "detail": "At least 2 papers need a completed analysis.",
+                        "skipped": skipped,
+                    }
+                ),
+                400,
+            )
 
-        sel_hash = _selection_hash(valid_ids)   # same helper as M11
+        sel_hash = _selection_hash(valid_ids)  # same helper as M11
 
         existing = db.execute(
             select(DerivedAnalysis).where(
-                DerivedAnalysis.user_id        == uid,
-                DerivedAnalysis.kind           == "gaps",
+                DerivedAnalysis.user_id == uid,
+                DerivedAnalysis.kind == "gaps",
                 DerivedAnalysis.selection_hash == sel_hash,
             )
         ).scalar_one_or_none()
@@ -5208,23 +6067,22 @@ def find_gaps():
             return jsonify(result)
 
         blobs_text = json.dumps(
-            [paper_blobs[fid] for fid in valid_ids],
-            ensure_ascii=False, indent=1
+            [paper_blobs[fid] for fid in valid_ids], ensure_ascii=False, indent=1
         )
 
         if existing:
-            existing.data  = ""
+            existing.data = ""
             existing.model = ""
             existing.file_ids = json.dumps(valid_ids)
             db.commit()
             da_id = existing.id
         else:
             da = DerivedAnalysis(
-                user_id        = uid,
-                project_id     = project_id,
-                kind           = "gaps",
-                selection_hash = sel_hash,
-                file_ids       = json.dumps(valid_ids),
+                user_id=uid,
+                project_id=project_id,
+                kind="gaps",
+                selection_hash=sel_hash,
+                file_ids=json.dumps(valid_ids),
             )
             db.add(da)
             db.commit()
@@ -5236,14 +6094,16 @@ def find_gaps():
             daemon=True,
         ).start()
 
-        return jsonify({
-            "id":       da_id,
-            "kind":     "gaps",
-            "status":   "running",
-            "file_ids": valid_ids,
-            "skipped":  skipped,
-            "data":     {},
-        })
+        return jsonify(
+            {
+                "id": da_id,
+                "kind": "gaps",
+                "status": "running",
+                "file_ids": valid_ids,
+                "skipped": skipped,
+                "data": {},
+            }
+        )
     finally:
         db.close()
 
@@ -5332,24 +6192,31 @@ def writing_assistant():
       action  str  – echoed back for reference
       warning str  – non-empty if the assistant had to hedge (e.g. too long)
     """
-    data   = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True) or {}
     action = str(data.get("action") or "").strip()
-    text   = str(data.get("text")   or "").strip()
+    text = str(data.get("text") or "").strip()
 
     if action not in WRITING_ACTIONS:
-        return jsonify({
-            "error":  "invalid_action",
-            "detail": f"Action must be one of: {', '.join(WRITING_ACTIONS)}",
-        }), 400
+        return (
+            jsonify(
+                {
+                    "error": "invalid_action",
+                    "detail": f"Action must be one of: {', '.join(WRITING_ACTIONS)}",
+                }
+            ),
+            400,
+        )
 
     if not text:
-        return jsonify({"error": "text_required",
-                        "detail": "text field is required."}), 400
+        return (
+            jsonify({"error": "text_required", "detail": "text field is required."}),
+            400,
+        )
 
     MAX_CHARS = 8_000
-    warning   = ""
+    warning = ""
     if len(text) > MAX_CHARS:
-        text    = text[:MAX_CHARS]
+        text = text[:MAX_CHARS]
         warning = (
             "Input was truncated to 8 000 characters. "
             "For longer texts, split into sections."
@@ -5360,19 +6227,23 @@ def writing_assistant():
         instruction
         + "\n\nIMPORTANT: If you are uncertain or lack context to make a requested "
         "change accurately, say so explicitly rather than inventing content.\n\n"
-        + "Text:\n" + text
+        + "Text:\n"
+        + text
     )
 
     result = responses_text(prompt)
 
-    return jsonify({
-        "result":  result,
-        "action":  action,
-        "warning": warning,
-    })
+    return jsonify(
+        {
+            "result": result,
+            "action": action,
+            "warning": warning,
+        }
+    )
 
 
 # ── Export Centre ─────────────────────────────────────────────────────────────
+
 
 def _export_as_markdown(content_str: str, title: str = "") -> bytes:
     header = f"# {title}\n\n" if title else ""
@@ -5384,6 +6255,7 @@ def _export_as_docx(content_str: str, title: str = "") -> bytes:
     try:
         import docx as _docx
         from io import BytesIO
+
         doc = _docx.Document()
         if title:
             doc.add_heading(title, 0)
@@ -5408,11 +6280,11 @@ def export_notes():
       project_id  int|null  – scope to a project
       note_ids    list[int] – export specific notes (null = all)
     """
-    data       = request.get_json(silent=True) or {}
-    uid        = session["user_id"]
-    fmt        = str(data.get("format") or "md").lower()
+    data = request.get_json(silent=True) or {}
+    uid = session["user_id"]
+    fmt = str(data.get("format") or "md").lower()
     project_id = data.get("project_id")
-    note_ids   = data.get("note_ids")   # list[int] or null
+    note_ids = data.get("note_ids")  # list[int] or null
 
     db = SessionLocal()
     try:
@@ -5434,20 +6306,21 @@ def export_notes():
     body = "\n\n---\n\n".join(sections)
 
     if fmt == "docx":
-        blob  = _export_as_docx(body, "Research Notes")
-        mime  = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        blob = _export_as_docx(body, "Research Notes")
+        mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         fname = "notes.docx"
     elif fmt == "txt":
-        blob  = body.encode("utf-8")
-        mime  = "text/plain"
+        blob = body.encode("utf-8")
+        mime = "text/plain"
         fname = "notes.txt"
     else:
-        blob  = _export_as_markdown(body, "Research Notes")
-        mime  = "text/markdown"
+        blob = _export_as_markdown(body, "Research Notes")
+        mime = "text/markdown"
         fname = "notes.md"
 
-    return send_file(io.BytesIO(blob), mimetype=mime,
-                     as_attachment=True, download_name=fname)
+    return send_file(
+        io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname
+    )
 
 
 @app.route("/api/export/analysis/<int:file_id>", methods=["GET"])
@@ -5472,8 +6345,15 @@ def export_analysis(file_id):
         ).scalar_one_or_none()
 
         if not pa or pa.status != "done":
-            return jsonify({"error": "analysis_not_ready",
-                            "detail": "Analysis not yet complete."}), 400
+            return (
+                jsonify(
+                    {
+                        "error": "analysis_not_ready",
+                        "detail": "Analysis not yet complete.",
+                    }
+                ),
+                400,
+            )
 
         analysis = json.loads(pa.data) if pa.data else {}
     finally:
@@ -5482,20 +6362,20 @@ def export_analysis(file_id):
     title = uf.title or uf.name
     lines = [f"# Paper Analysis: {title}", ""]
     field_labels = {
-        "executive_summary":  "Executive Summary",
+        "executive_summary": "Executive Summary",
         "abstract_explained": "Abstract Explained",
         "research_objective": "Research Objective",
-        "problem_statement":  "Problem Statement",
-        "methodology":        "Methodology",
-        "dataset":            "Dataset",
-        "experiments":        "Experiments",
-        "results":            "Results",
-        "key_contributions":  "Key Contributions",
-        "strengths":          "Strengths",
-        "limitations":        "Limitations",
-        "future_work":        "Future Work",
-        "keywords":           "Keywords",
-        "important_terms":    "Important Terms",
+        "problem_statement": "Problem Statement",
+        "methodology": "Methodology",
+        "dataset": "Dataset",
+        "experiments": "Experiments",
+        "results": "Results",
+        "key_contributions": "Key Contributions",
+        "strengths": "Strengths",
+        "limitations": "Limitations",
+        "future_work": "Future Work",
+        "keywords": "Keywords",
+        "important_terms": "Important Terms",
     }
     for key, label in field_labels.items():
         val = analysis.get(key)
@@ -5515,20 +6395,21 @@ def export_analysis(file_id):
     body = "\n".join(lines)
 
     if fmt == "docx":
-        blob  = _export_as_docx(body, f"Analysis: {title}")
-        mime  = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        blob = _export_as_docx(body, f"Analysis: {title}")
+        mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         fname = f"analysis-{file_id}.docx"
     elif fmt == "txt":
-        blob  = body.encode("utf-8")
-        mime  = "text/plain"
+        blob = body.encode("utf-8")
+        mime = "text/plain"
         fname = f"analysis-{file_id}.txt"
     else:
-        blob  = body.encode("utf-8")
-        mime  = "text/markdown"
+        blob = body.encode("utf-8")
+        mime = "text/markdown"
         fname = f"analysis-{file_id}.md"
 
-    return send_file(io.BytesIO(blob), mimetype=mime,
-                     as_attachment=True, download_name=fname)
+    return send_file(
+        io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname
+    )
 
 
 @app.route("/api/export/chat/<int:cid>", methods=["GET"])
@@ -5546,7 +6427,7 @@ def export_chat(cid):
     try:
         convo = db.execute(
             select(Conversation).where(
-                Conversation.id      == cid,
+                Conversation.id == cid,
                 Conversation.user_id == uid,
             )
         ).scalar_one_or_none()
@@ -5565,28 +6446,31 @@ def export_chat(cid):
     body = "\n".join(lines)
 
     if fmt == "txt":
-        blob  = body.encode("utf-8")
-        mime  = "text/plain"
+        blob = body.encode("utf-8")
+        mime = "text/plain"
         fname = f"chat-{cid}.txt"
     else:
-        blob  = body.encode("utf-8")
-        mime  = "text/markdown"
+        blob = body.encode("utf-8")
+        mime = "text/markdown"
         fname = f"chat-{cid}.md"
 
-    return send_file(io.BytesIO(blob), mimetype=mime,
-                     as_attachment=True, download_name=fname)
+    return send_file(
+        io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname
+    )
 
 
 # ------------------------------------------------------------------ SPA (React build) serving
-FRONTEND_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "frontend", "dist")
+FRONTEND_DIST = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "frontend", "dist"
+)
 
 
 @app.route("/assets/<path:filename>")
 def spa_assets(filename):
     # Vite content-hashes asset filenames, so they can be cached forever.
-    return send_from_directory(os.path.join(FRONTEND_DIST, "assets"), filename,
-                               max_age=31536000)
+    return send_from_directory(
+        os.path.join(FRONTEND_DIST, "assets"), filename, max_age=31536000
+    )
 
 
 @app.route("/", defaults={"path": ""})
@@ -5595,13 +6479,15 @@ def spa(path):
     # Real API/auth/static routes are matched by their explicit rules first;
     # this catch-all only fires for unmatched paths (client-side routes). The
     # guard turns a stray /api/... typo into a 404 instead of the SPA shell.
-    if path.startswith(("api/", "auth/", "static/", "assets/")) or \
-            path in ("login", "logout", "robots.txt"):
+    if path.startswith(("api/", "auth/", "static/", "assets/")) or path in (
+        "login",
+        "logout",
+        "robots.txt",
+    ):
         abort(404)
     index_path = os.path.join(FRONTEND_DIST, "index.html")
     if not os.path.exists(index_path):
-        return ("Frontend build not found — run `npm run build` in frontend/.",
-                501)
+        return ("Frontend build not found — run `npm run build` in frontend/.", 501)
     return send_from_directory(FRONTEND_DIST, "index.html")
 
 
