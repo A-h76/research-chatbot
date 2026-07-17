@@ -1,0 +1,79 @@
+name: ResearchOS CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install flake8
+        run: pip install flake8
+      - name: Run Linter
+        run: flake8 . --count --max-complexity=10 --statistics
+
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-flask
+      
+      - name: Run tests
+        run: pytest -v
+        env:
+          # --- DATABASE ---
+          DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
+          # --- REDIS ---
+          REDIS_URL: redis://localhost:6379/0
+          # --- STORAGE (use local, not R2) ---
+          STORAGE_BACKEND: local
+          # --- FLASK SETTINGS ---
+          FLASK_ENV: testing
+          SECRET_KEY: ci-test-secret-do-not-use
+          # --- DISABLE EXTERNAL APIS (so tests don't call OpenAI, etc.) ---
+          OPENAI_API_KEY: sk-fake-key-for-ci
+          # --- Add any other env vars your app requires to start ---
+          # If your app needs GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, add fake ones:
+          # GOOGLE_CLIENT_ID: fake-client-id
+          # GOOGLE_CLIENT_SECRET: fake-client-secret

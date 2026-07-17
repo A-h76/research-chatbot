@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip list *)",
+      "Bash(curl -s -o /dev/null -w \"login page: %{http_code}\\\\n\" http://localhost:5000/)",
+      "Bash(curl -s -o /dev/null -w \"static asset: %{http_code}\\\\n\" http://localhost:5000/robots.txt)",
+      "Bash(python -c \"import boto3; print\\(boto3.__version__\\)\")",
+      "Bash(pip install *)"
+    ]
+  }
+}

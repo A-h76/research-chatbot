@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Personal AI</title>
+<meta name="description" content="Personal AI — private assistant for research and thesis writing.">
+<meta name="robots" content="index, follow">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.5/purify.min.js"></script>
+<style>
+@font-face{font-family:'Creato Display';src:url('/static/fonts/CreatoDisplay-Light.otf') format('opentype');font-weight:300;font-style:normal;font-display:swap}
+@font-face{font-family:'Creato Display';src:url('/static/fonts/CreatoDisplay-Regular.otf') format('opentype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Creato Display';src:url('/static/fonts/CreatoDisplay-Medium.otf') format('opentype');font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:'Creato Display';src:url('/static/fonts/CreatoDisplay-Bold.otf') format('opentype');font-weight:700;font-style:normal;font-display:swap}
+:root{
+  --bg:#212121; --sidebar:#171717; --panel:#2f2f2f; --panel2:#424242;
+  --text:#ececec; --muted:#b4b4b4; --border:#4d4d4d; --accent:#10a37f;
+  --hover:#2a2a2a; --input:#303030;
+}
+body.light{
+  --bg:#ffffff; --sidebar:#f9f9f9; --panel:#ececec; --panel2:#d9d9d9;
+  --text:#1a1a1a; --muted:#6b6b6b; --border:#d0d0d0;
+  --hover:#efefef; --input:#f1f1f1;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:'Creato Display',ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--text);display:flex;overflow:hidden;
+  transition:background .2s,color .2s}
+button{font-family:inherit}
+svg.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+
+/* ---------------- sidebar ---------------- */
+#sidebar{width:260px;min-width:260px;background:var(--sidebar);display:flex;
+  flex-direction:column;height:100vh;transition:margin-left .25s}
+#sidebar.hidden{margin-left:-260px}
+.sb-head{display:flex;align-items:center;justify-content:space-between;padding:12px 12px 8px}
+.sb-logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px}
+.sb-logo .mark{width:28px;height:28px;border-radius:50%;background:var(--text);
+  color:var(--sidebar);display:flex;align-items:center;justify-content:center;font-size:15px}
+.iconbtn{background:none;border:none;color:var(--muted);cursor:pointer;padding:7px;
+  border-radius:8px;font-size:15px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
+.iconbtn:hover{background:var(--panel);color:var(--text)}
+.newchat{margin:4px 12px 8px;display:flex;align-items:center;gap:10px;padding:10px 12px;
+  background:none;border:1px solid var(--border);border-radius:10px;color:var(--text);
+  cursor:pointer;font-size:14px;width:calc(100% - 24px)}
+.newchat:hover{background:var(--hover)}
+.sb-scroll{flex:1;overflow-y:auto;padding:0 8px 8px}
+.sb-section{margin-top:14px}
+.sb-title{display:flex;align-items:center;justify-content:space-between;
+  font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  padding:4px 10px 6px}
+.sb-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;
+  cursor:pointer;font-size:14px;color:var(--text);position:relative;user-select:none}
+.sb-item:hover{background:var(--hover)}
+.sb-item.active{background:var(--panel2)}
+.sb-item .label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-item .dots{visibility:hidden;background:none;border:none;color:var(--muted);
+  cursor:pointer;font-size:16px;padding:0 2px;border-radius:6px}
+.sb-item:hover .dots{visibility:visible}
+.sb-item .dots:hover{color:var(--text)}
+.badge{font-size:12px}
+.sb-foot{border-top:1px solid var(--hover);padding:10px 12px;display:flex;align-items:center;
+  gap:10px;cursor:pointer;position:relative;border-radius:0 0 0 0}
+.sb-foot:hover{background:var(--hover)}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;
+  overflow:hidden;flex-shrink:0}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.uinfo{flex:1;min-width:0}
+.uname{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.uplan{font-size:11px;color:var(--muted)}
+
+/* account menu (ChatGPT-style) */
+#accountMenu{position:fixed;display:none;flex-direction:column;z-index:300;
+  background:var(--panel);border:1px solid var(--border);border-radius:16px;
+  width:280px;box-shadow:0 12px 40px rgba(0,0,0,.5);padding:6px;bottom:64px;left:10px}
+.am-head{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);margin-bottom:4px}
+.am-head .avatar{width:36px;height:36px}
+.am-head .n{font-size:14px;font-weight:600}
+.am-head .e{font-size:12px;color:var(--muted)}
+.am-item{display:flex;align-items:center;gap:12px;width:100%;text-align:left;
+  background:none;border:none;color:var(--text);padding:10px 12px;border-radius:10px;
+  cursor:pointer;font-size:14px}
+.am-item:hover{background:var(--panel2)}
+.am-item .chev{margin-left:auto;color:var(--muted);font-size:12px}
+.am-sep{height:1px;background:var(--border);margin:4px 8px}
+
+/* context menus */
+.menu{position:fixed;background:var(--panel);border:1px solid var(--border);
+  border-radius:12px;padding:4px;z-index:300;min-width:170px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.menu button{display:flex;width:100%;text-align:left;background:none;border:none;
+  color:var(--text);padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;gap:8px;align-items:center}
+.menu button:hover{background:var(--panel2)}
+.menu button.danger{color:#ff7b7b}
+
+/* ---------------- main ---------------- */
+#main{flex:1;display:flex;flex-direction:column;height:100vh;min-width:0;position:relative}
+#topbar{display:flex;align-items:center;gap:6px;padding:10px 14px;min-height:52px}
+#chatTitle{font-size:14px;font-weight:600;color:var(--muted);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:50vw}
+#chatwrap{flex:1;overflow-y:auto}
+#chat{max-width:760px;margin:0 auto;padding:12px 20px 30px}
+.msg{display:flex;gap:14px;margin:18px 0}
+.msg.user{flex-direction:column;align-items:flex-end;gap:6px}
+.msg.user .bubble{background:var(--panel);border-radius:18px;padding:10px 16px;
+  max-width:70%;white-space:pre-wrap;word-wrap:break-word}
+.attchips{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.attchip{display:flex;align-items:center;gap:6px;background:var(--panel);
+  border:1px solid var(--border);border-radius:10px;padding:5px 10px;font-size:12px;max-width:230px}
+.attchip .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.attthumb{width:120px;height:120px;object-fit:cover;border-radius:12px;border:1px solid var(--border)}
+.msg.assistant{align-items:flex-start}
+.amark{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;margin-top:2px}
+.acontent{flex:1;min-width:0;line-height:1.65;font-size:15px}
+.acontent p{margin:0 0 12px}
+.acontent h1,.acontent h2,.acontent h3{margin:18px 0 10px}
+.acontent ul,.acontent ol{margin:0 0 12px 22px}
+.acontent li{margin:4px 0}
+.acontent table{border-collapse:collapse;margin:12px 0;font-size:14px}
+.acontent th,.acontent td{border:1px solid var(--border);padding:6px 12px}
+.acontent blockquote{border-left:3px solid var(--border);padding-left:12px;color:var(--muted);margin:12px 0}
+.acontent code{background:#0d0d0d;color:#eaeaea;padding:2px 5px;border-radius:5px;font-size:13px}
+.acontent pre{background:#0d0d0d;border-radius:10px;margin:12px 0;overflow:hidden}
+.acontent pre .codehead{display:flex;justify-content:space-between;align-items:center;
+  padding:6px 12px;font-size:12px;color:#b4b4b4;background:#1a1a1a}
+.acontent pre .codehead button{background:none;border:none;color:#b4b4b4;cursor:pointer;font-size:12px}
+.acontent pre .codehead button:hover{color:#fff}
+.acontent pre code{display:block;padding:12px;overflow-x:auto;background:none}
+.cursor::after{content:"●";animation:blink 1s infinite;margin-left:2px;font-size:11px}
+@keyframes blink{50%{opacity:0}}
+.statusline{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;margin:6px 0}
+.spin{width:12px;height:12px;border:2px solid var(--muted);border-top-color:transparent;
+  border-radius:50%;animation:rot .8s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.sources{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
+.sources a{font-size:12px;color:var(--muted);border:1px solid var(--border);
+  border-radius:999px;padding:3px 10px;text-decoration:none;max-width:220px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sources a:hover{color:var(--text);border-color:var(--muted)}
+.msgactions{margin-top:6px;display:flex;gap:4px}
+.msgactions button{background:none;border:none;color:var(--muted);cursor:pointer;
+  font-size:13px;padding:4px 6px;border-radius:6px}
+.msgactions button:hover{background:var(--panel);color:var(--text)}
+.errbox{background:#4a1d1d;border:1px solid #7f2f2f;color:#ffb4b4;
+  padding:10px 14px;border-radius:10px;font-size:14px;margin:8px 0}
+
+/* welcome */
+#welcome{max-width:760px;margin:0 auto;padding:9vh 20px 0;text-align:center}
+#welcome h1{font-size:30px;font-weight:600;margin-bottom:6px}
+#welcome p{color:var(--muted);margin-bottom:34px}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:640px;margin:0 auto}
+.card{border:1px solid var(--border);border-radius:14px;padding:14px;text-align:left;
+  cursor:pointer;background:none;color:var(--text)}
+.card:hover{background:var(--hover)}
+.card b{display:block;font-size:14px;margin-bottom:4px}
+.card span{font-size:12px;color:var(--muted)}
+
+/* ---------------- composer ---------------- */
+#composer{padding:0 16px 14px}
+#composerBox{max-width:760px;margin:0 auto;background:var(--input);
+  border:1px solid var(--border);border-radius:24px;padding:10px 12px 8px}
+#pendingAtts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+#pendingAtts .attchip button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px}
+#pendingAtts .attchip button:hover{color:#ff7b7b}
+#inputbox{width:100%;background:none;border:none;color:var(--text);font-size:15px;
+  resize:none;outline:none;max-height:200px;line-height:1.5;font-family:inherit;padding:4px 6px}
+#composerRow{display:flex;align-items:center;gap:6px;margin-top:4px}
+.crbtn{display:inline-flex;align-items:center;gap:6px;background:none;
+  border:1px solid var(--border);border-radius:999px;color:var(--muted);
+  padding:6px 11px;font-size:13px;cursor:pointer;white-space:nowrap}
+.crbtn:hover{background:var(--hover);color:var(--text)}
+.crbtn.iconly{border:none;padding:6px 8px;font-size:17px}
+.crbtn .chev{font-size:10px}
+#sendBtn{margin-left:auto;width:34px;height:34px;border-radius:50%;
+  border:none;background:var(--text);color:var(--bg);cursor:pointer;font-size:14px;
+  display:flex;align-items:center;justify-content:center}
+#sendBtn:disabled{opacity:.3;cursor:default}
+#sendBtn.stop{background:var(--panel2);color:var(--text)}
+#hint{max-width:760px;margin:8px auto 0;text-align:center;font-size:11px;color:var(--muted)}
+
+/* model menu (opens upward from composer) */
+#modelMenu{position:fixed;display:none;flex-direction:column;width:300px;max-height:400px;
+  background:var(--panel);border:1px solid var(--border);border-radius:14px;z-index:300;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);overflow:hidden}
+#modelMenu input{margin:8px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);
+  border-radius:8px;color:var(--text);font-size:13px;outline:none}
+#modelList{overflow-y:auto;padding:0 6px 6px}
+#modelList div{padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;
+  display:flex;justify-content:space-between;align-items:center}
+#modelList div:hover{background:var(--panel2)}
+#modelList div.sel::after{content:"✓";color:var(--accent)}
+
+/* search mode menu */
+#searchMenu{position:fixed;display:none;z-index:300}
+
+/* ---------------- modals ---------------- */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;
+  align-items:center;justify-content:center;z-index:400}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:16px;
+  width:min(560px,94vw);max-height:82vh;display:flex;flex-direction:column}
+.modal header{display:flex;justify-content:space-between;align-items:center;padding:16px 18px 8px}
+.modal header h2{font-size:16px}
+.modal .body{padding:10px 18px 18px;overflow-y:auto}
+.modal label{font-size:12px;color:var(--muted);display:block;margin:12px 0 4px}
+.modal input[type=text],.modal textarea,.modal select{width:100%;background:var(--bg);
+  border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);
+  font-size:14px;outline:none;font-family:inherit}
+.modal textarea{min-height:90px;resize:vertical}
+.modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.btn{padding:8px 16px;border-radius:9px;border:1px solid var(--border);
+  background:none;color:var(--text);cursor:pointer;font-size:13px}
+.btn.primary{background:var(--text);color:var(--bg);border-color:var(--text);font-weight:600}
+.btn.danger{border-color:#7f2f2f;color:#ff7b7b}
+.listitem{display:flex;align-items:flex-start;gap:10px;padding:10px 0;
+  border-bottom:1px solid var(--border);font-size:13px}
+.listitem .grow{flex:1;line-height:1.5;min-width:0}
+.listitem .sub{color:var(--muted);font-size:12px}
+.listitem .tag{font-size:10px;color:var(--muted);border:1px solid var(--border);
+  border-radius:999px;padding:1px 8px;white-space:nowrap}
+.listitem .xbtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px}
+.listitem .xbtn:hover{color:#ff7b7b}
+.listitem .cpbtn{background:none;border:1px solid var(--border);border-radius:7px;
+  color:var(--muted);cursor:pointer;font-size:11px;padding:3px 8px}
+.listitem .cpbtn:hover{color:var(--text)}
+.empty{color:var(--muted);font-size:13px;text-align:center;padding:20px 0}
+.seg{display:flex;background:var(--bg);border-radius:10px;padding:3px;border:1px solid var(--border)}
+.seg button{flex:1;background:none;border:none;color:var(--muted);font-size:13px;
+  padding:6px 10px;border-radius:8px;cursor:pointer}
+.seg button.on{background:var(--panel2);color:var(--text)}
+
+/* toast */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:var(--panel);border:1px solid var(--border);color:var(--text);
+  padding:10px 18px;border-radius:12px;font-size:13px;display:none;z-index:500;
+  box-shadow:0 8px 24px rgba(0,0,0,.4)}
+
+#burger{display:none}
+@media (max-width:768px){
+  #sidebar{position:fixed;z-index:250;box-shadow:4px 0 20px rgba(0,0,0,.5)}
+  #burger{display:inline-flex}
+  .cards{grid-template-columns:1fr}
+  .crbtn span.lbl{display:none}
+}
+</style>
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="sb-head">
+    <div class="sb-logo"><div class="mark">✦</div>Personal AI</div>
+    <button class="iconbtn" onclick="toggleSidebar()" title="Close sidebar">
+      <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9" y1="4" x2="9" y2="20"/></svg>
+    </button>
+  </div>
+  <button class="newchat" onclick="newChat()">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    New chat</button>
+  <div class="sb-scroll">
+    <div class="sb-section">
+      <div class="sb-title">Projects
+        <button class="iconbtn" style="font-size:13px" onclick="openProjectModal()" title="New project">＋</button>
+      </div>
+      <div id="projectList"></div>
+    </div>
+    <div class="sb-section">
+      <div class="sb-title" id="chatsTitle">Chats</div>
+      <div id="convoList"></div>
+    </div>
+  </div>
+  <div class="sb-foot" onclick="toggleAccountMenu(event)">
+    <div class="avatar" id="avatarBox"></div>
+    <div class="uinfo">
+      <div class="uname">{{ user_name }}</div>
+      <div class="uplan">Free</div>
+    </div>
+  </div>
+</aside>
+
+<!-- ChatGPT-style account menu -->
+<div id="accountMenu">
+  <div class="am-head">
+    <div class="avatar" id="avatarBox2"></div>
+    <div><div class="n">{{ user_name }}</div><div class="e">{{ user_email }}</div></div>
+  </div>
+  <button class="am-item" onclick="openOverlay('personalizationOverlay');loadMemories()">🎛 Personalization</button>
+  <button class="am-item" onclick="openSettings()">Settings</button>
+  <div class="am-sep"></div>
+  <button class="am-item" onclick="openFilesModal()">Files</button>
+  <button class="am-item" onclick="openCitationsModal()">Citations</button>
+  <div class="am-sep"></div>
+  <button class="am-item" onclick="toast('See README.md for help & setup guides')">❓ Help<span class="chev">›</span></button>
+  <button class="am-item" onclick="location.href='/logout'">↩ Log out</button>
+</div>
+
+<main id="main">
+  <div id="topbar">
+    <button class="iconbtn" id="burger" onclick="toggleSidebar()">☰</button>
+    <button class="iconbtn" id="sbOpen" style="display:none" onclick="toggleSidebar()" title="Open sidebar">
+      <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9" y1="4" x2="9" y2="20"/></svg>
+    </button>
+    <div id="chatTitle"></div>
+  </div>
+
+  <div id="chatwrap">
+    <div id="welcome">
+      <h1>✦ Personal AI</h1>
+      <p>Your private assistant for research &amp; thesis writing</p>
+      <div class="cards">
+        <button class="card" onclick="useSuggestion(this)"><b>Outline a chapter</b><span>Help me structure a thesis chapter on my topic</span></button>
+        <button class="card" onclick="useSuggestion(this)"><b>Find recent papers</b><span>Search the web for recent papers on my research area</span></button>
+        <button class="card" onclick="useSuggestion(this)"><b>Summarize a PDF</b><span>Upload a paper and I will summarize its key findings</span></button>
+        <button class="card" onclick="useSuggestion(this)"><b>Explain a method</b><span>Explain a statistical method with an example</span></button>
+      </div>
+    </div>
+    <div id="chat"></div>
+  </div>
+
+  <div id="composer">
+    <div id="composerBox">
+      <div id="pendingAtts"></div>
+      <textarea id="inputbox" rows="1" placeholder="Message Personal AI…"
+        oninput="autoGrow()" onkeydown="composerKey(event)"></textarea>
+      <div id="composerRow">
+        <button class="crbtn iconly" onclick="pickFile()" title="Attach PDF, Word, text or image">＋</button>
+        <button class="crbtn" id="modelBtn" onclick="toggleModelMenu(event)">
+          <span id="modelName">…</span><span class="chev">▲</span></button>
+        <button class="crbtn" id="searchBtn" onclick="toggleSearchMenu(event)">
+          <svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+          <span class="lbl" id="searchLbl">Auto</span></button>
+        <button id="sendBtn" onclick="sendOrStop()" disabled>➤</button>
+      </div>
+    </div>
+    <div id="hint">Personal AI can make mistakes. Check important info.</div>
+    <input type="file" id="fileInput" multiple style="display:none"
+      accept=".pdf,.docx,.txt,.md,.csv,.tex,.png,.jpg,.jpeg,.gif,.webp" onchange="uploadPicked()">
+  </div>
+
+  <div id="modelMenu">
+    <input id="modelSearch" placeholder="Search models…" oninput="renderModelList()">
+    <div id="modelList"></div>
+  </div>
+  <div id="searchMenu" class="menu">
+    <button onclick="setSearch('off')">🚫 Search off</button>
+    <button onclick="setSearch('auto')">✨ Auto (model decides)</button>
+    <button onclick="setSearch('on')">🌐 Always search</button>
+  </div>
+</main>
+
+<!-- project modal -->
+<div class="overlay" id="projectOverlay">
+  <div class="modal">
+    <header><h2 id="projectModalTitle">New project</h2>
+      <button class="iconbtn" onclick="closeOverlay('projectOverlay')">✕</button></header>
+    <div class="body">
+      <label>Emoji</label><input type="text" id="pEmoji" maxlength="4" placeholder="📚">
+      <label>Name</label><input type="text" id="pName" placeholder="Thesis">
+      <label>Custom instructions (used in every chat of this project)</label>
+      <textarea id="pInstr" placeholder="e.g. My thesis is about X. Always use APA citations."></textarea>
+      <div class="actions">
+        <button class="btn danger" id="pDelete" style="display:none;margin-right:auto" onclick="deleteProject()">Delete</button>
+        <button class="btn" onclick="closeOverlay('projectOverlay')">Cancel</button>
+        <button class="btn primary" onclick="saveProject()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- personalization modal -->
+<div class="overlay" id="personalizationOverlay">
+  <div class="modal">
+    <header><h2>Personalization</h2>
+      <button class="iconbtn" onclick="closeOverlay('personalizationOverlay')">✕</button></header>
+    <div class="body">
+      <label>Custom instructions — applied to every chat</label>
+      <textarea id="ciBox" placeholder="e.g. I'm writing a master's thesis on machine learning. Prefer formal tone, APA style.">{{ custom_instructions }}</textarea>
+      <div class="actions"><button class="btn primary" onclick="saveCI()">Save instructions</button></div>
+      <label style="margin-top:20px">Memory — what Personal AI remembers about you</label>
+      <div id="memList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- settings modal -->
+<div class="overlay" id="settingsOverlay">
+  <div class="modal">
+    <header><h2>Settings</h2>
+      <button class="iconbtn" onclick="closeOverlay('settingsOverlay')">✕</button></header>
+    <div class="body">
+      <label>Theme</label>
+      <div class="seg" id="themeSeg">
+        <button data-v="dark" onclick="setTheme('dark')">Dark</button>
+        <button data-v="light" onclick="setTheme('light')">Light</button>
+      </div>
+      <label>Default model for new chats</label>
+      <select id="defModelSel" onchange="saveLocalSettings()"></select>
+      <label>Default web-search mode</label>
+      <div class="seg" id="searchSeg">
+        <button data-v="off" onclick="setDefaultSearch('off')">Off</button>
+        <button data-v="auto" onclick="setDefaultSearch('auto')">Auto</button>
+        <button data-v="on" onclick="setDefaultSearch('on')">Always</button>
+      </div>
+      <label style="margin-top:18px">Account</label>
+      <div class="listitem" style="border:none"><div class="grow">{{ user_email }}<div class="sub">Signed in with Google</div></div>
+        <button class="btn" onclick="location.href='/logout'">Log out</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- files modal -->
+<div class="overlay" id="filesOverlay">
+  <div class="modal">
+    <header><h2>Uploaded files</h2>
+      <button class="iconbtn" onclick="closeOverlay('filesOverlay')">✕</button></header>
+    <div class="body"><div id="fileList"></div></div>
+  </div>
+</div>
+
+<!-- citations modal -->
+<div class="overlay" id="citationsOverlay">
+  <div class="modal">
+    <header><h2>Citations</h2>
+      <div>
+        <button class="btn" onclick="addCitationForm()">＋ Add</button>
+        <button class="btn" onclick="location.href='/api/citations/export'">⬇ Export .bib</button>
+        <button class="iconbtn" onclick="closeOverlay('citationsOverlay')">✕</button>
+      </div></header>
+    <div class="body">
+      <div id="citForm" style="display:none">
+        <label>Title</label><input type="text" id="cTitle">
+        <label>Authors (Last, F.; Last, F.)</label><input type="text" id="cAuthors">
+        <label>Year</label><input type="text" id="cYear">
+        <label>Journal / venue</label><input type="text" id="cVenue">
+        <label>DOI</label><input type="text" id="cDoi">
+        <label>URL</label><input type="text" id="cUrl">
+        <div class="actions">
+          <button class="btn" onclick="document.getElementById('citForm').style.display='none'">Cancel</button>
+          <button class="btn primary" onclick="saveCitation()">Save</button>
+        </div>
+      </div>
+      <div id="citList"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ------------------------------------------------ state */
+const USER_NAME = {{ user_name|tojson }};
+const USER_PIC  = {{ user_picture|tojson }};
+let models = [], currentModel = localStorage.getItem('defModel') || {{ default_model|tojson }};
+let projects = [], convos = [];
+let currentConvo = null, currentProject = null;
+let searchMode = localStorage.getItem('defSearch') || 'auto';
+let streaming = false, aborter = null, editingProject = null;
+let pendingFiles = [];   // [{id,name,kind}]
+
+marked.setOptions({breaks:true, gfm:true});
+
+/* ------------------------------------------------ init */
+init();
+async function init(){
+  const av = USER_PIC ? `<img src="${USER_PIC}" alt="">` : USER_NAME.slice(0,1).toUpperCase();
+  document.getElementById('avatarBox').innerHTML = av;
+  document.getElementById('avatarBox2').innerHTML = av;
+  setTheme(localStorage.getItem('theme') || 'dark', true);
+  setSearch(searchMode, true);
+  await Promise.all([loadModels(), loadProjects(), loadConvos()]);
+  renderAll();
+  fillSettings();
+}
+async function api(url, opts){
+  const r = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
+  if(r.status === 401){ location.href='/login'; throw new Error('auth'); }
+  return r.json();
+}
+async function loadModels(refresh){
+  const d = await api('/api/models' + (refresh ? '?refresh=1' : ''));
+  models = d.models;
+  if(!models.includes(currentModel)) currentModel = models.includes(d.default) ? d.default : models[0];
+  document.getElementById('modelName').textContent = currentModel;
+}
+async function loadProjects(){ projects = await api('/api/projects'); }
+async function loadConvos(){ convos = await api('/api/conversations'); }
+
+/* ------------------------------------------------ sidebar */
+function renderAll(){ renderProjects(); renderConvos(); renderModelList(); }
+function renderProjects(){
+  const box = document.getElementById('projectList');
+  box.innerHTML = '';
+  projects.forEach(p => {
+    const el = document.createElement('div');
+    el.className = 'sb-item' + (currentProject === p.id ? ' active' : '');
+    el.innerHTML = `<span class="badge">${esc(p.emoji)}</span>
+      <span class="label">${esc(p.name)}</span>
+      <button class="dots" title="Edit">⚙</button>`;
+    el.onclick = e => {
+      if(e.target.classList.contains('dots')){ openProjectModal(p); return; }
+      currentProject = (currentProject === p.id) ? null : p.id;
+      renderAll();
+    };
+    box.appendChild(el);
+  });
+  document.getElementById('chatsTitle').textContent =
+    currentProject ? 'Project chats' : 'Chats';
+}
+function renderConvos(){
+  const box = document.getElementById('convoList');
+  box.innerHTML = '';
+  const list = convos.filter(c => currentProject ? c.project_id === currentProject : true);
+  if(!list.length){ box.innerHTML = '<div class="empty">No chats yet</div>'; return; }
+  list.forEach(c => {
+    const proj = projects.find(p => p.id === c.project_id);
+    const el = document.createElement('div');
+    el.className = 'sb-item' + (currentConvo && currentConvo.id === c.id ? ' active' : '');
+    el.innerHTML = `${(!currentProject && proj) ? `<span class="badge">${esc(proj.emoji)}</span>` : ''}
+      <span class="label">${esc(c.title)}</span>
+      <button class="dots">⋯</button>`;
+    el.onclick = e => {
+      if(e.target.classList.contains('dots')){ convoMenu(e, c); return; }
+      openConvo(c.id);
+    };
+    box.appendChild(el);
+  });
+}
+function convoMenu(e, c){
+  e.stopPropagation(); closeMenus();
+  const m = document.createElement('div');
+  m.className = 'menu'; m.id = 'ctxMenu';
+  m.style.left = Math.min(e.pageX, innerWidth-190) + 'px';
+  m.style.top = Math.min(e.pageY, innerHeight-240) + 'px';
+  let projBtns = projects.map(p =>
+    `<button onclick="moveConvo(${c.id},${p.id})">${esc(p.emoji)} Move to ${esc(p.name)}</button>`).join('');
+  if(c.project_id) projBtns += `<button onclick="moveConvo(${c.id},null)">📤 Remove from project</button>`;
+  m.innerHTML = `<button onclick="renameConvo(${c.id})">✏️ Rename</button>${projBtns}
+    <button class="danger" onclick="deleteConvo(${c.id})">🗑 Delete</button>`;
+  document.body.appendChild(m);
+}
+async function renameConvo(id){
+  closeMenus();
+  const c = convos.find(x => x.id === id);
+  const t = prompt('Rename chat:', c.title);
+  if(t === null || !t.trim()) return;
+  await api('/api/conversations/'+id, {method:'PATCH', body:JSON.stringify({title:t.trim()})});
+  c.title = t.trim(); renderConvos(); updateTitlebar();
+}
+async function deleteConvo(id){
+  closeMenus();
+  if(!confirm('Delete this chat?')) return;
+  await api('/api/conversations/'+id, {method:'DELETE'});
+  convos = convos.filter(c => c.id !== id);
+  if(currentConvo && currentConvo.id === id){ currentConvo = null; showWelcome(); }
+  renderConvos();
+}
+async function moveConvo(id, pid){
+  closeMenus();
+  await api('/api/conversations/'+id, {method:'PATCH', body:JSON.stringify({project_id:pid})});
+  const c = convos.find(x => x.id === id); c.project_id = pid;
+  renderConvos();
+}
+function updateTitlebar(){
+  document.getElementById('chatTitle').textContent = currentConvo ? currentConvo.title : '';
+}
+
+/* ------------------------------------------------ model / search pickers */
+function toggleModelMenu(e){
+  e.stopPropagation();
+  const m = document.getElementById('modelMenu');
+  const show = m.style.display !== 'flex';
+  closeMenus();
+  if(show){
+    const r = document.getElementById('modelBtn').getBoundingClientRect();
+    m.style.display = 'flex';
+    m.style.left = r.left + 'px';
+    m.style.bottom = (innerHeight - r.top + 8) + 'px';
+    document.getElementById('modelSearch').focus();
+  }
+}
+function renderModelList(){
+  const q = (document.getElementById('modelSearch').value || '').toLowerCase();
+  const box = document.getElementById('modelList');
+  box.innerHTML = '';
+  models.filter(m => m.toLowerCase().includes(q)).forEach(m => {
+    const el = document.createElement('div');
+    el.textContent = m;
+    if(m === currentModel) el.className = 'sel';
+    el.onclick = async () => {
+      currentModel = m;
+      document.getElementById('modelName').textContent = m;
+      document.getElementById('modelMenu').style.display = 'none';
+      if(currentConvo) await api('/api/conversations/'+currentConvo.id,
+        {method:'PATCH', body:JSON.stringify({model:m})});
+      renderModelList();
+    };
+    box.appendChild(el);
+  });
+}
+function toggleSearchMenu(e){
+  e.stopPropagation();
+  const m = document.getElementById('searchMenu');
+  const show = m.style.display !== 'block';
+  closeMenus();
+  if(show){
+    const r = document.getElementById('searchBtn').getBoundingClientRect();
+    m.style.display = 'block';
+    m.style.left = r.left + 'px';
+    m.style.top = (r.top - 130) + 'px';
+  }
+}
+function setSearch(mode, silent){
+  searchMode = mode;
+  document.getElementById('searchLbl').textContent =
+    mode === 'auto' ? 'Auto' : mode === 'on' ? 'Always' : 'Off';
+  if(!silent) closeMenus();
+}
+
+/* ------------------------------------------------ attachments */
+function pickFile(){ document.getElementById('fileInput').click(); }
+async function uploadPicked(){
+  const inp = document.getElementById('fileInput');
+  for(const f of inp.files){
+    const chip = addPendingChip({name: f.name, uploading: true});
+    const fd = new FormData();
+    fd.append('file', f);
+    if(currentConvo) fd.append('conversation_id', currentConvo.id);
+    if(currentProject) fd.append('project_id', currentProject);
+    try{
+      const r = await fetch('/api/files', {method:'POST', body: fd});
+      const d = await r.json();
+      if(!r.ok) throw new Error(d.detail || d.error || 'upload failed');
+      chip.remove();
+      pendingFiles.push({id: d.id, name: d.name, kind: d.kind});
+      renderPendingAtts();
+      toast(d.kind === 'document' ? `Indexed ${d.name} (${d.chunks} sections)` : `Attached ${d.name}`);
+    }catch(err){
+      chip.remove(); toast('⚠ ' + err.message);
+    }
+  }
+  inp.value = '';
+  autoGrow();
+}
+function addPendingChip(f){
+  const box = document.getElementById('pendingAtts');
+  const el = document.createElement('div');
+  el.className = 'attchip';
+  el.innerHTML = `<span>${f.uploading ? '⏳' : '📄'}</span><span class="nm">${esc(f.name)}</span>`;
+  box.appendChild(el);
+  return el;
+}
+function renderPendingAtts(){
+  const box = document.getElementById('pendingAtts');
+  box.innerHTML = '';
+  pendingFiles.forEach((f, i) => {
+    const el = document.createElement('div');
+    el.className = 'attchip';
+    el.innerHTML = `<span>${f.kind === 'image' ? '🖼' : '📄'}</span>
+      <span class="nm">${esc(f.name)}</span><button title="Remove">✕</button>`;
+    el.querySelector('button').onclick = () => { pendingFiles.splice(i,1); renderPendingAtts(); autoGrow(); };
+    box.appendChild(el);
+  });
+  autoGrow();
+}
+
+/* ------------------------------------------------ chat rendering */
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function mdRender(text){ return DOMPurify.sanitize(marked.parse(text || '')); }
+function decorateCode(container){
+  container.querySelectorAll('pre').forEach(pre => {
+    if(pre.querySelector('.codehead')) return;
+    const code = pre.querySelector('code');
+    if(!code) return;
+    const lang = (code.className.match(/language-(\w+)/) || [,''])[1];
+    const head = document.createElement('div');
+    head.className = 'codehead';
+    head.innerHTML = `<span>${esc(lang || 'code')}</span><button>Copy</button>`;
+    head.querySelector('button').onclick = () => {
+      navigator.clipboard.writeText(code.textContent);
+      head.querySelector('button').textContent = 'Copied!';
+      setTimeout(()=>head.querySelector('button').textContent='Copy', 1500);
+    };
+    pre.insertBefore(head, code);
+    try{ hljs.highlightElement(code); }catch(_){}
+  });
+}
+function addUserMsg(text, attachments){
+  const el = document.createElement('div');
+  el.className = 'msg user';
+  let chips = '';
+  if(attachments && attachments.length){
+    chips = '<div class="attchips">' + attachments.map(a =>
+      a.kind === 'image'
+        ? `<img class="attthumb" src="/api/files/${a.id}/raw" alt="${esc(a.name)}">`
+        : `<div class="attchip"><span>📄</span><span class="nm">${esc(a.name)}</span></div>`
+    ).join('') + '</div>';
+  }
+  el.innerHTML = chips + `<div class="bubble">${esc(text)}</div>`;
+  document.getElementById('chat').appendChild(el);
+}
+function addAssistantMsg(){
+  const el = document.createElement('div');
+  el.className = 'msg assistant';
+  el.innerHTML = `<div class="amark">✦</div><div class="acontent"><div class="mdbody cursor"></div></div>`;
+  document.getElementById('chat').appendChild(el);
+  return el;
+}
+function finishAssistantMsg(el, fullText, sources){
+  const body = el.querySelector('.mdbody');
+  body.classList.remove('cursor');
+  body.innerHTML = mdRender(fullText);
+  decorateCode(body);
+  el.querySelector('.statusline')?.remove();
+  const ac = el.querySelector('.acontent');
+  if(sources && sources.length){
+    const s = document.createElement('div'); s.className = 'sources';
+    s.innerHTML = sources.filter(x=>x.url).slice(0,6).map(x =>
+      `<a href="${esc(x.url)}" target="_blank" rel="noopener">🔗 ${esc(x.title || x.url)}</a>`).join('');
+    ac.appendChild(s);
+  }
+  const act = document.createElement('div'); act.className = 'msgactions';
+  act.innerHTML = `<button>⧉ Copy</button><button>↻ Regenerate</button>`;
+  const [copyB, regenB] = act.querySelectorAll('button');
+  copyB.onclick = () => { navigator.clipboard.writeText(fullText);
+    copyB.textContent = '✓ Copied'; setTimeout(()=>copyB.innerHTML='⧉ Copy',1500); };
+  regenB.onclick = regenerate;
+  ac.appendChild(act);
+}
+function showWelcome(){
+  document.getElementById('chat').innerHTML = '';
+  document.getElementById('welcome').style.display = 'block';
+  updateTitlebar(); renderConvos();
+}
+function hideWelcome(){ document.getElementById('welcome').style.display = 'none'; }
+function scrollBottom(){
+  const w = document.getElementById('chatwrap');
+  w.scrollTop = w.scrollHeight;
+}
+
+/* ------------------------------------------------ open conversation */
+async function openConvo(id){
+  const d = await api('/api/conversations/'+id);
+  currentConvo = d;
+  if(d.model && models.includes(d.model)){
+    currentModel = d.model;
+    document.getElementById('modelName').textContent = currentModel;
+  }
+  hideWelcome(); updateTitlebar();
+  const chat = document.getElementById('chat');
+  chat.innerHTML = '';
+  d.messages.forEach(m => {
+    if(m.role === 'user'){ addUserMsg(m.content, m.attachments); }
+    else{
+      const el = addAssistantMsg();
+      finishAssistantMsg(el, m.content, m.sources);
+    }
+  });
+  renderConvos(); scrollBottom();
+  if(innerWidth <= 768) document.getElementById('sidebar').classList.add('hidden');
+}
+function newChat(){
+  currentConvo = null; pendingFiles = [];
+  renderPendingAtts(); showWelcome();
+  document.getElementById('inputbox').focus();
+}
+
+/* ------------------------------------------------ send / stream */
+function useSuggestion(btn){
+  document.getElementById('inputbox').value = btn.querySelector('span').textContent;
+  autoGrow(); sendOrStop();
+}
+function autoGrow(){
+  const t = document.getElementById('inputbox');
+  t.style.height = 'auto';
+  t.style.height = Math.min(t.scrollHeight, 200) + 'px';
+  document.getElementById('sendBtn').disabled =
+    !streaming && !t.value.trim() && !pendingFiles.length;
+}
+function composerKey(e){
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendOrStop(); }
+}
+function sendOrStop(){
+  if(streaming){ aborter?.abort(); return; }
+  send();
+}
+async function send(){
+  const t = document.getElementById('inputbox');
+  const text = t.value.trim();
+  if((!text && !pendingFiles.length) || streaming) return;
+  t.value = '';
+
+  if(!currentConvo){
+    const c = await api('/api/conversations', {method:'POST',
+      body:JSON.stringify({model:currentModel, project_id:currentProject})});
+    currentConvo = c; c.title = text.slice(0,60) || 'New chat';
+    convos.unshift(c); renderConvos();
+  }
+  hideWelcome(); updateTitlebar();
+  const atts = pendingFiles.slice();
+  pendingFiles = []; renderPendingAtts();
+  addUserMsg(text || '(see attached files)', atts);
+  await streamChat({conversation_id:currentConvo.id, message:text,
+                    model:currentModel, search:searchMode,
+                    attachments: atts.map(a => a.id)});
+}
+async function regenerate(){
+  if(streaming || !currentConvo) return;
+  const msgs = document.querySelectorAll('#chat .msg.assistant');
+  if(msgs.length) msgs[msgs.length-1].remove();
+  await streamChat({conversation_id:currentConvo.id, regenerate:true,
+                    model:currentModel, search:searchMode});
+}
+async function streamChat(payload){
+  streaming = true; aborter = new AbortController();
+  const sendBtn = document.getElementById('sendBtn');
+  sendBtn.disabled = false; sendBtn.textContent = '■'; sendBtn.classList.add('stop');
+
+  const el = addAssistantMsg();
+  const body = el.querySelector('.mdbody');
+  let full = '', sources = [];
+  scrollBottom();
+
+  try{
+    const r = await fetch('/api/chat', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload), signal:aborter.signal});
+    if(!r.ok || !r.body){
+      const e = await r.json().catch(()=>({}));
+      throw new Error(e.error || 'Request failed');
+    }
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while(true){
+      const {done, value} = await reader.read();
+      if(done) break;
+      buf += dec.decode(value, {stream:true});
+      const parts = buf.split('\n\n'); buf = parts.pop();
+      for(const part of parts){
+        const evM = part.match(/^event: (.+)$/m);
+        const dataM = part.match(/^data: (.+)$/m);
+        if(!evM || !dataM) continue;
+        const ev = evM[1], data = JSON.parse(dataM[1]);
+        if(ev === 'delta'){
+          full += data.text;
+          el.querySelector('.statusline')?.remove();
+          body.innerHTML = mdRender(full);
+          body.classList.add('cursor');
+          scrollBottom();
+        }else if(ev === 'status'){
+          el.querySelector('.statusline')?.remove();
+          const s = document.createElement('div');
+          s.className = 'statusline';
+          s.innerHTML = `<div class="spin"></div>${esc(data.text)}`;
+          el.querySelector('.acontent').prepend(s);
+          scrollBottom();
+        }else if(ev === 'done'){
+          sources = data.sources || [];
+          if(data.title){
+            const c = convos.find(x => x.id === currentConvo.id);
+            if(c){ c.title = data.title; }
+            currentConvo.title = data.title;
+            renderConvos(); updateTitlebar();
+          }
+        }else if(ev === 'error'){
+          throw new Error(data.text);
+        }
+      }
+    }
+    finishAssistantMsg(el, full, sources);
+  }catch(err){
+    if(err.name === 'AbortError'){
+      finishAssistantMsg(el, full + ' *(stopped)*', sources);
+    }else{
+      el.querySelector('.statusline')?.remove();
+      body.classList.remove('cursor');
+      if(!full){
+        el.querySelector('.acontent').innerHTML =
+          `<div class="errbox">⚠ ${esc(err.message)}</div>`;
+      }else{
+        finishAssistantMsg(el, full, sources);
+      }
+    }
+  }finally{
+    streaming = false; aborter = null;
+    sendBtn.textContent = '➤'; sendBtn.classList.remove('stop');
+    autoGrow(); scrollBottom();
+    loadConvos().then(renderConvos);
+  }
+}
+
+/* ------------------------------------------------ projects modal */
+function openProjectModal(p){
+  closeMenus();
+  editingProject = p || null;
+  document.getElementById('projectModalTitle').textContent = p ? 'Edit project' : 'New project';
+  document.getElementById('pEmoji').value = p ? p.emoji : '';
+  document.getElementById('pName').value = p ? p.name : '';
+  document.getElementById('pInstr').value = p ? p.instructions : '';
+  document.getElementById('pDelete').style.display = p ? 'inline-block' : 'none';
+  openOverlay('projectOverlay');
+}
+async function saveProject(){
+  const body = {name:document.getElementById('pName').value.trim(),
+    emoji:document.getElementById('pEmoji').value.trim() || '📁',
+    instructions:document.getElementById('pInstr').value.trim()};
+  if(!body.name){ toast('Give the project a name'); return; }
+  if(editingProject){
+    await api('/api/projects/'+editingProject.id, {method:'PATCH', body:JSON.stringify(body)});
+  }else{
+    await api('/api/projects', {method:'POST', body:JSON.stringify(body)});
+  }
+  closeOverlay('projectOverlay');
+  await loadProjects(); renderAll();
+}
+async function deleteProject(){
+  if(!editingProject || !confirm('Delete project? Its chats are kept (moved out of the project).')) return;
+  await api('/api/projects/'+editingProject.id, {method:'DELETE'});
+  if(currentProject === editingProject.id) currentProject = null;
+  closeOverlay('projectOverlay');
+  await Promise.all([loadProjects(), loadConvos()]); renderAll();
+}
+
+/* ------------------------------------------------ personalization */
+async function saveCI(){
+  await api('/api/profile', {method:'PATCH',
+    body:JSON.stringify({custom_instructions: document.getElementById('ciBox').value})});
+  toast('Saved — applies to all new messages');
+}
+async function loadMemories(){
+  const box = document.getElementById('memList');
+  box.innerHTML = '<div class="empty">Loading…</div>';
+  const mems = await api('/api/memories');
+  if(!mems.length){
+    box.innerHTML = '<div class="empty">Nothing remembered yet — memories appear as you chat.</div>';
+    return;
+  }
+  box.innerHTML = '';
+  mems.forEach(m => {
+    const proj = projects.find(p => p.id === m.project_id);
+    const el = document.createElement('div');
+    el.className = 'listitem';
+    el.innerHTML = `<div class="grow">${esc(m.fact)}</div>
+      ${proj ? `<span class="tag">${esc(proj.emoji)} ${esc(proj.name)}</span>` : ''}
+      <button class="xbtn" title="Forget">✕</button>`;
+    el.querySelector('.xbtn').onclick = async () => {
+      await api('/api/memories/'+m.id, {method:'DELETE'});
+      el.remove();
+    };
+    box.appendChild(el);
+  });
+}
+
+/* ------------------------------------------------ settings */
+function openSettings(){
+  closeMenus(); fillSettings(); openOverlay('settingsOverlay');
+}
+function fillSettings(){
+  const sel = document.getElementById('defModelSel');
+  sel.innerHTML = models.map(m => `<option ${m===(localStorage.getItem('defModel')||currentModel)?'selected':''}>${esc(m)}</option>`).join('');
+  document.querySelectorAll('#themeSeg button').forEach(b =>
+    b.classList.toggle('on', b.dataset.v === (localStorage.getItem('theme')||'dark')));
+  document.querySelectorAll('#searchSeg button').forEach(b =>
+    b.classList.toggle('on', b.dataset.v === (localStorage.getItem('defSearch')||'auto')));
+}
+function saveLocalSettings(){
+  localStorage.setItem('defModel', document.getElementById('defModelSel').value);
+  toast('Default model saved');
+}
+function setDefaultSearch(v){
+  localStorage.setItem('defSearch', v); setSearch(v, true); fillSettings();
+}
+function setTheme(v, silent){
+  document.body.classList.toggle('light', v === 'light');
+  localStorage.setItem('theme', v);
+  if(!silent) fillSettings();
+}
+
+/* ------------------------------------------------ files modal */
+async function openFilesModal(){
+  closeMenus(); openOverlay('filesOverlay');
+  const box = document.getElementById('fileList');
+  box.innerHTML = '<div class="empty">Loading…</div>';
+  const files = await api('/api/files');
+  if(!files.length){
+    box.innerHTML = '<div class="empty">No files uploaded yet — use ＋ in the chat box.</div>';
+    return;
+  }
+  box.innerHTML = '';
+  files.forEach(f => {
+    const proj = projects.find(p => p.id === f.project_id);
+    const el = document.createElement('div');
+    el.className = 'listitem';
+    el.innerHTML = `<span>${f.kind === 'image' ? '🖼' : '📄'}</span>
+      <div class="grow">${esc(f.name)}
+        <div class="sub">${(f.size/1024).toFixed(0)} KB${f.kind==='document' ? ` · ${f.chunks} indexed sections` : ''}</div></div>
+      ${proj ? `<span class="tag">${esc(proj.emoji)} ${esc(proj.name)}</span>` : ''}
+      <button class="xbtn" title="Delete">✕</button>`;
+    el.querySelector('.xbtn').onclick = async () => {
+      if(!confirm('Delete this file? It will no longer be used for answers.')) return;
+      await api('/api/files/'+f.id, {method:'DELETE'});
+      el.remove();
+    };
+    box.appendChild(el);
+  });
+}
+
+/* ------------------------------------------------ citations modal */
+async function openCitationsModal(){
+  closeMenus(); openOverlay('citationsOverlay');
+  document.getElementById('citForm').style.display = 'none';
+  await renderCitations();
+}
+async function renderCitations(){
+  const box = document.getElementById('citList');
+  box.innerHTML = '<div class="empty">Loading…</div>';
+  const cits = await api('/api/citations');
+  if(!cits.length){
+    box.innerHTML = '<div class="empty">No citations yet — ask the bot to "save this citation" or add one manually.</div>';
+    return;
+  }
+  box.innerHTML = '';
+  cits.forEach(c => {
+    const proj = projects.find(p => p.id === c.project_id);
+    const el = document.createElement('div');
+    el.className = 'listitem';
+    el.innerHTML = `<span>📑</span>
+      <div class="grow"><b>${esc(c.title || 'Untitled')}</b>
+        <div class="sub">${esc(c.authors)}${c.year ? ' · ' + esc(c.year) : ''}${c.venue ? ' · ' + esc(c.venue) : ''}
+        ${c.url ? ` · <a href="${esc(c.url)}" target="_blank" rel="noopener">link</a>` : ''}</div></div>
+      ${proj ? `<span class="tag">${esc(proj.emoji)} ${esc(proj.name)}</span>` : ''}
+      <button class="cpbtn">BibTeX</button>
+      <button class="xbtn" title="Delete">✕</button>`;
+    el.querySelector('.cpbtn').onclick = () => {
+      navigator.clipboard.writeText(c.bibtex); toast('BibTeX copied');
+    };
+    el.querySelector('.xbtn').onclick = async () => {
+      await api('/api/citations/'+c.id, {method:'DELETE'});
+      el.remove();
+    };
+    box.appendChild(el);
+  });
+}
+function addCitationForm(){
+  const f = document.getElementById('citForm');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+async function saveCitation(){
+  const g = id => document.getElementById(id).value.trim();
+  if(!g('cTitle')){ toast('Title is required'); return; }
+  await api('/api/citations', {method:'POST', body:JSON.stringify({
+    title:g('cTitle'), authors:g('cAuthors'), year:g('cYear'),
+    venue:g('cVenue'), doi:g('cDoi'), url:g('cUrl'),
+    project_id: currentProject})});
+  ['cTitle','cAuthors','cYear','cVenue','cDoi','cUrl'].forEach(i => document.getElementById(i).value='');
+  document.getElementById('citForm').style.display = 'none';
+  await renderCitations();
+}
+
+/* ------------------------------------------------ misc */
+function toggleSidebar(){
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('hidden');
+  document.getElementById('sbOpen').style.display =
+    sb.classList.contains('hidden') ? 'inline-flex' : 'none';
+}
+function toggleAccountMenu(e){
+  e.stopPropagation();
+  const m = document.getElementById('accountMenu');
+  const show = m.style.display !== 'flex';
+  closeMenus();
+  m.style.display = show ? 'flex' : 'none';
+}
+function openOverlay(id){ document.getElementById(id).style.display = 'flex'; }
+function closeOverlay(id){ document.getElementById(id).style.display = 'none'; }
+function closeMenus(){
+  document.getElementById('ctxMenu')?.remove();
+  document.getElementById('accountMenu').style.display = 'none';
+  document.getElementById('modelMenu').style.display = 'none';
+  document.getElementById('searchMenu').style.display = 'none';
+}
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.style.display = 'none', 2600);
+}
+document.addEventListener('click', closeMenus);
+document.querySelectorAll('.overlay').forEach(o =>
+  o.addEventListener('click', e => { if(e.target === o) o.style.display = 'none'; }));
+</script>
+</body>
+</html>

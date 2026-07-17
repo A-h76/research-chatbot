@@ -1,0 +1,20 @@
+class TextImporter:
+    """Extensions read verbatim as UTF-8 text — docs, data, config, source code."""
+    extensions = (
+        ".txt", ".md", ".markdown", ".rst", ".csv", ".tsv", ".tex", ".rtf", ".log",
+        ".json", ".jsonl", ".ndjson", ".yaml", ".yml", ".xml", ".html", ".htm",
+        ".ini", ".cfg", ".conf", ".toml", ".env", ".properties",
+        ".py", ".ipynb", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue",
+        ".svelte", ".java", ".kt", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp",
+        ".cs", ".go", ".rs", ".rb", ".php", ".swift", ".sh", ".bash", ".zsh",
+        ".bat", ".ps1", ".sql", ".r", ".m", ".pl", ".lua", ".dart", ".scala",
+        ".gradle", ".dockerfile", ".makefile", ".gitignore",
+    )
+    supports_locators = False
+
+    def matches(self, lower_name, mime):
+        return lower_name.endswith(self.extensions)
+
+    def extract(self, path, mime, name):
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()

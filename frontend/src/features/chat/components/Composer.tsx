@@ -1,0 +1,219 @@
+import { useEffect, useRef, useState } from "react";
+import { Plus, ArrowUp, Square, FileUp, FolderUp } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ComposerAttachments } from "./ComposerAttachments";
+import { ModelPickerPopover } from "./ModelPickerPopover";
+import { SearchModePicker } from "./SearchModePicker";
+import { TemperatureControl } from "./TemperatureControl";
+import { ReasoningEffortControl } from "./ReasoningEffortControl";
+import { MemoryToggle } from "./MemoryToggle";
+import { VoiceInputButton } from "./VoiceInputButton";
+import { filesApi } from "@/features/files/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
+import { toast } from "@/components/common/Toast";
+import { supportsReasoningEffort, supportsTemperature } from "@/lib/modelCapabilities";
+import type { ChatSettings, PendingFile } from "../types";
+import { cn } from "@/lib/utils";
+
+let tempIdCounter = -1;
+
+export function Composer({
+  settings,
+  onSettingsChange,
+  onSend,
+  streaming,
+  onStop,
+  conversationId,
+  projectId,
+  autoFocus,
+}: {
+  settings: ChatSettings;
+  onSettingsChange: (partial: Partial<ChatSettings>) => void;
+  onSend: (text: string, attachments: PendingFile[]) => void;
+  streaming: boolean;
+  onStop: () => void;
+  conversationId?: number | null;
+  projectId?: number | null;
+  autoFocus?: boolean;
+}) {
+  const [text, setText] = useState("");
+  const [pending, setPending] = useState<PendingFile[]>([]);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const qc = useQueryClient();
+
+  const uploading = pending.some((f) => f.uploading);
+  const canSend = !uploading && (text.trim().length > 0 || pending.length > 0);
+
+  useEffect(() => {
+    if (autoFocus) textareaRef.current?.focus();
+  }, [autoFocus]);
+
+  const autoGrow = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+  };
+
+  useEffect(autoGrow, [text]);
+
+  const IGNORE_PATH = /(^|\/)(node_modules|\.git|\.next|dist|build|\.venv|venv|__pycache__|\.idea|\.vscode|\.DS_Store)(\/|$)/;
+  const MAX_FOLDER_FILES = 40;
+
+  const handleFiles = async (fileList: FileList, fromFolder = false) => {
+    let files = Array.from(fileList);
+    if (fromFolder) {
+      files = files.filter((f) => {
+        const rel = (f as { webkitRelativePath?: string }).webkitRelativePath || f.name;
+        return !IGNORE_PATH.test(rel) && !f.name.startsWith(".");
+      });
+      if (files.length === 0) {
+        toast.error("No uploadable files found in that folder.");
+        return;
+      }
+      if (files.length > MAX_FOLDER_FILES) {
+        toast.info(`Folder has ${files.length} files — uploading the first ${MAX_FOLDER_FILES}.`);
+        files = files.slice(0, MAX_FOLDER_FILES);
+      }
+    }
+    for (const file of files) {
+      const tempId = tempIdCounter--;
+      setPending((p) => [...p, { id: tempId, name: file.name, kind: "document", uploading: true }]);
+      try {
+        const res = await filesApi.upload(file, conversationId, projectId);
+        setPending((p) =>
+          p.map((f) => (f.id === tempId ? { id: res.id, name: res.name, kind: res.kind } : f))
+        );
+        qc.invalidateQueries({ queryKey: queryKeys.files });
+        if (res.note === "scanned_pdf") {
+          toast.info(`${res.name}: no text layer — it'll be read as page images.`);
+        } else if (res.note) {
+          toast.warning(`${res.name}: ${res.note}.`);
+        } else {
+          toast.success(
+            res.kind === "document" ? `Indexed ${res.name} (${res.chunks} sections)` : `Attached ${res.name}`
+          );
+        }
+      } catch (err) {
+        setPending((p) => p.filter((f) => f.id !== tempId));
+        toast.error(err instanceof Error ? err.message : "Upload failed");
+      }
+    }
+  };
+
+  const submit = () => {
+    if (streaming) {
+      onStop();
+      return;
+    }
+    if (!canSend) return;
+    onSend(text.trim(), pending);
+    setText("");
+    setPending([]);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submit();
+    }
+  };
+
+  const showTemp = supportsTemperature(settings.model);
+  const showReasoning = supportsReasoningEffort(settings.model);
+
+  return (
+    <div className="mx-auto w-full max-w-3xl">
+      <div className="rounded-3xl border border-border bg-card p-2.5 shadow-sm transition-shadow focus-within:shadow-md">
+        <ComposerAttachments files={pending} onRemove={(id) => setPending((p) => p.filter((f) => f.id !== id))} />
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="Message Personal AI…"
+          className="max-h-50 w-full resize-none bg-transparent px-2.5 py-1.5 text-[0.95rem] outline-none placeholder:text-muted-foreground"
+        />
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) handleFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={folderInputRef}
+            type="file"
+            className="hidden"
+            {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+            onChange={(e) => {
+              if (e.target.files) handleFiles(e.target.files, true);
+              e.target.value = "";
+            }}
+          />
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              title="Attach files or a folder"
+              className="inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+            >
+              <Plus className="size-4.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-52">
+              <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                <FileUp className="size-4" /> Upload files
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => folderInputRef.current?.click()}>
+                <FolderUp className="size-4" /> Upload folder
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <ModelPickerPopover value={settings.model} onChange={(m) => onSettingsChange({ model: m })} />
+          <SearchModePicker value={settings.searchMode} onChange={(m) => onSettingsChange({ searchMode: m })} />
+          {showReasoning && (
+            <ReasoningEffortControl
+              value={settings.reasoningEffort}
+              onChange={(v) => onSettingsChange({ reasoningEffort: v })}
+            />
+          )}
+          {showTemp && (
+            <TemperatureControl
+              value={settings.temperature}
+              onChange={(v) => onSettingsChange({ temperature: v })}
+            />
+          )}
+          <MemoryToggle enabled={settings.memoryEnabled} onChange={(v) => onSettingsChange({ memoryEnabled: v })} />
+          <div className="ml-auto flex items-center gap-1">
+            <VoiceInputButton onTranscript={(t) => setText((prev) => (prev ? prev + " " + t : t))} />
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!streaming && !canSend}
+              className={cn(
+                "inline-flex size-9 items-center justify-center rounded-full transition-colors disabled:opacity-30",
+                streaming
+                  ? "bg-muted text-foreground hover:bg-muted/80"
+                  : "bg-foreground text-background hover:bg-foreground/90"
+              )}
+              title={streaming ? "Stop" : "Send"}
+            >
+              {streaming ? <Square className="size-4 fill-current" /> : <ArrowUp className="size-4.5" />}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
