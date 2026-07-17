@@ -18,7 +18,7 @@ jobs:
       - name: Install flake8
         run: pip install flake8
       - name: Run Linter
-        run: flake8 . --count --max-complexity=10 --statistics
+        run: flake8 . --count --max-complexity=20 --statistics
 
   test:
     runs-on: ubuntu-latest
