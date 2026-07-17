@@ -11,7 +11,6 @@ from functools import wraps
 from flask import g
 from flask_jwt_extended import jwt_required as _jwt_required, get_jwt_identity
 
-
 def jwt_required():
     """Verifies the Authorization: Bearer <token> header; aborts with
     401 (via flask_jwt_extended's own error handlers) if missing,
