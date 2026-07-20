@@ -24,14 +24,25 @@ second module identity and recurses. Same pattern as every module in
 auth/ and quotas/.
 """
 
+import hashlib
 import json
 import logging
+import os
+import tempfile
 import uuid
 
 from flask import Blueprint, request, jsonify, g
+from sqlalchemy import select
 
 from auth.decorators import jwt_required
 from quotas.service import QuotaExceededError
+from imports.registry import extract_text
+from backend.ai import PromptRegistry, ModelRegistry, ModelError
+from backend.ai.prompts import (
+    ensure_default_prompts,
+    ANALYSIS_MAX_CHARS,
+    ANALYSIS_ARRAY_FIELDS,
+)
 
 from .validation import (
     validate_extension,
@@ -41,6 +52,26 @@ from .validation import (
 )
 
 
+def _compose_analysis_text(uf, extracted_text):
+    """Surfaces title/authors/abstract to the model when already known
+    (e.g. from a prior extract_metadata pass) by prepending them to the
+    same `text` variable the paper_analysis prompt already expects,
+    rather than adding them as separate template variables — that would
+    mean a second, differently-shaped version of the "paper_analysis"
+    prompt competing with the one worker.py's queue handler already
+    uses under that exact name, and the two sides' idempotent
+    ensure-prompt checks would just keep flipping the active version
+    back to what each one expects."""
+    header = "\n".join(
+        f"{label}: {value}"
+        for label, value in (
+            ("Title", uf.title), ("Authors", uf.authors), ("Abstract", uf.abstract),
+        )
+        if value
+    )
+    return f"{header}\n\n{extracted_text}" if header else extracted_text
+
+
 def create_documents_blueprint(
     *,
     SessionLocal,
@@ -48,8 +79,10 @@ def create_documents_blueprint(
     UploadBatch,
     UploadJob,
     OutboxEvent,
+    PaperAnalysis,
     quota_service,
     storage_backend,
+    utility_model,
 ):
     bp = Blueprint("documents", __name__, url_prefix="/api/documents")
     log = logging.getLogger(__name__)
@@ -178,6 +211,112 @@ def create_documents_blueprint(
             except Exception:
                 pass
             raise
+        finally:
+            db.close()
+
+    @bp.route("/<int:doc_id>/analysis", methods=["POST"])
+    @jwt_required()
+    def analyze_document(doc_id):
+        """Synchronous counterpart to worker.py's paper_analysis job
+        handler — same prompt (by name, reused, not forked — see
+        _compose_analysis_text's docstring), same PromptRegistry/
+        ModelRegistry/CostLedger path, same array-field normalization.
+        Different only in execution context: this runs inline in the
+        request instead of via the queue, for a caller that wants the
+        result immediately rather than polling a job. Always regenerates
+        when called — no content_hash idempotency short-circuit like the
+        queue path has, since a caller hitting this endpoint is asking
+        for an analysis now, not "only if it doesn't already have one"."""
+        user_id = int(g.current_user)
+        db = SessionLocal()
+        try:
+            uf = db.get(UserFile, doc_id)
+            if not uf or uf.user_id != user_id:
+                return jsonify({"error": "not_found", "message": "Document not found"}), 404
+
+            try:
+                raw_bytes = storage_backend.download(uf.path)
+            except Exception:
+                return (
+                    jsonify({"error": "storage_unavailable",
+                            "message": "Could not read the document"}),
+                    502,
+                )
+
+            ext = os.path.splitext(uf.name.lower())[1]
+            fd, tmp_path = tempfile.mkstemp(suffix=ext)
+            try:
+                with os.fdopen(fd, "wb") as tmp_f:
+                    tmp_f.write(raw_bytes)
+                extracted_text = extract_text(tmp_path, uf.mime, uf.name)
+            finally:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+            no_text = not extracted_text or (
+                extracted_text.startswith("[") and extracted_text.endswith("]")
+            )
+            if no_text:
+                return (
+                    jsonify({"error": "no_text",
+                            "message": "No readable text could be extracted from this document"}),
+                    422,
+                )
+
+            text = _compose_analysis_text(uf, extracted_text)
+
+            ensure_default_prompts(db)
+            prompt_registry = PromptRegistry(db)
+            model_registry = ModelRegistry(db)
+            try:
+                prompt = prompt_registry.get_prompt(
+                    "paper_analysis",
+                    variables={"text": text[:ANALYSIS_MAX_CHARS], "max_chars": ANALYSIS_MAX_CHARS},
+                )
+                result = model_registry.call(
+                    utility_model,
+                    [{"role": "user", "content": prompt}],
+                    user_id=user_id,
+                    response_format={"type": "json_object"},
+                )
+                data = json.loads(result["content"])
+            except ModelError as exc:
+                return jsonify({"error": "model_call_failed", "message": str(exc)}), 502
+            except (ValueError, TypeError):
+                return (
+                    jsonify({"error": "invalid_model_response",
+                            "message": "The model did not return valid JSON"}),
+                    502,
+                )
+
+            for field in ANALYSIS_ARRAY_FIELDS:
+                v = data.get(field)
+                if isinstance(v, str):
+                    data[field] = [v] if v else []
+                elif not isinstance(v, list):
+                    data[field] = []
+            if not isinstance(data.get("important_terms"), dict):
+                data["important_terms"] = {}
+
+            content_hash = hashlib.sha256(extracted_text.encode("utf-8", errors="replace")).hexdigest()
+
+            pa = db.execute(
+                select(PaperAnalysis).where(PaperAnalysis.file_id == doc_id)
+            ).scalar_one_or_none()
+            if pa is None:
+                pa = PaperAnalysis(file_id=doc_id, user_id=user_id)
+                db.add(pa)
+            pa.status = "done"
+            pa.content_hash = content_hash
+            pa.model = result["model"]
+            pa.data = json.dumps(data, ensure_ascii=False)
+            pa.error = ""
+            db.commit()
+
+            return jsonify({"document_id": doc_id, "status": "done",
+                            "model": result["model"], "analysis": data}), 200
         finally:
             db.close()
 

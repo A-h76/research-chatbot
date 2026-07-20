@@ -90,3 +90,16 @@ export function useRefreshAnalysis() {
     },
   });
 }
+
+// Writes to the same PaperAnalysis row refreshAnalysis does (see
+// filesApi.analyzeDocument) — invalidate the same key so a subsequent visit
+// to the paper overview page doesn't show stale cached data.
+export function useAnalyzeDocument() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => filesApi.analyzeDocument(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: queryKeys.fileAnalysis(id) });
+    },
+  });
+}

@@ -15,4 +15,5 @@ export const queryKeys = {
   gaps:       (id: number) => ["analysis", "gaps",    id] as const,
   search: (q: string, kinds?: string[], projectId?: number | null) =>
             ["search", q, kinds ?? "all", projectId ?? null] as const,
+  aiPrompts: ["ai", "prompts"] as const,
 };

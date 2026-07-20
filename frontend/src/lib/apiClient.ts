@@ -25,10 +25,32 @@ async function request<T>(url: string, opts: RequestInit = {}): Promise<T> {
 
 export const api = {
   get: <T>(url: string) => request<T>(url),
-  post: <T>(url: string, body?: unknown) =>
-    request<T>(url, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined }),
+  post: <T>(url: string, body?: unknown, token?: string) =>
+    request<T>(url, {
+      method: "POST",
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    }),
   patch: <T>(url: string, body?: unknown) =>
     request<T>(url, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
   delete: <T>(url: string) => request<T>(url, { method: "DELETE" }),
-  postForm: <T>(url: string, form: FormData) => request<T>(url, { method: "POST", body: form }),
+  // token is for JWT-only routes (e.g. /api/documents/upload) — everything
+  // else here rides the session cookie, no token needed.
+  postForm: <T>(url: string, form: FormData, token?: string) =>
+    request<T>(url, {
+      method: "POST",
+      body: form,
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    }),
 };
+
+// Bridges the existing session cookie into a Bearer token for routes that
+// are @jwt_required() only (GET /api/auth/jwt mints/refreshes as needed —
+// see server.py). No client-side caching: access tokens are short-lived
+// (15 min) and this isn't called often enough to be worth tracking expiry.
+export async function getBearerToken(): Promise<string> {
+  const { access_token } = await request<{ access_token: string; refresh_token: string }>(
+    "/api/auth/jwt"
+  );
+  return access_token;
+}

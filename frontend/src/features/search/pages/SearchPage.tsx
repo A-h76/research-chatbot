@@ -3,16 +3,77 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, FileText, StickyNote, Quote, MessageSquare,
-  Loader2, BookOpen, ChevronRight, X, Filter,
+  Loader2, BookOpen, ChevronRight, X, Filter, Sparkles,
 } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Badge }         from "@/components/ui/badge";
 import { Button }        from "@/components/ui/button";
 import { EmptyState }    from "@/components/common/EmptyState";
-import { useSearch }     from "../useSearch";
+import { useSearch, useAskAi } from "../useSearch";
 import { useUI }         from "@/context/UIContext";
 import { cn }            from "@/lib/utils";
 import type { SearchResult } from "@/types/api";
+
+// ── Ask AI (RAG) panel ───────────────────────────────────────────────────────
+function AskAiPanel({ query, projectId }: { query: string; projectId: number | null }) {
+  const navigate = useNavigate();
+  const askAi = useAskAi();
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-primary/15 bg-accent-soft/40 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Sparkles className="size-4 text-primary" />
+          Ask AI
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => askAi.mutate({ query: query.trim(), project_id: projectId })}
+          disabled={query.trim().length < 2 || askAi.isPending}
+          className="gap-1.5"
+        >
+          {askAi.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+          {askAi.isPending ? "Thinking…" : "Ask AI"}
+        </Button>
+      </div>
+
+      {askAi.isError && (
+        <p className="text-sm text-destructive">
+          {askAi.error instanceof Error ? askAi.error.message : "Ask AI failed"}
+        </p>
+      )}
+
+      {askAi.data && (
+        askAi.data.answer ? (
+          <div className="space-y-3">
+            <p className="text-sm leading-relaxed">{askAi.data.answer}</p>
+            {askAi.data.sources.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {askAi.data.sources.map((s) => (
+                  <button
+                    key={s.chunk_id}
+                    onClick={() => navigate(`/papers/${s.document_id}`)}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/30 hover:text-foreground transition-colors"
+                    title={s.title}
+                  >
+                    <FileText className="size-3" />
+                    <span className="max-w-[16ch] truncate">{s.title}</span>
+                    <span className="tabular-nums opacity-70">{Math.round(s.score * 100)}%</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">
+            {askAi.data.message || "No relevant documents found for this query."}
+          </p>
+        )
+      )}
+    </div>
+  );
+}
 
 // ── Kind config ───────────────────────────────────────────────────────────────
 type Kind = "paper" | "note" | "citation" | "chat";
@@ -214,6 +275,9 @@ export function SearchPage() {
             </Badge>
           )}
         </div>
+
+        {/* Ask AI (RAG) — independent of the search-results flow above */}
+        <AskAiPanel query={q} projectId={currentProjectId} />
 
         {/* Results */}
         {isLoading ? (

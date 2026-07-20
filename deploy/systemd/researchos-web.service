@@ -1,0 +1,17 @@
+[Unit]
+Description=ResearchOS (Personal AI) web app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=researchos
+Group=researchos
+WorkingDirectory=/opt/researchos
+EnvironmentFile=/opt/researchos/.env
+ExecStart=/opt/researchos/venv/bin/python server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

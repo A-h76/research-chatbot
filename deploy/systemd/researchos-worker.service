@@ -1,0 +1,22 @@
+[Unit]
+Description=ResearchOS (Personal AI) background job worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=researchos
+Group=researchos
+WorkingDirectory=/opt/researchos
+EnvironmentFile=/opt/researchos/.env
+ExecStart=/opt/researchos/venv/bin/python worker.py
+Restart=on-failure
+RestartSec=5
+# worker.py exits immediately (sys.exit(1)) if DATABASE_URL isn't Postgres
+# — without a limit here, a misconfigured .env would crash-loop it forever
+# instead of surfacing as a clear, bounded failure in `systemctl status`.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

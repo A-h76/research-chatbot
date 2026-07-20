@@ -2,7 +2,7 @@
 -- CASCADE: a financial/audit row must outlive the job (and transitively
 -- the file) it was charged against — deleting either must never erase
 -- the fact that the API call, and its cost, actually happened.
-CREATE TABLE ai_usage_ledger (
+CREATE TABLE IF NOT EXISTS ai_usage_ledger (
     id                bigserial PRIMARY KEY,
     user_id           integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     upload_job_id     bigint REFERENCES upload_jobs(id) ON DELETE SET NULL,
@@ -15,5 +15,12 @@ CREATE TABLE ai_usage_ledger (
     created_at        timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX ix_ai_usage_ledger_user ON ai_usage_ledger (user_id, created_at DESC);
-CREATE INDEX ix_ai_usage_ledger_model ON ai_usage_ledger (model_version_id);
+-- Backfill for the case where server.py's own Base.metadata.create_all()
+-- created this table first, from an AIUsageLedger ORM class that (until
+-- fixed alongside this) didn't declare prompt_version_id — same reason
+-- and same fix shape as 0002's locked_by/locked_at/pipeline_version_id.
+ALTER TABLE ai_usage_ledger ADD COLUMN IF NOT EXISTS prompt_version_id bigint
+    REFERENCES prompt_versions(id);
+
+CREATE INDEX IF NOT EXISTS ix_ai_usage_ledger_user ON ai_usage_ledger (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_ai_usage_ledger_model ON ai_usage_ledger (model_version_id);

@@ -3,7 +3,7 @@
 -- across multiple target tables, so there is deliberately no FK here.
 -- Integrity is enforced by the writer (always insert in the same
 -- transaction as the aggregate change it's recording), not the schema.
-CREATE TABLE outbox_events (
+CREATE TABLE IF NOT EXISTS outbox_events (
     id             bigserial PRIMARY KEY,
     aggregate_type text NOT NULL,
     aggregate_id   bigint NOT NULL,
@@ -15,5 +15,5 @@ CREATE TABLE outbox_events (
 );
 
 -- Relay poll query — the same FOR UPDATE SKIP LOCKED pattern as upload_jobs.
-CREATE INDEX ix_outbox_events_pending
+CREATE INDEX IF NOT EXISTS ix_outbox_events_pending
     ON outbox_events (status, created_at) WHERE status = 'pending';

@@ -4,7 +4,7 @@
 -- the source. Refresh with:
 --   REFRESH MATERIALIZED VIEW CONCURRENTLY processing_metrics_daily;
 -- (CONCURRENTLY requires the unique index below.)
-CREATE MATERIALIZED VIEW processing_metrics_daily AS
+CREATE MATERIALIZED VIEW IF NOT EXISTS processing_metrics_daily AS
 SELECT
     date_trunc('day', created_at)                      AS bucket_date,
     job_type,
@@ -16,5 +16,5 @@ SELECT
 FROM upload_jobs
 GROUP BY 1, 2;
 
-CREATE UNIQUE INDEX ix_processing_metrics_daily
+CREATE UNIQUE INDEX IF NOT EXISTS ix_processing_metrics_daily
     ON processing_metrics_daily (bucket_date, job_type);

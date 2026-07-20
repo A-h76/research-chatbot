@@ -11,7 +11,9 @@ Requires Postgres — FOR UPDATE SKIP LOCKED is not supported by the
 SQLite dev fallback, and this process refuses to start against it.
 """
 
+import json
 import os
+import re
 import sys
 import time
 import logging
@@ -25,22 +27,32 @@ from server import (
     UploadJob,
     OutboxEvent,
     UserFile,
+    PaperAnalysis,
+    WorkerHeartbeat,
     extract_text,
     _process_document,
-    _apply_metadata,
-    _run_paper_analysis,
     _enqueue_job,
     _sha256,
 )
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s worker: %(message)s"
-)
+# ModelRegistry/PromptRegistry constructed directly (constructor-injection,
+# same pattern as auth/quotas/backend — see §3 of brain.md), not reached
+# into via any server.py-side instance: server.py doesn't hold module-level
+# singletons for either (get_prompt_registry()/get_model_registry() there
+# are themselves request-scoped factories, not something to import and
+# reuse). worker.py already does `import server` for the DB models/engine
+# above — safe here since worker.py is its own standalone process, never
+# imported back by server.py itself.
+from backend.ai import PromptRegistry, ModelRegistry, ModelError
+from observability import configure_logging, correlation_id_var, start_worker_metrics_server
+
+configure_logging()
 log = logging.getLogger("worker")
 
 POLL_INTERVAL_SECONDS = int(os.environ.get("WORKER_POLL_INTERVAL", "2"))
 BATCH_SIZE = int(os.environ.get("WORKER_BATCH_SIZE", "10"))
 MAX_ATTEMPTS = int(os.environ.get("WORKER_MAX_ATTEMPTS", "5"))
+METRICS_PORT = int(os.environ.get("WORKER_METRICS_PORT", "9101"))
 
 
 def _require_postgres():
@@ -63,6 +75,28 @@ def _get_text_for_file(uf):
         uf.path, suffix=ext
     ) as local_path:
         return extract_text(local_path, uf.mime, uf.name)
+
+
+# --------------------------------------------------------------- AI layer prompts
+# Prompt content/constants live in backend/ai/prompts.py, not here — it's
+# shared with server.py's POST /api/documents/<id>/analysis, which does
+# the same conceptual operation synchronously instead of via the queue.
+# worker.py can't be imported by server.py (see that module's own
+# docstring for why), so a neutral third module is where both meet.
+from backend.ai.prompts import (
+    META_EXCERPT_CHARS,
+    ANALYSIS_MAX_CHARS,
+    ANALYSIS_ARRAY_FIELDS,
+    ensure_default_prompts,
+)
+
+
+def _ensure_prompts():
+    db = SessionLocal()
+    try:
+        ensure_default_prompts(db)
+    finally:
+        db.close()
 
 
 # --------------------------------------------------------------- job handlers
@@ -95,22 +129,151 @@ def _handle_import(db, job):
         )
 
 
+_YEAR_RE = re.compile(r"(19|20)\d{2}")
+
+
 def _handle_extract_metadata(db, job):
+    """Root cause: kept the exact idempotency/field-validation semantics
+    server.py's _apply_metadata already had (content_hash short-circuit,
+    4-digit year regex, per-field length caps) — only the AI backend
+    changed, from responses_text()/Responses API to ModelRegistry/Chat
+    Completions. job lifecycle (status/attempts/retry) is entirely
+    run_job()'s job; this function's only contract is "do the work, or
+    raise" — no _start_upload_job/_finish_upload_job bookkeeping needed,
+    unlike the legacy thread-spawned callers _apply_metadata still serves."""
     uf = db.get(UserFile, job.file_id)
     if not uf:
         raise RuntimeError(f"file {job.file_id} no longer exists")
+
     text = _get_text_for_file(uf)
     content_hash = uf.content_hash or _sha256(text)
-    _apply_metadata(job.file_id, text, content_hash, job_id=job.id)
+    if uf.content_hash == content_hash and uf.meta_status == "done":
+        return
+
+    uf.meta_status = "running"
+    db.commit()
+
+    try:
+        prompt_registry = PromptRegistry(db)
+        model_registry = ModelRegistry(db)
+        prompt = prompt_registry.get_prompt(
+            "extract_metadata",
+            variables={"excerpt": text[:META_EXCERPT_CHARS], "max_chars": META_EXCERPT_CHARS},
+        )
+        result = model_registry.call(
+            server.UTILITY_MODEL,
+            [{"role": "user", "content": prompt}],
+            user_id=uf.user_id,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(result["content"])
+
+        uf = db.get(UserFile, job.file_id)   # re-fetch: another writer may have touched it
+        if not uf:
+            return
+        uf.content_hash = content_hash
+        uf.meta_status = "done"
+        title = data.get("title")
+        if title:
+            uf.title = str(title)[:500]
+        authors = data.get("authors")
+        if authors:
+            uf.authors = str(authors)[:1000]
+        year = data.get("year")
+        if year:
+            m = _YEAR_RE.search(str(year))
+            if m:
+                uf.year = m.group(0)
+        venue = data.get("venue")
+        if venue:
+            uf.venue = str(venue)[:300]
+        doi = data.get("doi")
+        if doi:
+            uf.doi = str(doi)[:200]
+        abstract = data.get("abstract")
+        if abstract:
+            uf.abstract = str(abstract)[:8000]
+        db.commit()
+    except Exception:
+        db.rollback()
+        uf = db.get(UserFile, job.file_id)
+        if uf:
+            uf.meta_status = "failed"
+            db.commit()
+        raise   # let run_job()'s own try/except apply retry/backoff
 
 
 def _handle_paper_analysis(db, job):
+    """Same relationship to server.py's _run_paper_analysis as
+    _handle_extract_metadata has to _apply_metadata above — idempotency
+    and field-normalization behavior preserved, AI backend swapped."""
     uf = db.get(UserFile, job.file_id)
     if not uf:
         raise RuntimeError(f"file {job.file_id} no longer exists")
+
     text = _get_text_for_file(uf)
     content_hash = uf.content_hash or _sha256(text)
-    _run_paper_analysis(job.file_id, text, content_hash, job_id=job.id)
+
+    pa = db.execute(
+        select(PaperAnalysis).where(PaperAnalysis.file_id == job.file_id)
+    ).scalar_one_or_none()
+    if pa is None:
+        pa = PaperAnalysis(file_id=job.file_id, user_id=uf.user_id)
+        db.add(pa)
+        db.commit()
+
+    if pa.content_hash == content_hash and pa.status == "done":
+        return
+
+    pa.status = "running"
+    pa.error = ""
+    db.commit()
+
+    try:
+        prompt_registry = PromptRegistry(db)
+        model_registry = ModelRegistry(db)
+        prompt = prompt_registry.get_prompt(
+            "paper_analysis",
+            variables={"text": text[:ANALYSIS_MAX_CHARS], "max_chars": ANALYSIS_MAX_CHARS},
+        )
+        result = model_registry.call(
+            server.UTILITY_MODEL,
+            [{"role": "user", "content": prompt}],
+            user_id=uf.user_id,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(result["content"])
+
+        for field in ANALYSIS_ARRAY_FIELDS:
+            v = data.get(field)
+            if isinstance(v, str):
+                data[field] = [v] if v else []
+            elif not isinstance(v, list):
+                data[field] = []
+        if not isinstance(data.get("important_terms"), dict):
+            data["important_terms"] = {}
+
+        pa = db.execute(
+            select(PaperAnalysis).where(PaperAnalysis.file_id == job.file_id)
+        ).scalar_one_or_none()
+        if pa is None:
+            return
+        pa.status = "done"
+        pa.content_hash = content_hash
+        pa.model = server.UTILITY_MODEL
+        pa.data = json.dumps(data, ensure_ascii=False)
+        pa.error = ""
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        pa = db.execute(
+            select(PaperAnalysis).where(PaperAnalysis.file_id == job.file_id)
+        ).scalar_one_or_none()
+        if pa:
+            pa.status = "failed"
+            pa.error = str(exc)[:500]
+            db.commit()
+        raise   # let run_job()'s own try/except apply retry/backoff
 
 
 HANDLERS = {
@@ -185,6 +348,9 @@ def claim_batch():
 
 
 def run_job(job_id):
+    # One job = one correlation id, same idea as one HTTP request = one id
+    # in server.py — every log line this job's handler emits carries it.
+    correlation_id_var.set(f"job-{job_id}")
     db = SessionLocal()
     try:
         job = db.get(UploadJob, job_id)
@@ -257,16 +423,41 @@ def run_job(job_id):
         db.close()
 
 
+def _heartbeat():
+    """Upserts the single worker_heartbeats row (id=1) — see
+    GET /api/worker/health in server.py, the only consumer. Best-effort:
+    a failed heartbeat write shouldn't take down the poll loop itself."""
+    db = SessionLocal()
+    try:
+        hb = db.get(WorkerHeartbeat, 1)
+        now = datetime.now(timezone.utc)
+        if hb is None:
+            db.add(WorkerHeartbeat(id=1, last_seen_at=now))
+        else:
+            hb.last_seen_at = now
+        db.commit()
+    except Exception:
+        log.exception("heartbeat write failed")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def main():
     _require_postgres()
+    _ensure_prompts()
+    start_worker_metrics_server(METRICS_PORT)
     log.info(
-        "worker starting — poll every %ss, batch size %s, max attempts %s",
+        "worker starting — poll every %ss, batch size %s, max attempts %s, "
+        "metrics on :%s",
         POLL_INTERVAL_SECONDS,
         BATCH_SIZE,
         MAX_ATTEMPTS,
+        METRICS_PORT,
     )
     while True:
         try:
+            _heartbeat()
             claimed = claim_batch()
             for job_id in claimed:
                 run_job(job_id)

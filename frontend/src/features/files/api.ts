@@ -1,8 +1,37 @@
-import { api } from "@/lib/apiClient";
+import { api, getBearerToken } from "@/lib/apiClient";
 import type { PaperAnalysis, UserFile } from "@/types/api";
 
 export interface UploadResult extends UserFile {
   note?: string | null;
+}
+
+// Mirrors backend/upload/validation.py's ALLOWED_EXTENSIONS — that route
+// only takes document types, no images.
+const JWT_UPLOAD_EXTENSIONS = new Set([".pdf", ".epub", ".docx", ".txt"]);
+
+function isDocumentUpload(filename: string): boolean {
+  const dot = filename.lastIndexOf(".");
+  return dot !== -1 && JWT_UPLOAD_EXTENSIONS.has(filename.slice(dot).toLowerCase());
+}
+
+export interface UploadDocumentResult {
+  document_id: number;
+  status: string;
+  message: string;
+}
+
+// The two upload routes have different auth (session vs JWT) and different
+// contracts (sync full record vs async job-enqueued placeholder) — callers
+// need to know which one they got back.
+export type UploadOutcome =
+  | { async: false; result: UploadResult }
+  | { async: true; result: UploadDocumentResult };
+
+export interface DocumentAnalysisResult {
+  document_id: number;
+  status: string;
+  model: string;
+  analysis: PaperAnalysis["data"];
 }
 
 export interface LibraryListParams {
@@ -88,12 +117,27 @@ export const filesApi = {
   ) => api.patch<UserFile>(`/api/files/${id}`, body),
 
   // ── Upload ──
-  upload: (file: File, conversationId?: number | null, projectId?: number | null) => {
+  // Documents (pdf/epub/docx/txt) go through the JWT-authenticated, async
+  // /api/documents/upload; everything else (images, for vision attachments)
+  // stays on the original session-authenticated, synchronous /api/files —
+  // the JWT route doesn't accept images at all.
+  upload: async (
+    file: File,
+    conversationId?: number | null,
+    projectId?: number | null
+  ): Promise<UploadOutcome> => {
     const fd = new FormData();
     fd.append("file", file);
     if (conversationId != null) fd.append("conversation_id", String(conversationId));
     if (projectId != null)      fd.append("project_id", String(projectId));
-    return api.postForm<UploadResult>("/api/files", fd);
+
+    if (isDocumentUpload(file.name)) {
+      const token = await getBearerToken();
+      const result = await api.postForm<UploadDocumentResult>("/api/documents/upload", fd, token);
+      return { async: true, result };
+    }
+    const result = await api.postForm<UploadResult>("/api/files", fd);
+    return { async: false, result };
   },
 
   remove: (id: number) => api.delete<{ ok: boolean }>(`/api/files/${id}`),
@@ -103,4 +147,12 @@ export const filesApi = {
     api.get<PaperAnalysis>(`/api/files/${id}/analysis`),
   refreshAnalysis: (id: number) =>
     api.post<{ ok: boolean; status: string }>(`/api/files/${id}/analysis/refresh`),
+
+  // JWT-authenticated, synchronous counterpart to refreshAnalysis above —
+  // writes to the same PaperAnalysis row (keyed by file id) via a separate
+  // prompt/model/cost-logging path, see backend/upload/routes.py.
+  analyzeDocument: async (id: number): Promise<DocumentAnalysisResult> => {
+    const token = await getBearerToken();
+    return api.post<DocumentAnalysisResult>(`/api/documents/${id}/analysis`, undefined, token);
+  },
 };

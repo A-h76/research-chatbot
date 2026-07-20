@@ -19,9 +19,26 @@ import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/components/common/Toast";
 import { supportsReasoningEffort, supportsTemperature } from "@/lib/modelCapabilities";
 import type { ChatSettings, PendingFile } from "../types";
+import type { UserFile } from "@/types/api";
 import { cn } from "@/lib/utils";
 
 let tempIdCounter = -1;
+
+// /api/documents/upload only enqueues the job — poll the (session-authed,
+// already-existing) file record until the worker finishes it.
+// ponytail: fixed interval/attempt ceiling, not backoff — fine at this
+// volume; revisit if uploads start regularly exceeding the 60s cap.
+async function pollForReady(
+  id: number,
+  { intervalMs = 2000, maxAttempts = 30 } = {}
+): Promise<UserFile> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const uf = await filesApi.get(id);
+    if (uf.meta_status === "done" || uf.meta_status === "failed") return uf;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  throw new Error("Processing timed out");
+}
 
 export function Composer({
   settings,
@@ -86,24 +103,47 @@ export function Composer({
     }
     for (const file of files) {
       const tempId = tempIdCounter--;
+      let currentId = tempId; // reassigned once the real id is known, so the catch below can still find the item
       setPending((p) => [...p, { id: tempId, name: file.name, kind: "document", uploading: true }]);
       try {
-        const res = await filesApi.upload(file, conversationId, projectId);
-        setPending((p) =>
-          p.map((f) => (f.id === tempId ? { id: res.id, name: res.name, kind: res.kind } : f))
-        );
-        qc.invalidateQueries({ queryKey: queryKeys.files });
-        if (res.note === "scanned_pdf") {
-          toast.info(`${res.name}: no text layer — it'll be read as page images.`);
-        } else if (res.note) {
-          toast.warning(`${res.name}: ${res.note}.`);
-        } else {
-          toast.success(
-            res.kind === "document" ? `Indexed ${res.name} (${res.chunks} sections)` : `Attached ${res.name}`
+        const outcome = await filesApi.upload(file, conversationId, projectId);
+        if (!outcome.async) {
+          const res = outcome.result;
+          setPending((p) =>
+            p.map((f) => (f.id === tempId ? { id: res.id, name: res.name, kind: res.kind } : f))
           );
+          qc.invalidateQueries({ queryKey: queryKeys.files });
+          if (res.note === "scanned_pdf") {
+            toast.info(`${res.name}: no text layer — it'll be read as page images.`);
+          } else if (res.note) {
+            toast.warning(`${res.name}: ${res.note}.`);
+          } else {
+            toast.success(
+              res.kind === "document" ? `Indexed ${res.name} (${res.chunks} sections)` : `Attached ${res.name}`
+            );
+          }
+          continue;
+        }
+
+        // Async path: job enqueued, not processed yet — keep showing the
+        // spinner (uploading: true blocks send, same as the sync path
+        // pre-response) while polling for the worker to finish.
+        const { document_id } = outcome.result;
+        currentId = document_id;
+        setPending((p) =>
+          p.map((f) => (f.id === tempId ? { id: document_id, name: file.name, kind: "document", uploading: true } : f))
+        );
+        const uf = await pollForReady(document_id);
+        qc.invalidateQueries({ queryKey: queryKeys.files });
+        if (uf.meta_status === "failed") {
+          setPending((p) => p.filter((f) => f.id !== document_id));
+          toast.error(`${file.name}: processing failed`);
+        } else {
+          setPending((p) => p.map((f) => (f.id === document_id ? { ...f, uploading: false } : f)));
+          toast.success(`Indexed ${uf.name} (${uf.chunks} sections)`);
         }
       } catch (err) {
-        setPending((p) => p.filter((f) => f.id !== tempId));
+        setPending((p) => p.filter((f) => f.id !== currentId));
         toast.error(err instanceof Error ? err.message : "Upload failed");
       }
     }

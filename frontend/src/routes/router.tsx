@@ -4,6 +4,7 @@ import { ChatPage }                 from "@/features/chat/pages/ChatPage";
 import { ProjectsPage }             from "@/features/projects/pages/ProjectsPage";
 import { ProjectDetailPage }        from "@/features/projects/pages/ProjectDetailPage";
 import { FilesPage }                from "@/features/files/pages/FilesPage";
+import { FileDetailPage }           from "@/features/files/pages/FileDetailPage";
 import { CitationsPage }            from "@/features/citations/pages/CitationsPage";
 import { MemoryPage }               from "@/features/memory/pages/MemoryPage";
 import { NotesPage }                from "@/features/notes/pages/NotesPage";
@@ -33,6 +34,7 @@ export const router = createBrowserRouter([
       { path: "projects",                              element: <ProjectsPage /> },
       { path: "projects/:projectId",                   element: <ProjectDetailPage /> },
       { path: "files",                                 element: <FilesPage /> },
+      { path: "files/:fileId",                         element: <FileDetailPage /> },
       { path: "papers/:fileId",                        element: <PaperOverviewPage /> },
       { path: "papers/:fileId/chat",                   element: <PaperChatPage /> },
       { path: "papers/:fileId/chat/:conversationId",   element: <PaperChatPage /> },

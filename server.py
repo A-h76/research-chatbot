@@ -38,6 +38,7 @@ from flask import (
     send_from_directory,
     send_file,
     abort,
+    g,
 )
 from authlib.integrations.flask_client import OAuth
 from sqlalchemy import (
@@ -53,6 +54,7 @@ from sqlalchemy import (
     ForeignKey,
     select,
     delete,
+    func,
     text as sqltext,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
@@ -77,19 +79,23 @@ ALLOWED_EMAILS = [
     if e.strip()
 ]
 
-DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "gpt-5-mini")
+# Defaults kept to models with confident, verified pricing (see
+# backend/ai/cost_ledger.py's PRICING table and its own note on why
+# gpt-5-family is deliberately excluded there) — not a claim that gpt-5
+# doesn't exist or can't be used; a user can still pick it manually from
+# the live-fetched dropdown. Only what's used automatically changed.
+DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "gpt-4o-mini")
 UTILITY_MODEL = os.environ.get("UTILITY_MODEL", "gpt-4o-mini")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "text-embedding-3-small")
 FALLBACK_MODELS = [
     m.strip()
-    for m in os.environ.get("MODELS", "gpt-5-mini,gpt-5,gpt-4o,gpt-4o-mini").split(",")
+    for m in os.environ.get("MODELS", "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo").split(",")
     if m.strip()
 ]
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)  # only used for throwaway temp files now
 MAX_FILE_MB = int(os.environ.get("MAX_FILE_MB", "25"))
-MAX_STORAGE_MB = int(os.environ.get("MAX_STORAGE_MB", "5000"))  # per-user total quota
 
 # Optional job-status cache (database-design.md §5's job:{id}:status key).
 # Never the source of truth — Postgres's upload_jobs row always is; a
@@ -106,6 +112,12 @@ APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000")
 IS_PRODUCTION = (
     os.environ.get("FLASK_ENV", "").lower() == "production"
     or os.environ.get("APP_ENV", "").lower() == "production"
+)
+# worker.py's default poll interval is 2s (WORKER_POLL_INTERVAL) and it
+# heartbeats every iteration — 60s is ~30 missed cycles, generous enough
+# that a normal GC pause or slow job doesn't false-positive as "down".
+WORKER_HEALTH_THRESHOLD_SECONDS = int(
+    os.environ.get("WORKER_HEALTH_THRESHOLD_SECONDS", "60")
 )
 
 app = Flask(__name__)
@@ -143,9 +155,17 @@ jwt_manager = JWTManager(app)
 from auth import create_jwt, decode_jwt, JWTError, create_get_current_user
 
 # ------------------------------------------------------------------ logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+from observability import (
+    configure_logging,
+    correlation_id_var,
+    HTTP_REQUESTS_TOTAL,
+    HTTP_REQUEST_DURATION_SECONDS,
+    UPLOAD_QUEUE_LENGTH,
+    record_ai_call,
+    render_metrics,
 )
+
+configure_logging()
 security_log = logging.getLogger("security")
 email_log = logging.getLogger("email")
 
@@ -253,6 +273,42 @@ def csrf_protect():
         return jsonify({"error": "csrf_origin_mismatch"}), 403
 
 
+_request_log = logging.getLogger("request")
+
+
+@app.before_request
+def _start_request_observability():
+    """Correlation id + start time for the logging/metrics after_request
+    hook below. Accepts an inbound X-Request-ID so a request can be
+    traced across a reverse proxy / calling service, mints one otherwise."""
+    g.request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    correlation_id_var.set(g.request_id)
+    g._request_start = time.monotonic()
+
+
+@app.after_request
+def _finish_request_observability(response):
+    response.headers["X-Request-ID"] = getattr(g, "request_id", "")
+    # url_rule.rule is the route TEMPLATE ("/api/files/<int:fid>"), not
+    # the resolved path — using the resolved path would put every
+    # distinct file/conversation/etc. id in its own metric label, an
+    # unbounded cardinality that never stops growing.
+    route = request.url_rule.rule if request.url_rule else "unmatched"
+    duration = time.monotonic() - getattr(g, "_request_start", time.monotonic())
+    HTTP_REQUESTS_TOTAL.labels(method=request.method, route=route, status=response.status_code).inc()
+    HTTP_REQUEST_DURATION_SECONDS.labels(method=request.method, route=route).observe(duration)
+    _request_log.info(
+        "request",
+        extra={
+            "method": request.method,
+            "route": route,
+            "status": response.status_code,
+            "duration_ms": round(duration * 1000, 1),
+        },
+    )
+    return response
+
+
 # ------------------------------------------------------------------ dynamic model list
 _EXCLUDE = (
     "embedding",
@@ -340,8 +396,13 @@ class User(Base):
     # ── Quotas (quotas/service.py) ──────────────────────────────────────
     # Current storage usage is NOT duplicated here — StorageUsage.bytes_used
     # (below) is already the live, actively-maintained source of truth;
-    # only the per-user *limit* is new (today's check is one global
-    # MAX_STORAGE_MB env var, not configurable per user).
+    # only the per-user *limit* is new. Both /api/files and
+    # /api/documents/upload check against this same column now (falling
+    # back to DEFAULT_STORAGE_LIMIT_BYTES) — they used to disagree, one
+    # via the standalone MAX_STORAGE_MB env var (5000 MB default), the
+    # other via this column's own default (~1000 MB) — see server.py's
+    # upload_file() for why the increment side still doesn't share code
+    # despite the check side now agreeing on the same limit.
     storage_limit_bytes = Column(
         BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES
     )
@@ -504,7 +565,15 @@ class UploadJob(Base):
     run_after = Column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )  # due time; backoff pushes this out
+    locked_by = Column(Text, nullable=True)
+    locked_at = Column(DateTime, nullable=True)
     last_error = Column(Text, nullable=True)
+    # References pipeline_versions(id) (backend/ai/models.py) — plain
+    # column, no ORM-level FK: pipeline_versions has no Python class
+    # instantiated anywhere yet (see brain.md §7), so there's no target
+    # to point a SQLAlchemy ForeignKey at. migrations/0005 adds the real
+    # DB-level FK constraint once that table exists.
+    pipeline_version_id = Column(Integer, nullable=True)
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -608,10 +677,39 @@ class AIUsageLedger(Base):
     upload_job_id = Column(Integer, ForeignKey("upload_jobs.id"), nullable=True)
     kind = Column(String(30), nullable=False)  # embedding|metadata|analysis|...
     model_version_id = Column(Integer, ForeignKey("model_versions.id"), nullable=False)
+    # References prompt_versions(id) — no ORM-level FK for the same
+    # reason as UploadJob.pipeline_version_id above: prompt_versions has
+    # no server.py-registered class (it lives under backend/ai's own
+    # private Base). migrations/0006 adds the real DB-level FK.
+    prompt_version_id = Column(Integer, nullable=True)
     prompt_tokens = Column(Integer, default=0)
     completion_tokens = Column(Integer, default=0)
     cost_usd = Column(Float, default=0.0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class WorkerHeartbeat(Base):
+    """Single row (id=1), upserted by worker.py once per poll loop
+    iteration — the only signal server.py has that the separate worker.py
+    process is actually alive, since it isn't a thread/child process it
+    can introspect directly. GET /api/worker/health compares
+    last_seen_at against now(); no row at all (id=1 missing) means the
+    worker has never run since this table existed."""
+
+    __tablename__ = "worker_heartbeats"
+    id = Column(Integer, primary_key=True)
+    # timezone=True (-> TIMESTAMPTZ on Postgres), not a bare DateTime:
+    # verified live against a real Postgres instance whose session
+    # timezone isn't UTC (Asia/Karachi, UTC+5) — writing a UTC-aware
+    # datetime into a naive TIMESTAMP column gets silently shifted to the
+    # session's zone on write, then misread as if it already were UTC on
+    # the way back out, producing a consistent 5-hour skew (a negative
+    # age_seconds in GET /api/worker/health). SQLite has no real
+    # per-session timezone, so this was invisible there — only showed up
+    # once this was actually run against Postgres. The migration
+    # (0013_worker_heartbeat.sql) already declared timestamptz correctly;
+    # this column just didn't match it. See migrations/0014.
+    last_seen_at = Column(DateTime(timezone=True), nullable=False)
 
 
 class Chunk(Base):
@@ -742,7 +840,12 @@ class SearchIndex(Base):
     )
 
 
-Base.metadata.create_all(engine)
+# checkfirst=True is SQLAlchemy's own default (verified: MetaData.create_all's
+# signature already defaults to it) — spelled out explicitly so it's not
+# a fact a reader has to already know. It's what makes this call safe to
+# run after migrations/*.sql already created these same tables: it only
+# creates what's missing, never re-creates or errors on what exists.
+Base.metadata.create_all(engine, checkfirst=True)
 
 
 def ensure_columns():
@@ -783,6 +886,15 @@ def ensure_columns():
         "ALTER TABLE users ADD COLUMN monthly_token_used INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN monthly_token_limit INTEGER DEFAULT 100000",
         "ALTER TABLE users ADD COLUMN quota_reset_at TIMESTAMP",
+        # ── ORM/migration drift found while fixing run_migrations.py:
+        # these columns were in migrations/0002 and 0006 but never made
+        # it into the UploadJob/AIUsageLedger classes above, so a
+        # SQLite dev DB (which only ever runs the ORM's create_all, never
+        # migrations/*.sql) was permanently missing them.
+        "ALTER TABLE upload_jobs ADD COLUMN locked_by TEXT",
+        "ALTER TABLE upload_jobs ADD COLUMN locked_at TIMESTAMP",
+        "ALTER TABLE upload_jobs ADD COLUMN pipeline_version_id INTEGER",
+        "ALTER TABLE ai_usage_ledger ADD COLUMN prompt_version_id INTEGER",
     ):
         try:
             with engine.begin() as conn:
@@ -803,11 +915,19 @@ def ensure_columns():
         "CREATE INDEX IF NOT EXISTS ix_files_user_checksum ON files (user_id, checksum_sha256)",
         "CREATE INDEX IF NOT EXISTS ix_upload_sessions_user ON upload_sessions (user_id)",
         # ── Storage foundation (database-design.md) ─────────────────────
-        "CREATE INDEX IF NOT EXISTS ix_upload_batches_user ON upload_batches (user_id)",
+        # ix_upload_batches_user and ix_outbox_events_pending must match
+        # migrations 0001/0007's definitions exactly (column list / WHERE
+        # clause), not just the name — Postgres's CREATE INDEX IF NOT
+        # EXISTS only checks the name, so if this ran first with a lesser
+        # definition, the migration's more complete one would silently
+        # never get created (same name = skipped), not just redundantly
+        # re-created. Found by actually comparing both files side by
+        # side, not assumed.
+        "CREATE INDEX IF NOT EXISTS ix_upload_batches_user ON upload_batches (user_id, created_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_upload_jobs_file ON upload_jobs (file_id)",
         "CREATE INDEX IF NOT EXISTS ix_upload_jobs_batch ON upload_jobs (upload_batch_id)",
         "CREATE INDEX IF NOT EXISTS ix_upload_jobs_user_status ON upload_jobs (user_id, status)",
-        "CREATE INDEX IF NOT EXISTS ix_outbox_events_pending ON outbox_events (status, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_outbox_events_pending ON outbox_events (status, created_at) WHERE status = 'pending'",
         "CREATE INDEX IF NOT EXISTS ix_usage_logs_user ON usage_logs (user_id, created_at)",
     ):
         try:
@@ -1016,8 +1136,27 @@ app.register_blueprint(
         UploadBatch=UploadBatch,
         UploadJob=UploadJob,
         OutboxEvent=OutboxEvent,
+        PaperAnalysis=PaperAnalysis,
         quota_service=quota_service,
         storage_backend=get_storage_backend(),
+        utility_model=UTILITY_MODEL,
+    )
+)
+
+# GET /api/documents/search, POST /api/rag — Bearer-JWT counterparts to
+# the existing session-based POST /api/search (below), same relationship
+# as /api/documents/upload has to /api/files. Search the exact same
+# Chunk.embedding data /api/search already uses for papers — see
+# backend/search/routes.py's module docstring for why this isn't a
+# second search engine.
+from backend.search.routes import create_search_blueprint
+
+app.register_blueprint(
+    create_search_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        Chunk=Chunk,
+        utility_model=UTILITY_MODEL,
     )
 )
 
@@ -1110,6 +1249,148 @@ def refresh_jwt():
 @app.route("/robots.txt")
 def robots():
     return send_from_directory("static", "robots.txt")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# AI layer (backend/ai/) — prompt registry, multi-provider model registry,
+# cost ledger. get_prompt_registry()/get_model_registry() are request-scoped
+# factories, NOT instances built once at startup: PromptRegistry/ModelRegistry
+# each hold one open SQLAlchemy Session for their lifetime (their own
+# constructors take a Session instance, not a factory) — sharing one across
+# concurrent requests would be a real bug, not a style issue. Every other
+# route in this file already opens/closes its own `db = SessionLocal()` per
+# request; these two follow that same convention rather than introducing
+# Flask's g/app.extensions for just this one feature. CostLedger is the one
+# genuine startup-time singleton here — it holds no session at all
+# (estimate_cost() is pure; log() takes a session as a call argument).
+#
+# prompt_versions/pipeline_versions/model_registry_cost_ledger only exist
+# under backend/ai's own private declarative Bases, never server.py's — see
+# prompt_registry.py's and model_registry.py's own docstrings for why. This
+# project has no Alembic (migrations/*.sql are hand-written, run via
+# run_migrations.py — 00-constitution.md), so there's no autogenerate step
+# to feed; what actually matters is these tables existing before anything
+# queries them. checkfirst=True is a no-op everywhere the real Postgres
+# migration already ran — it only creates anything on a fresh SQLite dev DB
+# (verified: prompt_versions/pipeline_versions didn't exist there before this).
+# ══════════════════════════════════════════════════════════════════════════
+from backend.ai import PromptRegistry, ModelRegistry, CostLedger, ModelError, TemplateError
+from backend.ai.prompt_registry import _Base as _ai_prompt_base
+from backend.ai.model_registry import _Base as _ai_model_base, CostLedgerEntry as _CostLedgerEntry
+
+_ai_prompt_base.metadata.create_all(engine, checkfirst=True)
+_ai_model_base.metadata.create_all(engine, checkfirst=True)
+
+_cost_ledger = CostLedger(_CostLedgerEntry)
+
+
+def get_prompt_registry(db_session):
+    return PromptRegistry(db_session)
+
+
+def get_model_registry(db_session):
+    return ModelRegistry(db_session)
+
+
+def get_cost_ledger():
+    return _cost_ledger
+
+
+@app.route("/metrics")
+def metrics():
+    """Unauthenticated, same reasoning as /api/worker/health right below
+    — a Prometheus scrape target, not a user-facing route. Firewall it at
+    the network/reverse-proxy level in a real deploy rather than gating
+    it behind app auth, same as any standard Prometheus setup."""
+    db = SessionLocal()
+    try:
+        for status in ("pending", "running", "failed", "done"):
+            count = db.execute(
+                select(func.count()).select_from(UploadJob).where(UploadJob.status == status)
+            ).scalar_one()
+            UPLOAD_QUEUE_LENGTH.labels(status=status).set(count)
+    finally:
+        db.close()
+    return Response(render_metrics(), mimetype="text/plain; version=0.0.4")
+
+
+@app.route("/api/worker/health")
+def worker_health():
+    """Unauthenticated on purpose — an ops liveness check (uptime monitor,
+    orchestrator probe), not a user-facing route, same class as a plain
+    /healthz. Reports on worker.py specifically, not this Flask process:
+    server.py being up says nothing about whether the separate worker.py
+    process is still polling upload_jobs."""
+    db = SessionLocal()
+    try:
+        hb = db.get(WorkerHeartbeat, 1)
+    finally:
+        db.close()
+
+    if hb is None:
+        return jsonify({
+            "status": "unknown",
+            "message": "worker has not reported in since this deploy — "
+                       "either it has never run, or it started before this "
+                       "endpoint existed",
+        }), 503
+
+    last_seen = hb.last_seen_at
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+    age_seconds = (datetime.now(timezone.utc) - last_seen).total_seconds()
+    healthy = age_seconds <= WORKER_HEALTH_THRESHOLD_SECONDS
+
+    return jsonify({
+        "status": "ok" if healthy else "down",
+        "last_seen_at": hb.last_seen_at.isoformat(),
+        "age_seconds": round(age_seconds, 1),
+        "threshold_seconds": WORKER_HEALTH_THRESHOLD_SECONDS,
+    }), (200 if healthy else 503)
+
+
+@app.route("/api/ai/prompts")
+@login_required
+def list_ai_prompts():
+    db = SessionLocal()
+    try:
+        registry = get_prompt_registry(db)
+        prompts = registry.list_prompts()
+        return jsonify({"prompts": [
+            {"name": p.name, "version": p.version, "template": p.template,
+             "is_active": p.is_active,
+             "created_at": p.created_at.isoformat() if p.created_at else None}
+            for p in prompts
+        ]})
+    finally:
+        db.close()
+
+
+@app.route("/api/ai/test", methods=["POST"])
+@login_required
+def test_ai_call():
+    """Dev-only: exercises ModelRegistry.call() directly against a real
+    provider. Gated on IS_PRODUCTION — "optional, for dev" shouldn't mean
+    an unrestricted call-any-model-with-any-prompt endpoint shipped without
+    a guard; that's a real cost/abuse surface, not just a nicety to skip."""
+    if IS_PRODUCTION:
+        return jsonify({"error": "disabled_in_production"}), 403
+
+    data = request.get_json(silent=True) or {}
+    model = data.get("model") or DEFAULT_MODEL
+    message = data.get("message") or "Say hello in one short sentence."
+
+    db = SessionLocal()
+    try:
+        registry = get_model_registry(db)
+        result = registry.call(
+            model, [{"role": "user", "content": message}],
+            user_id=session["user_id"], max_tokens=data.get("max_tokens", 100))
+        return jsonify(result)
+    except ModelError as exc:
+        return jsonify({"error": "model_call_failed", "message": str(exc)}), 502
+    finally:
+        db.close()
 
 
 # ------------------------------------------------------------------ text extraction / chunking / embeddings
@@ -1242,6 +1523,7 @@ def embed_texts(texts, user_id=None):
             resp = client.embeddings.create(model=EMBED_MODEL, input=texts[i : i + 64])
             out.extend([d.embedding for d in resp.data])
             total_tokens += getattr(resp.usage, "prompt_tokens", 0) or 0
+        record_ai_call(EMBED_MODEL, prompt_tokens=total_tokens)
         if user_id:
             _log_ai_usage(user_id, "embedding", "embed_model", total_tokens, 0)
         return out
@@ -1428,8 +1710,13 @@ def responses_text(prompt, json_mode=False, kind=None, user_id=None):
     if json_mode:
         kwargs["text"] = {"format": {"type": "json_object"}}
     resp = client.responses.create(**kwargs)
+    usage = getattr(resp, "usage", None)
+    record_ai_call(
+        UTILITY_MODEL,
+        prompt_tokens=getattr(usage, "input_tokens", 0) or 0,
+        completion_tokens=getattr(usage, "output_tokens", 0) or 0,
+    )
     if kind and user_id:
-        usage = getattr(resp, "usage", None)
         _log_ai_usage(
             user_id,
             kind,
@@ -1878,11 +2165,70 @@ def build_paper_chat_prompt(user, paper):
     return header + "\n\n" + body + "\n\n" + "\n".join(meta)
 
 
-def build_system_prompt(user, project, memory_enabled=True):
-    global_mems, proj_mems = [], []
-    if memory_enabled:
+# Static opening sentence only — everything else build_system_prompt()
+# assembles below (user name, date, custom instructions, project,
+# memories) is computed per-request and was never a good fit for a
+# template row. backfill.py already seeds this exact text under the name
+# "chat_system"; PromptRegistry is tried first, with this literal string
+# as the fallback for a fresh DB backfill.py hasn't run against yet (or
+# a deleted/corrupted row) — a chat request must never fail just because
+# a prompt lookup did.
+_CHAT_SYSTEM_FALLBACK = (
+    "You are Personal AI, a helpful assistant specialised in academic "
+    "research and thesis writing, but able to help with anything. "
+    "Use markdown. Be precise with citations and honest about "
+    "uncertainty. When you used web search results or document excerpts, "
+    "cite the sources inline."
+)
+
+
+def _get_chat_system_opening(db):
+    try:
+        return get_prompt_registry(db).get_prompt("chat_system")
+    except (ValueError, TemplateError):
+        return _CHAT_SYSTEM_FALLBACK
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "chat_system prompt fetch failed, using fallback", exc_info=True
+        )
+        return _CHAT_SYSTEM_FALLBACK
+
+
+def _log_chat_cost(user_id, model, usage):
+    """Best-effort — a logging failure must never break an otherwise-
+    successful chat response, same reasoning as every other best-effort
+    cost-logging call site in this app. /api/chat calls
+    client.responses.create() directly (never went through
+    responses_text()), so unlike extract_metadata/paper_analysis this
+    route had NO cost logging at all until now — a real gap being
+    closed, not a duplicate of anything."""
+    if not usage:
+        return
+    prompt_tokens = getattr(usage, "input_tokens", 0) or 0
+    completion_tokens = getattr(usage, "output_tokens", 0) or 0
+    record_ai_call(model, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
+    try:
+        ledger = get_cost_ledger()
+        cost = ledger.estimate_cost(model, prompt_tokens, completion_tokens)
         db = SessionLocal()
         try:
+            ledger.log(
+                db, user_id=user_id, model=model, prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                cost=cost, action="chat",
+            )
+        finally:
+            db.close()
+    except Exception:
+        logging.getLogger(__name__).warning("chat cost logging failed", exc_info=True)
+
+
+def build_system_prompt(user, project, memory_enabled=True):
+    global_mems, proj_mems = [], []
+    db = SessionLocal()
+    try:
+        if memory_enabled:
             global_mems = [
                 m.fact
                 for m in db.execute(
@@ -1900,15 +2246,12 @@ def build_system_prompt(user, project, memory_enabled=True):
                         )
                     ).scalars()
                 ]
-        finally:
-            db.close()
+        opening = _get_chat_system_opening(db)
+    finally:
+        db.close()
 
     parts = [
-        "You are Personal AI, a helpful assistant specialised in academic "
-        "research and thesis writing, but able to help with anything. "
-        "Use markdown. Be precise with citations and honest about "
-        "uncertainty. When you used web search results or document excerpts, "
-        "cite the sources inline.",
+        opening,
         f"The user's name is {user.name}.",
         f"Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}.",
     ]
@@ -2148,9 +2491,19 @@ def _get_job_status_cache(job_id):
 # Small static per-model price table (USD per 1K tokens) — update by hand
 # when OpenAI changes pricing, same approach devops-observability.md §3
 # recommends over integrating a billing API for this scale of app.
+#
+# gpt-5-mini was previously listed here with a specific rate while
+# backend/ai/cost_ledger.py's CostLedger.PRICING deliberately excluded the
+# whole gpt-5 family as unverified (its own docstring: "a wrong-but-
+# confident-looking dollar figure is worse than an honest unknown") — two
+# tables disagreeing about whether the same number was trustworthy.
+# Reconciled toward the more conservative policy: removed here too, so an
+# unpriced model returns cost=0.0 everywhere in this app, consistently,
+# rather than a real number in one place and a deliberate "we don't know"
+# in the other. Re-add with a real rate once OpenAI's published gpt-5-mini
+# pricing is actually confirmed against their pricing page.
 _PRICE_PER_1K_TOKENS = {
     "gpt-4o-mini": {"prompt": 0.00015, "completion": 0.0006},
-    "gpt-5-mini": {"prompt": 0.00025, "completion": 0.002},
     "text-embedding-3-small": {"prompt": 0.00002, "completion": 0.0},
 }
 
@@ -2429,7 +2782,23 @@ def upload_file():
 
         usage = db.get(StorageUsage, uid)
         already_used = usage.bytes_used if usage else 0
-        if already_used + size > MAX_STORAGE_MB * 1024 * 1024:
+        # Same limit QuotaService.check_storage_quota() uses for
+        # /api/documents/upload (per-user override, DEFAULT_STORAGE_LIMIT_BYTES
+        # otherwise) — this used to compare against the standalone
+        # MAX_STORAGE_MB env var instead, which defaults to 5000 MB vs
+        # QuotaService's ~1000 MB default: two routes silently enforcing
+        # different limits, not really "the same limit, two code paths" as
+        # once believed. Checked inline against the same `db` session/
+        # transaction rather than via quota_service.check_storage_quota()
+        # itself — that call opens its own session, which would lose the
+        # atomicity _adjust_storage_usage()'s docstring depends on (this
+        # check rolling back the batch/file inserts together on failure).
+        user_row = db.get(User, uid)
+        limit_bytes = (
+            (user_row.storage_limit_bytes if user_row else None)
+            or quota_service.DEFAULT_STORAGE_LIMIT_BYTES
+        )
+        if already_used + size > limit_bytes:
             db.rollback()  # undoes the batch insert/increment above too
             try:
                 os.remove(path)
@@ -2439,7 +2808,7 @@ def upload_file():
                 jsonify(
                     {
                         "error": "storage_quota_exceeded",
-                        "detail": f"Storage limit is {MAX_STORAGE_MB} MB",
+                        "detail": f"Storage limit is {limit_bytes // (1024 * 1024)} MB",
                     }
                 ),
                 403,
@@ -5265,6 +5634,8 @@ def chat():
                                 "response failed",
                             )
                         )
+
+                _log_chat_cost(user_id, model, getattr(final, "usage", None))
 
                 calls = [
                     it

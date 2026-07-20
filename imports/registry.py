@@ -8,6 +8,7 @@ from .importers.pdf import PdfImporter
 from .importers.docx import DocxImporter
 from .importers.pptx import PptxImporter
 from .importers.xlsx import XlsxImporter
+from .importers.epub import EpubImporter
 from .importers.zip import ZipImporter
 from .importers.text import TextImporter
 from .importers.legacy_office import LegacyOfficeImporter
@@ -15,12 +16,16 @@ from .sniff import sniff_text
 
 # Order matters — mirrors the original if/elif chain's priority exactly
 # (e.g. a mismatched extension with a matching mime still resolves the
-# same importer it did before).
+# same importer it did before). EpubImporter must come before ZipImporter:
+# an epub's mimetype ("application/epub+zip") contains "zip", which
+# ZipImporter's own matches() checks for — without this ordering every
+# .epub would still silently fall into the generic zip handler.
 _IMPORTERS = [
     PdfImporter(),
     DocxImporter(),
     PptxImporter(),
     XlsxImporter(),
+    EpubImporter(),
     ZipImporter(),
     TextImporter(),
     LegacyOfficeImporter(),

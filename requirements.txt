@@ -15,7 +15,15 @@ flask-limiter>=3.5
 boto3>=1.34
 redis>=5.0
 flask-jwt-extended>=4.7
+prometheus-client>=0.20
 pytest>=8.0
+pytest-mock>=3.15
+jinja2>=3.1
+# Optional multi-provider LLM support (backend/ai/model_registry.py) — the
+# app runs fine without these; _call_claude/_call_gemini raise a clear
+# ModelError if either is missing rather than requiring it at import time.
+anthropic>=0.117
+google-genai>=2.12
 
 
 pytest==8.3.2

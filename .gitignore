@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.claude/settings.local.json
+*_dev.log
+*_dev.err.log
+*_dev.pid

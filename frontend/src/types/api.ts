@@ -250,3 +250,26 @@ export interface WritingResponse {
   action: WritingAction;
   warning: string;
 }
+
+// ── AI layer (backend/ai) ─────────────────────────────────────────────────────
+export interface AiPrompt {
+  name: string;
+  version: number;
+  template: string;
+  is_active: boolean;
+  created_at: string | null;
+}
+
+export interface AiPromptsResponse {
+  prompts: AiPrompt[];
+}
+
+export interface AiTestResult {
+  content: string;
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  finish_reason: string;
+  cost: number;
+}
