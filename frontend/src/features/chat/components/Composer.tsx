@@ -13,7 +13,9 @@ import { TemperatureControl } from "./TemperatureControl";
 import { ReasoningEffortControl } from "./ReasoningEffortControl";
 import { MemoryToggle } from "./MemoryToggle";
 import { VoiceInputButton } from "./VoiceInputButton";
-import { filesApi } from "@/features/files/api";
+import { filesApi, isDocumentUpload } from "@/features/files/api";
+import type { BulkBatchStatus } from "@/features/files/api";
+import { BulkUploadProgress } from "@/features/files/components/BulkUploadProgress";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/components/common/Toast";
@@ -61,6 +63,10 @@ export function Composer({
 }) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState<PendingFile[]>([]);
+  // Set once a document batch is accepted (POST /api/uploads/bulk 201);
+  // <BulkUploadProgress> below owns polling it from there, replacing the
+  // old one-poll-per-file approach.
+  const [activeBatch, setActiveBatch] = useState<{ batchId: string; jobFileIds: number[] } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -101,10 +107,17 @@ export function Composer({
         files = files.slice(0, MAX_FOLDER_FILES);
       }
     }
-    for (const file of files) {
+    // Documents (pdf/epub/docx/txt) go through the bulk endpoint — one
+    // request for all of them instead of one /api/documents/upload call
+    // per file. Everything else (images, mainly) keeps the original
+    // one-request-per-file path; the bulk route doesn't accept images.
+    const documentFiles = files.filter((f) => isDocumentUpload(f.name));
+    const otherFiles = files.filter((f) => !isDocumentUpload(f.name));
+
+    for (const file of otherFiles) {
       const tempId = tempIdCounter--;
       let currentId = tempId; // reassigned once the real id is known, so the catch below can still find the item
-      setPending((p) => [...p, { id: tempId, name: file.name, kind: "document", uploading: true }]);
+      setPending((p) => [...p, { id: tempId, name: file.name, kind: "document", uploading: true, size: file.size }]);
       try {
         const outcome = await filesApi.upload(file, conversationId, projectId);
         if (!outcome.async) {
@@ -125,9 +138,9 @@ export function Composer({
           continue;
         }
 
-        // Async path: job enqueued, not processed yet — keep showing the
-        // spinner (uploading: true blocks send, same as the sync path
-        // pre-response) while polling for the worker to finish.
+        // Defensive only — isDocumentUpload() routes actual documents to
+        // the bulk branch below, so upload() shouldn't return the async
+        // shape here in practice.
         const { document_id } = outcome.result;
         currentId = document_id;
         setPending((p) =>
@@ -147,6 +160,65 @@ export function Composer({
         toast.error(err instanceof Error ? err.message : "Upload failed");
       }
     }
+
+    if (documentFiles.length > 0) {
+      const tempIds = documentFiles.map(() => tempIdCounter--);
+      setPending((p) => [
+        ...p,
+        ...documentFiles.map((file, i) => ({
+          id: tempIds[i], name: file.name, kind: "document" as const, uploading: true, size: file.size,
+        })),
+      ]);
+      try {
+        // One POST for the whole batch — jobs[] comes back in the same
+        // order the files were sent, one job per file. From here,
+        // <BulkUploadProgress> (rendered below, keyed on activeBatch)
+        // polls the batch status endpoint and reports back via
+        // onComplete/onError — no per-file polling loop here anymore.
+        const { batch_id, jobs } = await filesApi.uploadFiles(documentFiles);
+        setPending((p) =>
+          p.map((f) => {
+            const i = tempIds.indexOf(f.id);
+            return i === -1
+              ? f
+              : { id: jobs[i].file_id, name: jobs[i].filename, kind: "document" as const, uploading: true, size: f.size };
+          })
+        );
+        setActiveBatch({ batchId: String(batch_id), jobFileIds: jobs.map((j) => j.file_id) });
+        toast.info(`Uploading ${documentFiles.length} file${documentFiles.length === 1 ? "" : "s"}…`);
+      } catch (err) {
+        // Whole-batch rejection (validation/quota/storage) — the bulk
+        // route is all-or-nothing, so no file in this drop was stored;
+        // clear all of its pending rows, not just one.
+        setPending((p) => p.filter((f) => !tempIds.includes(f.id)));
+        toast.error(err instanceof Error ? err.message : "Upload failed");
+      }
+    }
+  };
+
+  const handleBatchComplete = (data: BulkBatchStatus) => {
+    qc.invalidateQueries({ queryKey: queryKeys.files });
+    const failed = data.jobs.filter((j) => j.status === "failed");
+    const ok = data.jobs.filter((j) => j.status !== "failed");
+
+    setPending((p) =>
+      p
+        .filter((f) => !failed.some((j) => j.file_id === f.id))
+        .map((f) => (ok.some((j) => j.file_id === f.id) ? { ...f, uploading: false } : f))
+    );
+
+    if (ok.length > 0) toast.success(`Indexed ${ok.length} file${ok.length === 1 ? "" : "s"}`);
+    for (const j of failed) toast.error(`${j.filename}: processing failed`);
+
+    setActiveBatch(null);
+  };
+
+  const handleBatchError = (message: string) => {
+    if (activeBatch) {
+      setPending((p) => p.filter((f) => !activeBatch.jobFileIds.includes(f.id)));
+    }
+    toast.error(message);
+    setActiveBatch(null);
   };
 
   const submit = () => {
@@ -174,6 +246,15 @@ export function Composer({
     <div className="mx-auto w-full max-w-3xl">
       <div className="rounded-3xl border border-border bg-card p-2.5 shadow-sm transition-shadow focus-within:shadow-md">
         <ComposerAttachments files={pending} onRemove={(id) => setPending((p) => p.filter((f) => f.id !== id))} />
+        {activeBatch && (
+          <div className="mb-2">
+            <BulkUploadProgress
+              batchId={activeBatch.batchId}
+              onComplete={handleBatchComplete}
+              onError={handleBatchError}
+            />
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           rows={1}

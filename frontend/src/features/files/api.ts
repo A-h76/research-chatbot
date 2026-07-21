@@ -9,7 +9,7 @@ export interface UploadResult extends UserFile {
 // only takes document types, no images.
 const JWT_UPLOAD_EXTENSIONS = new Set([".pdf", ".epub", ".docx", ".txt"]);
 
-function isDocumentUpload(filename: string): boolean {
+export function isDocumentUpload(filename: string): boolean {
   const dot = filename.lastIndexOf(".");
   return dot !== -1 && JWT_UPLOAD_EXTENSIONS.has(filename.slice(dot).toLowerCase());
 }
@@ -32,6 +32,43 @@ export interface DocumentAnalysisResult {
   status: string;
   model: string;
   analysis: PaperAnalysis["data"];
+}
+
+// POST /api/uploads/bulk (backend/upload/bulk.py) — same allowlist as
+// /api/documents/upload (.pdf/.epub/.docx/.txt), one request for N files.
+export interface BulkUploadJob {
+  job_id: number;
+  file_id: number;
+  filename: string;
+}
+
+export interface BulkUploadResult {
+  batch_id: number;
+  total_files: number;
+  jobs: BulkUploadJob[];
+}
+
+// GET /api/uploads/batch/<id>/status — batch-level status is only ever
+// "pending" | "processing" | "done" (the route never reports a batch as a
+// whole "failed"; a batch that finishes with some failed files is still
+// "done", just with failed_files > 0 — see backend/upload/bulk.py).
+// Per-job status is the finer-grained "pending" | "running" | "done" | "failed".
+export interface BulkBatchStatusJob {
+  job_id: number;
+  file_id: number;
+  filename: string;
+  status: "pending" | "running" | "done" | "failed";
+  error: string | null;
+}
+
+export interface BulkBatchStatus {
+  batch_id: number;
+  total_files: number;
+  processed_files: number;
+  failed_files: number;
+  status: "pending" | "processing" | "done";
+  jobs: BulkBatchStatusJob[];
+  created_at: string | null;
 }
 
 export interface LibraryListParams {
@@ -117,10 +154,12 @@ export const filesApi = {
   ) => api.patch<UserFile>(`/api/files/${id}`, body),
 
   // ── Upload ──
-  // Documents (pdf/epub/docx/txt) go through the JWT-authenticated, async
-  // /api/documents/upload; everything else (images, for vision attachments)
-  // stays on the original session-authenticated, synchronous /api/files —
-  // the JWT route doesn't accept images at all.
+  // Single-file upload. Documents (pdf/epub/docx/txt) go through the
+  // JWT-authenticated, async /api/documents/upload; everything else
+  // (images, for vision attachments) stays on the original
+  // session-authenticated, synchronous /api/files — the JWT route doesn't
+  // accept images at all. Kept (not removed) specifically for images and
+  // any other single-file caller — uploadFiles() below is documents-only.
   upload: async (
     file: File,
     conversationId?: number | null,
@@ -138,6 +177,28 @@ export const filesApi = {
     }
     const result = await api.postForm<UploadResult>("/api/files", fd);
     return { async: false, result };
+  },
+
+  // Bulk document upload — one request for N files instead of N calls to
+  // upload() above. Same allowlist as the single-doc route (validated
+  // server-side; images will 400). `metadata`, if given, rides along as a
+  // JSON string field — POST /api/uploads/bulk doesn't read it today, but
+  // sending it now costs nothing and keeps the door open.
+  uploadFiles: async (
+    files: File[],
+    metadata?: Record<string, unknown>
+  ): Promise<BulkUploadResult> => {
+    const fd = new FormData();
+    files.forEach((file) => fd.append("files[]", file));
+    if (metadata) fd.append("metadata", JSON.stringify(metadata));
+
+    const token = await getBearerToken();
+    return api.postForm<BulkUploadResult>("/api/uploads/bulk", fd, token);
+  },
+
+  batchStatus: async (batchId: number): Promise<BulkBatchStatus> => {
+    const token = await getBearerToken();
+    return api.get<BulkBatchStatus>(`/api/uploads/batch/${batchId}/status`, token);
   },
 
   remove: (id: number) => api.delete<{ ok: boolean }>(`/api/files/${id}`),

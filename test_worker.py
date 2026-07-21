@@ -63,7 +63,11 @@ def fake_storage(monkeypatch):
 
 def _mock_registries(mocker, response_json):
     prompt_registry = mocker.Mock()
-    prompt_registry.get_prompt.return_value = "rendered prompt text"
+    # get_prompt() returns (rendered_text, PromptVersion row) since
+    # backend/ai/prompt_registry.py's Prompt Registry extension — the
+    # version row is unused by worker.py's handlers (assigned to
+    # `_prompt_version`), so a plain Mock() stands in for it.
+    prompt_registry.get_prompt.return_value = ("rendered prompt text", mocker.Mock())
     model_registry = mocker.Mock()
     model_registry.call.return_value = {
         "content": json.dumps(response_json), "model": "gpt-4o-mini",
@@ -77,7 +81,7 @@ def _mock_registries(mocker, response_json):
 
 def _mock_failing_registries(mocker, exc):
     prompt_registry = mocker.Mock()
-    prompt_registry.get_prompt.return_value = "rendered prompt text"
+    prompt_registry.get_prompt.return_value = ("rendered prompt text", mocker.Mock())
     model_registry = mocker.Mock()
     model_registry.call.side_effect = exc
     mocker.patch.object(worker, "PromptRegistry", return_value=prompt_registry)

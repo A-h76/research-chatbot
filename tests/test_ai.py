@@ -59,28 +59,34 @@ def model_registry(monkeypatch):
 
 
 # ================================================================ PromptRegistry
+# status="active" is required below wherever a test then looks the prompt
+# up by name with no explicit version — PromptRegistry's own default
+# status is "draft" (migration 0015's authoring lifecycle), which isn't
+# servable via the no-version lookup. Deeper coverage of the state
+# machine itself lives in backend/ai/test_prompt_registry.py.
 def test_prompt_registry_create_prompt(registry):
-    row = registry.create_prompt("summary", "summarizes text", "Summarize: {{ text }}")
+    row = registry.create_prompt("summary", "summarizes text", "Summarize: {{ text }}", status="active")
     assert row.name == "summary"
     assert row.version == 1
     assert row.is_active is True
 
 
 def test_prompt_registry_get_prompt(registry):
-    registry.create_prompt("static", "desc", "no variables here")
-    assert registry.get_prompt("static") == "no variables here"
+    registry.create_prompt("static", "desc", "no variables here", status="active")
+    text, _version = registry.get_prompt("static")
+    assert text == "no variables here"
 
 
 def test_prompt_registry_add_version(registry):
-    registry.create_prompt("greeting", "desc", "v1 {{ name }}")
-    v2 = registry.add_version("greeting", "v2 {{ name }}", is_active=True)
+    registry.create_prompt("greeting", "desc", "v1 {{ name }}", status="active")
+    v2 = registry.add_version("greeting", "v2 {{ name }}", is_active=True, status="active")
     assert v2.version == 2
     assert registry.get_active_version("greeting").version == 2
 
 
 def test_prompt_registry_render_with_variables(registry):
-    registry.create_prompt("greeting", "desc", "Hello, {{ name }}! You are {{ age }}.")
-    rendered = registry.get_prompt("greeting", variables={"name": "Ada", "age": 36})
+    registry.create_prompt("greeting", "desc", "Hello, {{ name }}! You are {{ age }}.", status="active")
+    rendered, _version = registry.get_prompt("greeting", variables={"name": "Ada", "age": 36})
     assert rendered == "Hello, Ada! You are 36."
 
 
@@ -90,7 +96,7 @@ def test_prompt_registry_handle_missing_prompt(registry):
 
 
 def test_prompt_registry_handle_bad_template(registry):
-    registry.create_prompt("broken", "desc", "{{ unclosed")
+    registry.create_prompt("broken", "desc", "{{ unclosed", status="active")
     with pytest.raises(TemplateError):
         registry.get_prompt("broken")
 

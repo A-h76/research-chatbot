@@ -13,6 +13,7 @@ export interface PendingFile {
   name: string;
   kind: "image" | "document";
   uploading?: boolean;
+  size?: number;
 }
 
 export interface SendPayload {

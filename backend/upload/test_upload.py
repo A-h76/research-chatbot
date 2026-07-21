@@ -32,6 +32,7 @@ from quotas.models import create_usage_log_model
 from backend.upload import routes as upload_routes
 from backend.upload.routes import create_documents_blueprint
 from backend.ai import ModelError
+from backend.ai.model_router import ModelRouter
 from backend.upload.validation import validate_size, validate_extension, ValidationError
 
 
@@ -83,6 +84,7 @@ def env():
         __tablename__ = "files"
         id = Column(Integer, primary_key=True)
         user_id = Column(Integer, ForeignKey("users.id"))
+        project_id = Column(Integer, nullable=True)
         name = Column(String(300))
         mime = Column(String(120))
         kind = Column(String(20))
@@ -128,6 +130,19 @@ def env():
         model = Column(String(100), default="")
         data = Column(String, default="")
 
+    class PromptExecution(Base):
+        __tablename__ = "prompt_executions"
+        id = Column(Integer, primary_key=True)
+        prompt_version_id = Column(Integer, nullable=True)
+        persona_id = Column(Integer, nullable=True)
+        project_id = Column(Integer, nullable=True)
+        user_id = Column(Integer, ForeignKey("users.id"))
+        assembled_prompt = Column(String, nullable=False)
+        output_schema = Column(String, nullable=True)
+        tokens_used = Column(Integer, nullable=True)
+        latency_ms = Column(Integer, nullable=True)
+        status = Column(String(20), default="pending")
+
     UsageLog = create_usage_log_model(Base)
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
@@ -147,6 +162,7 @@ def env():
         JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=30),
     )
     JWTManager(app)
+    model_router = ModelRouter(defaults={"paper_analysis": "gpt-4o-mini", "_default": "gpt-4o-mini"})
     app.register_blueprint(
         create_documents_blueprint(
             SessionLocal=SessionLocal,
@@ -155,9 +171,10 @@ def env():
             UploadJob=UploadJob,
             OutboxEvent=OutboxEvent,
             PaperAnalysis=PaperAnalysis,
+            PromptExecution=PromptExecution,
             quota_service=quota_service,
             storage_backend=storage_backend,
-            utility_model="gpt-4o-mini",
+            model_router=model_router,
         )
     )
 
@@ -173,6 +190,7 @@ def env():
         "UploadJob": UploadJob,
         "OutboxEvent": OutboxEvent,
         "PaperAnalysis": PaperAnalysis,
+        "PromptExecution": PromptExecution,
         "storage_backend": storage_backend,
     }
 
@@ -335,7 +353,11 @@ _ANALYSIS_JSON = {
 
 def _mock_analysis_registries(mocker, response_json=None, model_side_effect=None):
     prompt_registry = mocker.Mock()
-    prompt_registry.get_prompt.return_value = "rendered prompt"
+    # get_prompt() returns (rendered_text, PromptVersion row) since the
+    # Prompt Registry extension — routes.py now reads .id off this row
+    # (PromptExecution.prompt_version_id), so it needs a real int, not a
+    # bare Mock() (whose .id would just be another Mock).
+    prompt_registry.get_prompt.return_value = ("rendered prompt", mocker.Mock(id=7))
     model_registry = mocker.Mock()
     if model_side_effect:
         model_registry.call.side_effect = model_side_effect
@@ -461,3 +483,41 @@ def test_analyze_document_model_error_returns_502(env, mocker):
 def test_analyze_document_requires_jwt(env):
     resp = env["client"].post("/api/documents/1/analysis")
     assert resp.status_code == 401
+
+
+def test_analyze_document_writes_successful_prompt_execution_row(env, mocker):
+    doc_id = _sample_document(env)
+    _mock_analysis_registries(mocker)
+
+    env["client"].post(f"/api/documents/{doc_id}/analysis", headers=_auth(env["access"]))
+
+    db = env["SessionLocal"]()
+    row = db.query(env["PromptExecution"]).one()
+    db.close()
+    assert row.status == "success"
+    assert row.prompt_version_id == 7
+    assert row.user_id == 1
+    assert row.assembled_prompt == "rendered prompt"
+    assert row.tokens_used == 15
+
+
+def test_analyze_document_model_error_marks_prompt_execution_failed(env, mocker):
+    doc_id = _sample_document(env)
+    _mock_analysis_registries(
+        mocker, model_side_effect=ModelError("bad key", provider="openai", model="gpt-4o-mini"))
+
+    env["client"].post(f"/api/documents/{doc_id}/analysis", headers=_auth(env["access"]))
+
+    db = env["SessionLocal"]()
+    row = db.query(env["PromptExecution"]).one()
+    db.close()
+    assert row.status == "failed"
+
+
+def test_analyze_document_calls_model_registry_with_prompt_version_id(env, mocker):
+    doc_id = _sample_document(env)
+    _, model_registry = _mock_analysis_registries(mocker)
+
+    env["client"].post(f"/api/documents/{doc_id}/analysis", headers=_auth(env["access"]))
+
+    assert model_registry.call.call_args.kwargs["prompt_version_id"] == 7

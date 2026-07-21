@@ -63,6 +63,48 @@ describe("filesApi.upload", () => {
   });
 });
 
+describe("filesApi.uploadFiles", () => {
+  it("returns batch_id, total_files, and jobs on success", async () => {
+    const fetchMock = mockFetch({
+      "/api/auth/jwt": { status: 200, body: { access_token: "tok789", refresh_token: "r" } },
+      "/api/uploads/bulk": {
+        status: 201,
+        body: {
+          batch_id: 42,
+          total_files: 2,
+          jobs: [
+            { job_id: 1, file_id: 101, filename: "a.pdf" },
+            { job_id: 2, file_id: 102, filename: "b.epub" },
+          ],
+        },
+      },
+    });
+
+    const result = await filesApi.uploadFiles([makeFile("a.pdf"), makeFile("b.epub")]);
+
+    const uploadCall = fetchMock.mock.calls.find((c) => c[0] === "/api/uploads/bulk")!;
+    expect((uploadCall[1] as RequestInit).headers).toEqual({ Authorization: "Bearer tok789" });
+    expect(result.batch_id).toBe(42);
+    expect(result.total_files).toBe(2);
+    expect(result.jobs).toEqual([
+      { job_id: 1, file_id: 101, filename: "a.pdf" },
+      { job_id: 2, file_id: 102, filename: "b.epub" },
+    ]);
+  });
+
+  it("propagates an ApiError when the batch is rejected (e.g. quota exceeded)", async () => {
+    mockFetch({
+      "/api/auth/jwt": { status: 200, body: { access_token: "tok789", refresh_token: "r" } },
+      "/api/uploads/bulk": {
+        status: 403,
+        body: { error: "storage_quota_exceeded", message: "Storage quota exceeded" },
+      },
+    });
+
+    await expect(filesApi.uploadFiles([makeFile("a.pdf")])).rejects.toThrow("storage_quota_exceeded");
+  });
+});
+
 describe("filesApi.analyzeDocument", () => {
   it("bridges a JWT and POSTs to /api/documents/<id>/analysis", async () => {
     const fetchMock = mockFetch({

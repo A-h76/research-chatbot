@@ -1,4 +1,5 @@
 import { FileText, ImageIcon, Loader2, X } from "lucide-react";
+import { formatBytes } from "@/lib/utils";
 import type { PendingFile } from "../types";
 
 export function ComposerAttachments({
@@ -24,6 +25,9 @@ export function ComposerAttachments({
             <FileText className="size-3.5 shrink-0 text-muted-foreground" />
           )}
           <span className="truncate">{f.name}</span>
+          {f.size != null && (
+            <span className="shrink-0 text-muted-foreground">{formatBytes(f.size)}</span>
+          )}
           {!f.uploading && (
             <button
               onClick={() => onRemove(f.id)}

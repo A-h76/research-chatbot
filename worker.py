@@ -156,7 +156,7 @@ def _handle_extract_metadata(db, job):
     try:
         prompt_registry = PromptRegistry(db)
         model_registry = ModelRegistry(db)
-        prompt = prompt_registry.get_prompt(
+        prompt, _prompt_version = prompt_registry.get_prompt(
             "extract_metadata",
             variables={"excerpt": text[:META_EXCERPT_CHARS], "max_chars": META_EXCERPT_CHARS},
         )
@@ -232,7 +232,7 @@ def _handle_paper_analysis(db, job):
     try:
         prompt_registry = PromptRegistry(db)
         model_registry = ModelRegistry(db)
-        prompt = prompt_registry.get_prompt(
+        prompt, _prompt_version = prompt_registry.get_prompt(
             "paper_analysis",
             variables={"text": text[:ANALYSIS_MAX_CHARS], "max_chars": ANALYSIS_MAX_CHARS},
         )

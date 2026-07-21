@@ -56,6 +56,22 @@ export function usePaperAnalysis(fileId: number | null, enabled = true) {
   });
 }
 
+// Polls GET /api/uploads/batch/<id>/status every 2s while the batch is
+// still in flight; stops the moment the backend reports "done" (a
+// terminal batch state — see BulkBatchStatus's own doc comment for why
+// there's no batch-level "failed" to also stop on). `retry: 3` overrides
+// the app-wide default of 1 (lib/queryClient.ts) — a poll blip shouldn't
+// tank the whole progress UI as fast as a one-off page load would.
+export function useBulkUploadStatus(batchId: number | null) {
+  return useQuery({
+    queryKey: ["uploads", "batch", batchId ?? "none"],
+    queryFn: () => filesApi.batchStatus(batchId!),
+    enabled: batchId !== null,
+    retry: 3,
+    refetchInterval: (query) => (query.state.data?.status === "done" ? false : 2000),
+  });
+}
+
 // ── Mutations ─────────────────────────────────────────────────────────────────
 export function useDeleteFile() {
   const qc = useQueryClient();

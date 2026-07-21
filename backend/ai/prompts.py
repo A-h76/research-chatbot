@@ -92,14 +92,21 @@ ANALYSIS_ARRAY_FIELDS = (
 def ensure_prompt(registry, name, template_text):
     """Idempotent: a no-op once the active version already matches (checked
     by content, not just presence) — safe to call on every startup/request
-    without piling up a new version row each time."""
+    without piling up a new version row each time.
+
+    status="active" is required on both branches now: PromptRegistry's
+    default status is "draft" (migration 0015's authoring lifecycle — see
+    docs/prompt-engine-architecture.md §3), and a draft version is not
+    servable via get_prompt()'s no-explicit-version path. This function's
+    whole job is "make sure this exact template is the one served", so it
+    always means to activate it, not leave it pending review."""
     active = registry.get_active_version(name)
     if active and active.template == template_text:
         return
     if active:
-        registry.add_version(name, template_text, is_active=True)
+        registry.add_version(name, template_text, is_active=True, status="active")
     else:
-        registry.create_prompt(name, f"default prompt: {name}", template_text)
+        registry.create_prompt(name, f"default prompt: {name}", template_text, status="active")
 
 
 def ensure_default_prompts(db_session):

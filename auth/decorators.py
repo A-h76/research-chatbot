@@ -5,11 +5,19 @@ attaching g.current_user consistently, not reimplementing verification.
 g.current_user is always the same attribute regardless of which
 decorator ran (a str user_id, matching create_jwt's identity, or None
 for jwt_optional with no/invalid token) — a route shouldn't need to know
-which decorator protected it to know where to look."""
+which decorator protected it to know where to look.
+
+create_admin_required() below is a different, session-based check (not
+JWT) for the Prompt Engine's admin-gated routes (backend/prompts/routes.py)
+— a factory, not a plain decorator, because it needs SessionLocal/User
+injected (same reason as every other module here: server.py runs as
+__main__, so this can't `import server` to get them). Uses flask.session
+directly rather than needing anything else injected — session is a
+request-scoped global proxy, not a real object that needs construction."""
 
 from functools import wraps
 
-from flask import g
+from flask import g, session, jsonify
 from flask_jwt_extended import jwt_required as _jwt_required, get_jwt_identity
 
 
@@ -43,3 +51,32 @@ def jwt_optional(fn):
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+def create_admin_required(SessionLocal, User):
+    """Returns an admin_required decorator for stacking under
+    @login_required: `@login_required` then `@admin_required`, in that
+    order (outer to inner) — @login_required already turns "no session"
+    into a 401 before this ever runs, so this only has to check the role.
+    Still checks session itself too (defense in depth, near-zero cost) in
+    case a route ever uses this one without @login_required by mistake."""
+
+    def admin_required(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            user_id = session.get("user_id")
+            if user_id is None:
+                return jsonify({"error": "not_authenticated"}), 401
+            db = SessionLocal()
+            try:
+                user = db.get(User, user_id)
+                is_admin = bool(user and user.is_admin)
+            finally:
+                db.close()
+            if not is_admin:
+                return jsonify({"error": "forbidden", "message": "Admin access required"}), 403
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return admin_required

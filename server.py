@@ -410,6 +410,11 @@ class User(Base):
     monthly_token_limit = Column(Integer, default=QuotaService.DEFAULT_TOKEN_LIMIT)
     quota_reset_at = Column(DateTime, nullable=True)
 
+    # Prompt Engine admin routes (migrations/0016, backend/prompts/routes.py)
+    # — default false for everyone; no signup flow ever sets this, the
+    # first admin is always a manual DB update.
+    is_admin = Column(Boolean, default=False)
+
 
 class Project(Base):
     __tablename__ = "projects"
@@ -895,6 +900,30 @@ def ensure_columns():
         "ALTER TABLE upload_jobs ADD COLUMN locked_at TIMESTAMP",
         "ALTER TABLE upload_jobs ADD COLUMN pipeline_version_id INTEGER",
         "ALTER TABLE ai_usage_ledger ADD COLUMN prompt_version_id INTEGER",
+        # ── Prompt Engine (migrations/0015, docs/prompt-engine-architecture.md) ──
+        # prompt_versions lives under backend/ai's own private Base, not this
+        # one — same reasoning as the two rows above: create_all() only
+        # creates a table it doesn't already find, never backfills a column
+        # onto one that already exists, so an existing chat_dev.db needs
+        # these applied explicitly too.
+        "ALTER TABLE prompt_versions ADD COLUMN description TEXT DEFAULT ''",
+        "ALTER TABLE prompt_versions ADD COLUMN status TEXT DEFAULT 'draft'",
+        "ALTER TABLE prompt_versions ADD COLUMN category TEXT DEFAULT ''",
+        "ALTER TABLE prompt_versions ADD COLUMN examples TEXT DEFAULT '[]'",
+        "ALTER TABLE prompt_versions ADD COLUMN expected_output_type TEXT DEFAULT 'text'",
+        "ALTER TABLE prompt_versions ADD COLUMN author_user_id INTEGER",
+        # model_registry_cost_ledger: same private-Base situation, third
+        # registry (model_registry.py's own) distinct from both of the above.
+        "ALTER TABLE model_registry_cost_ledger ADD COLUMN prompt_version_id INTEGER",
+        # projects.instructions: not new to this task's schema — found
+        # missing entirely (no migration, no ensure_columns entry) while
+        # checking this table per the Prompt Engine work; the ORM column
+        # (Project.instructions) has existed and been read/written for a
+        # while, so this was a real, previously-undocumented gap.
+        "ALTER TABLE projects ADD COLUMN instructions TEXT",
+        # users.is_admin — migrations/0016, backend/prompts/routes.py's
+        # admin-gated create/update routes.
+        "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
     ):
         try:
             with engine.begin() as conn:
@@ -1120,6 +1149,9 @@ app.register_blueprint(
 # alongside the existing session-based POST /api/files. Reuses UserFile/
 # UploadJob/OutboxEvent (no new Document model) and quota_service — see
 # backend/upload/routes.py's module docstring for the full reasoning.
+# Registration itself is deferred to just after the Prompt Engine wiring
+# further down (model_router/PromptExecution don't exist yet at this
+# point in the file) — see there.
 from backend.upload.validation import MAX_DOCUMENT_UPLOAD_MB
 from backend.upload.routes import create_documents_blueprint
 from backend.storage import get_storage_backend
@@ -1129,17 +1161,26 @@ from backend.storage import get_storage_backend
 app.config["MAX_CONTENT_LENGTH"] = (
     max(MAX_FILE_MB, MAX_DOCUMENT_UPLOAD_MB) * 1024 * 1024
 )
+
+# POST /api/uploads/bulk, GET /api/uploads/batch/<id>/status — bulk upload,
+# writing to UploadBatch (schema-only until now, see its own docstring)
+# via the same UserFile/UploadJob/OutboxEvent primitives as the single-file
+# route above. A batch can total far more than one file's MAX_CONTENT_LENGTH,
+# so the app-wide cap has to grow to fit MAX_BATCH_SIZE files at once.
+from backend.upload.bulk import create_bulk_upload_blueprint, MAX_BATCH_SIZE
+
+app.config["MAX_CONTENT_LENGTH"] = max(
+    app.config["MAX_CONTENT_LENGTH"], MAX_BATCH_SIZE * MAX_DOCUMENT_UPLOAD_MB * 1024 * 1024
+)
 app.register_blueprint(
-    create_documents_blueprint(
+    create_bulk_upload_blueprint(
         SessionLocal=SessionLocal,
         UserFile=UserFile,
         UploadBatch=UploadBatch,
         UploadJob=UploadJob,
         OutboxEvent=OutboxEvent,
-        PaperAnalysis=PaperAnalysis,
         quota_service=quota_service,
         storage_backend=get_storage_backend(),
-        utility_model=UTILITY_MODEL,
     )
 )
 
@@ -1148,17 +1189,10 @@ app.register_blueprint(
 # as /api/documents/upload has to /api/files. Search the exact same
 # Chunk.embedding data /api/search already uses for papers — see
 # backend/search/routes.py's module docstring for why this isn't a
-# second search engine.
+# second search engine. Registration itself is deferred to just after the
+# Prompt Engine wiring further down (get_prompt_builder/model_router/
+# PromptExecution don't exist yet at this point in the file) — see there.
 from backend.search.routes import create_search_blueprint
-
-app.register_blueprint(
-    create_search_blueprint(
-        SessionLocal=SessionLocal,
-        UserFile=UserFile,
-        Chunk=Chunk,
-        utility_model=UTILITY_MODEL,
-    )
-)
 
 # Unified user lookup — session first, Bearer JWT second, None if
 # neither. A helper for routes that should accept either auth method;
@@ -1274,7 +1308,7 @@ def robots():
 # migration already ran — it only creates anything on a fresh SQLite dev DB
 # (verified: prompt_versions/pipeline_versions didn't exist there before this).
 # ══════════════════════════════════════════════════════════════════════════
-from backend.ai import PromptRegistry, ModelRegistry, CostLedger, ModelError, TemplateError
+from backend.ai import PromptRegistry, PromptVersion, ModelRegistry, CostLedger, ModelError, TemplateError
 from backend.ai.prompt_registry import _Base as _ai_prompt_base
 from backend.ai.model_registry import _Base as _ai_model_base, CostLedgerEntry as _CostLedgerEntry
 
@@ -1294,6 +1328,222 @@ def get_model_registry(db_session):
 
 def get_cost_ledger():
     return _cost_ledger
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Prompt Engine (docs/prompt-engine-architecture.md) — SystemPromptManager,
+# PersonaEngine, MemoryEngine, ModelRouter, PromptBuilder, built on top of
+# the AI layer just above. Persona/PromptExecution live under
+# prompt_registry.py's own private Base too (see that module) — already
+# covered by _ai_prompt_base.metadata.create_all() above, no separate
+# create_all() call needed here.
+# ══════════════════════════════════════════════════════════════════════════
+from backend.ai.prompt_registry import Persona, PromptExecution
+from backend.ai.persona_engine import PersonaEngine
+from backend.ai.memory_engine import MemoryEngine
+from backend.ai.system_prompt import SystemPromptManager
+from backend.ai.model_router import ModelRouter
+from backend.ai.domain_registry import DomainRegistry
+from backend.ai.prompt_builder import PromptBuilder
+from backend.ai.analytics import PromptAnalytics
+from backend.prompts.routes import create_prompts_blueprint
+from auth.decorators import create_admin_required
+
+# ModelRouter is a genuine startup-time singleton — no DB session at all
+# (see model_router.py's own docstring), same category as CostLedger
+# above. task_name -> model string falls back through the SAME
+# env-derived constants (UTILITY_MODEL/EMBED_MODEL/DEFAULT_MODEL) this
+# app already reads, rather than inventing a fourth config surface.
+# "rag" isn't in the task brief's own example dict (that dict was labeled
+# "e.g.", not exhaustive) but backend/search/routes.py's rag_answer() is
+# required to call get_model_for_task("rag") specifically — mapped to
+# UTILITY_MODEL to preserve exactly what RAG already used before this
+# task, unless a RAG_MODEL env var is set to override it.
+model_router = ModelRouter(defaults={
+    "chat": UTILITY_MODEL,
+    "paper_analysis": UTILITY_MODEL,
+    "rag": UTILITY_MODEL,
+    "embedding": EMBED_MODEL,
+    "_default": DEFAULT_MODEL,
+})
+
+# Also a genuine startup-time singleton — DomainRegistry is pure Python,
+# no DB session, same category as ModelRouter (see that class's own
+# comment just above, and domain_registry.py's own module docstring).
+domain_registry = DomainRegistry()
+
+
+# get_persona_engine/get_memory_engine/get_system_prompt_manager/
+# get_prompt_builder are request-scoped factories, NOT startup
+# singletons — same reasoning as get_prompt_registry/get_model_registry
+# above: PersonaEngine/MemoryEngine/SystemPromptManager hold (and
+# PromptBuilder transitively holds, via all three) one open Session for
+# their lifetime; one shared instance across concurrent requests would
+# mean concurrent requests sharing one session.
+def get_persona_engine(db_session):
+    return PersonaEngine(db_session, Persona)
+
+
+def get_memory_engine(db_session):
+    return MemoryEngine(db_session, Memory)
+
+
+def get_system_prompt_manager(db_session):
+    return SystemPromptManager(get_prompt_registry(db_session))
+
+
+def get_prompt_builder(db_session):
+    return PromptBuilder(
+        system_prompt_manager=get_system_prompt_manager(db_session),
+        persona_engine=get_persona_engine(db_session),
+        memory_engine=get_memory_engine(db_session),
+        prompt_registry=get_prompt_registry(db_session),
+        SessionLocal=SessionLocal,
+        Project=Project,
+        domain_registry=domain_registry,
+    )
+
+
+def get_prompt_analytics(db_session):
+    return PromptAnalytics(db_session, AIUsageLedger, ModelVersion)
+
+
+admin_required = create_admin_required(SessionLocal, User)
+
+app.register_blueprint(
+    create_prompts_blueprint(
+        SessionLocal=SessionLocal,
+        PromptVersion=PromptVersion,
+        Persona=Persona,
+        PromptRegistry=PromptRegistry,
+        PersonaEngine=PersonaEngine,
+        get_prompt_builder=get_prompt_builder,
+        login_required=login_required,
+        admin_required=admin_required,
+    )
+)
+
+# backend/upload's and backend/search's blueprint registrations,
+# deferred to here (see the comments at their imports above) since both
+# need model_router/PromptExecution (backend/upload also get_prompt_builder
+# via backend/search), all defined just above.
+app.register_blueprint(
+    create_documents_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        UploadBatch=UploadBatch,
+        UploadJob=UploadJob,
+        OutboxEvent=OutboxEvent,
+        PaperAnalysis=PaperAnalysis,
+        PromptExecution=PromptExecution,
+        quota_service=quota_service,
+        storage_backend=get_storage_backend(),
+        model_router=model_router,
+    )
+)
+
+app.register_blueprint(
+    create_search_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        Chunk=Chunk,
+        get_prompt_builder=get_prompt_builder,
+        model_router=model_router,
+        PromptExecution=PromptExecution,
+    )
+)
+
+
+def _parse_usage_date_range():
+    """start_date/end_date query params, YYYY-MM-DD — naive datetimes on
+    purpose: SQLite doesn't preserve tzinfo on created_at (the same
+    limitation quotas/service.py's _ensure_reset already documents for
+    this exact database), so comparing a caller-supplied aware datetime
+    against a naive-in-SQLite column would be inconsistent; day-level
+    granularity doesn't need finer precision than this anyway. Returns
+    (None, None) on an unparseable date, for the route to turn into 400.
+    Defaults to the trailing 30 days when neither param is given."""
+    end_str = request.args.get("end_date")
+    start_str = request.args.get("start_date")
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    try:
+        end = datetime.fromisoformat(end_str) if end_str else now
+        start = datetime.fromisoformat(start_str) if start_str else end - timedelta(days=30)
+    except ValueError:
+        return None, None
+    return start, end
+
+
+# GET /api/prompt-usage[/by-prompt|/by-model|/by-user] — admin-only cost/
+# usage analytics (docs/prompt-engine-architecture.md, backend/ai/analytics.py).
+# No /by-project route: PromptAnalytics.get_usage_by_project() exists (the
+# class-level requirement asked for it) but wasn't in this task's own
+# route list, so it isn't surfaced as one yet — not an oversight.
+@app.route("/api/prompt-usage")
+@login_required
+@admin_required
+def prompt_usage_summary():
+    start, end = _parse_usage_date_range()
+    if start is None:
+        return jsonify({"error": "invalid_date", "message": "start_date/end_date must be YYYY-MM-DD"}), 400
+    db = SessionLocal()
+    try:
+        by_model = get_prompt_analytics(db).get_usage_by_model(start, end)
+    finally:
+        db.close()
+    return jsonify({
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "calls": sum(m["calls"] for m in by_model),
+        "total_tokens": sum(m["total_tokens"] for m in by_model),
+        "cost_usd": round(sum(m["cost_usd"] for m in by_model), 6),
+        "models_used": len(by_model),
+    })
+
+
+@app.route("/api/prompt-usage/by-prompt")
+@login_required
+@admin_required
+def prompt_usage_by_prompt():
+    start, end = _parse_usage_date_range()
+    if start is None:
+        return jsonify({"error": "invalid_date", "message": "start_date/end_date must be YYYY-MM-DD"}), 400
+    db = SessionLocal()
+    try:
+        rows = get_prompt_analytics(db).get_usage_by_prompt(start, end)
+    finally:
+        db.close()
+    return jsonify({"start_date": start.isoformat(), "end_date": end.isoformat(), "prompts": rows})
+
+
+@app.route("/api/prompt-usage/by-model")
+@login_required
+@admin_required
+def prompt_usage_by_model():
+    start, end = _parse_usage_date_range()
+    if start is None:
+        return jsonify({"error": "invalid_date", "message": "start_date/end_date must be YYYY-MM-DD"}), 400
+    db = SessionLocal()
+    try:
+        rows = get_prompt_analytics(db).get_usage_by_model(start, end)
+    finally:
+        db.close()
+    return jsonify({"start_date": start.isoformat(), "end_date": end.isoformat(), "models": rows})
+
+
+@app.route("/api/prompt-usage/by-user")
+@login_required
+@admin_required
+def prompt_usage_by_user():
+    start, end = _parse_usage_date_range()
+    if start is None:
+        return jsonify({"error": "invalid_date", "message": "start_date/end_date must be YYYY-MM-DD"}), 400
+    db = SessionLocal()
+    try:
+        rows = get_prompt_analytics(db).get_usage_by_user(start, end)
+    finally:
+        db.close()
+    return jsonify({"start_date": start.isoformat(), "end_date": end.isoformat(), "users": rows})
 
 
 @app.route("/metrics")
@@ -2184,7 +2434,8 @@ _CHAT_SYSTEM_FALLBACK = (
 
 def _get_chat_system_opening(db):
     try:
-        return get_prompt_registry(db).get_prompt("chat_system")
+        text, _prompt_version = get_prompt_registry(db).get_prompt("chat_system")
+        return text
     except (ValueError, TemplateError):
         return _CHAT_SYSTEM_FALLBACK
     except Exception:
@@ -2275,6 +2526,53 @@ def build_system_prompt(user, project, memory_enabled=True):
             + "\n".join(f"- {m}" for m in proj_mems)
         )
     return "\n\n".join(parts)
+
+
+def preview_chat_prompt_builder_migration(user, project, memory_enabled=True):
+    """Stub for testing the /api/chat -> Prompt Builder migration (see
+    docs/chat-migration-roadmap.md) — NOT called from /api/chat itself,
+    or from anywhere else; a manual comparison tool for whoever picks up
+    that migration later. Builds the same "what does the model see"
+    content two ways — today's build_system_prompt() (legacy) and
+    PromptBuilder.preview() (candidate) — so the two can be diffed by
+    hand before anything real is switched over, and returns the specific
+    fields the candidate doesn't cover yet (roadmap §2) rather than
+    silently omitting them.
+
+    task_name="chat_system" deliberately exercises the exact prompt name
+    /api/chat already uses today (via _get_chat_system_opening), not
+    SystemPromptManager's separate "system_prompt" name — the roadmap's
+    §3 naming collision is something to resolve before a real migration,
+    not something to paper over here."""
+    legacy = build_system_prompt(user, project, memory_enabled=memory_enabled)
+
+    db = SessionLocal()
+    try:
+        builder = get_prompt_builder(db)
+        assembled = builder.preview(
+            "", "chat_system",
+            project_id=project.id if project else None,
+            user_id=user.id if memory_enabled else None,
+        )
+    finally:
+        db.close()
+
+    return {
+        "legacy_system_prompt": legacy,
+        "prompt_builder_final": assembled.final,
+        "prompt_builder_system": assembled.system,
+        "prompt_builder_task": assembled.task,
+        "prompt_builder_project_context": assembled.project_context,
+        "prompt_builder_memory": assembled.memory,
+        "not_yet_covered_by_prompt_builder": {
+            "user_identity_and_date": (
+                f"The user's name is {user.name}. "
+                f"Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}."
+            ),
+            "user_custom_instructions": user.custom_instructions or "",
+            "project_name_framing": f'Current project: "{project.name}".' if project else "",
+        },
+    }
 
 
 # ------------------------------------------------------------------ API: profile / models

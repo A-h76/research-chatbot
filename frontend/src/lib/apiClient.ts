@@ -24,7 +24,10 @@ async function request<T>(url: string, opts: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  get: <T>(url: string) => request<T>(url),
+  // token is for JWT-only GET routes (e.g. the bulk-upload batch status
+  // route) — everything else here rides the session cookie, no token needed.
+  get: <T>(url: string, token?: string) =>
+    request<T>(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined }),
   post: <T>(url: string, body?: unknown, token?: string) =>
     request<T>(url, {
       method: "POST",

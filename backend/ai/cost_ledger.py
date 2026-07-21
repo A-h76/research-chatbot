@@ -49,6 +49,12 @@ def create_cost_ledger_model(Base):
         total_tokens = Column(Integer, default=0)
         cost = Column(Float, default=0.0)
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+        # Closes the gap prompt-engine-audit.md §3 flagged: which prompt
+        # version produced this call. Same cross-Base reasoning as
+        # user_id above — prompt_versions lives under prompt_registry.py's
+        # own private Base, a third registry — so this is a plain column,
+        # migrations/0015 adds the real DB-level FK.
+        prompt_version_id = Column(Integer, nullable=True)
 
     return CostLedgerEntry
 
@@ -89,9 +95,9 @@ class CostLedger:
                     + completion_tokens / 1_000_000 * completion_rate, 6)
 
     def log(self, db_session, *, user_id, model, prompt_tokens, completion_tokens,
-           total_tokens, cost, action="chat"):
+           total_tokens, cost, action="chat", prompt_version_id=None):
         db_session.add(self._Model(
             user_id=user_id, model=model, action=action,
             prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-            total_tokens=total_tokens, cost=cost))
+            total_tokens=total_tokens, cost=cost, prompt_version_id=prompt_version_id))
         db_session.commit()

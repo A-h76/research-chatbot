@@ -6,8 +6,10 @@ design docs (written before most of this was built, some now partially
 superseded by what's actually running). This file is the third thing:
 what's *actually in the repo right now*, how the pieces fit together, and
 what's still rough. Written 2026-07-20, updated 2026-07-20 to add the AI
-layer (§6); re-verify anything load-bearing before trusting it — code
-drifts, this file doesn't auto-update.
+layer (§6), updated again same day (§2, §6, §8, §9) to add `backend/search/`
+(JWT search + RAG) and `POST /api/documents/<id>/analysis`, which existed in
+the repo but weren't documented yet; re-verify anything load-bearing before
+trusting it — code drifts, this file doesn't auto-update.
 
 Project is a single Flask app (`server.py`) + a React/TS SPA (`frontend/`).
 Branded "Personal AI" in the UI; the repo/CI call it "ResearchOS" — same
@@ -35,14 +37,18 @@ imports/                 File-text-extraction importer registry (pdf/docx/
 backend/                Newer code, added for the JWT-auth API surface and
                         the AI layer:
   backend/storage/       ABC-based storage compat layer, wraps storage/.
-  backend/upload/        POST /api/documents/upload (Bearer-JWT route).
+  backend/upload/        POST /api/documents/upload + POST /api/documents/
+                          <id>/analysis (Bearer-JWT routes), validation.py.
+  backend/search/         GET /api/documents/search + POST /api/rag
+                          (Bearer-JWT), reuses Chunk embeddings — see §6.
   backend/ai/             Prompt registry, multi-provider model registry,
-                          cost ledger, DB seeding — see §6.
+                          cost ledger, DB seeding, shared prompt text
+                          (prompts.py) — see §6.
 observability/          JSON logging, correlation ids, Prometheus
                         metrics — shared by server.py and worker.py,
                         imports neither. See §12.
 
-migrations/             Numbered .sql files (0001-0013), Postgres-only,
+migrations/             Numbered .sql files (0001-0014), Postgres-only,
                         tracked via a schema_migrations table (see
                         run_migrations.py). Every statement is idempotent
                         (server.py must run before these ever can, per
@@ -94,6 +100,15 @@ starts writing to local disk while `worker.py` (which reads via the legacy
 `storage/` package) still looks in R2 — uploads silently never process. Leave
 `STORAGE_BACKEND` blank (auto-detect) unless you also change the legacy
 package's provider selection to match.
+
+Same blueprint (`backend/upload/routes.py`) also owns `POST
+/api/documents/<id>/analysis` — a **synchronous** counterpart to `/api/files/
+<id>/analysis` (§8's Ops group): same `paper_analysis` prompt (shared by
+name via `backend/ai/prompts.py`, not forked), same `PromptRegistry`/
+`ModelRegistry`/`PaperAnalysis` row, but runs inline in the request instead
+of via the queue/worker, and always regenerates (no `content_hash`
+short-circuit — a caller hitting this endpoint wants a fresh answer now, not
+"only if missing").
 
 ---
 
@@ -334,6 +349,48 @@ error-free. The two stale indexes were also fixed directly on this
 repo's own local `chat_dev.db`, which had been carrying the old,
 incomplete definitions from before this fix.
 
+Two migrations landed after that verification pass, both additive and
+unrelated to the above: `0013_worker_heartbeat.sql` (creates
+`worker_heartbeats`, the single-row table §5's health check reads) and
+`0014_worker_heartbeat_timestamptz.sql` (fixes that table's
+`last_seen_at` column to real `timestamptz` on any DB where server.py's
+own `create_all()` had already created it as naive `timestamp` first —
+same "ORM creates the table before the migration can" ordering problem
+as finding #2 above, caught live as a 5-hour clock skew in `GET
+/api/worker/health`'s `age_seconds`, UTC vs. the Postgres session's
+local timezone).
+
+### 6b. Search & RAG (`backend/search/`)
+
+Two Bearer-JWT routes, same "additional flow, not a replacement" pattern
+as `/api/documents/upload` next to `/api/files` (§2): `GET
+/api/documents/search` and `POST /api/rag`, sitting alongside server.py's
+existing session-based `POST /api/search` rather than replacing it.
+
+- **No second search engine.** Both new routes query the exact same
+  `Chunk.embedding` data (JSON-serialized floats, real cosine similarity,
+  no pgvector) that `/api/search` already reads for paper results.
+  `_search_chunks()` skips any chunk with no stored embedding rather than
+  falling back to keyword scoring — unlike `/api/search`, which does have
+  a keyword fallback. `SearchIndex` (notes/citations/chat unified index)
+  stays untouched — nothing in this codebase has ever written a row to
+  it; neither route needed it.
+- **`GET /api/documents/search`** — embeds the query (`ModelRegistry.embed`),
+  cosine-ranks the caller's own `UserFile(kind="document")` chunks
+  (optionally scoped to `file_id`/`project_id`), returns up to `limit`
+  (default 20, capped 50) scored snippets.
+- **`POST /api/rag`** — same retrieval (`top_k`, default 6, capped 20),
+  then feeds the retrieved chunk text into the `semantic_search` prompt
+  (`backend/ai/prompts.py`, seeded idempotently via `ensure_default_prompts`
+  on every call) and calls `utility_model` for a cited answer. Returns
+  `{answer: null, sources: []}` (200, not an error) when nothing scores
+  above `min_score` — "no relevant documents" is a normal outcome, not a
+  failure.
+- Constructor-injected (`SessionLocal`, `UserFile`, `Chunk`,
+  `utility_model`), same reason as every other `backend/`/`auth/`/`quotas/`
+  module: `server.py` runs as `__main__`, so anything it reaches into that
+  imports `server` back gets a second module identity and recurses.
+
 ---
 
 ## 7. Database
@@ -342,7 +399,7 @@ SQLite (`chat_dev.db`, default when `DATABASE_URL` is blank) locally;
 Postgres (Neon or CI's `postgres:15` service container) in
 production/CI. `worker.py` requires the latter.
 
-21 model classes in `server.py`, plus 3 more under `backend/ai`'s own
+22 model classes in `server.py`, plus 3 more under `backend/ai`'s own
 private Bases (§6): `PromptVersion` (`prompt_versions`), `CostLedgerEntry`
 (`model_registry_cost_ledger`), `ModelPreset` (`model_presets`, only via
 `backend/ai/seed.py` — not exported from `backend/ai/models.py`).
@@ -361,7 +418,8 @@ tags/reading_status), `Chunk`, `Citation`, `PaperAnalysis`,
 `UploadBatch`, `UploadJob`, `OutboxEvent`, `ImportSession` (schema-only,
 nothing writes real checkpoints yet), `StorageUsage` (live per-user
 bytes/file-count — the single source of truth both quota paths read)
-**Ops/usage**: `ModelVersion`, `AIUsageLedger`, `SupportRequest`
+**Ops/usage**: `ModelVersion`, `AIUsageLedger`, `SupportRequest`,
+`WorkerHeartbeat` (single-row heartbeat, id=1 — §5)
 
 `auth.auth_provider`, `storage_limit_bytes`, `monthly_token_used`,
 `monthly_token_limit`, `quota_reset_at` were added to `User` mid-session
@@ -382,7 +440,8 @@ mechanism for Postgres. Both need to stay in sync when a column is added
   `/api/dev-login`, `/api/auth/jwt`, `/api/auth/token`,
   `/auth/magic-link[/verify]`
 - **Files/uploads**: `/api/files` (POST/GET/PATCH/DELETE + `/<id>/analysis`,
-  `/<id>/raw`), `/api/documents/upload`, `/api/uploads/presign`,
+  `/<id>/analysis/refresh`, `/<id>/raw`), `/api/documents/upload`,
+  `/api/documents/<id>/analysis` (POST, synchronous — §2), `/api/uploads/presign`,
   `/api/uploads/multipart/complete`, `/api/uploads/confirm`,
   `/api/uploads/local-put|get`, `/api/jobs/<id>/status`
 - **Library**: `/api/library/tags`, `/api/library/stats`, `/api/dashboard`
@@ -391,27 +450,40 @@ mechanism for Postgres. Both need to stay in sync when a column is added
 - **Chat/AI**: `/api/chat`, `/api/search`, `/api/models`,
   `/api/analysis/compare*`, `/api/analysis/gaps*`, `/api/writing`
 - **AI layer** (§6, new): `GET /api/ai/prompts`, `POST /api/ai/test` (dev-only)
+- **Search/RAG** (§6b, new, Bearer-JWT): `GET /api/documents/search`,
+  `POST /api/rag`
 - **Account**: `/api/me`, `/api/profile`, `/api/memories*`,
   `/api/account` (delete), `/api/support`, `/api/export*`
 - **SPA catch-all**: `/`, `/<path:path>` → serves `frontend/dist`
 
-`/api/documents/upload` is the only route under `backend/`'s upload
-blueprint; `/api/ai/*` are plain `@app.route`s in `server.py` itself
-(no new blueprint file — the task that added them was scoped to
-"integrate into server.py," not "create a blueprint").
+`backend/upload/routes.py`'s `documents` blueprint owns both
+`/api/documents/upload` and `/api/documents/<id>/analysis`;
+`backend/search/routes.py`'s `search` blueprint owns
+`/api/documents/search` and `/api/rag`. `/api/ai/*` are plain
+`@app.route`s in `server.py` itself (no blueprint — the task that added
+them was scoped to "integrate into server.py," not "create a blueprint").
 
 ---
 
 ## 9. Testing & CI
 
-141 tests total, all passing as of this writing, spread across:
-`auth/test_{auth,context,magic_link}.py`, `storage/test_storage.py`,
-`imports/test_imports.py`, `quotas/test_service.py`,
-`backend/storage/test_backends.py`, `backend/upload/test_upload.py`,
+199 tests total (`pytest --collect-only -q`), all passing as of this
+writing, spread across: `auth/test_{auth,context,magic_link}.py`,
+`storage/test_storage.py`, `imports/test_imports.py`,
+`quotas/test_service.py`, `backend/storage/test_backends.py`,
+`backend/upload/test_upload.py`, `backend/search/test_search.py`,
 `backend/ai/test_{models,prompt_registry,model_registry,seed}.py`,
+root-level `test_chat.py`/`test_upload_quota.py`/`test_worker.py`/
+`test_worker_health.py`, `observability/test_observability.py`, and
 `tests/test_ai.py` (the one file placed at the literal `tests/` path
 asked for — see §1, conftest.py doesn't interfere since its fixtures
 are only invoked by name).
+
+Frontend has its own, separate Vitest suite (`cd frontend && npm test`,
+i.e. `vitest run`) — unit tests for the newer API wrapper modules only
+(`features/ai/api.test.ts`, `features/files/api.test.ts`,
+`features/search/api.test.ts`), not counted in the 199 above and not
+run by the root `pytest`/CI backend job.
 
 Run everything: `pytest` from repo root (picks up `pytest.ini`'s
 `test_*.py` pattern). Most suites are pytest-based with isolated

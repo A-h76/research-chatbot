@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 import uuid
 
 from flask import Blueprint, request, jsonify, g
@@ -80,9 +81,10 @@ def create_documents_blueprint(
     UploadJob,
     OutboxEvent,
     PaperAnalysis,
+    PromptExecution,
     quota_service,
     storage_backend,
-    utility_model,
+    model_router,
 ):
     bp = Blueprint("documents", __name__, url_prefix="/api/documents")
     log = logging.getLogger(__name__)
@@ -226,7 +228,21 @@ def create_documents_blueprint(
         result immediately rather than polling a job. Always regenerates
         when called — no content_hash idempotency short-circuit like the
         queue path has, since a caller hitting this endpoint is asking
-        for an analysis now, not "only if it doesn't already have one"."""
+        for an analysis now, not "only if it doesn't already have one".
+
+        Deliberately does NOT go through PromptBuilder.build() for the
+        Task rendering, unlike backend/search/routes.py's rag_answer() —
+        evaluated concretely, not skipped for convenience: paper_analysis's
+        real template needs both {{ text }} AND {{ max_chars }}, and
+        PromptBuilder's variable mapping only ever supplies
+        query/question/text (see its own docstring — designed for
+        query-style tasks, not document-body ones). Routing this through
+        it would render "first  characters" instead of "first 12000
+        characters" in the actual prompt sent to the model — a real
+        quality regression, not a hypothetical one. What IS adopted here,
+        since neither has that downside: model selection via ModelRouter
+        (was a fixed injected string) and a PromptExecution audit row
+        (was nothing) — both orthogonal to how the Task text gets built."""
         user_id = int(g.current_user)
         db = SessionLocal()
         try:
@@ -270,26 +286,49 @@ def create_documents_blueprint(
             ensure_default_prompts(db)
             prompt_registry = PromptRegistry(db)
             model_registry = ModelRegistry(db)
+            model = model_router.get_model_for_task("paper_analysis")
             try:
-                prompt = prompt_registry.get_prompt(
+                prompt, prompt_version = prompt_registry.get_prompt(
                     "paper_analysis",
                     variables={"text": text[:ANALYSIS_MAX_CHARS], "max_chars": ANALYSIS_MAX_CHARS},
                 )
+            except ValueError as exc:
+                return jsonify({"error": "prompt_not_found", "message": str(exc)}), 502
+
+            execution = PromptExecution(
+                prompt_version_id=prompt_version.id, project_id=uf.project_id,
+                user_id=user_id, assembled_prompt=prompt, status="pending",
+            )
+            db.add(execution)
+            db.commit()
+
+            started = time.perf_counter()
+            try:
                 result = model_registry.call(
-                    utility_model,
+                    model,
                     [{"role": "user", "content": prompt}],
                     user_id=user_id,
                     response_format={"type": "json_object"},
+                    prompt_version_id=prompt_version.id,
                 )
                 data = json.loads(result["content"])
             except ModelError as exc:
+                execution.status = "failed"
+                db.commit()
                 return jsonify({"error": "model_call_failed", "message": str(exc)}), 502
             except (ValueError, TypeError):
+                execution.status = "failed"
+                db.commit()
                 return (
                     jsonify({"error": "invalid_model_response",
                             "message": "The model did not return valid JSON"}),
                     502,
                 )
+
+            execution.status = "success"
+            execution.tokens_used = result.get("total_tokens")
+            execution.latency_ms = int((time.perf_counter() - started) * 1000)
+            db.commit()
 
             for field in ANALYSIS_ARRAY_FIELDS:
                 v = data.get(field)

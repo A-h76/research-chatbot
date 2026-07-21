@@ -52,7 +52,19 @@ def create_prompt_version_model(Base):
         migration's partial unique index (one active row per name) is
         Postgres-only and enforced there, not re-declared here — same
         convention server.py's own ModelVersion class already follows for
-        its sibling table's identical constraint."""
+        its sibling table's identical constraint.
+
+        The six columns below (migrations/0015_prompt_engine.sql — see
+        docs/prompt-engine-architecture.md §3) add authoring metadata and
+        a `status` lifecycle that's independent of `is_active`: `status`
+        is draft|active|archived (which authoring states a version has
+        passed through), `is_active` is still "the one version currently
+        served for this name". PromptRegistry enforces that only a
+        status='active' row may ever have is_active=True — not a DB-level
+        CHECK here (SQLite has no reliable equivalent this project relies
+        on elsewhere either; migration 0015's Postgres CHECK is the real
+        enforcement for direct SQL, this is the enforcement for anything
+        going through the ORM)."""
 
         __tablename__ = "prompt_versions"
         __table_args__ = (
@@ -66,6 +78,17 @@ def create_prompt_version_model(Base):
         template = Column(Text, nullable=False)
         is_active = Column(Boolean, nullable=False, default=False)
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+        description = Column(Text, nullable=False, default="")
+        status = Column(Text, nullable=False, default="draft")
+        category = Column(Text, nullable=False, default="")
+        examples = Column(Text, nullable=False, default="[]")  # JSON array, app-serialized
+        expected_output_type = Column(Text, nullable=False, default="text")
+        # Soft FK -> users.id: no ForeignKey(), prompt_versions lives under
+        # this module's own private Base, not server.py's real one — same
+        # reason CostLedgerEntry.user_id has none. Real FK constraint is
+        # migration-level only (0015).
+        author_user_id = Column(Integer, nullable=True)
 
     return PromptVersion
 
@@ -105,3 +128,56 @@ def create_pipeline_version_model(Base):
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     return PipelineVersion
+
+
+def create_persona_model(Base):
+    class Persona(Base):
+        """One row per persona — migrations/0015_prompt_engine.sql's
+        personas table (docs/prompt-engine-architecture.md §5).
+
+        `is_active` here means something different from
+        PromptVersion.is_active above: many personas can be True at once
+        (it just means "offered as a selectable option"), there's no
+        partial-unique-per-name index enforcing exactly one. Don't assume
+        the two columns behave the same way just because they share a
+        name."""
+
+        __tablename__ = "personas"
+        id = Column(Integer, primary_key=True)
+        name = Column(Text, nullable=False, unique=True)
+        description = Column(Text, nullable=False, default="")
+        system_prompt = Column(Text, nullable=False)
+        is_active = Column(Boolean, nullable=False, default=True)
+        created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+        updated_at = Column(
+            DateTime,
+            default=lambda: datetime.now(timezone.utc),
+            onupdate=lambda: datetime.now(timezone.utc),
+        )
+
+    return Persona
+
+
+def create_prompt_execution_model(Base):
+    class PromptExecution(Base):
+        """One row per PromptBuilder.build() call that actually went on
+        to a model — migrations/0015_prompt_engine.sql's prompt_executions
+        table (docs/prompt-engine-architecture.md §9). Real ForeignKeys to
+        prompt_versions/personas since both live on this same Base (see
+        prompt_registry.py); project_id/user_id are plain columns, same
+        cross-Base reason as PromptVersion.author_user_id."""
+
+        __tablename__ = "prompt_executions"
+        id = Column(Integer, primary_key=True)
+        prompt_version_id = Column(Integer, ForeignKey("prompt_versions.id"), nullable=True)
+        persona_id = Column(Integer, ForeignKey("personas.id"), nullable=True)
+        project_id = Column(Integer, nullable=True)
+        user_id = Column(Integer, nullable=False)
+        assembled_prompt = Column(Text, nullable=False)
+        output_schema = Column(Text, nullable=True)   # JSON-as-text, nullable
+        tokens_used = Column(Integer, nullable=True)
+        latency_ms = Column(Integer, nullable=True)
+        status = Column(Text, nullable=False, default="pending")   # pending|success|failed
+        created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    return PromptExecution

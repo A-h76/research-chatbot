@@ -94,15 +94,21 @@ class ModelRegistry:
         """fallback_models isn't in the original method list — added
         because the brief asks for a caller "with automatic fallbacks"
         without pinning down a mechanism; this is the minimal one:
-        opt-in list, no default chain, no config file."""
+        opt-in list, no default chain, no config file.
+
+        prompt_version_id (like user_id) is popped from kwargs, never
+        forwarded to a provider API — it's PromptBuilder's
+        AssembledPrompt.prompt_version_id, threaded through purely for
+        cost-ledger attribution (see _attach_cost_and_log)."""
         user_id = kwargs.pop("user_id", None)
+        prompt_version_id = kwargs.pop("prompt_version_id", None)
         candidates = [model] + list(fallback_models or [])
         errors = []
 
         for candidate in candidates:
             try:
                 result = self._dispatch(candidate, messages, **kwargs)
-                self._attach_cost_and_log(result, user_id)
+                self._attach_cost_and_log(result, user_id, prompt_version_id)
                 return result
             except ModelError as exc:
                 errors.append(exc)
@@ -192,7 +198,7 @@ class ModelRegistry:
         chat_messages = [m for m in messages if m.get("role") != "system"]
         return ("\n".join(system_parts) if system_parts else None), chat_messages
 
-    def _attach_cost_and_log(self, result: dict, user_id) -> None:
+    def _attach_cost_and_log(self, result: dict, user_id, prompt_version_id=None) -> None:
         record_ai_call(result["model"], result["prompt_tokens"], result["completion_tokens"])
         cost = self._cost_ledger.estimate_cost(
             result["model"], result["prompt_tokens"], result["completion_tokens"])
@@ -201,7 +207,7 @@ class ModelRegistry:
             self._log_cost_safely(
                 user_id=user_id, model=result["model"], prompt_tokens=result["prompt_tokens"],
                 completion_tokens=result["completion_tokens"], total_tokens=result["total_tokens"],
-                cost=cost, action="chat")
+                cost=cost, action="chat", prompt_version_id=prompt_version_id)
 
     def _log_cost_safely(self, **kwargs):
         # Best-effort: a logging failure must never take down an

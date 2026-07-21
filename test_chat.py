@@ -59,7 +59,12 @@ def test_falls_back_when_chat_system_not_seeded(db):
 
 def test_uses_registry_when_chat_system_seeded(db):
     registry = PromptRegistry(db)
-    registry.create_prompt("chat_system", "test", "Custom system prompt from the registry.")
+    # status="active" required: PromptRegistry's own default is "draft"
+    # (migration 0015's authoring lifecycle) — a draft has no active
+    # version for _get_chat_system_opening()'s no-explicit-version lookup
+    # to find, so without this the fallback would fire instead.
+    registry.create_prompt("chat_system", "test", "Custom system prompt from the registry.",
+                           status="active")
 
     opening = server._get_chat_system_opening(db)
 
@@ -123,3 +128,40 @@ def test_log_chat_cost_noop_when_usage_none(db):
 def test_log_chat_cost_is_best_effort_on_failure(mocker):
     mocker.patch.object(server, "get_cost_ledger", side_effect=RuntimeError("ledger unavailable"))
     server._log_chat_cost(1, "gpt-4o-mini", _FakeUsage(10, 5))   # must not raise
+
+
+# ------------------------------------------------------------ preview_chat_prompt_builder_migration
+def test_preview_chat_migration_returns_legacy_and_candidate_side_by_side(db):
+    # Same "chat_system" name /api/chat's own _get_chat_system_opening
+    # already uses — see docs/chat-migration-roadmap.md §3 on why this
+    # is deliberately NOT SystemPromptManager's separate "system_prompt".
+    # PromptBuilder.build() always resolves SystemPromptManager's own
+    # "system_prompt" first regardless of task_name, so both need seeding
+    # here — found by actually running this, not assumed: the first
+    # version of this test only seeded "chat_system" and hit exactly the
+    # ValueError this comment now explains.
+    registry = server.PromptRegistry(db)
+    registry.create_prompt("chat_system", "test", "Custom opening line.", status="active")
+    registry.create_prompt("system_prompt", "test", "Global system text.", status="active")
+
+    user = server.User(email="chatmigrationtest@example.com", name="Ada Lovelace", auth_provider="dev")
+    db.add(user)
+    db.commit()
+
+    try:
+        result = server.preview_chat_prompt_builder_migration(user, project=None, memory_enabled=False)
+
+        assert "Custom opening line." in result["legacy_system_prompt"]
+        assert "Ada Lovelace" in result["legacy_system_prompt"]
+        assert result["prompt_builder_task"] == "Custom opening line."
+        assert result["prompt_builder_system"] == "Global system text."
+        assert "Ada Lovelace" in result["not_yet_covered_by_prompt_builder"]["user_identity_and_date"]
+        # The candidate's own assembled text doesn't yet include user
+        # identity/date — confirms the roadmap's §2 gap is real, not
+        # just asserted in a comment.
+        assert "Ada Lovelace" not in result["prompt_builder_final"]
+    finally:
+        db.delete(user)
+        db.query(PromptVersion).filter_by(name="chat_system").delete()
+        db.query(PromptVersion).filter_by(name="system_prompt").delete()
+        db.commit()

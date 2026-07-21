@@ -14,20 +14,29 @@ is intentionally left untouched — nothing in this codebase has ever
 written a row to it; reviving unpopulated schema wasn't asked for and
 isn't needed for either route here, which only need paper chunks.
 
-Constructor-injected (SessionLocal, models, utility_model), never
-`import server` — same reason as every other module in auth/, quotas/,
-and backend/: server.py runs as __main__, so a module it reaches into
-importing "server" back re-executes the whole file under a second
-module identity and recurses.
+POST /api/rag builds its prompt via PromptBuilder (docs/
+prompt-engine-architecture.md §8), not a direct PromptRegistry.get_prompt()
+call as it originally did — the first real integration of the Prompt
+Engine outside its own package. Picks the model via
+ModelRouter.get_model_for_task("rag") rather than a fixed injected
+string, and writes one PromptExecution row per call (pending -> success/
+failed), closing the audit-trail gap prompt-engine-audit.md flagged.
+
+Constructor-injected (SessionLocal, models, get_prompt_builder,
+model_router, PromptExecution), never `import server` — same reason as
+every other module in auth/, quotas/, and backend/: server.py runs as
+__main__, so a module it reaches into importing "server" back
+re-executes the whole file under a second module identity and recurses.
 """
 import json
 import math
+import time
 
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy import select
 
 from auth.decorators import jwt_required
-from backend.ai import PromptRegistry, ModelRegistry, ModelError
+from backend.ai import ModelRegistry, ModelError
 from backend.ai.prompts import ensure_default_prompts
 
 
@@ -75,7 +84,8 @@ def _search_chunks(db, UserFile, Chunk, user_id, query_embedding, *,
     return scored[:limit]
 
 
-def create_search_blueprint(*, SessionLocal, UserFile, Chunk, utility_model):
+def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder,
+                            model_router, PromptExecution):
     bp = Blueprint("search", __name__)
 
     @bp.route("/api/documents/search", methods=["GET"])
@@ -157,19 +167,46 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, utility_model):
             )
 
             ensure_default_prompts(db)
-            prompt_registry = PromptRegistry(db)
+            builder = get_prompt_builder(db)
             try:
-                prompt = prompt_registry.get_prompt(
-                    "semantic_search",
-                    variables={"documents": documents_text, "question": query},
+                # rag_context is its own layer, not folded into
+                # semantic_search's own {{ documents }} variable — see
+                # PromptBuilder's module docstring on why retrieved
+                # context always stays a separate section. The model
+                # gets `assembled.final` (every non-empty layer, System
+                # first), not just the Task layer alone.
+                assembled = builder.build(
+                    query, "semantic_search",
+                    project_id=project_id, user_id=user_id, rag_context=documents_text,
                 )
+            except ValueError as exc:
+                return jsonify({"error": "prompt_assembly_failed", "message": str(exc)}), 502
+
+            model = model_router.get_model_for_task("rag")
+            execution = PromptExecution(
+                prompt_version_id=assembled.prompt_version_id,
+                persona_id=assembled.persona_id,
+                project_id=project_id, user_id=user_id,
+                assembled_prompt=assembled.final, status="pending",
+            )
+            db.add(execution)
+            db.commit()
+
+            started = time.perf_counter()
+            try:
                 result = model_registry.call(
-                    utility_model,
-                    [{"role": "user", "content": prompt}],
-                    user_id=user_id,
+                    model, [{"role": "user", "content": assembled.final}],
+                    user_id=user_id, prompt_version_id=assembled.prompt_version_id,
                 )
             except ModelError as exc:
+                execution.status = "failed"
+                db.commit()
                 return jsonify({"error": "model_call_failed", "message": str(exc)}), 502
+
+            execution.status = "success"
+            execution.tokens_used = result.get("total_tokens")
+            execution.latency_ms = int((time.perf_counter() - started) * 1000)
+            db.commit()
 
             return jsonify({
                 "answer": result["content"],

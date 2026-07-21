@@ -51,6 +51,45 @@ def test_prompt_version_round_trip(env):
     db.close()
 
 
+def test_prompt_version_authoring_metadata_defaults(env):
+    # migrations/0015_prompt_engine.sql columns — a row created without
+    # specifying any of them should still get sensible column defaults,
+    # not None/NULL for the text fields (see the CHECK constraints
+    # migration 0015 adds — a bare NULL wouldn't satisfy those in Postgres).
+    db = env["SessionLocal"]()
+    db.add(env["PromptVersion"](name="x", version=1, template="a"))
+    db.commit()
+
+    row = db.query(env["PromptVersion"]).filter_by(name="x").one()
+    assert row.description == ""
+    assert row.status == "draft"
+    assert row.category == ""
+    assert row.examples == "[]"
+    assert row.expected_output_type == "text"
+    assert row.author_user_id is None
+    db.close()
+
+
+def test_prompt_version_authoring_metadata_round_trip(env):
+    db = env["SessionLocal"]()
+    db.add(env["PromptVersion"](
+        name="y", version=1, template="b", is_active=True,
+        description="a test prompt", status="active", category="analysis",
+        examples=json.dumps([{"input": "x", "output": "y"}]),
+        expected_output_type="json", author_user_id=7,
+    ))
+    db.commit()
+
+    row = db.query(env["PromptVersion"]).filter_by(name="y").one()
+    assert row.description == "a test prompt"
+    assert row.status == "active"
+    assert row.category == "analysis"
+    assert json.loads(row.examples) == [{"input": "x", "output": "y"}]
+    assert row.expected_output_type == "json"
+    assert row.author_user_id == 7
+    db.close()
+
+
 def test_prompt_version_unique_name_and_version(env):
     db = env["SessionLocal"]()
     db.add(env["PromptVersion"](name="x", version=1, template="a"))
