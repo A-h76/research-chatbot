@@ -3,8 +3,8 @@ beyond a plain instance.
 
 Run: pytest backend/ai/test_domain_registry.py -v
 """
-from backend.ai.domain_registry import DomainRegistry
 
+from backend.ai.domain_registry import DomainRegistry
 
 registry = DomainRegistry()
 
@@ -52,7 +52,9 @@ def test_detect_domain_user_selection_unknown_falls_through():
     # falls through to venue/keyword detection instead of propagating a
     # domain name that doesn't exist in DOMAINS.
     domain = registry.detect_domain(
-        metadata={"venue": "NeurIPS"}, content="", user_selected="not-a-real-domain",
+        metadata={"venue": "NeurIPS"},
+        content="",
+        user_selected="not-a-real-domain",
     )
     assert domain == "ai_ml"
 
@@ -70,7 +72,8 @@ def test_detect_domain_venue_takes_priority_over_keyword():
     # Venue detection (2nd priority) should win even when the content
     # would keyword-match a different domain (3rd priority).
     domain = registry.detect_domain(
-        metadata={"venue": "Cell"}, content="a randomized clinical trial of patients",
+        metadata={"venue": "Cell"},
+        content="a randomized clinical trial of patients",
     )
     assert domain == "biology"
 

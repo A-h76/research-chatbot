@@ -32,12 +32,7 @@ class ZipImporter:
             for info in zf.infolist():
                 member = info.filename
                 base = os.path.basename(member)
-                if (
-                    info.is_dir()
-                    or not base
-                    or base.startswith(".")
-                    or "__MACOSX" in member
-                ):
+                if info.is_dir() or not base or base.startswith(".") or "__MACOSX" in member:
                     continue
                 if info.file_size > 25 * 1024 * 1024:  # skip huge members
                     continue

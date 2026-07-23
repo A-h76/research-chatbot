@@ -28,15 +28,16 @@ every other module in auth/, quotas/, and backend/: server.py runs as
 __main__, so a module it reaches into importing "server" back
 re-executes the whole file under a second module identity and recurses.
 """
+
 import json
 import math
 import time
 
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select
 
 from auth.decorators import jwt_required
-from backend.ai import ModelRegistry, ModelError
+from backend.ai import ModelError, ModelRegistry
 from backend.ai.prompts import ensure_default_prompts
 
 
@@ -47,8 +48,9 @@ def _cosine(a, b):
     return dot / (na * nb)
 
 
-def _search_chunks(db, UserFile, Chunk, user_id, query_embedding, *,
-                   file_id=None, project_id=None, limit=20, min_score=0.15):
+def _search_chunks(
+    db, UserFile, Chunk, user_id, query_embedding, *, file_id=None, project_id=None, limit=20, min_score=0.15
+):
     """Real vector similarity, not keyword fallback — unlike /api/search,
     which also falls back to keyword scoring for chunks with no stored
     embedding. That fallback isn't reproduced here: this endpoint's whole
@@ -63,9 +65,7 @@ def _search_chunks(db, UserFile, Chunk, user_id, query_embedding, *,
     if not file_map:
         return []
 
-    chunks = db.execute(
-        select(Chunk).where(Chunk.file_id.in_(file_map.keys()))
-    ).scalars().all()
+    chunks = db.execute(select(Chunk).where(Chunk.file_id.in_(file_map.keys()))).scalars().all()
 
     scored = []
     for ch in chunks:
@@ -84,8 +84,7 @@ def _search_chunks(db, UserFile, Chunk, user_id, query_embedding, *,
     return scored[:limit]
 
 
-def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder,
-                            model_router, PromptExecution):
+def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder, model_router, PromptExecution):
     bp = Blueprint("search", __name__)
 
     @bp.route("/api/documents/search", methods=["GET"])
@@ -94,8 +93,7 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder
         user_id = int(g.current_user)
         q = (request.args.get("q") or "").strip()
         if len(q) < 2:
-            return jsonify({"error": "query_too_short",
-                            "message": "Query must be at least 2 characters"}), 400
+            return jsonify({"error": "query_too_short", "message": "Query must be at least 2 characters"}), 400
         file_id = request.args.get("file_id", type=int)
         project_id = request.args.get("project_id", type=int)
         limit = max(1, min(50, request.args.get("limit", default=20, type=int) or 20))
@@ -109,22 +107,32 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder
                 return jsonify({"error": "embedding_failed", "message": str(exc)}), 502
 
             results = _search_chunks(
-                db, UserFile, Chunk, user_id, query_embedding,
-                file_id=file_id, project_id=project_id, limit=limit,
+                db,
+                UserFile,
+                Chunk,
+                user_id,
+                query_embedding,
+                file_id=file_id,
+                project_id=project_id,
+                limit=limit,
             )
-            return jsonify({"results": [
+            return jsonify(
                 {
-                    "document_id": ch.file_id,
-                    "chunk_id": ch.id,
-                    "title": (uf.title or uf.name) if uf else "Document",
-                    "file_name": uf.name if uf else None,
-                    "snippet": ch.content[:300],
-                    "score": round(score, 4),
-                    "page": ch.page,
-                    "section": ch.section,
+                    "results": [
+                        {
+                            "document_id": ch.file_id,
+                            "chunk_id": ch.id,
+                            "title": (uf.title or uf.name) if uf else "Document",
+                            "file_name": uf.name if uf else None,
+                            "snippet": ch.content[:300],
+                            "score": round(score, 4),
+                            "page": ch.page,
+                            "section": ch.section,
+                        }
+                        for score, ch, uf in results
+                    ]
                 }
-                for score, ch, uf in results
-            ]})
+            )
         finally:
             db.close()
 
@@ -135,8 +143,7 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder
         data = request.get_json(silent=True) or {}
         query = (data.get("query") or "").strip()
         if len(query) < 2:
-            return jsonify({"error": "query_too_short",
-                            "message": "Query must be at least 2 characters"}), 400
+            return jsonify({"error": "query_too_short", "message": "Query must be at least 2 characters"}), 400
         file_id = data.get("file_id")
         project_id = data.get("project_id")
         top_k = max(1, min(20, int(data.get("top_k") or 6)))
@@ -150,14 +157,26 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder
                 return jsonify({"error": "embedding_failed", "message": str(exc)}), 502
 
             results = _search_chunks(
-                db, UserFile, Chunk, user_id, query_embedding,
-                file_id=file_id, project_id=project_id, limit=top_k,
+                db,
+                UserFile,
+                Chunk,
+                user_id,
+                query_embedding,
+                file_id=file_id,
+                project_id=project_id,
+                limit=top_k,
             )
             if not results:
-                return jsonify({
-                    "answer": None, "sources": [],
-                    "message": "No relevant documents found for this query.",
-                }), 200
+                return (
+                    jsonify(
+                        {
+                            "answer": None,
+                            "sources": [],
+                            "message": "No relevant documents found for this query.",
+                        }
+                    ),
+                    200,
+                )
 
             documents_text = "\n\n".join(
                 f"[{(uf.title or uf.name) if uf else 'document'}]"
@@ -176,8 +195,11 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder
                 # gets `assembled.final` (every non-empty layer, System
                 # first), not just the Task layer alone.
                 assembled = builder.build(
-                    query, "semantic_search",
-                    project_id=project_id, user_id=user_id, rag_context=documents_text,
+                    query,
+                    "semantic_search",
+                    project_id=project_id,
+                    user_id=user_id,
+                    rag_context=documents_text,
                 )
             except ValueError as exc:
                 return jsonify({"error": "prompt_assembly_failed", "message": str(exc)}), 502
@@ -186,8 +208,10 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder
             execution = PromptExecution(
                 prompt_version_id=assembled.prompt_version_id,
                 persona_id=assembled.persona_id,
-                project_id=project_id, user_id=user_id,
-                assembled_prompt=assembled.final, status="pending",
+                project_id=project_id,
+                user_id=user_id,
+                assembled_prompt=assembled.final,
+                status="pending",
             )
             db.add(execution)
             db.commit()
@@ -195,8 +219,10 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder
             started = time.perf_counter()
             try:
                 result = model_registry.call(
-                    model, [{"role": "user", "content": assembled.final}],
-                    user_id=user_id, prompt_version_id=assembled.prompt_version_id,
+                    model,
+                    [{"role": "user", "content": assembled.final}],
+                    user_id=user_id,
+                    prompt_version_id=assembled.prompt_version_id,
                 )
             except ModelError as exc:
                 execution.status = "failed"
@@ -208,21 +234,26 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder
             execution.latency_ms = int((time.perf_counter() - started) * 1000)
             db.commit()
 
-            return jsonify({
-                "answer": result["content"],
-                "model": result["model"],
-                "sources": [
+            return (
+                jsonify(
                     {
-                        "document_id": ch.file_id,
-                        "chunk_id": ch.id,
-                        "title": (uf.title or uf.name) if uf else "Document",
-                        "score": round(score, 4),
-                        "page": ch.page,
-                        "section": ch.section,
+                        "answer": result["content"],
+                        "model": result["model"],
+                        "sources": [
+                            {
+                                "document_id": ch.file_id,
+                                "chunk_id": ch.id,
+                                "title": (uf.title or uf.name) if uf else "Document",
+                                "score": round(score, 4),
+                                "page": ch.page,
+                                "section": ch.section,
+                            }
+                            for score, ch, uf in results
+                        ],
                     }
-                    for score, ch, uf in results
-                ],
-            }), 200
+                ),
+                200,
+            )
         finally:
             db.close()
 

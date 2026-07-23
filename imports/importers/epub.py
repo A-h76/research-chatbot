@@ -17,9 +17,10 @@ some real-world epub generators declare a slightly different or missing
 namespace on these elements. Being strict would trade "works on the
 epubs people actually have" for spec purity nothing here needs.
 """
+
 import posixpath
-import zipfile
 import xml.etree.ElementTree as ET
+import zipfile
 
 _XHTML_SKIP_TAGS = {"script", "style"}
 

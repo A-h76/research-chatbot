@@ -45,16 +45,17 @@ duplicate or a rename of pipeline_versions. No migration exists for this
 table since nothing else in the schema needs it; this module creates it
 if missing (see _ensure_model_presets_table).
 """
+
 import json
 import os
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, UniqueConstraint
+from sqlalchemy import Column, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import declarative_base
 
-from .prompt_registry import PromptRegistry, Persona
-from .system_prompt import SystemPromptManager, DEFAULT_SYSTEM_PROMPT
 from .persona_engine import PersonaEngine
+from .prompt_registry import Persona, PromptRegistry
+from .system_prompt import DEFAULT_SYSTEM_PROMPT, SystemPromptManager
 
 _Base = declarative_base()
 
@@ -65,7 +66,7 @@ def create_model_preset_model(Base):
         __table_args__ = (UniqueConstraint("name", name="uq_model_presets_name"),)
         id = Column(Integer, primary_key=True)
         name = Column(String(60), nullable=False)
-        config = Column(Text, nullable=False)   # JSON: {"model", "temperature", "max_tokens", ...}
+        config = Column(Text, nullable=False)  # JSON: {"model", "temperature", "max_tokens", ...}
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     return ModelPreset
@@ -90,7 +91,7 @@ DEFAULT_PROMPTS = {
         "methodology, and key findings.\n\nPaper:\n{{ text }}"
     ),
     "paper_analysis": (
-        "You are analyzing a research paper. The user has asked: \"{{ query }}\"\n\n"
+        'You are analyzing a research paper. The user has asked: "{{ query }}"\n\n'
         "**Paper Content:**\n{{ text }}\n\n"
         "**Paper Metadata:**\n"
         "- Title: {{ title }}\n"
@@ -307,7 +308,7 @@ _MEDICAL_SECTIONS_17_TO_30 = (
 
 DOMAIN_MODULES = {
     "domain_medical": (
-        "You are analyzing a research paper. The user has asked: \"{{ query }}\"\n\n"
+        'You are analyzing a research paper. The user has asked: "{{ query }}"\n\n'
         "**Paper Content:**\n{{ text }}\n\n"
         "**Paper Metadata:**\n"
         "- Title: {{ title }}\n"
@@ -331,7 +332,7 @@ DOMAIN_MODULES = {
     # module (benchmark rigor, ablations, compute/licensing reporting,
     # etc.) is a separate, later task, not written here.
     "domain_ai_ml": (
-        "You are analyzing an AI/ML research paper. The user has asked: \"{{ query }}\"\n\n"
+        'You are analyzing an AI/ML research paper. The user has asked: "{{ query }}"\n\n'
         "**Paper Content:**\n{{ text }}\n\n"
         "**Paper Metadata:**\n"
         "- Title: {{ title }}\n"
@@ -468,8 +469,12 @@ def seed_prompts(db_session) -> dict:
             result[name] = existing
             continue
         result[name] = registry.create_prompt(
-            name=name, description=f"Default seed prompt: {name}", template_text=template,
-            status="active", category=name)
+            name=name,
+            description=f"Default seed prompt: {name}",
+            template_text=template,
+            status="active",
+            category=name,
+        )
         print(f"OK    prompt '{name}' seeded")
 
     for name, template in DOMAIN_MODULES.items():
@@ -479,8 +484,12 @@ def seed_prompts(db_session) -> dict:
             result[name] = existing
             continue
         result[name] = registry.create_prompt(
-            name=name, description=f"Domain module: {name}", template_text=template,
-            status="active", category="domain_module")
+            name=name,
+            description=f"Domain module: {name}",
+            template_text=template,
+            status="active",
+            category="domain_module",
+        )
         print(f"OK    domain module '{name}' seeded")
 
     return result
@@ -572,8 +581,7 @@ if __name__ == "__main__":
     # would re-execute that file under a second module identity since
     # it runs as __main__ — see auth/magic_link.py's docstring for the
     # full explanation of why that's a hard rule in this project).
-    url = (os.environ.get("DATABASE_URL") or "sqlite:///chat_dev.db").replace(
-        "postgres://", "postgresql://", 1)
+    url = (os.environ.get("DATABASE_URL") or "sqlite:///chat_dev.db").replace("postgres://", "postgresql://", 1)
     engine = create_engine(url, pool_pre_ping=True)
     SessionLocal = sessionmaker(bind=engine)
 

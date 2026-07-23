@@ -16,9 +16,9 @@ import os
 
 import pytest
 
+from backend.storage.factory import get_storage_backend
 from backend.storage.interface import StorageBackend
 from backend.storage.local import LocalBackend
-from backend.storage.factory import get_storage_backend
 
 
 # ------------------------------------------------------------------ LocalBackend
@@ -114,17 +114,16 @@ _r2_configured = bool(os.environ.get("R2_BUCKET"))
 
 @pytest.mark.skipif(not _r2_configured, reason="R2 not configured in this environment")
 def test_r2_backend_real_upload_download_delete_round_trip():
-    from backend.storage.r2 import R2Backend
     import uuid
+
+    from backend.storage.r2 import R2Backend
 
     backend = R2Backend()
     key = f"backend-storage-compat-test-{uuid.uuid4().hex}.txt"
     content = b"real R2 round trip via the compat layer"
 
     try:
-        returned_key = backend.upload(
-            io.BytesIO(content), key, content_type="text/plain"
-        )
+        returned_key = backend.upload(io.BytesIO(content), key, content_type="text/plain")
         assert returned_key == key
 
         downloaded = backend.download(key)

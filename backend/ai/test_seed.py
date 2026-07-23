@@ -5,17 +5,27 @@ just "does it insert once."
 
 Run: pytest backend/ai/test_seed.py -v
 """
+
 import json
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.ai.prompt_registry import PromptRegistry, Persona, _Base as prompt_base
 from backend.ai.persona_engine import PersonaEngine
+from backend.ai.prompt_registry import Persona, PromptRegistry
+from backend.ai.prompt_registry import _Base as prompt_base
 from backend.ai.seed import (
-    seed_prompts, seed_pipelines, seed_all, seed_system_prompt, seed_personas,
-    ModelPreset, DEFAULT_PROMPTS, DEFAULT_PIPELINES, DEFAULT_PERSONAS, DOMAIN_MODULES,
+    DEFAULT_PERSONAS,
+    DEFAULT_PIPELINES,
+    DEFAULT_PROMPTS,
+    DOMAIN_MODULES,
+    ModelPreset,
+    seed_all,
+    seed_personas,
+    seed_pipelines,
+    seed_prompts,
+    seed_system_prompt,
 )
 from backend.ai.system_prompt import DEFAULT_SYSTEM_PROMPT
 
@@ -23,7 +33,7 @@ from backend.ai.system_prompt import DEFAULT_SYSTEM_PROMPT
 @pytest.fixture
 def db():
     engine = create_engine("sqlite:///:memory:")
-    prompt_base.metadata.create_all(engine)   # prompt_versions
+    prompt_base.metadata.create_all(engine)  # prompt_versions
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()
     yield session
@@ -115,8 +125,7 @@ def test_seed_prompts_does_not_overwrite_existing_prompt_with_same_name(db):
     # get_active_version()-based idempotency check, and this test would
     # be exercising the wrong scenario.
     registry = PromptRegistry(db)
-    registry.create_prompt("paper_analysis", "the real one", "REAL EXISTING TEMPLATE {{ text }}",
-                           status="active")
+    registry.create_prompt("paper_analysis", "the real one", "REAL EXISTING TEMPLATE {{ text }}", status="active")
 
     seed_prompts(db)
 
@@ -146,7 +155,7 @@ def test_seed_pipelines_idempotent(db):
 def test_seed_pipelines_creates_table_if_missing(db):
     # The fixture only creates prompt_versions — model_presets must be
     # created by seed_pipelines itself (no migration owns this table).
-    seed_pipelines(db)   # must not raise "no such table"
+    seed_pipelines(db)  # must not raise "no such table"
     assert db.query(ModelPreset).count() == 3
 
 
@@ -166,7 +175,7 @@ def test_seed_system_prompt_idempotent(db):
 
     registry = PromptRegistry(db)
     versions = registry.get_prompts_by_status("active")
-    assert len(versions) == 1   # a second run must not create v2
+    assert len(versions) == 1  # a second run must not create v2
 
 
 # ------------------------------------------------------------ seed_personas

@@ -22,7 +22,7 @@ re-execute the whole file under a second identity.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 
 
 def create_usage_log_model(Base):
@@ -31,9 +31,7 @@ def create_usage_log_model(Base):
         id = Column(Integer, primary_key=True)
         user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
         action = Column(String(30), nullable=False)  # upload | ai_query | export | ...
-        amount = Column(
-            Integer, default=0
-        )  # bytes or tokens — meaning depends on action
+        amount = Column(Integer, default=0)  # bytes or tokens — meaning depends on action
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     return UsageLog

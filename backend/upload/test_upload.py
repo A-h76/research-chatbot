@@ -15,25 +15,25 @@ import pytest
 from flask import Flask
 from flask_jwt_extended import JWTManager
 from sqlalchemy import (
-    create_engine,
-    Column,
-    Integer,
     BigInteger,
-    String,
+    Column,
     DateTime,
     ForeignKey,
+    Integer,
+    String,
+    create_engine,
     select,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from auth.jwt_utils import create_jwt
-from quotas.service import QuotaService
-from quotas.models import create_usage_log_model
-from backend.upload import routes as upload_routes
-from backend.upload.routes import create_documents_blueprint
 from backend.ai import ModelError
 from backend.ai.model_router import ModelRouter
-from backend.upload.validation import validate_size, validate_extension, ValidationError
+from backend.upload import routes as upload_routes
+from backend.upload.routes import create_documents_blueprint
+from backend.upload.validation import ValidationError, validate_extension, validate_size
+from quotas.models import create_usage_log_model
+from quotas.service import QuotaService
 
 
 class FakeStorageBackend:
@@ -67,9 +67,7 @@ def env():
     class User(Base):
         __tablename__ = "users"
         id = Column(Integer, primary_key=True)
-        storage_limit_bytes = Column(
-            BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES
-        )
+        storage_limit_bytes = Column(BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES)
         monthly_token_used = Column(Integer, default=0)
         monthly_token_limit = Column(Integer, default=QuotaService.DEFAULT_TOKEN_LIMIT)
         quota_reset_at = Column(DateTime, nullable=True)
@@ -225,12 +223,8 @@ def test_successful_upload_writes_file_row_and_enqueues_job(env):
 
     db = env["SessionLocal"]()
     uf = db.get(env["UserFile"], doc_id)
-    job = db.execute(
-        select(env["UploadJob"]).where(env["UploadJob"].file_id == doc_id)
-    ).scalar_one()
-    event = db.execute(
-        select(env["OutboxEvent"]).where(env["OutboxEvent"].aggregate_id == job.id)
-    ).scalar_one()
+    job = db.execute(select(env["UploadJob"]).where(env["UploadJob"].file_id == doc_id)).scalar_one()
+    event = db.execute(select(env["OutboxEvent"]).where(env["OutboxEvent"].aggregate_id == job.id)).scalar_one()
     db.close()
 
     assert uf.name == "paper.pdf"
@@ -333,8 +327,15 @@ def test_storage_failure_returns_502_and_writes_no_file_row(env):
 def _sample_document(env, title=None, authors=None, abstract=None):
     db = env["SessionLocal"]()
     uf = env["UserFile"](
-        user_id=1, name="paper.pdf", mime="application/pdf", kind="document",
-        path="fake/key.pdf", size=100, title=title, authors=authors, abstract=abstract,
+        user_id=1,
+        name="paper.pdf",
+        mime="application/pdf",
+        kind="document",
+        path="fake/key.pdf",
+        size=100,
+        title=title,
+        authors=authors,
+        abstract=abstract,
     )
     db.add(uf)
     db.commit()
@@ -344,10 +345,20 @@ def _sample_document(env, title=None, authors=None, abstract=None):
 
 
 _ANALYSIS_JSON = {
-    "executive_summary": "A summary.", "abstract_explained": "x", "research_objective": "x",
-    "problem_statement": "x", "methodology": "x", "dataset": None, "experiments": "x",
-    "results": "x", "key_contributions": ["a"], "strengths": ["b"], "limitations": ["c"],
-    "future_work": ["d"], "keywords": ["e"], "important_terms": {"x": "y"},
+    "executive_summary": "A summary.",
+    "abstract_explained": "x",
+    "research_objective": "x",
+    "problem_statement": "x",
+    "methodology": "x",
+    "dataset": None,
+    "experiments": "x",
+    "results": "x",
+    "key_contributions": ["a"],
+    "strengths": ["b"],
+    "limitations": ["c"],
+    "future_work": ["d"],
+    "keywords": ["e"],
+    "important_terms": {"x": "y"},
 }
 
 
@@ -363,9 +374,13 @@ def _mock_analysis_registries(mocker, response_json=None, model_side_effect=None
         model_registry.call.side_effect = model_side_effect
     else:
         model_registry.call.return_value = {
-            "content": json.dumps(response_json or _ANALYSIS_JSON), "model": "gpt-4o-mini",
-            "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
-            "finish_reason": "stop", "cost": 0.001,
+            "content": json.dumps(response_json or _ANALYSIS_JSON),
+            "model": "gpt-4o-mini",
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15,
+            "finish_reason": "stop",
+            "cost": 0.001,
         }
     mocker.patch.object(upload_routes, "PromptRegistry", return_value=prompt_registry)
     mocker.patch.object(upload_routes, "ModelRegistry", return_value=model_registry)
@@ -411,9 +426,7 @@ def test_analyze_document_writes_paper_analysis_row(env, mocker):
     env["client"].post(f"/api/documents/{doc_id}/analysis", headers=_auth(env["access"]))
 
     db = env["SessionLocal"]()
-    pa = db.execute(
-        select(env["PaperAnalysis"]).where(env["PaperAnalysis"].file_id == doc_id)
-    ).scalar_one()
+    pa = db.execute(select(env["PaperAnalysis"]).where(env["PaperAnalysis"].file_id == doc_id)).scalar_one()
     db.close()
     assert pa.status == "done"
     assert pa.model == "gpt-4o-mini"
@@ -450,8 +463,7 @@ def test_analyze_document_not_found_for_missing_document(env, mocker):
 
 def test_analyze_document_not_found_for_other_users_document(env, mocker):
     db = env["SessionLocal"]()
-    uf = env["UserFile"](user_id=2, name="other.pdf", mime="application/pdf",
-                         kind="document", path="k", size=1)
+    uf = env["UserFile"](user_id=2, name="other.pdf", mime="application/pdf", kind="document", path="k", size=1)
     db.add(uf)
     db.commit()
     doc_id = uf.id
@@ -473,8 +485,7 @@ def test_analyze_document_no_extractable_text_returns_422(env, mocker):
 
 def test_analyze_document_model_error_returns_502(env, mocker):
     doc_id = _sample_document(env)
-    _mock_analysis_registries(
-        mocker, model_side_effect=ModelError("bad key", provider="openai", model="gpt-4o-mini"))
+    _mock_analysis_registries(mocker, model_side_effect=ModelError("bad key", provider="openai", model="gpt-4o-mini"))
 
     resp = env["client"].post(f"/api/documents/{doc_id}/analysis", headers=_auth(env["access"]))
     assert resp.status_code == 502
@@ -503,8 +514,7 @@ def test_analyze_document_writes_successful_prompt_execution_row(env, mocker):
 
 def test_analyze_document_model_error_marks_prompt_execution_failed(env, mocker):
     doc_id = _sample_document(env)
-    _mock_analysis_registries(
-        mocker, model_side_effect=ModelError("bad key", provider="openai", model="gpt-4o-mini"))
+    _mock_analysis_registries(mocker, model_side_effect=ModelError("bad key", provider="openai", model="gpt-4o-mini"))
 
     env["client"].post(f"/api/documents/{doc_id}/analysis", headers=_auth(env["access"]))
 

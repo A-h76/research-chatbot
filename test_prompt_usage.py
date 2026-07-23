@@ -9,13 +9,14 @@ works, not a second copy of the aggregation tests.
 
 Run: pytest test_prompt_usage.py -v
 """
+
 import os
 
 import pytest
 
 import server
-from server import User
 from backend.ai.model_registry import CostLedgerEntry
+from server import User
 
 ROUTES = [
     "/api/prompt-usage",
@@ -94,8 +95,13 @@ def test_defaults_to_trailing_30_days_when_no_dates_given(client, users):
 def test_by_model_reflects_a_real_cost_ledger_entry(client, db, users):
     _login(client, users["admin"].id)
     entry = CostLedgerEntry(
-        user_id=users["admin"].id, model="gpt-4o-mini", action="chat",
-        prompt_tokens=10, completion_tokens=5, total_tokens=15, cost=0.001,
+        user_id=users["admin"].id,
+        model="gpt-4o-mini",
+        action="chat",
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        cost=0.001,
     )
     db.add(entry)
     db.commit()
@@ -112,8 +118,13 @@ def test_by_model_reflects_a_real_cost_ledger_entry(client, db, users):
 def test_summary_totals_match_by_model_breakdown(client, db, users):
     _login(client, users["admin"].id)
     entry = CostLedgerEntry(
-        user_id=users["admin"].id, model="gpt-4o-mini", action="chat",
-        prompt_tokens=10, completion_tokens=5, total_tokens=15, cost=0.005,
+        user_id=users["admin"].id,
+        model="gpt-4o-mini",
+        action="chat",
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        cost=0.005,
     )
     db.add(entry)
     db.commit()

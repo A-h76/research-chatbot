@@ -11,13 +11,14 @@ test_chat.py's docstring for why.
 
 Run: pytest test_upload_quota.py -v
 """
+
 import io
 
 import pytest
 
 import server
-from server import User, StorageUsage
 from quotas import QuotaService
+from server import StorageUsage, User
 
 
 @pytest.fixture
@@ -82,8 +83,10 @@ def test_upload_falls_back_to_quota_service_default_not_old_max_storage_mb(db):
     route were still silently using the old 5000 MB ceiling, it wouldn't."""
     default_limit = QuotaService.DEFAULT_STORAGE_LIMIT_BYTES
     user_id = _make_user(
-        db, "quota-default@test.local",
-        storage_limit_bytes=None, bytes_used=default_limit - 10,
+        db,
+        "quota-default@test.local",
+        storage_limit_bytes=None,
+        bytes_used=default_limit - 10,
     )
     client = server.app.test_client()
     _login(client, user_id)

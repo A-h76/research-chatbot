@@ -42,6 +42,7 @@ Security notes (mechanics are in build()'s own comments below):
   favor of sandboxing, which gives a real guarantee HTML-escaping
   wouldn't and has zero effect on legitimate output.
 """
+
 import json
 from dataclasses import dataclass
 from typing import Optional
@@ -64,8 +65,16 @@ class AssembledPrompt:
 
 
 class PromptBuilder:
-    def __init__(self, system_prompt_manager, persona_engine, memory_engine,
-                 prompt_registry, SessionLocal, Project, domain_registry):
+    def __init__(
+        self,
+        system_prompt_manager,
+        persona_engine,
+        memory_engine,
+        prompt_registry,
+        SessionLocal,
+        Project,
+        domain_registry,
+    ):
         self.system_prompt_manager = system_prompt_manager
         self.persona_engine = persona_engine
         self.memory_engine = memory_engine
@@ -75,10 +84,16 @@ class PromptBuilder:
         self.domain_registry = domain_registry
 
     def build(
-        self, user_query: str, task_name: str = "paper_analysis", persona=None,
-        project_id: Optional[int] = None, user_id: Optional[int] = None,
-        rag_context: Optional[str] = None, output_schema: Optional[dict] = None,
-        domain: Optional[str] = None, metadata: Optional[dict] = None,
+        self,
+        user_query: str,
+        task_name: str = "paper_analysis",
+        persona=None,
+        project_id: Optional[int] = None,
+        user_id: Optional[int] = None,
+        rag_context: Optional[str] = None,
+        output_schema: Optional[dict] = None,
+        domain: Optional[str] = None,
+        metadata: Optional[dict] = None,
     ) -> AssembledPrompt:
         """`persona` may be a name (str) or an id (int). Raises ValueError
         if a persona is given but doesn't resolve to a real row — a typo
@@ -149,16 +164,13 @@ class PromptBuilder:
             try:
                 project = db.get(self.Project, project_id)
                 if project:
-                    project_context = "\n".join(
-                        s for s in (project.description, project.instructions) if s
-                    )
+                    project_context = "\n".join(s for s in (project.description, project.instructions) if s)
             finally:
                 db.close()
 
         memory_text = ""
         if user_id is not None:
-            memories = self.memory_engine.get_relevant_memories(
-                user_id, user_query, project_id=project_id)
+            memories = self.memory_engine.get_relevant_memories(user_id, user_query, project_id=project_id)
             memory_text = "\n".join(f"- {m.fact}" for m in memories)
 
         # Always its own section — never merged into the Task variables
@@ -166,19 +178,19 @@ class PromptBuilder:
         rag_text = rag_context or ""
 
         render_variables = {
-            "query": user_query, "question": user_query, "text": user_query,
+            "query": user_query,
+            "question": user_query,
+            "text": user_query,
             "title": (metadata or {}).get("title", ""),
             "authors": (metadata or {}).get("authors", ""),
             "year": (metadata or {}).get("year", ""),
             "venue": (metadata or {}).get("venue", ""),
         }
-        task_text, prompt_version = self.prompt_registry.get_prompt(
-            task_name, variables=render_variables)
+        task_text, prompt_version = self.prompt_registry.get_prompt(task_name, variables=render_variables)
 
         # ------------------------------------------------------------ domain
         if domain is None:
-            domain = self.domain_registry.detect_domain(
-                metadata=metadata or {}, content=rag_context or user_query)
+            domain = self.domain_registry.detect_domain(metadata=metadata or {}, content=rag_context or user_query)
 
         domain_version_id = None
         if domain != "general":
@@ -186,7 +198,8 @@ class PromptBuilder:
             if domain_prompt_name:
                 try:
                     domain_text, domain_version = self.prompt_registry.get_prompt(
-                        domain_prompt_name, variables=render_variables)
+                        domain_prompt_name, variables=render_variables
+                    )
                     task_text = f"{task_text}\n\n{domain_text}"
                     domain_version_id = domain_version.id
                 except ValueError:
@@ -198,10 +211,7 @@ class PromptBuilder:
 
         schema_text = ""
         if output_schema:
-            schema_text = (
-                "Respond ONLY with JSON matching this schema:\n"
-                + json.dumps(output_schema, indent=2)
-            )
+            schema_text = "Respond ONLY with JSON matching this schema:\n" + json.dumps(output_schema, indent=2)
 
         sections = [
             ("System", system),
@@ -215,11 +225,18 @@ class PromptBuilder:
         final = "\n\n".join(f"## {label}\n{body}" for label, body in sections if body)
 
         return AssembledPrompt(
-            system=system, persona=persona_text, project_context=project_context,
-            memory=memory_text, rag=rag_text, task=task_text, output_schema=schema_text,
-            final=final, prompt_version_id=prompt_version.id,
+            system=system,
+            persona=persona_text,
+            project_context=project_context,
+            memory=memory_text,
+            rag=rag_text,
+            task=task_text,
+            output_schema=schema_text,
+            final=final,
+            prompt_version_id=prompt_version.id,
             persona_id=persona_row.id if persona_row else None,
-            domain=domain, domain_version_id=domain_version_id,
+            domain=domain,
+            domain_version_id=domain_version_id,
         )
 
     def preview(self, *args, **kwargs) -> AssembledPrompt:

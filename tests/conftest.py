@@ -1,6 +1,7 @@
-import pytest
 import importlib.util
 import os
+
+import pytest
 
 
 def find_flask_app():

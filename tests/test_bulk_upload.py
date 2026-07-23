@@ -21,20 +21,20 @@ import pytest
 from flask import Flask
 from flask_jwt_extended import JWTManager
 from sqlalchemy import (
-    create_engine,
     Column,
-    Integer,
-    String,
     DateTime,
     ForeignKey,
+    Integer,
+    String,
+    create_engine,
     select,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from auth.jwt_utils import create_jwt
-from quotas.service import QuotaExceededError
-from backend.upload.bulk import create_bulk_upload_blueprint, MAX_BATCH_SIZE
+from backend.upload.bulk import MAX_BATCH_SIZE, create_bulk_upload_blueprint
 from backend.upload.validation import ValidationError
+from quotas.service import QuotaExceededError
 
 
 @pytest.fixture
@@ -166,11 +166,7 @@ def test_bulk_upload_success(client, db_models):
     db = db_models["SessionLocal"]()
     batch = db.get(db_models["UploadBatch"], body["batch_id"])
     jobs = (
-        db.execute(
-            select(db_models["UploadJob"]).where(
-                db_models["UploadJob"].upload_batch_id == batch.id
-            )
-        )
+        db.execute(select(db_models["UploadJob"]).where(db_models["UploadJob"].upload_batch_id == batch.id))
         .scalars()
         .all()
     )
@@ -179,9 +175,7 @@ def test_bulk_upload_success(client, db_models):
     assert len(jobs) == 3
     assert all(j.job_type == "import" and j.status == "pending" for j in jobs)
 
-    status_resp = client.get(
-        f"/api/uploads/batch/{batch.id}/status", headers=_auth(client.access_token)
-    )
+    status_resp = client.get(f"/api/uploads/batch/{batch.id}/status", headers=_auth(client.access_token))
     assert status_resp.status_code == 200, status_resp.get_json()
     assert status_resp.get_json()["total_files"] == 3
 
@@ -240,11 +234,7 @@ def test_bulk_upload_batch_status(client, db_models):
 
     db = db_models["SessionLocal"]()
     jobs = (
-        db.execute(
-            select(db_models["UploadJob"]).where(
-                db_models["UploadJob"].upload_batch_id == batch_id
-            )
-        )
+        db.execute(select(db_models["UploadJob"]).where(db_models["UploadJob"].upload_batch_id == batch_id))
         .scalars()
         .all()
     )
@@ -254,15 +244,18 @@ def test_bulk_upload_batch_status(client, db_models):
     db.commit()
     db.close()
 
-    resp = client.get(
-        f"/api/uploads/batch/{batch_id}/status", headers=_auth(client.access_token)
-    )
+    resp = client.get(f"/api/uploads/batch/{batch_id}/status", headers=_auth(client.access_token))
     body = resp.get_json()
 
     assert resp.status_code == 200, body
     assert set(body.keys()) >= {
-        "batch_id", "total_files", "processed_files", "failed_files", "status",
-        "jobs", "created_at",
+        "batch_id",
+        "total_files",
+        "processed_files",
+        "failed_files",
+        "status",
+        "jobs",
+        "created_at",
     }
     assert body["total_files"] == 2
     assert body["processed_files"] == 2

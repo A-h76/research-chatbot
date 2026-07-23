@@ -24,6 +24,7 @@ literal). Same field names/shape as the originals — downstream JSON
 parsing depends on them; the JSON-example portions are described in
 prose instead of embedded brace syntax to sidestep the crash entirely.
 """
+
 EXTRACT_METADATA_PROMPT = """You are a metadata extractor for academic papers.
 
 Given the first portion of a research document, extract the following fields exactly as they appear. Return ONLY a JSON object — no markdown, no prose. Use null for any field you cannot find with high confidence.
@@ -85,7 +86,11 @@ ANALYSIS_MAX_CHARS = 12_000
 # string, or omits the key) — downstream code (the analysis UI, export)
 # assumes these are always the right Python type.
 ANALYSIS_ARRAY_FIELDS = (
-    "key_contributions", "strengths", "limitations", "future_work", "keywords",
+    "key_contributions",
+    "strengths",
+    "limitations",
+    "future_work",
+    "keywords",
 )
 
 
@@ -111,6 +116,7 @@ def ensure_prompt(registry, name, template_text):
 
 def ensure_default_prompts(db_session):
     from .prompt_registry import PromptRegistry
+
     registry = PromptRegistry(db_session)
     ensure_prompt(registry, "extract_metadata", EXTRACT_METADATA_PROMPT)
     ensure_prompt(registry, "paper_analysis", PAPER_ANALYSIS_PROMPT)

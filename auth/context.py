@@ -7,9 +7,9 @@ thing — see auth/magic_link.py's module docstring for the full
 explanation of the same issue, hit and fixed there first.
 """
 
-from flask import session, request
+from flask import request, session
 
-from .jwt_utils import decode_jwt, JWTError
+from .jwt_utils import JWTError, decode_jwt
 
 
 def create_get_current_user(SessionLocal, User):

@@ -4,6 +4,7 @@ root conftest.py (see that file / test_chat.py's docstring for why).
 
 Run: pytest test_worker_health.py -v
 """
+
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -51,9 +52,7 @@ def test_fresh_heartbeat_reports_ok(client, db):
 
 
 def test_stale_heartbeat_reports_down(client, db):
-    stale = datetime.now(timezone.utc) - timedelta(
-        seconds=server.WORKER_HEALTH_THRESHOLD_SECONDS + 30
-    )
+    stale = datetime.now(timezone.utc) - timedelta(seconds=server.WORKER_HEALTH_THRESHOLD_SECONDS + 30)
     db.add(WorkerHeartbeat(id=1, last_seen_at=stale))
     db.commit()
 

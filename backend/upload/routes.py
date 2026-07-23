@@ -32,24 +32,24 @@ import tempfile
 import time
 import uuid
 
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select
 
 from auth.decorators import jwt_required
-from quotas.service import QuotaExceededError
-from imports.registry import extract_text
-from backend.ai import PromptRegistry, ModelRegistry, ModelError
+from backend.ai import ModelError, ModelRegistry, PromptRegistry
 from backend.ai.prompts import (
-    ensure_default_prompts,
-    ANALYSIS_MAX_CHARS,
     ANALYSIS_ARRAY_FIELDS,
+    ANALYSIS_MAX_CHARS,
+    ensure_default_prompts,
 )
+from imports.registry import extract_text
+from quotas.service import QuotaExceededError
 
 from .validation import (
+    ValidationError,
+    safe_filename,
     validate_extension,
     validate_size,
-    safe_filename,
-    ValidationError,
 )
 
 
@@ -66,7 +66,9 @@ def _compose_analysis_text(uf, extracted_text):
     header = "\n".join(
         f"{label}: {value}"
         for label, value in (
-            ("Title", uf.title), ("Authors", uf.authors), ("Abstract", uf.abstract),
+            ("Title", uf.title),
+            ("Authors", uf.authors),
+            ("Abstract", uf.abstract),
         )
         if value
     )
@@ -192,9 +194,7 @@ def create_documents_blueprint(
             try:
                 quota_service.increment_storage(user_id, size)
             except Exception:
-                log.warning(
-                    "quota increment_storage failed for user %s", user_id, exc_info=True
-                )
+                log.warning("quota increment_storage failed for user %s", user_id, exc_info=True)
 
             return (
                 jsonify(
@@ -254,8 +254,7 @@ def create_documents_blueprint(
                 raw_bytes = storage_backend.download(uf.path)
             except Exception:
                 return (
-                    jsonify({"error": "storage_unavailable",
-                            "message": "Could not read the document"}),
+                    jsonify({"error": "storage_unavailable", "message": "Could not read the document"}),
                     502,
                 )
 
@@ -271,13 +270,10 @@ def create_documents_blueprint(
                 except OSError:
                     pass
 
-            no_text = not extracted_text or (
-                extracted_text.startswith("[") and extracted_text.endswith("]")
-            )
+            no_text = not extracted_text or (extracted_text.startswith("[") and extracted_text.endswith("]"))
             if no_text:
                 return (
-                    jsonify({"error": "no_text",
-                            "message": "No readable text could be extracted from this document"}),
+                    jsonify({"error": "no_text", "message": "No readable text could be extracted from this document"}),
                     422,
                 )
 
@@ -296,8 +292,11 @@ def create_documents_blueprint(
                 return jsonify({"error": "prompt_not_found", "message": str(exc)}), 502
 
             execution = PromptExecution(
-                prompt_version_id=prompt_version.id, project_id=uf.project_id,
-                user_id=user_id, assembled_prompt=prompt, status="pending",
+                prompt_version_id=prompt_version.id,
+                project_id=uf.project_id,
+                user_id=user_id,
+                assembled_prompt=prompt,
+                status="pending",
             )
             db.add(execution)
             db.commit()
@@ -320,8 +319,7 @@ def create_documents_blueprint(
                 execution.status = "failed"
                 db.commit()
                 return (
-                    jsonify({"error": "invalid_model_response",
-                            "message": "The model did not return valid JSON"}),
+                    jsonify({"error": "invalid_model_response", "message": "The model did not return valid JSON"}),
                     502,
                 )
 
@@ -341,9 +339,7 @@ def create_documents_blueprint(
 
             content_hash = hashlib.sha256(extracted_text.encode("utf-8", errors="replace")).hexdigest()
 
-            pa = db.execute(
-                select(PaperAnalysis).where(PaperAnalysis.file_id == doc_id)
-            ).scalar_one_or_none()
+            pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == doc_id)).scalar_one_or_none()
             if pa is None:
                 pa = PaperAnalysis(file_id=doc_id, user_id=user_id)
                 db.add(pa)
@@ -354,8 +350,7 @@ def create_documents_blueprint(
             pa.error = ""
             db.commit()
 
-            return jsonify({"document_id": doc_id, "status": "done",
-                            "model": result["model"], "analysis": data}), 200
+            return jsonify({"document_id": doc_id, "status": "done", "model": result["model"], "analysis": data}), 200
         finally:
             db.close()
 

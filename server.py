@@ -5,18 +5,18 @@ Flask + Google OAuth + Postgres/SQLite + OpenAI Responses API (streaming)
 + File uploads (PDF/Word/image/text) + vision + RAG + citation manager.
 """
 
-import os
-import io
-import json
-import math
-import time
-import uuid
-import shutil
 import base64
 import binascii
+import io
+import json
 import logging
+import math
+import os
+import shutil
 import threading
-from datetime import datetime, timezone, timedelta
+import time
+import uuid
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from urllib.parse import urlparse
 
@@ -25,41 +25,42 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import click
-import storage
+from authlib.integrations.flask_client import OAuth
 from flask import (
     Flask,
-    request,
-    session,
-    redirect,
-    url_for,
-    jsonify,
-    render_template,
     Response,
-    send_from_directory,
-    send_file,
     abort,
     g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    send_from_directory,
+    session,
+    url_for,
 )
-from authlib.integrations.flask_client import OAuth
+from openai import OpenAI
 from sqlalchemy import (
-    create_engine,
-    Column,
-    Integer,
     BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
     String,
     Text,
-    Float,
-    Boolean,
-    DateTime,
-    ForeignKey,
-    select,
+    create_engine,
     delete,
     func,
-    text as sqltext,
+    select,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from quotas import QuotaService, QuotaExceededError, create_usage_log_model
-from openai import OpenAI
+from sqlalchemy import text as sqltext
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+
+import storage
+from quotas import QuotaService, create_usage_log_model
 
 # ------------------------------------------------------------------ config
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
@@ -73,11 +74,7 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 # When set, visiting /login automatically signs in as a local dev user.
 # NEVER set this in production.
 DEV_AUTO_LOGIN = os.environ.get("DEV_AUTO_LOGIN", "")
-ALLOWED_EMAILS = [
-    e.strip().lower()
-    for e in os.environ.get("ALLOWED_EMAILS", "").split(",")
-    if e.strip()
-]
+ALLOWED_EMAILS = [e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()]
 
 # Defaults kept to models with confident, verified pricing (see
 # backend/ai/cost_ledger.py's PRICING table and its own note on why
@@ -88,9 +85,7 @@ DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "gpt-4o-mini")
 UTILITY_MODEL = os.environ.get("UTILITY_MODEL", "gpt-4o-mini")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "text-embedding-3-small")
 FALLBACK_MODELS = [
-    m.strip()
-    for m in os.environ.get("MODELS", "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo").split(",")
-    if m.strip()
+    m.strip() for m in os.environ.get("MODELS", "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo").split(",") if m.strip()
 ]
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -110,15 +105,12 @@ EMAIL_FROM = os.environ.get("EMAIL_FROM", "Personal AI <onboarding@resend.dev>")
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "")  # where tickets are routed
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000")
 IS_PRODUCTION = (
-    os.environ.get("FLASK_ENV", "").lower() == "production"
-    or os.environ.get("APP_ENV", "").lower() == "production"
+    os.environ.get("FLASK_ENV", "").lower() == "production" or os.environ.get("APP_ENV", "").lower() == "production"
 )
 # worker.py's default poll interval is 2s (WORKER_POLL_INTERVAL) and it
 # heartbeats every iteration — 60s is ~30 missed cycles, generous enough
 # that a normal GC pause or slow job doesn't false-positive as "down".
-WORKER_HEALTH_THRESHOLD_SECONDS = int(
-    os.environ.get("WORKER_HEALTH_THRESHOLD_SECONDS", "60")
-)
+WORKER_HEALTH_THRESHOLD_SECONDS = int(os.environ.get("WORKER_HEALTH_THRESHOLD_SECONDS", "60"))
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
@@ -141,26 +133,22 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 # not re-solved here, just not made worse by a second silent fallback).
 app.config.update(
     JWT_SECRET_KEY=os.environ.get("JWT_SECRET_KEY", app.secret_key),
-    JWT_ACCESS_TOKEN_EXPIRES=timedelta(
-        minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MIN", "15"))
-    ),
-    JWT_REFRESH_TOKEN_EXPIRES=timedelta(
-        days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "30"))
-    ),
+    JWT_ACCESS_TOKEN_EXPIRES=timedelta(minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MIN", "15"))),
+    JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "30"))),
     JWT_ALGORITHM="HS256",
 )
 from flask_jwt_extended import JWTManager
 
 jwt_manager = JWTManager(app)
-from auth import create_jwt, decode_jwt, JWTError, create_get_current_user
+from auth import JWTError, create_get_current_user, create_jwt, decode_jwt
 
 # ------------------------------------------------------------------ logging
 from observability import (
+    HTTP_REQUEST_DURATION_SECONDS,
+    HTTP_REQUESTS_TOTAL,
+    UPLOAD_QUEUE_LENGTH,
     configure_logging,
     correlation_id_var,
-    HTTP_REQUESTS_TOTAL,
-    HTTP_REQUEST_DURATION_SECONDS,
-    UPLOAD_QUEUE_LENGTH,
     record_ai_call,
     render_metrics,
 )
@@ -221,9 +209,7 @@ class EmailService:
                 timeout=15,
             )
             if resp.status_code >= 400:
-                email_log.error(
-                    "Resend error %s: %s", resp.status_code, resp.text[:300]
-                )
+                email_log.error("Resend error %s: %s", resp.status_code, resp.text[:300])
                 return False
             return True
         except Exception as e:
@@ -348,21 +334,12 @@ def supports_temperature(model):
 
 def get_models(force=False):
     with _model_lock:
-        if (
-            not force
-            and _model_cache["models"]
-            and time.time() - _model_cache["ts"] < 600
-        ):
+        if not force and _model_cache["models"] and time.time() - _model_cache["ts"] < 600:
             return _model_cache["models"]
         try:
             raw = client.models.list().data
             models = sorted(
-                (
-                    m.id
-                    for m in raw
-                    if m.id.startswith(_INCLUDE_PREFIX)
-                    and not any(x in m.id for x in _EXCLUDE)
-                ),
+                (m.id for m in raw if m.id.startswith(_INCLUDE_PREFIX) and not any(x in m.id for x in _EXCLUDE)),
                 key=lambda mid: next((-m.created for m in raw if m.id == mid), 0),
             )
             if models:
@@ -403,9 +380,7 @@ class User(Base):
     # other via this column's own default (~1000 MB) — see server.py's
     # upload_file() for why the increment side still doesn't share code
     # despite the check side now agreeing on the same limit.
-    storage_limit_bytes = Column(
-        BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES
-    )
+    storage_limit_bytes = Column(BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES)
     monthly_token_used = Column(Integer, default=0)
     monthly_token_limit = Column(Integer, default=QuotaService.DEFAULT_TOKEN_LIMIT)
     quota_reset_at = Column(DateTime, nullable=True)
@@ -528,9 +503,7 @@ class UploadSession(Base):
     size_expected = Column(Integer, default=0)
     checksum_sha256 = Column(String(64), nullable=True)  # client-claimed, pre-upload
     upload_id = Column(String(300), nullable=True)  # multipart only
-    status = Column(
-        String(20), default="pending"
-    )  # pending|uploaded|confirmed|expired|aborted
+    status = Column(String(20), default="pending")  # pending|uploaded|confirmed|expired|aborted
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -562,14 +535,10 @@ class UploadJob(Base):
     upload_batch_id = Column(Integer, ForeignKey("upload_batches.id"), nullable=True)
     file_id = Column(Integer, ForeignKey("files.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    job_type = Column(
-        String(30), nullable=False
-    )  # import|extract_metadata|paper_analysis
+    job_type = Column(String(30), nullable=False)  # import|extract_metadata|paper_analysis
     status = Column(String(20), default="pending")  # pending|running|done|failed
     attempts = Column(Integer, default=0)
-    run_after = Column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
-    )  # due time; backoff pushes this out
+    run_after = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # due time; backoff pushes this out
     locked_by = Column(Text, nullable=True)
     locked_at = Column(DateTime, nullable=True)
     last_error = Column(Text, nullable=True)
@@ -620,9 +589,7 @@ class ImportSession(Base):
 
     __tablename__ = "import_sessions"
     id = Column(Integer, primary_key=True)
-    upload_job_id = Column(
-        Integer, ForeignKey("upload_jobs.id"), nullable=False, unique=True
-    )
+    upload_job_id = Column(Integer, ForeignKey("upload_jobs.id"), nullable=False, unique=True)
     stage = Column(String(20), default="extract")  # extract|chunk|embed
     checkpoint = Column(Text, default="{}")  # JSON
     updated_at = Column(
@@ -1003,13 +970,9 @@ def login_page():
         db = SessionLocal()
         try:
             dev_email = "dev@localhost"
-            user = db.execute(
-                select(User).where(User.email == dev_email)
-            ).scalar_one_or_none()
+            user = db.execute(select(User).where(User.email == dev_email)).scalar_one_or_none()
             if not user:
-                user = User(
-                    email=dev_email, name="Dev User", picture="", auth_provider="dev"
-                )
+                user = User(email=dev_email, name="Dev User", picture="", auth_provider="dev")
                 db.add(user)
                 db.commit()
             session["user_id"] = user.id
@@ -1105,9 +1068,7 @@ def dev_login():
     db = SessionLocal()
     try:
         dev_email = "dev@localhost"
-        user = db.execute(
-            select(User).where(User.email == dev_email)
-        ).scalar_one_or_none()
+        user = db.execute(select(User).where(User.email == dev_email)).scalar_one_or_none()
         if not user:
             user = User(email=dev_email, name="Dev User", picture="")
             db.add(user)
@@ -1145,6 +1106,9 @@ app.register_blueprint(
     )
 )
 
+from backend.storage import get_storage_backend
+from backend.upload.routes import create_documents_blueprint
+
 # POST /api/documents/upload — Bearer-JWT-authenticated upload entry point
 # alongside the existing session-based POST /api/files. Reuses UserFile/
 # UploadJob/OutboxEvent (no new Document model) and quota_service — see
@@ -1153,21 +1117,17 @@ app.register_blueprint(
 # further down (model_router/PromptExecution don't exist yet at this
 # point in the file) — see there.
 from backend.upload.validation import MAX_DOCUMENT_UPLOAD_MB
-from backend.upload.routes import create_documents_blueprint
-from backend.storage import get_storage_backend
 
 # Flask rejects an over-limit request body before any route code runs —
 # this route's own limit must not be shadowed by the app-wide one.
-app.config["MAX_CONTENT_LENGTH"] = (
-    max(MAX_FILE_MB, MAX_DOCUMENT_UPLOAD_MB) * 1024 * 1024
-)
+app.config["MAX_CONTENT_LENGTH"] = max(MAX_FILE_MB, MAX_DOCUMENT_UPLOAD_MB) * 1024 * 1024
 
 # POST /api/uploads/bulk, GET /api/uploads/batch/<id>/status — bulk upload,
 # writing to UploadBatch (schema-only until now, see its own docstring)
 # via the same UserFile/UploadJob/OutboxEvent primitives as the single-file
 # route above. A batch can total far more than one file's MAX_CONTENT_LENGTH,
 # so the app-wide cap has to grow to fit MAX_BATCH_SIZE files at once.
-from backend.upload.bulk import create_bulk_upload_blueprint, MAX_BATCH_SIZE
+from backend.upload.bulk import MAX_BATCH_SIZE, create_bulk_upload_blueprint
 
 app.config["MAX_CONTENT_LENGTH"] = max(
     app.config["MAX_CONTENT_LENGTH"], MAX_BATCH_SIZE * MAX_DOCUMENT_UPLOAD_MB * 1024 * 1024
@@ -1230,9 +1190,7 @@ def get_session_jwt():
     if stored:
         try:
             decode_jwt(stored["access"])
-            return jsonify(
-                {"access_token": stored["access"], "refresh_token": stored["refresh"]}
-            )
+            return jsonify({"access_token": stored["access"], "refresh_token": stored["refresh"]})
         except JWTError:
             pass  # expired/invalid — fall through and mint a fresh pair
     access, refresh = create_jwt(session["user_id"])
@@ -1257,9 +1215,7 @@ def refresh_jwt():
         return jsonify({"error": "invalid_refresh_token"}), 401
     if claims.get("type") != "refresh":
         return (
-            jsonify(
-                {"error": "invalid_refresh_token", "detail": "not a refresh token"}
-            ),
+            jsonify({"error": "invalid_refresh_token", "detail": "not a refresh token"}),
             401,
         )
     try:
@@ -1308,9 +1264,10 @@ def robots():
 # migration already ran — it only creates anything on a fresh SQLite dev DB
 # (verified: prompt_versions/pipeline_versions didn't exist there before this).
 # ══════════════════════════════════════════════════════════════════════════
-from backend.ai import PromptRegistry, PromptVersion, ModelRegistry, CostLedger, ModelError, TemplateError
+from backend.ai import CostLedger, ModelError, ModelRegistry, PromptRegistry, PromptVersion, TemplateError
+from backend.ai.model_registry import CostLedgerEntry as _CostLedgerEntry
+from backend.ai.model_registry import _Base as _ai_model_base
 from backend.ai.prompt_registry import _Base as _ai_prompt_base
-from backend.ai.model_registry import _Base as _ai_model_base, CostLedgerEntry as _CostLedgerEntry
 
 _ai_prompt_base.metadata.create_all(engine, checkfirst=True)
 _ai_model_base.metadata.create_all(engine, checkfirst=True)
@@ -1330,6 +1287,14 @@ def get_cost_ledger():
     return _cost_ledger
 
 
+from auth.decorators import create_admin_required
+from backend.ai.analytics import PromptAnalytics
+from backend.ai.domain_registry import DomainRegistry
+from backend.ai.memory_engine import MemoryEngine
+from backend.ai.model_router import ModelRouter
+from backend.ai.persona_engine import PersonaEngine
+from backend.ai.prompt_builder import PromptBuilder
+
 # ══════════════════════════════════════════════════════════════════════════
 # Prompt Engine (docs/prompt-engine-architecture.md) — SystemPromptManager,
 # PersonaEngine, MemoryEngine, ModelRouter, PromptBuilder, built on top of
@@ -1339,15 +1304,8 @@ def get_cost_ledger():
 # create_all() call needed here.
 # ══════════════════════════════════════════════════════════════════════════
 from backend.ai.prompt_registry import Persona, PromptExecution
-from backend.ai.persona_engine import PersonaEngine
-from backend.ai.memory_engine import MemoryEngine
 from backend.ai.system_prompt import SystemPromptManager
-from backend.ai.model_router import ModelRouter
-from backend.ai.domain_registry import DomainRegistry
-from backend.ai.prompt_builder import PromptBuilder
-from backend.ai.analytics import PromptAnalytics
 from backend.prompts.routes import create_prompts_blueprint
-from auth.decorators import create_admin_required
 
 # ModelRouter is a genuine startup-time singleton — no DB session at all
 # (see model_router.py's own docstring), same category as CostLedger
@@ -1359,13 +1317,15 @@ from auth.decorators import create_admin_required
 # required to call get_model_for_task("rag") specifically — mapped to
 # UTILITY_MODEL to preserve exactly what RAG already used before this
 # task, unless a RAG_MODEL env var is set to override it.
-model_router = ModelRouter(defaults={
-    "chat": UTILITY_MODEL,
-    "paper_analysis": UTILITY_MODEL,
-    "rag": UTILITY_MODEL,
-    "embedding": EMBED_MODEL,
-    "_default": DEFAULT_MODEL,
-})
+model_router = ModelRouter(
+    defaults={
+        "chat": UTILITY_MODEL,
+        "paper_analysis": UTILITY_MODEL,
+        "rag": UTILITY_MODEL,
+        "embedding": EMBED_MODEL,
+        "_default": DEFAULT_MODEL,
+    }
+)
 
 # Also a genuine startup-time singleton — DomainRegistry is pure Python,
 # no DB session, same category as ModelRouter (see that class's own
@@ -1491,14 +1451,16 @@ def prompt_usage_summary():
         by_model = get_prompt_analytics(db).get_usage_by_model(start, end)
     finally:
         db.close()
-    return jsonify({
-        "start_date": start.isoformat(),
-        "end_date": end.isoformat(),
-        "calls": sum(m["calls"] for m in by_model),
-        "total_tokens": sum(m["total_tokens"] for m in by_model),
-        "cost_usd": round(sum(m["cost_usd"] for m in by_model), 6),
-        "models_used": len(by_model),
-    })
+    return jsonify(
+        {
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "calls": sum(m["calls"] for m in by_model),
+            "total_tokens": sum(m["total_tokens"] for m in by_model),
+            "cost_usd": round(sum(m["cost_usd"] for m in by_model), 6),
+            "models_used": len(by_model),
+        }
+    )
 
 
 @app.route("/api/prompt-usage/by-prompt")
@@ -1578,12 +1540,17 @@ def worker_health():
         db.close()
 
     if hb is None:
-        return jsonify({
-            "status": "unknown",
-            "message": "worker has not reported in since this deploy — "
-                       "either it has never run, or it started before this "
-                       "endpoint existed",
-        }), 503
+        return (
+            jsonify(
+                {
+                    "status": "unknown",
+                    "message": "worker has not reported in since this deploy — "
+                    "either it has never run, or it started before this "
+                    "endpoint existed",
+                }
+            ),
+            503,
+        )
 
     last_seen = hb.last_seen_at
     if last_seen.tzinfo is None:
@@ -1591,12 +1558,14 @@ def worker_health():
     age_seconds = (datetime.now(timezone.utc) - last_seen).total_seconds()
     healthy = age_seconds <= WORKER_HEALTH_THRESHOLD_SECONDS
 
-    return jsonify({
-        "status": "ok" if healthy else "down",
-        "last_seen_at": hb.last_seen_at.isoformat(),
-        "age_seconds": round(age_seconds, 1),
-        "threshold_seconds": WORKER_HEALTH_THRESHOLD_SECONDS,
-    }), (200 if healthy else 503)
+    return jsonify(
+        {
+            "status": "ok" if healthy else "down",
+            "last_seen_at": hb.last_seen_at.isoformat(),
+            "age_seconds": round(age_seconds, 1),
+            "threshold_seconds": WORKER_HEALTH_THRESHOLD_SECONDS,
+        }
+    ), (200 if healthy else 503)
 
 
 @app.route("/api/ai/prompts")
@@ -1606,12 +1575,20 @@ def list_ai_prompts():
     try:
         registry = get_prompt_registry(db)
         prompts = registry.list_prompts()
-        return jsonify({"prompts": [
-            {"name": p.name, "version": p.version, "template": p.template,
-             "is_active": p.is_active,
-             "created_at": p.created_at.isoformat() if p.created_at else None}
-            for p in prompts
-        ]})
+        return jsonify(
+            {
+                "prompts": [
+                    {
+                        "name": p.name,
+                        "version": p.version,
+                        "template": p.template,
+                        "is_active": p.is_active,
+                        "created_at": p.created_at.isoformat() if p.created_at else None,
+                    }
+                    for p in prompts
+                ]
+            }
+        )
     finally:
         db.close()
 
@@ -1634,8 +1611,11 @@ def test_ai_call():
     try:
         registry = get_model_registry(db)
         result = registry.call(
-            model, [{"role": "user", "content": message}],
-            user_id=session["user_id"], max_tokens=data.get("max_tokens", 100))
+            model,
+            [{"role": "user", "content": message}],
+            user_id=session["user_id"],
+            max_tokens=data.get("max_tokens", 100),
+        )
         return jsonify(result)
     except ModelError as exc:
         return jsonify({"error": "model_call_failed", "message": str(exc)}), 502
@@ -1817,24 +1797,17 @@ def rag_retrieve(user_id, conversation_id, project_id, query, top_k=6, file_id=N
                 .all()
             )
         else:
-            files = (
-                db.execute(select(UserFile).where(UserFile.user_id == user_id))
-                .scalars()
-                .all()
-            )
+            files = db.execute(select(UserFile).where(UserFile.user_id == user_id)).scalars().all()
             files = [
                 f
                 for f in files
-                if (f.conversation_id == conversation_id)
-                or (project_id and f.project_id == project_id)
+                if (f.conversation_id == conversation_id) or (project_id and f.project_id == project_id)
             ]
         if not files:
             return []
         fids = [f.id for f in files]
         fnames = {f.id: f.name for f in files}
-        chunks = (
-            db.execute(select(Chunk).where(Chunk.file_id.in_(fids))).scalars().all()
-        )
+        chunks = db.execute(select(Chunk).where(Chunk.file_id.in_(fids))).scalars().all()
         if not chunks:
             return []
         q_emb = embed_texts([query])[0]
@@ -2032,11 +2005,7 @@ def _extract_meta_from_text(text: str, user_id=None) -> dict:
     clean = {}
     for key in ("title", "authors", "year", "venue", "doi", "abstract", "keywords"):
         val = data.get(key)
-        clean[key] = (
-            str(val).strip()
-            if val and str(val).strip() not in ("null", "None", "")
-            else None
-        )
+        clean[key] = str(val).strip() if val and str(val).strip() not in ("null", "None", "") else None
     return clean
 
 
@@ -2108,9 +2077,7 @@ def _apply_metadata(file_id: int, text: str, content_hash: str, job_id=None) -> 
             pass
         if not owns_job:
             raise  # let the queue worker's own try/except apply retry/backoff
-        logging.getLogger(__name__).warning(
-            "metadata extraction failed for file %s: %s", file_id, exc
-        )
+        logging.getLogger(__name__).warning("metadata extraction failed for file %s: %s", file_id, exc)
     finally:
         db.close()
 
@@ -2180,9 +2147,7 @@ Paper text (first {max_chars} characters):
 _ANALYSIS_MAX_CHARS = 12_000  # covers most papers; keeps prompt cost bounded
 
 
-def _run_paper_analysis(
-    file_id: int, text: str, content_hash: str, job_id=None
-) -> None:
+def _run_paper_analysis(file_id: int, text: str, content_hash: str, job_id=None) -> None:
     """Background worker: generate and persist the 14-field paper analysis.
 
     Idempotent on content_hash: if the stored hash matches and status=='done'
@@ -2195,14 +2160,10 @@ def _run_paper_analysis(
     db = SessionLocal()
     owns_job = job_id is None
     try:
-        pa = db.execute(
-            select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)
-        ).scalar_one_or_none()
+        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)).scalar_one_or_none()
 
         if pa is None:
-            pa = PaperAnalysis(
-                file_id=file_id, user_id=db.get(UserFile, file_id).user_id
-            )
+            pa = PaperAnalysis(file_id=file_id, user_id=db.get(UserFile, file_id).user_id)
             db.add(pa)
             db.commit()
 
@@ -2220,9 +2181,7 @@ def _run_paper_analysis(
             max_chars=_ANALYSIS_MAX_CHARS,
             text=text[:_ANALYSIS_MAX_CHARS],
         )
-        raw = responses_text(
-            prompt, json_mode=True, kind="analysis", user_id=pa.user_id
-        )
+        raw = responses_text(prompt, json_mode=True, kind="analysis", user_id=pa.user_id)
         data = json.loads(raw)
 
         # Normalise: ensure array fields are lists, terms dict is a dict
@@ -2243,9 +2202,7 @@ def _run_paper_analysis(
             data["important_terms"] = {}
 
         # Re-fetch in case a concurrent request modified the row
-        pa = db.execute(
-            select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)
-        ).scalar_one_or_none()
+        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)).scalar_one_or_none()
         if pa is None:
             return
 
@@ -2260,9 +2217,7 @@ def _run_paper_analysis(
 
     except Exception as exc:
         try:
-            pa2 = db.execute(
-                select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)
-            ).scalar_one_or_none()
+            pa2 = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)).scalar_one_or_none()
             if pa2:
                 pa2.status = "failed"
                 pa2.error = str(exc)[:500]
@@ -2273,16 +2228,12 @@ def _run_paper_analysis(
             pass
         if not owns_job:
             raise  # let the queue worker's own try/except apply retry/backoff
-        logging.getLogger(__name__).warning(
-            "paper analysis failed for file %s: %s", file_id, exc
-        )
+        logging.getLogger(__name__).warning("paper analysis failed for file %s: %s", file_id, exc)
     finally:
         db.close()
 
 
-def trigger_paper_analysis(
-    file_id: int, text: str, content_hash: str, sync: bool = False
-) -> None:
+def trigger_paper_analysis(file_id: int, text: str, content_hash: str, sync: bool = False) -> None:
     """Fire paper analysis in a background thread (or inline when sync=True)."""
     if sync:
         _run_paper_analysis(file_id, text, content_hash)
@@ -2342,15 +2293,8 @@ def _file_to_dict(x: UserFile) -> dict:
 def extract_memories(user_id, project_id, convo_messages):
     db = SessionLocal()
     try:
-        existing = [
-            m.fact
-            for m in db.execute(
-                select(Memory).where(Memory.user_id == user_id)
-            ).scalars()
-        ]
-        transcript = "\n".join(
-            f"{m['role']}: {str(m['content'])[:500]}" for m in convo_messages[-10:]
-        )
+        existing = [m.fact for m in db.execute(select(Memory).where(Memory.user_id == user_id)).scalars()]
+        transcript = "\n".join(f"{m['role']}: {str(m['content'])[:500]}" for m in convo_messages[-10:])
         text = responses_text(
             MEMORY_PROMPT.format(known=json.dumps(existing), transcript=transcript),
             json_mode=True,
@@ -2439,9 +2383,7 @@ def _get_chat_system_opening(db):
     except (ValueError, TemplateError):
         return _CHAT_SYSTEM_FALLBACK
     except Exception:
-        logging.getLogger(__name__).warning(
-            "chat_system prompt fetch failed, using fallback", exc_info=True
-        )
+        logging.getLogger(__name__).warning("chat_system prompt fetch failed, using fallback", exc_info=True)
         return _CHAT_SYSTEM_FALLBACK
 
 
@@ -2464,10 +2406,14 @@ def _log_chat_cost(user_id, model, usage):
         db = SessionLocal()
         try:
             ledger.log(
-                db, user_id=user_id, model=model, prompt_tokens=prompt_tokens,
+                db,
+                user_id=user_id,
+                model=model,
+                prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=prompt_tokens + completion_tokens,
-                cost=cost, action="chat",
+                cost=cost,
+                action="chat",
             )
         finally:
             db.close()
@@ -2483,18 +2429,14 @@ def build_system_prompt(user, project, memory_enabled=True):
             global_mems = [
                 m.fact
                 for m in db.execute(
-                    select(Memory).where(
-                        Memory.user_id == user.id, Memory.project_id.is_(None)
-                    )
+                    select(Memory).where(Memory.user_id == user.id, Memory.project_id.is_(None))
                 ).scalars()
             ]
             if project:
                 proj_mems = [
                     m.fact
                     for m in db.execute(
-                        select(Memory).where(
-                            Memory.user_id == user.id, Memory.project_id == project.id
-                        )
+                        select(Memory).where(Memory.user_id == user.id, Memory.project_id == project.id)
                     ).scalars()
                 ]
         opening = _get_chat_system_opening(db)
@@ -2507,24 +2449,15 @@ def build_system_prompt(user, project, memory_enabled=True):
         f"Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}.",
     ]
     if user.custom_instructions:
-        parts.append(
-            "The user's custom instructions (always follow):\n"
-            + user.custom_instructions
-        )
+        parts.append("The user's custom instructions (always follow):\n" + user.custom_instructions)
     if project:
         parts.append(f'Current project: "{project.name}".')
         if project.instructions:
             parts.append("Project instructions from the user:\n" + project.instructions)
     if global_mems:
-        parts.append(
-            "Things you remember about the user:\n"
-            + "\n".join(f"- {m}" for m in global_mems)
-        )
+        parts.append("Things you remember about the user:\n" + "\n".join(f"- {m}" for m in global_mems))
     if proj_mems:
-        parts.append(
-            "Things you remember in this project:\n"
-            + "\n".join(f"- {m}" for m in proj_mems)
-        )
+        parts.append("Things you remember in this project:\n" + "\n".join(f"- {m}" for m in proj_mems))
     return "\n\n".join(parts)
 
 
@@ -2550,7 +2483,8 @@ def preview_chat_prompt_builder_migration(user, project, memory_enabled=True):
     try:
         builder = get_prompt_builder(db)
         assembled = builder.preview(
-            "", "chat_system",
+            "",
+            "chat_system",
             project_id=project.id if project else None,
             user_id=user.id if memory_enabled else None,
         )
@@ -2566,8 +2500,7 @@ def preview_chat_prompt_builder_migration(user, project, memory_enabled=True):
         "prompt_builder_memory": assembled.memory,
         "not_yet_covered_by_prompt_builder": {
             "user_identity_and_date": (
-                f"The user's name is {user.name}. "
-                f"Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}."
+                f"The user's name is {user.name}. " f"Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}."
             ),
             "user_custom_instructions": user.custom_instructions or "",
             "project_name_framing": f'Current project: "{project.name}".' if project else "",
@@ -2623,13 +2556,9 @@ IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp")  # vision-API formats
 MAX_UPLOAD_BYTES = MAX_FILE_MB * 1024 * 1024
 
 # ---- storage architecture: presigned/multipart upload config -------------
-MULTIPART_THRESHOLD_BYTES = (
-    int(os.environ.get("MULTIPART_THRESHOLD_MB", "25")) * 1024 * 1024
-)
+MULTIPART_THRESHOLD_BYTES = int(os.environ.get("MULTIPART_THRESHOLD_MB", "25")) * 1024 * 1024
 UPLOAD_PART_BYTES = int(os.environ.get("UPLOAD_PART_SIZE_MB", "8")) * 1024 * 1024
-UPLOAD_SESSION_TTL_SECONDS = (
-    int(os.environ.get("UPLOAD_SESSION_TTL_MINUTES", "60")) * 60
-)
+UPLOAD_SESSION_TTL_SECONDS = int(os.environ.get("UPLOAD_SESSION_TTL_MINUTES", "60")) * 60
 
 
 def _find_duplicate_file(db, user_id, checksum):
@@ -2641,11 +2570,7 @@ def _find_duplicate_file(db, user_id, checksum):
     if not checksum:
         return None
     existing = (
-        db.execute(
-            select(UserFile).where(
-                UserFile.user_id == user_id, UserFile.checksum_sha256 == checksum
-            )
-        )
+        db.execute(select(UserFile).where(UserFile.user_id == user_id, UserFile.checksum_sha256 == checksum))
         .scalars()
         .first()
     )
@@ -2732,16 +2657,12 @@ def _get_redis():
     try:
         import redis as redis_lib
 
-        client = redis_lib.from_url(
-            REDIS_URL, socket_connect_timeout=2, socket_timeout=2, decode_responses=True
-        )
+        client = redis_lib.from_url(REDIS_URL, socket_connect_timeout=2, socket_timeout=2, decode_responses=True)
         client.ping()
         _redis_client = client
         return _redis_client
     except Exception:
-        logging.getLogger(__name__).warning(
-            "Redis unavailable — job-status cache disabled"
-        )
+        logging.getLogger(__name__).warning("Redis unavailable — job-status cache disabled")
         return None
 
 
@@ -2767,9 +2688,7 @@ def _set_job_status_cache(job_id, status, progress, updated_at, user_id):
         )
         r.expire(key, JOB_STATUS_CACHE_TTL_SECONDS)
     except Exception:
-        logging.getLogger(__name__).warning(
-            "job-status cache write failed", exc_info=True
-        )
+        logging.getLogger(__name__).warning("job-status cache write failed", exc_info=True)
 
 
 def _get_job_status_cache(job_id):
@@ -2780,9 +2699,7 @@ def _get_job_status_cache(job_id):
         data = r.hgetall(f"job:{job_id}:status")
         return data or None
     except Exception:
-        logging.getLogger(__name__).warning(
-            "job-status cache read failed", exc_info=True
-        )
+        logging.getLogger(__name__).warning("job-status cache read failed", exc_info=True)
         return None
 
 
@@ -2818,8 +2735,8 @@ def _get_active_model_version_id(logical_name):
             db.execute(
                 select(ModelVersion).where(
                     ModelVersion.logical_name == logical_name,
-                    ModelVersion.is_active == True,
-                )  # noqa: E712 (SQLAlchemy needs == True, not `is True`, for a Column comparison)
+                    ModelVersion.is_active == True,  # noqa: E712 (SQLAlchemy Column needs == True)
+                )
             )
             .scalars()
             .first()
@@ -2845,9 +2762,7 @@ def _log_ai_usage(user_id, kind, logical_model_name, prompt_tokens, completion_t
             mv = db.get(ModelVersion, model_version_id)
             prices = _PRICE_PER_1K_TOKENS.get(mv.provider_model_id) if mv else None
             if prices:
-                cost = (prompt_tokens / 1000) * prices["prompt"] + (
-                    completion_tokens / 1000
-                ) * prices["completion"]
+                cost = (prompt_tokens / 1000) * prices["prompt"] + (completion_tokens / 1000) * prices["completion"]
             db.add(
                 AIUsageLedger(
                     user_id=user_id,
@@ -2901,23 +2816,14 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
     try:
         lower = name.lower()
         text = extract_text(path, mime, name)
-        is_note = (
-            bool(text)
-            and text.startswith("[")
-            and text.endswith("]")
-            and len(text) < 400
-        )
+        is_note = bool(text) and text.startswith("[") and text.endswith("]") and len(text) < 400
         note = None
         n_chunks = 0
 
         if not text:
             # No readable text — e.g. a scanned/image PDF or a binary blob.
             uf.text_len = 0
-            note = (
-                "scanned_pdf"
-                if (lower.endswith(".pdf") or "pdf" in (mime or ""))
-                else "no_text"
-            )
+            note = "scanned_pdf" if (lower.endswith(".pdf") or "pdf" in (mime or "")) else "no_text"
         elif is_note:
             uf.text_len = 0
             note = text.strip("[]")
@@ -2926,11 +2832,7 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
             # Use the locator-aware chunker for PDFs and DOCX so every chunk
             # knows its page / section; fall back to plain chunking for
             # everything else (pptx, xlsx, txt …).
-            is_locatable = (
-                lower.endswith(".pdf")
-                or "pdf" in (mime or "")
-                or lower.endswith(".docx")
-            )
+            is_locatable = lower.endswith(".pdf") or "pdf" in (mime or "") or lower.endswith(".docx")
             if is_locatable:
                 doc_chunks = chunk_document(text)
                 pieces = [c["content"] for c in doc_chunks]
@@ -3031,9 +2933,7 @@ def upload_file():
         except OSError:
             pass
         return (
-            jsonify(
-                {"error": "too_large", "detail": f"Max file size is {MAX_FILE_MB} MB"}
-            ),
+            jsonify({"error": "too_large", "detail": f"Max file size is {MAX_FILE_MB} MB"}),
             400,
         )
 
@@ -3092,10 +2992,7 @@ def upload_file():
         # atomicity _adjust_storage_usage()'s docstring depends on (this
         # check rolling back the batch/file inserts together on failure).
         user_row = db.get(User, uid)
-        limit_bytes = (
-            (user_row.storage_limit_bytes if user_row else None)
-            or quota_service.DEFAULT_STORAGE_LIMIT_BYTES
-        )
+        limit_bytes = (user_row.storage_limit_bytes if user_row else None) or quota_service.DEFAULT_STORAGE_LIMIT_BYTES
         if already_used + size > limit_bytes:
             db.rollback()  # undoes the batch insert/increment above too
             try:
@@ -3246,9 +3143,7 @@ def presign_upload():
         return jsonify({"error": "invalid_request"}), 400
     if size > MAX_UPLOAD_BYTES:
         return (
-            jsonify(
-                {"error": "too_large", "detail": f"Max file size is {MAX_FILE_MB} MB"}
-            ),
+            jsonify({"error": "too_large", "detail": f"Max file size is {MAX_FILE_MB} MB"}),
             400,
         )
 
@@ -3302,12 +3197,8 @@ def presign_upload():
                 }
             )
 
-        put_url = provider.presigned_put_url(
-            key, mime, expires_in=UPLOAD_SESSION_TTL_SECONDS
-        )
-        return jsonify(
-            {"mode": "single", "session_id": us.id, "key": key, "put_url": put_url}
-        )
+        put_url = provider.presigned_put_url(key, mime, expires_in=UPLOAD_SESSION_TTL_SECONDS)
+        return jsonify({"mode": "single", "session_id": us.id, "key": key, "put_url": put_url})
     finally:
         db.close()
 
@@ -3330,10 +3221,7 @@ def complete_multipart_upload_route():
             provider.complete_multipart_upload(
                 us.key,
                 us.upload_id,
-                [
-                    storage.UploadPart(part_number=p["part_number"], etag=p["etag"])
-                    for p in parts
-                ],
+                [storage.UploadPart(part_number=p["part_number"], etag=p["etag"]) for p in parts],
             )
         except Exception:
             logging.exception("multipart complete failed for session %s", session_id)
@@ -3412,16 +3300,12 @@ def confirm_upload():
         )
         db.add(uf)
         us.status = "confirmed"
-        _adjust_storage_usage(
-            db, session["user_id"], delta_bytes=info.size, delta_files=1
-        )
+        _adjust_storage_usage(db, session["user_id"], delta_bytes=info.size, delta_files=1)
         db.commit()
 
         note = None
         if kind == "document":
-            with provider.local_copy(
-                us.key, suffix=os.path.splitext(lower)[1]
-            ) as local_path:
+            with provider.local_copy(us.key, suffix=os.path.splitext(lower)[1]) as local_path:
                 note = _process_document(db, uf, local_path, us.name, us.mime)
 
         db3 = SessionLocal()
@@ -3447,9 +3331,7 @@ def local_upload_put(key):
     if not hasattr(provider, "verify_token"):
         return jsonify({"error": "not_supported"}), 404
     try:
-        payload = provider.verify_token(
-            request.args.get("token", ""), max_age=UPLOAD_SESSION_TTL_SECONDS
-        )
+        payload = provider.verify_token(request.args.get("token", ""), max_age=UPLOAD_SESSION_TTL_SECONDS)
     except ValueError:
         return jsonify({"error": "invalid_token"}), 403
     if payload.get("key") != key:
@@ -3495,9 +3377,7 @@ def local_upload_get(key):
 def sweep_temp_cmd():
     """Delete stray files left in UPLOAD_DIR by a request that crashed
     before its own cleanup ran."""
-    removed = storage.sweep_temp_dir(
-        UPLOAD_DIR, max_age_seconds=UPLOAD_SESSION_TTL_SECONDS
-    )
+    removed = storage.sweep_temp_dir(UPLOAD_DIR, max_age_seconds=UPLOAD_SESSION_TTL_SECONDS)
     click.echo(f"sweep-temp: removed {len(removed)} stale temp file(s)")
 
 
@@ -3518,9 +3398,7 @@ def gc_storage_cmd():
             .scalars()
             .all()
         )
-        report = storage.garbage_collect(
-            storage.storage_manager.provider, [s.key for s in stale]
-        )
+        report = storage.garbage_collect(storage.storage_manager.provider, [s.key for s in stale])
         for s in stale:
             s.status = "expired"
         db.commit()
@@ -3542,15 +3420,9 @@ def reconcile_storage_cmd(apply):
     """Compare what's actually in storage against what the DB references."""
     db = SessionLocal()
     try:
-        known_keys = {
-            row[0] for row in db.execute(select(UserFile.path)).all() if row[0]
-        }
-        report = storage.reconcile(
-            storage.storage_manager.provider, known_keys, dry_run=not apply
-        )
-        click.echo(
-            f"orphaned: {len(report.orphaned_keys)}  missing: {len(report.missing_keys)}"
-        )
+        known_keys = {row[0] for row in db.execute(select(UserFile.path)).all() if row[0]}
+        report = storage.reconcile(storage.storage_manager.provider, known_keys, dry_run=not apply)
+        click.echo(f"orphaned: {len(report.orphaned_keys)}  missing: {len(report.missing_keys)}")
         for k in report.orphaned_keys:
             click.echo(f"  orphan   {k}")
         for k in report.missing_keys:
@@ -3678,9 +3550,7 @@ def list_files():
             "title": lambda f: (f.title or f.name or "").lower(),
             "authors": lambda f: (f.authors or "").lower(),
             "year": lambda f: f.year or "",
-            "reading_status": lambda f: {"reading": 0, "unread": 1, "read": 2}.get(
-                f.reading_status or "unread", 1
-            ),
+            "reading_status": lambda f: {"reading": 0, "unread": 1, "read": 2}.get(f.reading_status or "unread", 1),
             "size": lambda f: f.size or 0,
         }
         key_fn = SORT_KEYS.get(sort, SORT_KEYS["recent"])
@@ -3722,9 +3592,7 @@ def library_tags():
         if project_id_raw is not None:
             try:
                 pid = int(project_id_raw)
-                q_stmt = q_stmt.where(
-                    UserFile.project_id == pid if pid else UserFile.project_id.is_(None)
-                )
+                q_stmt = q_stmt.where(UserFile.project_id == pid if pid else UserFile.project_id.is_(None))
             except (TypeError, ValueError):
                 pass
 
@@ -3772,9 +3640,7 @@ def library_stats():
         if project_id_raw is not None:
             try:
                 pid = int(project_id_raw)
-                q_stmt = q_stmt.where(
-                    UserFile.project_id == pid if pid else UserFile.project_id.is_(None)
-                )
+                q_stmt = q_stmt.where(UserFile.project_id == pid if pid else UserFile.project_id.is_(None))
             except (TypeError, ValueError):
                 pass
 
@@ -3800,13 +3666,7 @@ def library_stats():
         analyses_done = 0
         analyses_pending = 0
         if doc_ids:
-            pas = (
-                db.execute(
-                    select(PaperAnalysis).where(PaperAnalysis.file_id.in_(doc_ids))
-                )
-                .scalars()
-                .all()
-            )
+            pas = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id.in_(doc_ids))).scalars().all()
             analyses_done = sum(1 for p in pas if p.status == "done")
             analyses_pending = sum(1 for p in pas if p.status in ("pending", "running"))
 
@@ -3857,9 +3717,7 @@ def dashboard():
     db = SessionLocal()
     try:
         # ── Files ───────────────────────────────────────────────────────────
-        all_files = (
-            db.execute(select(UserFile).where(UserFile.user_id == uid)).scalars().all()
-        )
+        all_files = db.execute(select(UserFile).where(UserFile.user_id == uid)).scalars().all()
         docs = [f for f in all_files if f.kind == "document"]
         rs_cnt = {"unread": 0, "reading": 0, "read": 0}
         tag_cnt: dict[str, int] = {}
@@ -3893,11 +3751,7 @@ def dashboard():
             reverse=True,
         )
         recent_papers = [_paper_brief(f) for f in sorted_docs[:5]]
-        current_papers = [
-            _paper_brief(f)
-            for f in sorted_docs
-            if (f.reading_status or "unread") == "reading"
-        ][:5]
+        current_papers = [_paper_brief(f) for f in sorted_docs if (f.reading_status or "unread") == "reading"][:5]
 
         top_tags = sorted(
             [{"tag": t, "count": c} for t, c in tag_cnt.items()],
@@ -3914,11 +3768,7 @@ def dashboard():
 
         # ── Conversations ────────────────────────────────────────────────────
         convos = (
-            db.execute(
-                select(Conversation)
-                .where(Conversation.user_id == uid)
-                .order_by(Conversation.updated_at.desc())
-            )
+            db.execute(select(Conversation).where(Conversation.user_id == uid).order_by(Conversation.updated_at.desc()))
             .scalars()
             .all()
         )
@@ -3935,23 +3785,14 @@ def dashboard():
 
         # ── Citations ────────────────────────────────────────────────────────
         cites = (
-            db.execute(
-                select(Citation)
-                .where(Citation.user_id == uid)
-                .order_by(Citation.created_at.desc())
-            )
+            db.execute(select(Citation).where(Citation.user_id == uid).order_by(Citation.created_at.desc()))
             .scalars()
             .all()
         )
-        recent_citations = [
-            {"id": c.id, "title": c.title, "authors": c.authors, "year": c.year}
-            for c in cites[:5]
-        ]
+        recent_citations = [{"id": c.id, "title": c.title, "authors": c.authors, "year": c.year} for c in cites[:5]]
 
         # ── Projects ─────────────────────────────────────────────────────────
-        projects = (
-            db.execute(select(Project).where(Project.user_id == uid)).scalars().all()
-        )
+        projects = db.execute(select(Project).where(Project.user_id == uid)).scalars().all()
         file_proj_cnt = {}
         for f in docs:
             if f.project_id:
@@ -4070,9 +3911,7 @@ def get_analysis(fid):
                 }
             )
 
-        pa = db.execute(
-            select(PaperAnalysis).where(PaperAnalysis.file_id == fid)
-        ).scalar_one_or_none()
+        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
 
         if pa is None:
             # No record yet — start analysis now and return pending
@@ -4122,9 +3961,7 @@ def refresh_analysis(fid):
             return jsonify({"error": "no_text_content"}), 400
 
         # Wipe the cached hash so the worker doesn't short-circuit
-        pa = db.execute(
-            select(PaperAnalysis).where(PaperAnalysis.file_id == fid)
-        ).scalar_one_or_none()
+        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
         if pa:
             pa.content_hash = ""
             pa.status = "pending"
@@ -4147,9 +3984,7 @@ def file_raw(fid):
         x = db.get(UserFile, fid)
         if not x or x.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
-        url = storage.presigned_url(
-            x.path, x.name, x.mime or "application/octet-stream"
-        )
+        url = storage.presigned_url(x.path, x.name, x.mime or "application/octet-stream")
         return redirect(url)
     finally:
         db.close()
@@ -4165,9 +4000,7 @@ def delete_file(fid):
             return jsonify({"error": "not_found"}), 404
         storage.delete(x.path)
         db.delete(x)
-        _adjust_storage_usage(
-            db, session["user_id"], delta_bytes=-(x.size or 0), delta_files=-1
-        )
+        _adjust_storage_usage(db, session["user_id"], delta_bytes=-(x.size or 0), delta_files=-1)
         db.commit()
         return jsonify({"ok": True})
     finally:
@@ -4223,9 +4056,7 @@ def list_notes():
         if project_id_raw is not None:
             try:
                 pid = int(project_id_raw)
-                stmt = stmt.where(
-                    Note.project_id == pid if pid else Note.project_id.is_(None)
-                )
+                stmt = stmt.where(Note.project_id == pid if pid else Note.project_id.is_(None))
             except (TypeError, ValueError):
                 pass
 
@@ -4236,11 +4067,7 @@ def list_notes():
 
         # Full-text search (Python side for SQLite portability)
         if q:
-            notes = [
-                n
-                for n in notes
-                if q in (n.title or "").lower() or q in (n.content or "").lower()
-            ]
+            notes = [n for n in notes if q in (n.title or "").lower() or q in (n.content or "").lower()]
 
         total = len(notes)
         page = notes[offset : offset + limit]
@@ -4274,9 +4101,7 @@ def create_note():
     content = str(data.get("content") or "").strip()
     if not content:
         return (
-            jsonify(
-                {"error": "content_required", "detail": "Note content cannot be empty."}
-            ),
+            jsonify({"error": "content_required", "detail": "Note content cannot be empty."}),
             400,
         )
 
@@ -4423,11 +4248,7 @@ def apa_entry(c) -> str:
     venue_part = f"*{c.venue}*. " if c.venue else ""
     doi_part = f"https://doi.org/{c.doi}" if c.doi else (c.url or "")
 
-    return (
-        f"{author_str}. {year_part}{title_part}{venue_part}{doi_part}".strip().rstrip(
-            "."
-        )
-    )
+    return f"{author_str}. {year_part}{title_part}{venue_part}{doi_part}".strip().rstrip(".")
 
 
 def ieee_entry(c) -> str:
@@ -4517,9 +4338,7 @@ def list_citations():
         if project_id_raw is not None:
             try:
                 pid = int(project_id_raw)
-                stmt = stmt.where(
-                    Citation.project_id == pid if pid else Citation.project_id.is_(None)
-                )
+                stmt = stmt.where(Citation.project_id == pid if pid else Citation.project_id.is_(None))
             except (TypeError, ValueError):
                 pass
         cits = db.execute(stmt.order_by(Citation.created_at.desc())).scalars().all()
@@ -4527,9 +4346,7 @@ def list_citations():
             cits = [
                 c
                 for c in cits
-                if q in (c.title or "").lower()
-                or q in (c.authors or "").lower()
-                or q in (c.venue or "").lower()
+                if q in (c.title or "").lower() or q in (c.authors or "").lower() or q in (c.venue or "").lower()
             ]
         return jsonify([_citation_to_dict(c) for c in cits])
     finally:
@@ -4652,8 +4469,7 @@ def citation_from_paper(fid):
                 jsonify(
                     {
                         "error": "no_metadata",
-                        "detail": "This paper has no extracted title yet. "
-                        "Wait for metadata extraction to complete.",
+                        "detail": "This paper has no extracted title yet. " "Wait for metadata extraction to complete.",
                     }
                 ),
                 400,
@@ -4709,9 +4525,7 @@ def export_citations():
         if project_id_raw is not None:
             try:
                 pid = int(project_id_raw)
-                stmt = stmt.where(
-                    Citation.project_id == pid if pid else Citation.project_id.is_(None)
-                )
+                stmt = stmt.where(Citation.project_id == pid if pid else Citation.project_id.is_(None))
             except (TypeError, ValueError):
                 pass
         cits = db.execute(stmt.order_by(Citation.created_at)).scalars().all()
@@ -4743,11 +4557,7 @@ def list_projects():
     db = SessionLocal()
     try:
         projs = (
-            db.execute(
-                select(Project)
-                .where(Project.user_id == session["user_id"])
-                .order_by(Project.created_at)
-            )
+            db.execute(select(Project).where(Project.user_id == session["user_id"]).order_by(Project.created_at))
             .scalars()
             .all()
         )
@@ -4832,22 +4642,12 @@ def get_project(pid):
         )
 
         chat_count = (
-            db.execute(
-                select(Conversation).where(
-                    Conversation.user_id == uid, Conversation.project_id == pid
-                )
-            )
+            db.execute(select(Conversation).where(Conversation.user_id == uid, Conversation.project_id == pid))
             .scalars()
             .all()
         )
 
-        memory_count = (
-            db.execute(
-                select(Memory).where(Memory.user_id == uid, Memory.project_id == pid)
-            )
-            .scalars()
-            .all()
-        )
+        memory_count = db.execute(select(Memory).where(Memory.user_id == uid, Memory.project_id == pid)).scalars().all()
 
         # Reading status breakdown for papers in this project
         rs_counts = {"unread": 0, "reading": 0, "read": 0}
@@ -4917,9 +4717,7 @@ def delete_project(pid):
         p = db.get(Project, pid)
         if not p or p.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
-        for c in db.execute(
-            select(Conversation).where(Conversation.project_id == pid)
-        ).scalars():
+        for c in db.execute(select(Conversation).where(Conversation.project_id == pid)).scalars():
             c.project_id = None
         for m in db.execute(select(Memory).where(Memory.project_id == pid)).scalars():
             db.delete(m)
@@ -4981,9 +4779,7 @@ def conversation_settings_json(c):
     return {
         "temperature": c.temperature,
         "reasoning_effort": c.reasoning_effort,
-        "memory_enabled": (
-            bool(c.memory_enabled) if c.memory_enabled is not None else True
-        ),
+        "memory_enabled": (bool(c.memory_enabled) if c.memory_enabled is not None else True),
     }
 
 
@@ -5064,9 +4860,7 @@ def get_conversation(cid):
                         "role": m.role,
                         "content": m.content,
                         "sources": json.loads(m.sources) if m.sources else [],
-                        "attachments": (
-                            json.loads(m.attachments) if m.attachments else []
-                        ),
+                        "attachments": (json.loads(m.attachments) if m.attachments else []),
                     }
                     for m in c.messages
                 ],
@@ -5116,11 +4910,7 @@ def _purge_conversation(db, convo):
     """Delete a conversation, its messages (ORM cascade), and its
     conversation-only files/embeddings. Files also attached to a project are
     kept (just detached from the chat)."""
-    for uf in (
-        db.execute(select(UserFile).where(UserFile.conversation_id == convo.id))
-        .scalars()
-        .all()
-    ):
+    for uf in db.execute(select(UserFile).where(UserFile.conversation_id == convo.id)).scalars().all():
         if uf.project_id:
             uf.conversation_id = None
         else:
@@ -5161,9 +4951,7 @@ def bulk_delete_conversations():
         for c in convos:
             _purge_conversation(db, c)
         db.commit()
-        log_security_event(
-            "chats_deleted", user=uid, count=len(convos), all=bool(data.get("all"))
-        )
+        log_security_event("chats_deleted", user=uid, count=len(convos), all=bool(data.get("all")))
         return jsonify({"ok": True, "deleted": len(convos)})
     finally:
         db.close()
@@ -5205,15 +4993,7 @@ def _collect_export(db, uid, conversation_id=None):
                 "messages": msgs,
             }
         )
-    cites = (
-        db.execute(
-            select(Citation)
-            .where(Citation.user_id == uid)
-            .order_by(Citation.created_at)
-        )
-        .scalars()
-        .all()
-    )
+    cites = db.execute(select(Citation).where(Citation.user_id == uid).order_by(Citation.created_at)).scalars().all()
     cite_list = [
         {
             "authors": ct.authors,
@@ -5265,11 +5045,7 @@ def _export_markdown(data, cites, user, plain=False):
             who = _role_label(m["role"])
             att = ""
             if m["attachments"]:
-                att = (
-                    " (attached: "
-                    + ", ".join(a.get("name", "") for a in m["attachments"])
-                    + ")"
-                )
+                att = " (attached: " + ", ".join(a.get("name", "") for a in m["attachments"]) + ")"
             lines += [f"{b}{who}{att}:{b}", "", m["content"], ""]
     if cites:
         lines += ["", f"{'' if plain else '## '}Citations", ""]
@@ -5415,9 +5191,7 @@ def export_data():
         body = _export_markdown(data, cites, uinfo, plain=True)
         return _download(_text_to_pdf(title, body), base + ".pdf", "application/pdf")
     return (
-        jsonify(
-            {"error": "bad_format", "detail": "format must be json|md|txt|docx|pdf"}
-        ),
+        jsonify({"error": "bad_format", "detail": "format must be json|md|txt|docx|pdf"}),
         400,
     )
 
@@ -5443,16 +5217,10 @@ def delete_account():
         if not user:
             return jsonify({"error": "not_found"}), 404
         # Files (chunks + on-disk blobs)
-        for uf in (
-            db.execute(select(UserFile).where(UserFile.user_id == uid)).scalars().all()
-        ):
+        for uf in db.execute(select(UserFile).where(UserFile.user_id == uid)).scalars().all():
             _remove_file_row(db, uf)
         # Conversations (messages cascade), memories, citations, projects
-        for conv in (
-            db.execute(select(Conversation).where(Conversation.user_id == uid))
-            .scalars()
-            .all()
-        ):
+        for conv in db.execute(select(Conversation).where(Conversation.user_id == uid)).scalars().all():
             db.delete(conv)
         db.execute(delete(Memory).where(Memory.user_id == uid))
         db.execute(delete(Citation).where(Citation.user_id == uid))
@@ -5514,9 +5282,7 @@ def submit_support():
         )
     if len(message) < 5:
         return (
-            jsonify(
-                {"error": "empty_message", "detail": "Please describe your issue."}
-            ),
+            jsonify({"error": "empty_message", "detail": "Please describe your issue."}),
             400,
         )
     message = message[:5000]
@@ -5559,11 +5325,7 @@ def list_memories():
     db = SessionLocal()
     try:
         mems = (
-            db.execute(
-                select(Memory)
-                .where(Memory.user_id == session["user_id"])
-                .order_by(Memory.created_at.desc())
-            )
+            db.execute(select(Memory).where(Memory.user_id == session["user_id"]).order_by(Memory.created_at.desc()))
             .scalars()
             .all()
         )
@@ -5712,14 +5474,7 @@ def chat():
                     role="user",
                     content=user_message or "(see attached files)",
                     attachments=(
-                        json.dumps(
-                            [
-                                {k: a[k] for k in ("id", "name", "mime", "kind")}
-                                for a in atts
-                            ]
-                        )
-                        if atts
-                        else None
+                        json.dumps([{k: a[k] for k in ("id", "name", "mime", "kind")} for a in atts]) if atts else None
                     ),
                 )
             )
@@ -5735,9 +5490,7 @@ def chat():
                 names = ", ".join(a["name"] for a in m_atts)
                 content = f"[attached files: {names}]\n{content}"
             history.append({"role": m.role, "content": content})
-        memory_enabled = (
-            bool(convo.memory_enabled) if convo.memory_enabled is not None else True
-        )
+        memory_enabled = bool(convo.memory_enabled) if convo.memory_enabled is not None else True
         temperature = convo.temperature
         reasoning_effort = convo.reasoning_effort
         paper_file_id = convo.file_id  # M7: paper chat scope (may be None)
@@ -5777,9 +5530,7 @@ def chat():
             )
 
             # M7: paper chat hard-scopes RAG to the single paper file
-            excerpts = rag_retrieve(
-                user_id, convo_id, project_id, last_query[:500], file_id=paper_file_id
-            )
+            excerpts = rag_retrieve(user_id, convo_id, project_id, last_query[:500], file_id=paper_file_id)
             if excerpts:
                 yield sse("status", {"text": "Reading your documents…"})
                 input_items.append(
@@ -5805,30 +5556,24 @@ def chat():
             for a in doc_atts:
                 with storage.local_copy(a["path"]) as local_path:
                     txt = extract_text(local_path, a["mime"], a["name"])
-                    has_text = bool(txt) and not (
-                        txt.startswith("[") and txt.endswith("]") and len(txt) < 400
-                    )
+                    has_text = bool(txt) and not (txt.startswith("[") and txt.endswith("]") and len(txt) < 400)
                     if has_text:
                         body = (
                             txt
                             if len(txt) <= INLINE_DOC_CHARS
                             else (
-                                txt[:INLINE_DOC_CHARS]
-                                + f"\n\n[…truncated {len(txt) - INLINE_DOC_CHARS} more "
+                                txt[:INLINE_DOC_CHARS] + f"\n\n[…truncated {len(txt) - INLINE_DOC_CHARS} more "
                                 "characters; see the excerpts above for the rest.]"
                             )
                         )
                         input_items.append(
                             {
                                 "role": "developer",
-                                "content": f"Full text of attached file "
-                                f"'{a['name']}':\n{body}",
+                                "content": f"Full text of attached file " f"'{a['name']}':\n{body}",
                             }
                         )
                         continue
-                    is_pdf = a["name"].lower().endswith(".pdf") or "pdf" in (
-                        a["mime"] or ""
-                    )
+                    is_pdf = a["name"].lower().endswith(".pdf") or "pdf" in (a["mime"] or "")
                     pages = []
                     if is_pdf:
                         try:
@@ -5887,8 +5632,7 @@ def chat():
                 input_items.append(
                     {
                         "role": "developer",
-                        "content": "Web search results (cite these):\n"
-                        + json.dumps(results, ensure_ascii=False),
+                        "content": "Web search results (cite these):\n" + json.dumps(results, ensure_ascii=False),
                     }
                 )
 
@@ -5935,11 +5679,7 @@ def chat():
 
                 _log_chat_cost(user_id, model, getattr(final, "usage", None))
 
-                calls = [
-                    it
-                    for it in (final.output if final else [])
-                    if getattr(it, "type", "") == "function_call"
-                ]
+                calls = [it for it in (final.output if final else []) if getattr(it, "type", "") == "function_call"]
                 if calls:
                     for c in calls:
                         input_items.append(
@@ -6010,20 +5750,13 @@ def chat():
         except Exception as e:
             msg = str(e)
             if "invalid_api_key" in msg or "Incorrect API key" in msg:
-                msg = (
-                    "Your OpenAI API key seems invalid — check OPENAI_API_KEY in .env."
-                )
+                msg = "Your OpenAI API key seems invalid — check OPENAI_API_KEY in .env."
             elif "insufficient_quota" in msg:
                 msg = "Your OpenAI account is out of credit."
             elif "does not exist" in msg or "model_not_found" in msg:
-                msg = (
-                    f"Model '{model}' isn't available — pick another from the dropdown."
-                )
+                msg = f"Model '{model}' isn't available — pick another from the dropdown."
             elif "image" in msg.lower() and "support" in msg.lower():
-                msg = (
-                    f"Model '{model}' doesn't support images — "
-                    "switch to a vision model like gpt-4o or gpt-5."
-                )
+                msg = f"Model '{model}' doesn't support images — " "switch to a vision model like gpt-4o or gpt-5."
             yield sse("error", {"text": msg})
 
     return Response(
@@ -6132,11 +5865,7 @@ def semantic_search():
             file_map = {f.id: f for f in files}
 
             if file_ids:
-                chunks = (
-                    db.execute(select(Chunk).where(Chunk.file_id.in_(file_ids)))
-                    .scalars()
-                    .all()
-                )
+                chunks = db.execute(select(Chunk).where(Chunk.file_id.in_(file_ids))).scalars().all()
                 for ch in chunks:
                     if query_emb and ch.embedding:
                         try:
@@ -6323,9 +6052,7 @@ def _derived_to_dict(da: DerivedAnalysis) -> dict:
     }
 
 
-def _run_comparison(
-    derived_id: int, analyses_payload: str, file_ids: list[int]
-) -> None:
+def _run_comparison(derived_id: int, analyses_payload: str, file_ids: list[int]) -> None:
     """Background worker: call the model and store the comparison result."""
     db = SessionLocal()
     try:
@@ -6363,9 +6090,7 @@ def _run_comparison(
         db.commit()
 
     except Exception as exc:
-        logging.getLogger(__name__).warning(
-            "comparison failed for derived_id=%s: %s", derived_id, exc
-        )
+        logging.getLogger(__name__).warning("comparison failed for derived_id=%s: %s", derived_id, exc)
         try:
             da2 = db.get(DerivedAnalysis, derived_id)
             if da2:
@@ -6407,16 +6132,12 @@ def compare_papers():
 
     if len(file_ids) < 2:
         return (
-            jsonify(
-                {"error": "too_few", "detail": "Select at least 2 papers to compare."}
-            ),
+            jsonify({"error": "too_few", "detail": "Select at least 2 papers to compare."}),
             400,
         )
     if len(file_ids) > 10:
         return (
-            jsonify(
-                {"error": "too_many", "detail": "Maximum 10 papers per comparison."}
-            ),
+            jsonify({"error": "too_many", "detail": "Maximum 10 papers per comparison."}),
             400,
         )
 
@@ -6432,9 +6153,7 @@ def compare_papers():
             if not uf or uf.user_id != uid:
                 skipped.append({"id": fid, "reason": "not_found"})
                 continue
-            pa = db.execute(
-                select(PaperAnalysis).where(PaperAnalysis.file_id == fid)
-            ).scalar_one_or_none()
+            pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
             if not pa or pa.status != "done":
                 skipped.append(
                     {
@@ -6457,8 +6176,7 @@ def compare_papers():
                 jsonify(
                     {
                         "error": "too_few_ready",
-                        "detail": "At least 2 papers need a completed analysis. "
-                        "Try again after analysis finishes.",
+                        "detail": "At least 2 papers need a completed analysis. " "Try again after analysis finishes.",
                         "skipped": skipped,
                     }
                 ),
@@ -6482,9 +6200,7 @@ def compare_papers():
             return jsonify(result)
 
         # Build analyses payload for the prompt
-        blobs_text = json.dumps(
-            [paper_blobs[fid] for fid in valid_ids], ensure_ascii=False, indent=1
-        )
+        blobs_text = json.dumps([paper_blobs[fid] for fid in valid_ids], ensure_ascii=False, indent=1)
 
         # Create or reset the DerivedAnalysis row
         if existing:
@@ -6584,9 +6300,7 @@ Papers (as structured analyses):
 _GAP_MAX_ANALYSES_CHARS = 20_000
 
 
-def _run_gap_finder(
-    derived_id: int, analyses_payload: str, file_ids: list[int]
-) -> None:
+def _run_gap_finder(derived_id: int, analyses_payload: str, file_ids: list[int]) -> None:
     """Background worker: call the model and store gap analysis result."""
     db = SessionLocal()
     try:
@@ -6630,9 +6344,7 @@ def _run_gap_finder(
         db.commit()
 
     except Exception as exc:
-        logging.getLogger(__name__).warning(
-            "gap finder failed for derived_id=%s: %s", derived_id, exc
-        )
+        logging.getLogger(__name__).warning("gap finder failed for derived_id=%s: %s", derived_id, exc)
         try:
             da2 = db.get(DerivedAnalysis, derived_id)
             if da2:
@@ -6671,9 +6383,7 @@ def find_gaps():
         return jsonify({"error": "too_few", "detail": "Select at least 2 papers."}), 400
     if len(file_ids) > 10:
         return (
-            jsonify(
-                {"error": "too_many", "detail": "Maximum 10 papers per gap analysis."}
-            ),
+            jsonify({"error": "too_many", "detail": "Maximum 10 papers per gap analysis."}),
             400,
         )
 
@@ -6688,9 +6398,7 @@ def find_gaps():
             if not uf or uf.user_id != uid:
                 skipped.append({"id": fid, "reason": "not_found"})
                 continue
-            pa = db.execute(
-                select(PaperAnalysis).where(PaperAnalysis.file_id == fid)
-            ).scalar_one_or_none()
+            pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
             if not pa or pa.status != "done":
                 skipped.append(
                     {
@@ -6735,9 +6443,7 @@ def find_gaps():
             result["skipped"] = skipped
             return jsonify(result)
 
-        blobs_text = json.dumps(
-            [paper_blobs[fid] for fid in valid_ids], ensure_ascii=False, indent=1
-        )
+        blobs_text = json.dumps([paper_blobs[fid] for fid in valid_ids], ensure_ascii=False, indent=1)
 
         if existing:
             existing.data = ""
@@ -6830,10 +6536,7 @@ WRITING_ACTIONS = {
         "Stay strictly within what the original text implies — do not invent "
         "facts, citations, or experiments."
     ),
-    "shorten": (
-        "Shorten the following text, removing redundancy and filler while "
-        "preserving the key information."
-    ),
+    "shorten": ("Shorten the following text, removing redundancy and filler while " "preserving the key information."),
     "generate_abstract": (
         "Write a concise academic abstract (150-250 words) for the text below. "
         "Structure: background, objective, method, results, conclusion. "
@@ -6886,18 +6589,12 @@ def writing_assistant():
     warning = ""
     if len(text) > MAX_CHARS:
         text = text[:MAX_CHARS]
-        warning = (
-            "Input was truncated to 8 000 characters. "
-            "For longer texts, split into sections."
-        )
+        warning = "Input was truncated to 8 000 characters. " "For longer texts, split into sections."
 
     instruction = WRITING_ACTIONS[action]
     prompt = (
-        instruction
-        + "\n\nIMPORTANT: If you are uncertain or lack context to make a requested "
-        "change accurately, say so explicitly rather than inventing content.\n\n"
-        + "Text:\n"
-        + text
+        instruction + "\n\nIMPORTANT: If you are uncertain or lack context to make a requested "
+        "change accurately, say so explicitly rather than inventing content.\n\n" + "Text:\n" + text
     )
 
     result = responses_text(prompt)
@@ -6922,8 +6619,9 @@ def _export_as_markdown(content_str: str, title: str = "") -> bytes:
 def _export_as_docx(content_str: str, title: str = "") -> bytes:
     """Create a minimal DOCX from plain text.  Requires python-docx."""
     try:
-        import docx as _docx
         from io import BytesIO
+
+        import docx as _docx
 
         doc = _docx.Document()
         if title:
@@ -6987,9 +6685,7 @@ def export_notes():
         mime = "text/markdown"
         fname = "notes.md"
 
-    return send_file(
-        io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname
-    )
+    return send_file(io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname)
 
 
 @app.route("/api/export/analysis/<int:file_id>", methods=["GET"])
@@ -7009,9 +6705,7 @@ def export_analysis(file_id):
         if not uf or uf.user_id != uid:
             return jsonify({"error": "not_found"}), 404
 
-        pa = db.execute(
-            select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)
-        ).scalar_one_or_none()
+        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)).scalar_one_or_none()
 
         if not pa or pa.status != "done":
             return (
@@ -7076,9 +6770,7 @@ def export_analysis(file_id):
         mime = "text/markdown"
         fname = f"analysis-{file_id}.md"
 
-    return send_file(
-        io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname
-    )
+    return send_file(io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname)
 
 
 @app.route("/api/export/chat/<int:cid>", methods=["GET"])
@@ -7123,23 +6815,17 @@ def export_chat(cid):
         mime = "text/markdown"
         fname = f"chat-{cid}.md"
 
-    return send_file(
-        io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname
-    )
+    return send_file(io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname)
 
 
 # ------------------------------------------------------------------ SPA (React build) serving
-FRONTEND_DIST = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "frontend", "dist"
-)
+FRONTEND_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
 
 
 @app.route("/assets/<path:filename>")
 def spa_assets(filename):
     # Vite content-hashes asset filenames, so they can be cached forever.
-    return send_from_directory(
-        os.path.join(FRONTEND_DIST, "assets"), filename, max_age=31536000
-    )
+    return send_from_directory(os.path.join(FRONTEND_DIST, "assets"), filename, max_age=31536000)
 
 
 @app.route("/", defaults={"path": ""})

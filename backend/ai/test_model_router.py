@@ -3,6 +3,7 @@ mocking needed beyond monkeypatching env vars.
 
 Run: pytest backend/ai/test_model_router.py -v
 """
+
 import pytest
 
 from backend.ai.model_router import ModelRouter
@@ -10,12 +11,14 @@ from backend.ai.model_router import ModelRouter
 
 @pytest.fixture
 def router():
-    return ModelRouter({
-        "chat": "gpt-4o",
-        "paper_analysis": "gpt-4o",
-        "embedding": "text-embedding-3-small",
-        "_default": "gpt-4o",
-    })
+    return ModelRouter(
+        {
+            "chat": "gpt-4o",
+            "paper_analysis": "gpt-4o",
+            "embedding": "text-embedding-3-small",
+            "_default": "gpt-4o",
+        }
+    )
 
 
 # ------------------------------------------------------------ precedence
@@ -73,7 +76,7 @@ def test_clear_override_reverts_to_dict_default_when_no_env_var(router):
 
 
 def test_clear_override_is_a_noop_when_nothing_overridden(router):
-    router.clear_override("chat")   # must not raise
+    router.clear_override("chat")  # must not raise
     assert router.get_model_for_task("chat") == "gpt-4o"
 
 

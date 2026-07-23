@@ -5,14 +5,15 @@ too, same as prompt_versions.
 
 Run: pytest backend/ai/test_persona_engine.py -v
 """
+
 import time
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.ai.prompt_registry import Persona, _Base
 from backend.ai.persona_engine import PersonaEngine
+from backend.ai.prompt_registry import Persona, _Base
 
 
 @pytest.fixture
@@ -89,7 +90,7 @@ def test_update_changes_given_fields_only(engine):
     p = engine.create("X", "old desc", "old prompt")
     updated = engine.update(p.id, description="new desc")
     assert updated.description == "new desc"
-    assert updated.system_prompt == "old prompt"   # untouched field preserved
+    assert updated.system_prompt == "old prompt"  # untouched field preserved
 
 
 def test_update_bumps_updated_at(engine):

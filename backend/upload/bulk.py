@@ -26,17 +26,17 @@ import json
 import os
 import uuid
 
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select
 
 from auth.decorators import jwt_required
 from quotas.service import QuotaExceededError
 
 from .validation import (
+    ValidationError,
+    safe_filename,
     validate_extension,
     validate_size,
-    safe_filename,
-    ValidationError,
 )
 
 DEFAULT_MAX_BATCH_SIZE = 50

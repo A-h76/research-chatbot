@@ -20,6 +20,7 @@ Label cardinality is deliberately bounded:
     Prometheus is for operational aggregates, not a second billing
     ledger. See CostLedger/AIUsageLedger for "tokens used by user X".
 """
+
 from prometheus_client import (
     CollectorRegistry,
     Counter,
@@ -27,7 +28,6 @@ from prometheus_client import (
     Histogram,
     generate_latest,
     start_http_server,
-    CONTENT_TYPE_LATEST,
 )
 
 REGISTRY = CollectorRegistry()
