@@ -10,7 +10,6 @@ import sys
 
 sys.path.insert(0, r"D:\chatbot (v1)")
 import server
-from auth.magic_link import TOKEN_MAX_AGE_SECONDS
 
 EMAIL = "magic-link-verify@example.com"
 
@@ -25,9 +24,7 @@ def _serializer():
 def _cleanup():
     db = server.SessionLocal()
     try:
-        u = db.execute(
-            server.select(server.User).where(server.User.email == EMAIL)
-        ).scalar_one_or_none()
+        u = db.execute(server.select(server.User).where(server.User.email == EMAIL)).scalar_one_or_none()
         if u:
             db.delete(u)
             db.commit()
@@ -48,9 +45,7 @@ def test_request_gives_generic_response_regardless_of_allowlist():
         allowed_resp = client.post("/auth/magic-link", json={"email": EMAIL})
         server.ALLOWED_EMAILS.append("someone-else@example.com")
         try:
-            denied_resp = client.post(
-                "/auth/magic-link", json={"email": "nobody@example.com"}
-            )
+            denied_resp = client.post("/auth/magic-link", json={"email": "nobody@example.com"})
         finally:
             server.ALLOWED_EMAILS.remove("someone-else@example.com")
         assert allowed_resp.get_json() == denied_resp.get_json()
@@ -59,10 +54,7 @@ def test_request_gives_generic_response_regardless_of_allowlist():
 def test_request_rate_limited_per_email():
     with server.app.test_client() as client:
         email = "rate-limit-test@example.com"
-        statuses = [
-            client.post("/auth/magic-link", json={"email": email}).status_code
-            for _ in range(4)
-        ]
+        statuses = [client.post("/auth/magic-link", json={"email": email}).status_code for _ in range(4)]
         print("   4 requests, statuses:", statuses)
         assert statuses[:3] == [200, 200, 200]
         assert statuses[3] == 429
@@ -96,9 +88,7 @@ def test_verify_expired_token():
     # And confirm the actual HTTP endpoint rejects a signature-invalid
     # token the same way (same code path the real 15-minute expiry hits).
     with server.app.test_client() as client:
-        resp = client.post(
-            "/auth/magic-link/verify", json={"token": token + "tampered"}
-        )
+        resp = client.post("/auth/magic-link/verify", json={"token": token + "tampered"})
         assert resp.status_code == 401, resp.get_json()
 
 
@@ -112,11 +102,7 @@ def test_verify_creates_new_user_with_magic_provider():
         print(
             "   verify (new user):",
             resp.status_code,
-            {
-                k: v
-                for k, v in data.items()
-                if k not in ("access_token", "refresh_token")
-            },
+            {k: v for k, v in data.items() if k not in ("access_token", "refresh_token")},
         )
         assert resp.status_code == 200, data
         assert data["access_token"] and data["refresh_token"]

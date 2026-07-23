@@ -16,8 +16,8 @@ avoids that entirely, and is a cleaner dependency direction anyway
 
 import re
 
-from flask import Blueprint, request, session, jsonify
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from flask import Blueprint, jsonify, request, session
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 TOKEN_MAX_AGE_SECONDS = 15 * 60
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -111,9 +111,7 @@ def create_magic_link_blueprint(
 
         db = SessionLocal()
         try:
-            user = db.execute(
-                select(User).where(User.email == email)
-            ).scalar_one_or_none()
+            user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
             if not user:
                 user = User(email=email, name=email, auth_provider="magic")
                 db.add(user)

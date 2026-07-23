@@ -22,14 +22,16 @@ when this file wasn't the first one pytest happened to collect).
 
 Run: pytest test_chat.py -v
 """
+
 import pytest
 from dotenv import load_dotenv
-load_dotenv(override=False)   # OPENAI_API_KEY etc. — never overrides conftest.py's DATABASE_URL
+
+load_dotenv(override=False)  # OPENAI_API_KEY etc. — never overrides conftest.py's DATABASE_URL
 
 import server
 from backend.ai import PromptRegistry
-from backend.ai.prompt_registry import PromptVersion
 from backend.ai.model_registry import CostLedgerEntry
+from backend.ai.prompt_registry import PromptVersion
 
 
 @pytest.fixture
@@ -63,8 +65,7 @@ def test_uses_registry_when_chat_system_seeded(db):
     # (migration 0015's authoring lifecycle) — a draft has no active
     # version for _get_chat_system_opening()'s no-explicit-version lookup
     # to find, so without this the fallback would fire instead.
-    registry.create_prompt("chat_system", "test", "Custom system prompt from the registry.",
-                           status="active")
+    registry.create_prompt("chat_system", "test", "Custom system prompt from the registry.", status="active")
 
     opening = server._get_chat_system_opening(db)
 
@@ -121,13 +122,13 @@ def test_log_chat_cost_writes_row(db):
 
 
 def test_log_chat_cost_noop_when_usage_none(db):
-    server._log_chat_cost(999999, "gpt-4o-mini", None)   # must not raise
+    server._log_chat_cost(999999, "gpt-4o-mini", None)  # must not raise
     assert db.query(CostLedgerEntry).filter_by(user_id=999999).count() == 0
 
 
 def test_log_chat_cost_is_best_effort_on_failure(mocker):
     mocker.patch.object(server, "get_cost_ledger", side_effect=RuntimeError("ledger unavailable"))
-    server._log_chat_cost(1, "gpt-4o-mini", _FakeUsage(10, 5))   # must not raise
+    server._log_chat_cost(1, "gpt-4o-mini", _FakeUsage(10, 5))  # must not raise
 
 
 # ------------------------------------------------------------ preview_chat_prompt_builder_migration

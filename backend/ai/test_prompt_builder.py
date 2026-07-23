@@ -7,24 +7,26 @@ would just test that the mocks were called, not that assembly is correct.
 
 Run: pytest backend/ai/test_prompt_builder.py -v
 """
+
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import create_engine, Column, Integer, Text, DateTime
+from sqlalchemy import Column, DateTime, Integer, Text, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from backend.ai.prompt_registry import PromptRegistry, Persona, _Base as prompt_base
-from backend.ai.persona_engine import PersonaEngine
-from backend.ai.memory_engine import MemoryEngine
-from backend.ai.system_prompt import SystemPromptManager
 from backend.ai.domain_registry import DomainRegistry
+from backend.ai.memory_engine import MemoryEngine
+from backend.ai.persona_engine import PersonaEngine
 from backend.ai.prompt_builder import PromptBuilder
+from backend.ai.prompt_registry import Persona, PromptRegistry
+from backend.ai.prompt_registry import _Base as prompt_base
+from backend.ai.system_prompt import SystemPromptManager
 
 
 @pytest.fixture
 def env():
     engine = create_engine("sqlite:///:memory:")
-    prompt_base.metadata.create_all(engine)   # prompt_versions + personas
+    prompt_base.metadata.create_all(engine)  # prompt_versions + personas
 
     ServerBase = declarative_base()
 
@@ -66,9 +68,14 @@ def env():
     )
 
     return {
-        "db": db, "SessionLocal": SessionLocal, "Memory": Memory, "Project": Project,
-        "registry": registry, "persona_engine": persona_engine,
-        "domain_registry": domain_registry, "builder": builder,
+        "db": db,
+        "SessionLocal": SessionLocal,
+        "Memory": Memory,
+        "Project": Project,
+        "registry": registry,
+        "persona_engine": persona_engine,
+        "domain_registry": domain_registry,
+        "builder": builder,
     }
 
 
@@ -83,10 +90,7 @@ def test_build_assembles_minimal_prompt_system_then_task(env):
 
     assert result.system == "Global system prompt text."
     assert result.task == "Answer the question: what is X?"
-    assert result.final == (
-        "## System\nGlobal system prompt text.\n\n"
-        "## Task\nAnswer the question: what is X?"
-    )
+    assert result.final == ("## System\nGlobal system prompt text.\n\n" "## Task\nAnswer the question: what is X?")
 
 
 def test_build_omits_empty_sections_from_final(env):
@@ -110,14 +114,24 @@ def test_build_section_order_is_system_persona_project_memory_rag_task_schema(en
     env["db"].commit()
 
     result = env["builder"].build(
-        "q", "ask", persona="Reviewer", project_id=proj.id, user_id=1,
-        rag_context="retrieved doc text", output_schema={"type": "object"},
+        "q",
+        "ask",
+        persona="Reviewer",
+        project_id=proj.id,
+        user_id=1,
+        rag_context="retrieved doc text",
+        output_schema={"type": "object"},
     )
 
     order = [line for line in result.final.split("\n") if line.startswith("## ")]
     assert order == [
-        "## System", "## Persona", "## Project Context", "## Memory",
-        "## Retrieved Context", "## Task", "## Output Format",
+        "## System",
+        "## Persona",
+        "## Project Context",
+        "## Memory",
+        "## Retrieved Context",
+        "## Task",
+        "## Output Format",
     ]
 
 
@@ -184,7 +198,7 @@ def test_build_no_user_id_skips_memory_entirely(env):
     env["db"].add(env["Memory"](user_id=1, fact="prefers concise answers"))
     env["db"].commit()
 
-    result = env["builder"].build("q", "ask")   # no user_id
+    result = env["builder"].build("q", "ask")  # no user_id
     assert result.memory == ""
 
 
@@ -299,8 +313,7 @@ def test_build_with_domain_detection(env):
     _make_domain_module(env, "domain_medical", "MEDICAL: {{ query }}")
 
     # No domain given at all — auto-detected from content via keyword match.
-    result = env["builder"].build(
-        "This randomized clinical trial enrolled patients at a hospital.", "ask")
+    result = env["builder"].build("This randomized clinical trial enrolled patients at a hospital.", "ask")
 
     assert result.domain == "medical"
     assert "MEDICAL:" in result.task
@@ -311,9 +324,9 @@ def test_build_domain_missing_gracefully_falls_back_to_core_only(env):
     # domain_medical is NOT seeded in this test at all.
     result = env["builder"].build("q", "ask", domain="medical")
 
-    assert result.task == "CORE: q"   # unchanged — no crash, no partial/broken text
-    assert result.domain == "medical"          # still records what was requested/detected
-    assert result.domain_version_id is None    # but nothing was actually appended
+    assert result.task == "CORE: q"  # unchanged — no crash, no partial/broken text
+    assert result.domain == "medical"  # still records what was requested/detected
+    assert result.domain_version_id is None  # but nothing was actually appended
 
 
 def test_get_available_domains_returns_enabled_domain_names(env):

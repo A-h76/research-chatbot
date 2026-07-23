@@ -38,15 +38,18 @@ that needs "create and immediately serve" now says so explicitly via
 status="active" (see backend/ai/prompts.py's ensure_prompt(),
 backend/ai/seed.py's seed_prompts()).
 """
-import json
-from typing import Optional, List
 
-from jinja2.sandbox import SandboxedEnvironment
+import json
+from typing import List, Optional
+
 from jinja2.exceptions import TemplateError as Jinja2TemplateError
+from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy.orm import Session, declarative_base
 
 from .models import (
-    create_prompt_version_model, create_persona_model, create_prompt_execution_model,
+    create_persona_model,
+    create_prompt_execution_model,
+    create_prompt_version_model,
 )
 
 _Base = declarative_base()
@@ -88,11 +91,7 @@ class PromptRegistry:
 
     # ------------------------------------------------------------ reads
     def get_active_version(self, name: str) -> Optional[PromptVersion]:
-        return (
-            self.db.query(PromptVersion)
-            .filter_by(name=name, is_active=True)
-            .first()
-        )
+        return self.db.query(PromptVersion).filter_by(name=name, is_active=True).first()
 
     def list_prompts(self) -> List[PromptVersion]:
         """Every version of every prompt — the full registry inventory,
@@ -120,8 +119,9 @@ class PromptRegistry:
     def get_prompts_by_status(self, status: str) -> List[PromptVersion]:
         return self.db.query(PromptVersion).filter_by(status=status).all()
 
-    def get_prompt(self, name: str, version: Optional[int] = None,
-                   variables: Optional[dict] = None) -> tuple[str, PromptVersion]:
+    def get_prompt(
+        self, name: str, version: Optional[int] = None, variables: Optional[dict] = None
+    ) -> tuple[str, PromptVersion]:
         """Returns (rendered_text, the PromptVersion row that produced it)
         — callers need the row to attribute an AI call to the exact
         prompt version that produced it (prompt_executions,
@@ -143,16 +143,21 @@ class PromptRegistry:
         try:
             rendered = _jinja_env.from_string(row.template).render(**(variables or {}))
         except Jinja2TemplateError as exc:
-            raise TemplateError(
-                f"failed to render prompt {name!r} v{row.version}: {exc}") from exc
+            raise TemplateError(f"failed to render prompt {name!r} v{row.version}: {exc}") from exc
         return rendered, row
 
     # ------------------------------------------------------------ writes
     def create_prompt(
-        self, name: str, description: str, template_text: str,
-        default_version: int = 1, *,
-        status: str = "draft", category: str = "",
-        examples: Optional[list] = None, expected_output_type: str = "text",
+        self,
+        name: str,
+        description: str,
+        template_text: str,
+        default_version: int = 1,
+        *,
+        status: str = "draft",
+        category: str = "",
+        examples: Optional[list] = None,
+        expected_output_type: str = "text",
         author_user_id: Optional[int] = None,
     ) -> PromptVersion:
         """First version of a new name. `is_active` is derived from
@@ -160,41 +165,47 @@ class PromptRegistry:
         the one served for its name if it's actually status='active'
         (see module docstring). Pass status="active" for a prompt that
         should be immediately servable; the default ("draft") is not."""
-        existing = (
-            self.db.query(PromptVersion)
-            .filter_by(name=name, version=default_version)
-            .first()
-        )
+        existing = self.db.query(PromptVersion).filter_by(name=name, version=default_version).first()
         if existing:
             raise ValueError(f"prompt {name!r} version {default_version} already exists")
 
         row = PromptVersion(
-            name=name, version=default_version, template=template_text,
+            name=name,
+            version=default_version,
+            template=template_text,
             is_active=(status == "active"),
-            description=description, status=status, category=category,
+            description=description,
+            status=status,
+            category=category,
             examples=json.dumps(examples if examples is not None else []),
-            expected_output_type=expected_output_type, author_user_id=author_user_id,
+            expected_output_type=expected_output_type,
+            author_user_id=author_user_id,
         )
         self.db.add(row)
         self.db.commit()
         return row
 
     def add_version(
-        self, name: str, template_text: str, is_active: bool = False, *,
-        status: str = "draft", description: str = "", category: str = "",
-        examples: Optional[list] = None, expected_output_type: str = "text",
+        self,
+        name: str,
+        template_text: str,
+        is_active: bool = False,
+        *,
+        status: str = "draft",
+        description: str = "",
+        category: str = "",
+        examples: Optional[list] = None,
+        expected_output_type: str = "text",
         author_user_id: Optional[int] = None,
     ) -> PromptVersion:
         if is_active and status != "active":
             raise ValueError(
                 f"cannot create a version with is_active=True and status={status!r} — "
                 "only a status='active' version may be the one served (activate_prompt() "
-                "or pass status=\"active\" explicitly)"
+                'or pass status="active" explicitly)'
             )
 
-        existing_versions = (
-            self.db.query(PromptVersion).filter_by(name=name).all()
-        )
+        existing_versions = self.db.query(PromptVersion).filter_by(name=name).all()
         if not existing_versions:
             raise ValueError(f"no prompt named {name!r} — use create_prompt() first")
 
@@ -205,10 +216,16 @@ class PromptRegistry:
                 v.is_active = False
 
         row = PromptVersion(
-            name=name, version=next_version, template=template_text, is_active=is_active,
-            status=status, description=description, category=category,
+            name=name,
+            version=next_version,
+            template=template_text,
+            is_active=is_active,
+            status=status,
+            description=description,
+            category=category,
             examples=json.dumps(examples if examples is not None else []),
-            expected_output_type=expected_output_type, author_user_id=author_user_id,
+            expected_output_type=expected_output_type,
+            author_user_id=author_user_id,
         )
         self.db.add(row)
         self.db.commit()

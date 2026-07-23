@@ -46,9 +46,7 @@ class R2Provider:
             if e.response.get("Error", {}).get("Code") in ("404", "NoSuchKey"):
                 return None
             raise
-        return ObjectInfo(
-            key=key, size=resp["ContentLength"], etag=resp.get("ETag", "").strip('"')
-        )
+        return ObjectInfo(key=key, size=resp["ContentLength"], etag=resp.get("ETag", "").strip('"'))
 
     def list_keys(self, prefix=""):
         paginator = self._client.get_paginator("list_objects_v2")
@@ -92,9 +90,7 @@ class R2Provider:
             # don't hash to this — integrity is enforced *during* upload,
             # not just checked after the fact.
             params["ContentMD5"] = content_md5_b64
-        return self._client.generate_presigned_url(
-            "put_object", Params=params, ExpiresIn=expires_in
-        )
+        return self._client.generate_presigned_url("put_object", Params=params, ExpiresIn=expires_in)
 
     def create_multipart_upload(self, key, mime):
         resp = self._client.create_multipart_upload(
@@ -119,16 +115,12 @@ class R2Provider:
             Bucket=self.bucket,
             Key=key,
             UploadId=upload_id,
-            MultipartUpload={
-                "Parts": [{"PartNumber": p.part_number, "ETag": p.etag} for p in parts]
-            },
+            MultipartUpload={"Parts": [{"PartNumber": p.part_number, "ETag": p.etag} for p in parts]},
         )
 
     def abort_multipart_upload(self, key, upload_id):
         try:
-            self._client.abort_multipart_upload(
-                Bucket=self.bucket, Key=key, UploadId=upload_id
-            )
+            self._client.abort_multipart_upload(Bucket=self.bucket, Key=key, UploadId=upload_id)
         except Exception:
             logging.exception(
                 "R2Provider.abort_multipart_upload failed " "for key=%s upload_id=%s",

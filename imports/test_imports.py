@@ -60,16 +60,15 @@ def _write_minimal_epub(path, chapters):
             'media-type="application/oebps-package+xml"/></rootfiles></container>',
         )
         manifest_items = "".join(
-            f'<item id="{cid}" href="{fname}" media-type="application/xhtml+xml"/>'
-            for cid, fname, _ in chapters
+            f'<item id="{cid}" href="{fname}" media-type="application/xhtml+xml"/>' for cid, fname, _ in chapters
         )
         spine_items = "".join(f'<itemref idref="{cid}"/>' for cid, _, _ in chapters)
         zf.writestr(
             "OEBPS/content.opf",
             '<?xml version="1.0"?>'
             '<package xmlns="http://www.idpf.org/2007/opf">'
-            f'<manifest>{manifest_items}</manifest>'
-            f'<spine>{spine_items}</spine>'
+            f"<manifest>{manifest_items}</manifest>"
+            f"<spine>{spine_items}</spine>"
             "</package>",
         )
         for _, fname, body in chapters:
@@ -85,10 +84,13 @@ def test_epub_importer_extracts_spine_text_in_order():
     d = tempfile.mkdtemp()
     try:
         p = os.path.join(d, "book.epub")
-        _write_minimal_epub(p, [
-            ("ch1", "ch1.xhtml", "Chapter one text"),
-            ("ch2", "ch2.xhtml", "Chapter two text"),
-        ])
+        _write_minimal_epub(
+            p,
+            [
+                ("ch1", "ch1.xhtml", "Chapter one text"),
+                ("ch2", "ch2.xhtml", "Chapter two text"),
+            ],
+        )
         result = extract_text(p, "application/epub+zip", "book.epub")
         assert "Chapter one text" in result
         assert "Chapter two text" in result

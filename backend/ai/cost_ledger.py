@@ -21,10 +21,11 @@ fabricated number — a wrong-but-confident-looking dollar figure is worse
 than an honest "unknown." gpt-5-family/o-series/gemini-2.0 models are
 intentionally NOT in this table for that reason.
 """
+
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy import Column, DateTime, Float, Integer, String
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ class CostLedger:
     }
 
     def __init__(self, Model):
-        self._Model = Model   # the mapped CostLedgerEntry class
+        self._Model = Model  # the mapped CostLedgerEntry class
 
     def estimate_cost(self, model: str, prompt_tokens: int, completion_tokens: int) -> float:
         # Exact match first, then prefix — real model ids often carry a
@@ -91,13 +92,31 @@ class CostLedger:
             logger.info("no known pricing for model %r, cost recorded as 0.0", model)
             rates = (0.0, 0.0)
         prompt_rate, completion_rate = rates
-        return round(prompt_tokens / 1_000_000 * prompt_rate
-                    + completion_tokens / 1_000_000 * completion_rate, 6)
+        return round(prompt_tokens / 1_000_000 * prompt_rate + completion_tokens / 1_000_000 * completion_rate, 6)
 
-    def log(self, db_session, *, user_id, model, prompt_tokens, completion_tokens,
-           total_tokens, cost, action="chat", prompt_version_id=None):
-        db_session.add(self._Model(
-            user_id=user_id, model=model, action=action,
-            prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-            total_tokens=total_tokens, cost=cost, prompt_version_id=prompt_version_id))
+    def log(
+        self,
+        db_session,
+        *,
+        user_id,
+        model,
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        cost,
+        action="chat",
+        prompt_version_id=None,
+    ):
+        db_session.add(
+            self._Model(
+                user_id=user_id,
+                model=model,
+                action=action,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                cost=cost,
+                prompt_version_id=prompt_version_id,
+            )
+        )
         db_session.commit()

@@ -6,10 +6,11 @@ real or a test stand-in with the same columns).
 
 Run: pytest backend/ai/test_memory_engine.py -v
 """
+
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import create_engine, Column, Integer, Text, DateTime
+from sqlalchemy import Column, DateTime, Integer, Text, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from backend.ai.memory_engine import MemoryEngine
@@ -37,7 +38,10 @@ def env():
 
 def _add(env, user_id=1, project_id=None, fact="a fact", importance=3, age_seconds=0):
     m = env["Memory"](
-        user_id=user_id, project_id=project_id, fact=fact, importance=importance,
+        user_id=user_id,
+        project_id=project_id,
+        fact=fact,
+        importance=importance,
         created_at=datetime.now(timezone.utc) - timedelta(seconds=age_seconds),
     )
     env["db"].add(m)

@@ -17,8 +17,9 @@ request-scoped global proxy, not a real object that needs construction."""
 
 from functools import wraps
 
-from flask import g, session, jsonify
-from flask_jwt_extended import jwt_required as _jwt_required, get_jwt_identity
+from flask import g, jsonify, session
+from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import jwt_required as _jwt_required
 
 
 def jwt_required():

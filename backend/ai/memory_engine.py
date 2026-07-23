@@ -9,7 +9,16 @@ Constructor-injected (db_session, Memory) — same reason as everything
 else in backend/ai: never `import server`; Memory comes from whichever
 Base actually owns it (server.py's own), not redeclared here.
 """
-from typing import List, Optional
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, List, Optional
+
+if TYPE_CHECKING:
+    # Static-analysis only — never executed, so this doesn't violate the
+    # "never import server at runtime" rule (see module docstring): the
+    # import is erased entirely before Python runs the module.
+    from server import Memory
 
 
 class MemoryEngine:
@@ -18,9 +27,12 @@ class MemoryEngine:
         self.Memory = Memory
 
     def get_relevant_memories(
-        self, user_id: int, query: str, project_id: Optional[int] = None,
+        self,
+        user_id: int,
+        query: str,
+        project_id: Optional[int] = None,
         limit: int = 5,
-    ) -> List["Memory"]:
+    ) -> List[Memory]:
         """Project-scoping matches server.py's own build_system_prompt()
         exactly (global_mems + proj_mems), not a new convention invented
         here: project_id=None -> global memories only (project_id IS

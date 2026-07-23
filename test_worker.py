@@ -18,12 +18,14 @@ when this file wasn't the first one pytest happened to collect).
 
 Run: pytest test_worker.py -v
 """
+
 import json
 import os
 
 import pytest
 from dotenv import load_dotenv
-load_dotenv(override=False)   # OPENAI_API_KEY etc. — never overrides conftest.py's DATABASE_URL
+
+load_dotenv(override=False)  # OPENAI_API_KEY etc. — never overrides conftest.py's DATABASE_URL
 
 import server
 import worker
@@ -47,8 +49,14 @@ def user(db):
 
 @pytest.fixture
 def uf(db, user):
-    f = server.UserFile(user_id=user.id, name="paper.txt", mime="text/plain",
-                        kind="document", path="irrelevant-for-these-tests", size=10)
+    f = server.UserFile(
+        user_id=user.id,
+        name="paper.txt",
+        mime="text/plain",
+        kind="document",
+        path="irrelevant-for-these-tests",
+        size=10,
+    )
     db.add(f)
     db.commit()
     return f
@@ -70,9 +78,13 @@ def _mock_registries(mocker, response_json):
     prompt_registry.get_prompt.return_value = ("rendered prompt text", mocker.Mock())
     model_registry = mocker.Mock()
     model_registry.call.return_value = {
-        "content": json.dumps(response_json), "model": "gpt-4o-mini",
-        "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
-        "finish_reason": "stop", "cost": 0.001,
+        "content": json.dumps(response_json),
+        "model": "gpt-4o-mini",
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15,
+        "finish_reason": "stop",
+        "cost": 0.001,
     }
     mocker.patch.object(worker, "PromptRegistry", return_value=prompt_registry)
     mocker.patch.object(worker, "ModelRegistry", return_value=model_registry)
@@ -121,10 +133,17 @@ def test_extract_metadata_calls_model_registry_with_user_id_and_json_mode(db, uf
 
 
 def test_extract_metadata_writes_fields_to_userfile(db, uf, mocker):
-    _mock_registries(mocker, {
-        "title": "A Test Paper", "authors": "Smith, J.; Doe, A.", "year": "2023",
-        "venue": "Test Journal", "doi": "10.1/test", "abstract": "An abstract.",
-    })
+    _mock_registries(
+        mocker,
+        {
+            "title": "A Test Paper",
+            "authors": "Smith, J.; Doe, A.",
+            "year": "2023",
+            "venue": "Test Journal",
+            "doi": "10.1/test",
+            "abstract": "An abstract.",
+        },
+    )
     job = server.UploadJob(file_id=uf.id, user_id=uf.user_id, job_type="extract_metadata", status="running")
     db.add(job)
     db.commit()
@@ -168,14 +187,29 @@ def test_extract_metadata_sets_failed_status_and_reraises_on_ai_error(db, uf, mo
 
 # ------------------------------------------------------------ paper_analysis
 def _analysis_payload(**overrides):
-    base = {f: "x" for f in (
-        "executive_summary", "abstract_explained", "research_objective", "problem_statement",
-        "methodology", "dataset", "experiments", "results",
-    )}
-    base.update({
-        "key_contributions": ["a"], "strengths": ["b"], "limitations": ["c"],
-        "future_work": ["d"], "keywords": ["e"], "important_terms": {"x": "y"},
-    })
+    base = {
+        f: "x"
+        for f in (
+            "executive_summary",
+            "abstract_explained",
+            "research_objective",
+            "problem_statement",
+            "methodology",
+            "dataset",
+            "experiments",
+            "results",
+        )
+    }
+    base.update(
+        {
+            "key_contributions": ["a"],
+            "strengths": ["b"],
+            "limitations": ["c"],
+            "future_work": ["d"],
+            "keywords": ["e"],
+            "important_terms": {"x": "y"},
+        }
+    )
     base.update(overrides)
     return base
 

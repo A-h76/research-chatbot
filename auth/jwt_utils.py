@@ -26,9 +26,7 @@ def create_jwt(user_id, additional_claims=None):
     server.py, not per call."""
     identity = str(user_id)
     access = create_access_token(identity=identity, additional_claims=additional_claims)
-    refresh = create_refresh_token(
-        identity=identity, additional_claims=additional_claims
-    )
+    refresh = create_refresh_token(identity=identity, additional_claims=additional_claims)
     return access, refresh
 
 

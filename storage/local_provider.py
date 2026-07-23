@@ -12,7 +12,7 @@ import contextlib
 import os
 import shutil
 
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from .checksum import md5_file_b64
 from .provider import ObjectInfo
@@ -80,10 +80,7 @@ class LocalProvider:
             raise ValueError("invalid or expired upload token") from e
 
     def create_multipart_upload(self, key, mime):
-        raise NotImplementedError(
-            "local provider has no part-size limit; "
-            "use a single presigned_put_url instead"
-        )
+        raise NotImplementedError("local provider has no part-size limit; " "use a single presigned_put_url instead")
 
     def presigned_part_url(self, key, upload_id, part_number, expires_in=3600):
         raise NotImplementedError

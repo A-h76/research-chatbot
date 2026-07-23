@@ -6,9 +6,9 @@ import os
 import shutil
 import tempfile
 
-from storage.checksum import sha256_file, md5_file_b64
+from storage.checksum import md5_file_b64, sha256_file
 from storage.local_provider import LocalProvider
-from storage.manager import sweep_temp_dir, garbage_collect, reconcile
+from storage.manager import garbage_collect, reconcile, sweep_temp_dir
 
 
 def _write(path, content: bytes):
@@ -56,9 +56,7 @@ def test_local_provider_round_trip():
 
 
 def test_local_provider_signed_tokens_round_trip_and_expire():
-    provider = LocalProvider(
-        root_dir=tempfile.mkdtemp(), secret_key="s", base_url="http://localhost:5000"
-    )
+    provider = LocalProvider(root_dir=tempfile.mkdtemp(), secret_key="s", base_url="http://localhost:5000")
     url = provider.presigned_put_url("k.pdf", "application/pdf", expires_in=600)
     token = url.split("token=")[1]
     payload = provider.verify_token(token, max_age=600)
@@ -94,9 +92,7 @@ def test_sweep_temp_dir_removes_only_stale_files():
 
 
 def test_garbage_collect_deletes_given_keys():
-    provider = LocalProvider(
-        root_dir=tempfile.mkdtemp(), secret_key="s", base_url="http://localhost:5000"
-    )
+    provider = LocalProvider(root_dir=tempfile.mkdtemp(), secret_key="s", base_url="http://localhost:5000")
     src = tempfile.mktemp()
     _write(src, b"x")
     provider.upload("orphan.pdf", src)
@@ -108,9 +104,7 @@ def test_garbage_collect_deletes_given_keys():
 
 
 def test_reconcile_finds_orphans_and_missing_without_deleting_by_default():
-    provider = LocalProvider(
-        root_dir=tempfile.mkdtemp(), secret_key="s", base_url="http://localhost:5000"
-    )
+    provider = LocalProvider(root_dir=tempfile.mkdtemp(), secret_key="s", base_url="http://localhost:5000")
     src = tempfile.mktemp()
     _write(src, b"x")
     provider.upload("a.pdf", src)  # in storage

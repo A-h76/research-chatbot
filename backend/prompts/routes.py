@@ -14,9 +14,10 @@ module in backend/: server.py runs as __main__, so a module it reaches
 into importing it back re-executes the whole file under a second module
 identity and recurses.
 """
+
 import json
 
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, jsonify, request, session
 
 
 def _prompt_to_dict(row):
@@ -49,8 +50,15 @@ def _persona_to_dict(row):
 
 
 def create_prompts_blueprint(
-    *, SessionLocal, PromptVersion, Persona, PromptRegistry, PersonaEngine,
-    get_prompt_builder, login_required, admin_required,
+    *,
+    SessionLocal,
+    PromptVersion,
+    Persona,
+    PromptRegistry,
+    PersonaEngine,
+    get_prompt_builder,
+    login_required,
+    admin_required,
 ):
     bp = Blueprint("prompts", __name__)
 
@@ -102,7 +110,9 @@ def create_prompts_blueprint(
             registry = PromptRegistry(db)
             try:
                 row = registry.create_prompt(
-                    name, data.get("description", ""), template,
+                    name,
+                    data.get("description", ""),
+                    template,
                     status=data.get("status", "draft"),
                     category=data.get("category", ""),
                     examples=data.get("examples"),
@@ -170,7 +180,8 @@ def create_prompts_blueprint(
             registry = PromptRegistry(db)
             try:
                 row = registry.add_version(
-                    existing.name, template,
+                    existing.name,
+                    template,
                     is_active=bool(data.get("is_active", False)),
                     status=data.get("status", "draft"),
                     description=data.get("description", ""),
@@ -199,7 +210,8 @@ def create_prompts_blueprint(
             builder = get_prompt_builder(db)
             try:
                 result = builder.preview(
-                    data.get("user_query", ""), task_name,
+                    data.get("user_query", ""),
+                    task_name,
                     persona=data.get("persona"),
                     project_id=data.get("project_id"),
                     # Always the logged-in user's own id — never trust a
@@ -212,18 +224,20 @@ def create_prompts_blueprint(
             except ValueError as exc:
                 return jsonify({"error": "invalid_request", "message": str(exc)}), 400
 
-            return jsonify({
-                "system": result.system,
-                "persona": result.persona,
-                "project_context": result.project_context,
-                "memory": result.memory,
-                "rag": result.rag,
-                "task": result.task,
-                "output_schema": result.output_schema,
-                "final": result.final,
-                "prompt_version_id": result.prompt_version_id,
-                "persona_id": result.persona_id,
-            })
+            return jsonify(
+                {
+                    "system": result.system,
+                    "persona": result.persona,
+                    "project_context": result.project_context,
+                    "memory": result.memory,
+                    "rag": result.rag,
+                    "task": result.task,
+                    "output_schema": result.output_schema,
+                    "final": result.final,
+                    "prompt_version_id": result.prompt_version_id,
+                    "persona_id": result.persona_id,
+                }
+            )
         finally:
             db.close()
 

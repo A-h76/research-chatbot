@@ -8,15 +8,18 @@ one physical database.
 
 Run: pytest backend/ai/test_analytics.py -v
 """
+
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float
+from sqlalchemy import Column, DateTime, Float, Integer, String, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from backend.ai.analytics import PromptAnalytics
-from backend.ai.model_registry import CostLedgerEntry, _Base as model_base
-from backend.ai.prompt_registry import PromptVersion, PromptExecution, _Base as prompt_base
+from backend.ai.model_registry import CostLedgerEntry
+from backend.ai.model_registry import _Base as model_base
+from backend.ai.prompt_registry import PromptExecution, PromptVersion
+from backend.ai.prompt_registry import _Base as prompt_base
 
 
 @pytest.fixture
@@ -42,16 +45,18 @@ def env():
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     LegacyBase.metadata.create_all(engine)
-    model_base.metadata.create_all(engine)    # CostLedgerEntry
-    prompt_base.metadata.create_all(engine)   # PromptVersion, PromptExecution
+    model_base.metadata.create_all(engine)  # CostLedgerEntry
+    prompt_base.metadata.create_all(engine)  # PromptVersion, PromptExecution
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
     db = SessionLocal()
 
     analytics = PromptAnalytics(db, AIUsageLedger, ModelVersion)
 
     return {
-        "db": db, "analytics": analytics,
-        "AIUsageLedger": AIUsageLedger, "ModelVersion": ModelVersion,
+        "db": db,
+        "analytics": analytics,
+        "AIUsageLedger": AIUsageLedger,
+        "ModelVersion": ModelVersion,
     }
 
 
@@ -62,29 +67,53 @@ START = NOW - timedelta(days=7)
 END = NOW + timedelta(days=1)
 
 
-def _add_legacy_event(env, user_id=1, provider_model_id="gpt-4o", prompt_tokens=100,
-                      completion_tokens=50, cost_usd=0.01, created_at=IN_RANGE,
-                      prompt_version_id=None):
+def _add_legacy_event(
+    env,
+    user_id=1,
+    provider_model_id="gpt-4o",
+    prompt_tokens=100,
+    completion_tokens=50,
+    cost_usd=0.01,
+    created_at=IN_RANGE,
+    prompt_version_id=None,
+):
     mv = env["ModelVersion"](logical_name="utility_model", provider_model_id=provider_model_id)
     env["db"].add(mv)
     env["db"].flush()
     led = env["AIUsageLedger"](
-        user_id=user_id, model_version_id=mv.id, prompt_version_id=prompt_version_id,
-        prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-        cost_usd=cost_usd, created_at=created_at,
+        user_id=user_id,
+        model_version_id=mv.id,
+        prompt_version_id=prompt_version_id,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cost_usd=cost_usd,
+        created_at=created_at,
     )
     env["db"].add(led)
     env["db"].commit()
     return led
 
 
-def _add_new_event(env, user_id=1, model="gpt-4o-mini", prompt_tokens=20, completion_tokens=10,
-                   cost_usd=0.001, created_at=IN_RANGE, prompt_version_id=None):
+def _add_new_event(
+    env,
+    user_id=1,
+    model="gpt-4o-mini",
+    prompt_tokens=20,
+    completion_tokens=10,
+    cost_usd=0.001,
+    created_at=IN_RANGE,
+    prompt_version_id=None,
+):
     r = CostLedgerEntry(
-        user_id=user_id, model=model, action="chat",
-        prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-        total_tokens=prompt_tokens + completion_tokens, cost=cost_usd,
-        prompt_version_id=prompt_version_id, created_at=created_at,
+        user_id=user_id,
+        model=model,
+        action="chat",
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=prompt_tokens + completion_tokens,
+        cost=cost_usd,
+        prompt_version_id=prompt_version_id,
+        created_at=created_at,
     )
     env["db"].add(r)
     env["db"].commit()
@@ -98,12 +127,25 @@ def _add_prompt(env, name="paper_analysis"):
     return pv
 
 
-def _add_execution(env, prompt_version_id, project_id=None, user_id=1, tokens_used=30,
-                   latency_ms=500, created_at=IN_RANGE, status="success"):
+def _add_execution(
+    env,
+    prompt_version_id,
+    project_id=None,
+    user_id=1,
+    tokens_used=30,
+    latency_ms=500,
+    created_at=IN_RANGE,
+    status="success",
+):
     ex = PromptExecution(
-        prompt_version_id=prompt_version_id, project_id=project_id, user_id=user_id,
-        assembled_prompt="x", tokens_used=tokens_used, latency_ms=latency_ms,
-        status=status, created_at=created_at,
+        prompt_version_id=prompt_version_id,
+        project_id=project_id,
+        user_id=user_id,
+        assembled_prompt="x",
+        tokens_used=tokens_used,
+        latency_ms=latency_ms,
+        status=status,
+        created_at=created_at,
     )
     env["db"].add(ex)
     env["db"].commit()
@@ -163,9 +205,9 @@ def test_by_prompt_combines_cost_from_ledgers_and_latency_from_executions(env):
 
     rows = {r["prompt_name"]: r for r in env["analytics"].get_usage_by_prompt(START, END)}
     row = rows["paper_analysis"]
-    assert row["calls"] == 1                    # one cost-ledger event
+    assert row["calls"] == 1  # one cost-ledger event
     assert row["cost_usd"] == pytest.approx(0.03)
-    assert row["latency_ms_avg"] == 600.0        # avg(800, 400) from the two executions
+    assert row["latency_ms_avg"] == 600.0  # avg(800, 400) from the two executions
 
 
 def test_by_prompt_unattributed_legacy_rows_bucket_as_unknown(env):

@@ -7,6 +7,7 @@ logic in isolation.
 
 Run: pytest observability/test_observability.py -v
 """
+
 import json
 import logging
 
@@ -16,8 +17,13 @@ from observability.metrics import AI_CALLS_TOTAL, AI_TOKENS_TOTAL, record_ai_cal
 
 def _make_record(msg="hello", **extra):
     record = logging.LogRecord(
-        name="test.logger", level=logging.INFO, pathname=__file__, lineno=1,
-        msg=msg, args=(), exc_info=None,
+        name="test.logger",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg=msg,
+        args=(),
+        exc_info=None,
     )
     for k, v in extra.items():
         setattr(record, k, v)

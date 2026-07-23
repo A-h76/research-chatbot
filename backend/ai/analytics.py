@@ -32,11 +32,12 @@ associates an AI call with a project today; it has no cost_usd for the
 same reason (PromptExecution only ever recorded token counts, not
 dollar cost).
 """
+
 from collections import defaultdict
-from typing import List, Optional
+from typing import List
 
 from .model_registry import CostLedgerEntry
-from .prompt_registry import PromptVersion, PromptExecution
+from .prompt_registry import PromptExecution, PromptVersion
 
 
 def _empty_ledger_bucket():
@@ -69,8 +70,7 @@ class PromptAnalytics:
         rows = (
             self.db.query(self.AIUsageLedger, self.ModelVersion)
             .join(self.ModelVersion, self.AIUsageLedger.model_version_id == self.ModelVersion.id)
-            .filter(self.AIUsageLedger.created_at >= start_date,
-                   self.AIUsageLedger.created_at <= end_date)
+            .filter(self.AIUsageLedger.created_at >= start_date, self.AIUsageLedger.created_at <= end_date)
             .all()
         )
         return [
@@ -123,8 +123,7 @@ class PromptAnalytics:
         for event in self._unified_events(start_date, end_date):
             _accumulate(buckets[event["user_id"]], event)
         return [
-            {"user_id": key, **value}
-            for key, value in sorted(buckets.items(), key=lambda kv: (kv[0] is None, kv[0]))
+            {"user_id": key, **value} for key, value in sorted(buckets.items(), key=lambda kv: (kv[0] is None, kv[0]))
         ]
 
     def get_usage_by_prompt(self, start_date, end_date) -> List[dict]:
@@ -140,11 +139,14 @@ class PromptAnalytics:
             key = names.get(event["prompt_version_id"], "unknown")
             _accumulate(buckets[key], event)
 
-        latency_sums = defaultdict(lambda: [0, 0])   # name -> [sum, count]
+        latency_sums = defaultdict(lambda: [0, 0])  # name -> [sum, count]
         executions = (
             self.db.query(PromptExecution)
-            .filter(PromptExecution.created_at >= start_date, PromptExecution.created_at <= end_date,
-                   PromptExecution.latency_ms.isnot(None))
+            .filter(
+                PromptExecution.created_at >= start_date,
+                PromptExecution.created_at <= end_date,
+                PromptExecution.latency_ms.isnot(None),
+            )
             .all()
         )
         for execution in executions:
@@ -178,8 +180,11 @@ class PromptAnalytics:
         result = []
         for key, value in sorted(buckets.items(), key=lambda kv: (kv[0] is None, kv[0])):
             total, count = latency_sums[key]
-            result.append({
-                "project_id": key, **value,
-                "latency_ms_avg": round(total / count, 1) if count else None,
-            })
+            result.append(
+                {
+                    "project_id": key,
+                    **value,
+                    "latency_ms_avg": round(total / count, 1) if count else None,
+                }
+            )
         return result

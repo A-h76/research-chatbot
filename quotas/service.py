@@ -11,7 +11,7 @@ path), never duplicated here — see this task's own note on why
 per-user *limit* is new.
 """
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 class QuotaExceededError(Exception):
@@ -152,9 +152,7 @@ class QuotaService:
             user = self._get_user(db, user_id)
             self._ensure_reset(db, user)
             user.monthly_token_used = (user.monthly_token_used or 0) + tokens_used
-            db.add(
-                self.UsageLog(user_id=user_id, action="ai_query", amount=tokens_used)
-            )
+            db.add(self.UsageLog(user_id=user_id, action="ai_query", amount=tokens_used))
             db.commit()
         finally:
             db.close()
@@ -175,21 +173,13 @@ class QuotaService:
                 "storage": {
                     "used_bytes": storage_used,
                     "limit_bytes": storage_limit,
-                    "percent": (
-                        round(100 * storage_used / storage_limit, 2)
-                        if storage_limit
-                        else 0.0
-                    ),
+                    "percent": (round(100 * storage_used / storage_limit, 2) if storage_limit else 0.0),
                 },
                 "tokens": {
                     "used": token_used,
                     "limit": token_limit,
-                    "percent": (
-                        round(100 * token_used / token_limit, 2) if token_limit else 0.0
-                    ),
-                    "reset_at": (
-                        user.quota_reset_at.isoformat() if user.quota_reset_at else None
-                    ),
+                    "percent": (round(100 * token_used / token_limit, 2) if token_limit else 0.0),
+                    "reset_at": (user.quota_reset_at.isoformat() if user.quota_reset_at else None),
                 },
             }
         finally:

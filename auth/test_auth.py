@@ -9,8 +9,8 @@ from datetime import timedelta
 from flask import Flask, g, jsonify
 from flask_jwt_extended import JWTManager, create_access_token
 
-from auth.jwt_utils import create_jwt, decode_jwt, JWTError
-from auth.decorators import jwt_required, jwt_optional
+from auth.decorators import jwt_optional, jwt_required
+from auth.jwt_utils import JWTError, create_jwt, decode_jwt
 
 
 def _make_app():

@@ -14,23 +14,40 @@ threaded dev server (each request thread gets an isolated copy
 automatically) without extra plumbing, and it's the same primitive
 that'd be needed if either process ever went async.
 """
+
 import contextvars
 import json
 import logging
 from datetime import datetime, timezone
 
-correlation_id_var: "contextvars.ContextVar[str | None]" = contextvars.ContextVar(
-    "correlation_id", default=None
-)
+correlation_id_var: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("correlation_id", default=None)
 
 # Attributes logging.LogRecord always has — anything else on a record
 # came from a caller's `logging.info(..., extra={...})` and should be
 # surfaced as its own JSON field.
 _STANDARD_RECORD_ATTRS = {
-    "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
-    "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
-    "created", "msecs", "relativeCreated", "thread", "threadName",
-    "processName", "process", "message", "taskName",
+    "name",
+    "msg",
+    "args",
+    "levelname",
+    "levelno",
+    "pathname",
+    "filename",
+    "module",
+    "exc_info",
+    "exc_text",
+    "stack_info",
+    "lineno",
+    "funcName",
+    "created",
+    "msecs",
+    "relativeCreated",
+    "thread",
+    "threadName",
+    "processName",
+    "process",
+    "message",
+    "taskName",
 }
 
 

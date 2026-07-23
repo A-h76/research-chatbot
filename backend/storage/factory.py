@@ -6,8 +6,8 @@ to SQLite): no R2 config present, no explicit choice -> local."""
 import os
 
 from .interface import StorageBackend
-from .r2 import R2Backend
 from .local import LocalBackend
+from .r2 import R2Backend
 from .s3 import S3Backend
 
 

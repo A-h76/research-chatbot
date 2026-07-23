@@ -12,28 +12,16 @@ SQLite dev fallback, and this process refuses to start against it.
 """
 
 import json
+import logging
 import os
 import re
 import sys
 import time
-import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
 import server
-from server import (
-    SessionLocal,
-    UploadJob,
-    OutboxEvent,
-    UserFile,
-    PaperAnalysis,
-    WorkerHeartbeat,
-    extract_text,
-    _process_document,
-    _enqueue_job,
-    _sha256,
-)
 
 # ModelRegistry/PromptRegistry constructed directly (constructor-injection,
 # same pattern as auth/quotas/backend — see §3 of brain.md), not reached
@@ -43,8 +31,20 @@ from server import (
 # reuse). worker.py already does `import server` for the DB models/engine
 # above — safe here since worker.py is its own standalone process, never
 # imported back by server.py itself.
-from backend.ai import PromptRegistry, ModelRegistry, ModelError
+from backend.ai import ModelRegistry, PromptRegistry
 from observability import configure_logging, correlation_id_var, start_worker_metrics_server
+from server import (
+    OutboxEvent,
+    PaperAnalysis,
+    SessionLocal,
+    UploadJob,
+    UserFile,
+    WorkerHeartbeat,
+    _enqueue_job,
+    _process_document,
+    _sha256,
+    extract_text,
+)
 
 configure_logging()
 log = logging.getLogger("worker")
@@ -71,9 +71,7 @@ def _get_text_for_file(uf):
     the text — there is no in-memory value to reuse across separate polls,
     possibly by a different worker process entirely."""
     ext = os.path.splitext(uf.name.lower())[1]
-    with server.storage.storage_manager.provider.local_copy(
-        uf.path, suffix=ext
-    ) as local_path:
+    with server.storage.storage_manager.provider.local_copy(uf.path, suffix=ext) as local_path:
         return extract_text(local_path, uf.mime, uf.name)
 
 
@@ -84,9 +82,9 @@ def _get_text_for_file(uf):
 # worker.py can't be imported by server.py (see that module's own
 # docstring for why), so a neutral third module is where both meet.
 from backend.ai.prompts import (
-    META_EXCERPT_CHARS,
-    ANALYSIS_MAX_CHARS,
     ANALYSIS_ARRAY_FIELDS,
+    ANALYSIS_MAX_CHARS,
+    META_EXCERPT_CHARS,
     ensure_default_prompts,
 )
 
@@ -105,17 +103,13 @@ def _handle_import(db, job):
     if not uf:
         raise RuntimeError(f"file {job.file_id} no longer exists")
     ext = os.path.splitext(uf.name.lower())[1]
-    with server.storage.storage_manager.provider.local_copy(
-        uf.path, suffix=ext
-    ) as local_path:
+    with server.storage.storage_manager.provider.local_copy(uf.path, suffix=ext) as local_path:
 
         def enqueue_followups(file_id, text, content_hash):
             # Replaces _process_document's old extract_metadata()/
             # trigger_paper_analysis() thread spawns — same follow-on
             # stages, enqueued transactionally instead.
-            _enqueue_job(
-                db, uf.user_id, file_id, "extract_metadata", job.upload_batch_id
-            )
+            _enqueue_job(db, uf.user_id, file_id, "extract_metadata", job.upload_batch_id)
             _enqueue_job(db, uf.user_id, file_id, "paper_analysis", job.upload_batch_id)
 
         _process_document(
@@ -168,7 +162,7 @@ def _handle_extract_metadata(db, job):
         )
         data = json.loads(result["content"])
 
-        uf = db.get(UserFile, job.file_id)   # re-fetch: another writer may have touched it
+        uf = db.get(UserFile, job.file_id)  # re-fetch: another writer may have touched it
         if not uf:
             return
         uf.content_hash = content_hash
@@ -200,7 +194,7 @@ def _handle_extract_metadata(db, job):
         if uf:
             uf.meta_status = "failed"
             db.commit()
-        raise   # let run_job()'s own try/except apply retry/backoff
+        raise  # let run_job()'s own try/except apply retry/backoff
 
 
 def _handle_paper_analysis(db, job):
@@ -214,9 +208,7 @@ def _handle_paper_analysis(db, job):
     text = _get_text_for_file(uf)
     content_hash = uf.content_hash or _sha256(text)
 
-    pa = db.execute(
-        select(PaperAnalysis).where(PaperAnalysis.file_id == job.file_id)
-    ).scalar_one_or_none()
+    pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == job.file_id)).scalar_one_or_none()
     if pa is None:
         pa = PaperAnalysis(file_id=job.file_id, user_id=uf.user_id)
         db.add(pa)
@@ -253,9 +245,7 @@ def _handle_paper_analysis(db, job):
         if not isinstance(data.get("important_terms"), dict):
             data["important_terms"] = {}
 
-        pa = db.execute(
-            select(PaperAnalysis).where(PaperAnalysis.file_id == job.file_id)
-        ).scalar_one_or_none()
+        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == job.file_id)).scalar_one_or_none()
         if pa is None:
             return
         pa.status = "done"
@@ -266,14 +256,12 @@ def _handle_paper_analysis(db, job):
         db.commit()
     except Exception as exc:
         db.rollback()
-        pa = db.execute(
-            select(PaperAnalysis).where(PaperAnalysis.file_id == job.file_id)
-        ).scalar_one_or_none()
+        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == job.file_id)).scalar_one_or_none()
         if pa:
             pa.status = "failed"
             pa.error = str(exc)[:500]
             db.commit()
-        raise   # let run_job()'s own try/except apply retry/backoff
+        raise  # let run_job()'s own try/except apply retry/backoff
 
 
 HANDLERS = {
@@ -307,9 +295,7 @@ def _sync_status_cache(job):
     no-op if Redis isn't configured/reachable, so this is safe to call
     unconditionally at every status transition."""
     progress = 100 if job.status == "done" else 0
-    server._set_job_status_cache(
-        job.id, job.status, progress, job.updated_at, job.user_id
-    )
+    server._set_job_status_cache(job.id, job.status, progress, job.updated_at, job.user_id)
 
 
 # --------------------------------------------------------------- poll loop
@@ -362,9 +348,7 @@ def run_job(job_id):
             # terminal (done/failed) or still 'pending' getting here means
             # something upstream double-dispatched it. Refuse rather than
             # silently reprocess.
-            log.warning(
-                "job %s not in 'running' state (%s) — skipping", job_id, job.status
-            )
+            log.warning("job %s not in 'running' state (%s) — skipping", job_id, job.status)
             return
         try:
             handler = HANDLERS.get(job.job_type)
@@ -405,9 +389,7 @@ def run_job(job_id):
                 # attempt (60s, 120s, 180s, ...). No outbox update here:
                 # the job isn't actually finished yet, just paused.
                 job.status = "pending"
-                job.run_after = datetime.now(timezone.utc) + timedelta(
-                    seconds=job.attempts * 60
-                )
+                job.run_after = datetime.now(timezone.utc) + timedelta(seconds=job.attempts * 60)
                 log.warning(
                     "job %s (%s) failed (attempt %d/%d), retrying at %s: %s",
                     job.id,
@@ -448,8 +430,7 @@ def main():
     _ensure_prompts()
     start_worker_metrics_server(METRICS_PORT)
     log.info(
-        "worker starting — poll every %ss, batch size %s, max attempts %s, "
-        "metrics on :%s",
+        "worker starting — poll every %ss, batch size %s, max attempts %s, " "metrics on :%s",
         POLL_INTERVAL_SECONDS,
         BATCH_SIZE,
         MAX_ATTEMPTS,
