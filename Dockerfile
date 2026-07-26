@@ -1,0 +1,29 @@
+# Build frontend (Vite) then run Flask via Gunicorn.
+# Railway detects this Dockerfile and uses it instead of Python-only Railpack.
+
+FROM node:22-bookworm-slim AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+FROM python:3.12-slim-bookworm
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+COPY --from=frontend /frontend/dist ./frontend/dist
+
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8080
+
+CMD ["sh", "-c", "python -m gunicorn -w 2 -k gthread --threads 8 -b 0.0.0.0:${PORT:-8080} server:app"]
