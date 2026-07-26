@@ -44,7 +44,7 @@ Document excerpt (first {{ max_chars }} characters):
 
 PAPER_ANALYSIS_PROMPT = """You are an expert research analyst. Analyse the paper below and return ONLY a JSON object — no markdown fences, no prose outside the object.
 
-Each key maps to the content described. Use null when a section genuinely does not apply (e.g. no dataset for a pure theory paper). Never fabricate details not present in the text.
+Each key maps to the content described. Use an empty string when a section genuinely does not apply (e.g. no dataset for a pure theory paper). Never fabricate details not present in the text.
 
 Keys and what to put in them:
   executive_summary   - 3-5 sentences: what is this paper, why does it matter
@@ -52,7 +52,7 @@ Keys and what to put in them:
   research_objective  - one sentence: what the paper is trying to achieve
   problem_statement   - the specific gap or problem being addressed
   methodology         - how the study was conducted (approach, framework, steps)
-  dataset              - datasets used, sizes, sources (null if not applicable)
+  dataset              - datasets used, sizes, sources (empty string if not applicable)
   experiments          - key experiments or evaluations described
   results              - main findings; include numbers if stated
   key_contributions    - a JSON array of strings, each a distinct novel contribution
@@ -60,11 +60,152 @@ Keys and what to put in them:
   limitations          - weaknesses, assumptions, threats to validity, as an array
   future_work          - next steps suggested by authors or implied by gaps, as an array
   keywords              - 5-10 technical keywords as a JSON array
-  important_terms       - a JSON object mapping each key technical term to a one-line definition
+  important_terms       - a JSON array of {"term": ..., "definition": ...} objects, one per key technical term
 
 Paper text (first {{ max_chars }} characters):
 {{ text }}
 """
+
+# response_format for the OpenAI Structured Outputs API (client.chat.completions.
+# create(response_format=...), passed straight through by ModelRegistry._call_openai) —
+# a real fix, not a stricter-worded prompt: plain {"type": "json_object"} mode only
+# guarantees syntactically-valid JSON, not any particular shape, which is exactly
+# what let a real medical-domain call return keys named "17. PICO Extraction
+# (Medical)" instead of the expected field names (verified against a live call,
+# not theorized) — the model followed the *domain module's* competing "output
+# these 30 keys" instruction instead of this prompt's field list, silently
+# dropping every field below. `additionalProperties: false` + every property in
+# `required` are strict-mode requirements, not stylistic choices — OpenAI
+# rejects a schema without them once `strict: true` is set. `important_terms`
+# is an array of {term, definition} objects rather than a free {term: definition}
+# dict for the same reason: strict mode has no way to express "any additional
+# string-keyed properties", only enumerated ones.
+_PAPER_ANALYSIS_STRING_FIELDS = (
+    "executive_summary",
+    "abstract_explained",
+    "research_objective",
+    "problem_statement",
+    "methodology",
+    "dataset",
+    "experiments",
+    "results",
+)
+_PAPER_ANALYSIS_ARRAY_FIELD_SCHEMA = {"type": "array", "items": {"type": "string"}}
+_IMPORTANT_TERMS_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {"term": {"type": "string"}, "definition": {"type": "string"}},
+        "required": ["term", "definition"],
+    },
+}
+
+# Medical fields are grouped by backend/ai/domain_registry.py's
+# DomainRegistry.detect_document_type() result, not one flat list —
+# a research paper, a clinical guide, and a review warrant different
+# clinical questions, and (see PAPER_ANALYSIS_MEDICAL_RESPONSE_FORMATS_BY_
+# DOCUMENT_TYPE below) a *different enforced schema* per type, not just
+# different prompt wording: a strict-mode schema still requiring
+# target_audience/scope_of_content on a randomized trial (or
+# pico_extraction on a how-to guide) would force the model to invent
+# content for a question that doesn't apply to what it's actually
+# looking at. backend/ai/seed.py's DOMAIN_MODULES["domain_medical"] is
+# the prompt-side counterpart — same key names/grouping, cross-imports
+# these tuples rather than re-listing them, so the two can't drift.
+MEDICAL_CORE_FIELDS = (
+    "clinical_relevance",
+    "clinical_translation",
+    "clinical_bottom_line",
+)
+MEDICAL_RESEARCH_FIELDS = (
+    "pico_extraction",
+    "evidence_quality",
+    "risk_of_bias_assessment",
+    "clinical_outcomes",
+    "grade_assessment",
+    "patient_population",
+    "ethics_patient_consent",
+)
+MEDICAL_CLINICAL_GUIDE_FIELDS = (
+    "target_audience",
+    "scope_of_content",
+    "practical_value",
+    "evidence_base",
+    "critical_assessment",
+    "comparison_to_other_resources",
+)
+MEDICAL_REVIEW_FIELDS = (
+    "review_coverage",
+    "search_strategy",
+    "quality_of_included_studies",
+    "key_findings",
+    "gaps_in_literature",
+    "future_research_directions",
+)
+
+MEDICAL_FIELDS_BY_DOCUMENT_TYPE = {
+    "research": MEDICAL_RESEARCH_FIELDS,
+    "clinical_guide": MEDICAL_CLINICAL_GUIDE_FIELDS,
+    "review": MEDICAL_REVIEW_FIELDS,
+}
+
+
+def _base_analysis_properties():
+    props = {name: {"type": "string"} for name in _PAPER_ANALYSIS_STRING_FIELDS}
+    for name in ("key_contributions", "strengths", "limitations", "future_work", "keywords"):
+        props[name] = _PAPER_ANALYSIS_ARRAY_FIELD_SCHEMA
+    props["important_terms"] = _IMPORTANT_TERMS_SCHEMA
+    return props
+
+
+def _json_schema_response_format(name, properties):
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": name,
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": properties,
+                "required": list(properties.keys()),
+            },
+        },
+    }
+
+
+def _medical_properties(*document_type_fields):
+    props = _base_analysis_properties()
+    for name in MEDICAL_CORE_FIELDS:
+        props[name] = {"type": "string"}
+    for name in document_type_fields:
+        props[name] = {"type": "string"}
+    return props
+
+
+PAPER_ANALYSIS_RESPONSE_FORMAT = _json_schema_response_format("paper_analysis", _base_analysis_properties())
+
+# Core-only — any medical document_type that isn't research/clinical_guide/
+# review (case_report, editorial, general, ...) gets just the 3 always-on
+# fields, no document-type-specific section the task never defined one for.
+PAPER_ANALYSIS_MEDICAL_RESPONSE_FORMAT = _json_schema_response_format(
+    "paper_analysis_medical", _medical_properties()
+)
+PAPER_ANALYSIS_MEDICAL_RESPONSE_FORMATS_BY_DOCUMENT_TYPE = {
+    doc_type: _json_schema_response_format(f"paper_analysis_medical_{doc_type}", _medical_properties(*fields))
+    for doc_type, fields in MEDICAL_FIELDS_BY_DOCUMENT_TYPE.items()
+}
+
+
+def medical_response_format(document_type):
+    """The schema to enforce for a domain="medical" call, chosen by the
+    already-detected document_type (see AssembledPrompt.document_type) —
+    falls back to the core-only schema for any type without its own
+    section group."""
+    return PAPER_ANALYSIS_MEDICAL_RESPONSE_FORMATS_BY_DOCUMENT_TYPE.get(
+        document_type, PAPER_ANALYSIS_MEDICAL_RESPONSE_FORMAT
+    )
 
 # Verbatim copy of backend/ai/seed.py's own "semantic_search" text —
 # not a rewrite. seed.py's seed_prompts() and this module's

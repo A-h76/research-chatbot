@@ -45,17 +45,22 @@ duplicate or a rename of pipeline_versions. No migration exists for this
 table since nothing else in the schema needs it; this module creates it
 if missing (see _ensure_model_presets_table).
 """
-
 import json
 import os
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Text, DateTime, UniqueConstraint
 from sqlalchemy.orm import declarative_base
 
+from .prompt_registry import PromptRegistry, Persona
+from .prompts import (
+    MEDICAL_CORE_FIELDS,
+    MEDICAL_RESEARCH_FIELDS,
+    MEDICAL_CLINICAL_GUIDE_FIELDS,
+    MEDICAL_REVIEW_FIELDS,
+)
+from .system_prompt import SystemPromptManager, DEFAULT_SYSTEM_PROMPT
 from .persona_engine import PersonaEngine
-from .prompt_registry import Persona, PromptRegistry
-from .system_prompt import DEFAULT_SYSTEM_PROMPT, SystemPromptManager
 
 _Base = declarative_base()
 
@@ -66,7 +71,7 @@ def create_model_preset_model(Base):
         __table_args__ = (UniqueConstraint("name", name="uq_model_presets_name"),)
         id = Column(Integer, primary_key=True)
         name = Column(String(60), nullable=False)
-        config = Column(Text, nullable=False)  # JSON: {"model", "temperature", "max_tokens", ...}
+        config = Column(Text, nullable=False)   # JSON: {"model", "temperature", "max_tokens", ...}
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     return ModelPreset
@@ -91,7 +96,7 @@ DEFAULT_PROMPTS = {
         "methodology, and key findings.\n\nPaper:\n{{ text }}"
     ),
     "paper_analysis": (
-        'You are analyzing a research paper. The user has asked: "{{ query }}"\n\n'
+        "You are analyzing a research paper. The user has asked: \"{{ query }}\"\n\n"
         "**Paper Content:**\n{{ text }}\n\n"
         "**Paper Metadata:**\n"
         "- Title: {{ title }}\n"
@@ -222,117 +227,169 @@ _CORE_16_SECTIONS = (
     "What's your honest assessment of the paper? Is it a breakthrough, incremental, or flawed? What are the 3 key takeaways?\n\n"
 )
 
-_MEDICAL_SECTIONS_17_TO_30 = (
-    "## 17. PICO Extraction (Medical)\n"
-    "- **P**opulation: Who are the patients/subjects? (age, condition, demographics)\n"
-    "- **I**ntervention: What treatment, exposure, or diagnostic test?\n"
-    "- **C**omparison: What is the alternative or control?\n"
-    "- **O**utcome: What was measured? (primary and secondary outcomes)\n\n"
-    "## 18. Evidence Quality (Medical)\n"
-    "What study design was used? Assign an evidence level:\n"
-    "- Meta-analysis → Very High\n"
-    "- Randomized Controlled Trial → High\n"
-    "- Cohort Study → Moderate\n"
-    "- Case-Control → Moderate\n"
-    "- Cross-sectional → Low\n"
-    "- Expert Opinion → Very Low\n\n"
-    "## 19. Risk of Bias Assessment (Medical)\n"
-    "Evaluate:\n"
-    "- Selection bias: Was the sample representative?\n"
-    "- Performance bias: Were participants/providers blinded?\n"
-    "- Detection bias: Were outcome assessors blinded?\n"
-    "- Attrition bias: Was follow-up complete?\n"
-    "- Reporting bias: Were all outcomes reported?\n"
-    "- Funding bias: Who funded the research? Conflicts of interest?\n\n"
-    "## 20. Clinical Relevance (Medical)\n"
-    "- Which patients benefit from this?\n"
-    "- Does it affect diagnosis, treatment, or prevention?\n"
-    "- Can hospitals/clinics realistically adopt this?\n"
-    "- What is the implementation timeline?\n\n"
-    "## 21. Clinical Outcomes (Medical)\n"
-    "- Primary outcomes: What was the main measure? Was it achieved?\n"
-    "- Secondary outcomes: What else was measured?\n"
-    "- Clinical significance: Is the effect meaningful?\n"
-    "- Adverse effects: What side effects or harms were reported?\n"
-    "- Mortality: Was survival affected?\n"
-    "- Quality of life: Was patient quality of life improved?\n"
-    "- Hospital stay / Readmission rates\n\n"
-    "## 22. Statistical Interpretation (Medical)\n"
-    "- Confidence intervals: Are they reported? Are they narrow?\n"
-    "- Odds Ratio / Relative Risk / Hazard Ratio\n"
-    "- Sensitivity / Specificity / PPV / NPV (for diagnostic studies)\n"
-    "- ROC-AUC\n"
-    "- P-values: Are they adjusted for multiple comparisons?\n"
-    "- Effect sizes: Are they clinically meaningful?\n\n"
-    "## 23. Guideline Comparison (Medical)\n"
-    "Compare with major guidelines:\n"
-    "- WHO, CDC, NICE, AHA, ADA, Local guidelines\n"
-    "- Does this agree or differ?\n\n"
-    "## 24. GRADE Assessment (Medical)\n"
-    "Estimate certainty of evidence:\n"
-    "- High, Moderate, Low, Very Low\n\n"
-    "## 25. Clinical Translation (Medical)\n"
-    "- Can this be used clinically immediately?\n"
-    "- Or is it still laboratory/bench research?\n"
-    "- Estimated timeline for clinical adoption?\n"
-    "- Barriers to translation?\n\n"
-    "## 26. Patient Population (Medical)\n"
-    "- Sample size: Is it adequate?\n"
-    "- Age, gender, ethnicity distribution\n"
-    "- Inclusion/exclusion criteria\n"
-    "- Generalizability to other populations\n\n"
-    "## 27. Safety & Adverse Events (Medical)\n"
-    "- Adverse events reported?\n"
-    "- Safety profile?\n"
-    "- Contraindications?\n"
-    "- Monitoring required?\n"
-    "- Risk/benefit ratio?\n\n"
-    "## 28. Ethics & Patient Consent (Medical)\n"
-    "- Ethical approval obtained?\n"
-    "- Patient consent?\n"
-    "- Vulnerable populations protected?\n"
-    "- Data privacy standards?\n"
-    "- Clinical trial registration?\n\n"
-    "## 29. Cost-effectiveness (Medical)\n"
-    "- Cost-effective compared to alternatives?\n"
-    "- Implementation costs?\n"
-    "- Long-term cost implications?\n"
-    "- Feasibility in low-resource settings?\n\n"
-    "## 30. Clinical Bottom Line (Medical)\n"
-    "- Can clinicians trust this paper?\n"
-    "- Would it change current practice?\n"
-    "- Should researchers conduct more studies first?\n"
-    "- How useful is this for medical education?\n"
-    "- Single most important takeaway for a clinician?\n\n"
-)
+# Guidance text per medical-specific field, keyed by the exact JSON field
+# name backend/ai/prompts.py's MEDICAL_*_FIELDS/medical_response_format()
+# enforce server-side (see that module's own comment for why enforcement
+# moved from prompt wording to a real Structured Outputs schema, and why
+# it's grouped by document_type). Iterating those tuples below rather than
+# hand-listing keys again here means a field added to one place without
+# the other fails fast (KeyError) instead of silently drifting out of sync.
+_MEDICAL_FIELD_GUIDANCE = {
+    # Core — always applicable regardless of document_type.
+    "clinical_relevance": (
+        "Clinical relevance — which patients benefit from this; does it affect diagnosis, "
+        "treatment, or prevention; can hospitals/clinics realistically adopt it; what's the "
+        "implementation timeline?"
+    ),
+    "clinical_translation": (
+        "Clinical translation — can this be used clinically immediately, or is it still "
+        "laboratory/bench research; estimated timeline for clinical adoption; barriers to "
+        "translation?"
+    ),
+    "clinical_bottom_line": (
+        "Clinical bottom line — can clinicians trust this document; would it change current "
+        "practice; should researchers conduct more studies first; how useful is this for "
+        "medical education; single most important takeaway for a clinician?"
+    ),
+    # document_type == "research"
+    "pico_extraction": (
+        "PICO extraction — Population (who are the patients/subjects: age, condition, "
+        "demographics), Intervention (what treatment, exposure, or diagnostic test), "
+        "Comparison (the alternative or control), Outcome (what was measured, primary and "
+        "secondary)."
+    ),
+    "evidence_quality": (
+        "Evidence quality — what study design was used, and what evidence level does that "
+        "warrant (meta-analysis -> Very High, randomized controlled trial -> High, cohort "
+        "study -> Moderate, case-control -> Moderate, cross-sectional -> Low, expert "
+        "opinion -> Very Low)?"
+    ),
+    "risk_of_bias_assessment": (
+        "Risk of bias — selection bias (was the sample representative?), performance bias "
+        "(were participants/providers blinded?), detection bias (were outcome assessors "
+        "blinded?), attrition bias (was follow-up complete?), reporting bias (were all "
+        "outcomes reported?), funding bias (who funded the research, conflicts of "
+        "interest?)."
+    ),
+    "clinical_outcomes": (
+        "Clinical outcomes — primary outcomes (main measure, was it achieved), secondary "
+        "outcomes, clinical significance (is the effect meaningful), adverse effects, "
+        "mortality, quality of life, hospital stay / readmission rates."
+    ),
+    "grade_assessment": "GRADE assessment — estimate certainty of evidence: High, Moderate, Low, or Very Low.",
+    "patient_population": (
+        "Patient population — sample size (adequate?), age/gender/ethnicity distribution, "
+        "inclusion/exclusion criteria, generalizability to other populations."
+    ),
+    "ethics_patient_consent": (
+        "Ethics and patient consent — ethical approval obtained, patient consent, "
+        "vulnerable populations protected, data privacy standards, clinical trial "
+        "registration."
+    ),
+    # document_type == "clinical_guide"
+    "target_audience": (
+        "Target audience — who is this guide written for (students, generalists, "
+        "specialists)? What background knowledge does it assume?"
+    ),
+    "scope_of_content": (
+        "Scope of content — which topics or procedures does the guide cover, and what's "
+        "explicitly out of scope?"
+    ),
+    "practical_value": (
+        "Practical value — how directly actionable is the guidance; would following it "
+        "change what a practitioner actually does day to day?"
+    ),
+    "evidence_base": (
+        "Evidence base — is the guidance grounded in cited studies/guidelines, or mostly "
+        "expert opinion and personal experience?"
+    ),
+    "critical_assessment": (
+        "Critical assessment — where is the guidance strong, and where does it "
+        "oversimplify, omit caveats, or risk being outdated?"
+    ),
+    "comparison_to_other_resources": (
+        "Comparison to other resources — how does this compare to established clinical "
+        "guidelines or textbooks on the same topic?"
+    ),
+    # document_type == "review"
+    "review_coverage": (
+        "Review coverage — what time period, population, and interventions/topics does the "
+        "review span?"
+    ),
+    "search_strategy": (
+        "Search strategy — which databases/sources were searched, and how systematic or "
+        "reproducible was the search?"
+    ),
+    "quality_of_included_studies": (
+        "Quality of included studies — how many studies were included, and what was their "
+        "overall methodological quality / risk of bias?"
+    ),
+    "key_findings": "Key findings — what does the pooled or synthesized evidence actually show?",
+    "gaps_in_literature": (
+        "Gaps in literature — what questions remain unanswered or under-studied across the "
+        "included evidence?"
+    ),
+    "future_research_directions": (
+        "Future research directions — what specific studies would most usefully fill those "
+        "gaps?"
+    ),
+}
+
+
+def _medical_field_lines(fields):
+    return "\n".join(f"- {_MEDICAL_FIELD_GUIDANCE[key]}" for key in fields)
+
 
 DOMAIN_MODULES = {
+    # Extension-only (see PromptBuilder.build()'s own docstring) and
+    # document-type-aware: a randomized trial, a how-to guide, and a
+    # review warrant different clinical questions, so only one
+    # document-type-specific section ever renders, chosen by the same
+    # {{ document_type }} PromptBuilder.build() already computes (via
+    # DomainRegistry.detect_document_type()) for every render. response_
+    # format (backend/ai/prompts.py's medical_response_format()) enforces
+    # exactly the field set that matches whichever branch below actually
+    # rendered, so the schema and the prompt text can never describe two
+    # different shapes at once — the failure mode a real call against the
+    # pre-document-type version of this module hit (see that module's own
+    # comment for the exact symptom).
     "domain_medical": (
-        'You are analyzing a research paper. The user has asked: "{{ query }}"\n\n'
-        "**Paper Content:**\n{{ text }}\n\n"
-        "**Paper Metadata:**\n"
-        "- Title: {{ title }}\n"
-        "- Authors: {{ authors }}\n"
-        "- Year: {{ year }}\n"
-        "- Journal/Conference: {{ venue }}\n\n"
-        "Provide a comprehensive, expert-level analysis structured in the following 30 "
-        "sections (the core 16 plus 14 medical/clinical-specific sections). Be rigorous, "
-        "specific, and actionable, holding this paper to clinical evidence standards.\n\n"
-        + _CORE_16_SECTIONS
-        + _MEDICAL_SECTIONS_17_TO_30
-        + "**Important Guidelines:**\n"
-        "- Be specific and cite evidence from the paper.\n"
-        "- Distinguish between facts, interpretations, and suggestions.\n"
-        "- If a section is not applicable, state that clearly rather than inventing content.\n"
-        "- Never fabricate references or information.\n"
-        "- Write at an expert level, suitable for a clinician or medical researcher.\n\n"
-        "Output the response as a structured JSON object with these 30 keys."
+        "## Document Type Detection\n"
+        "This document appears to be a {{ document_type }}.\n\n"
+        "## Core Medical Sections\n"
+        "This document is in a medical/clinical domain. Extend your JSON response with "
+        "these always-applicable clinical fields, holding it to clinical evidence "
+        "standards. Be specific, cite evidence from the text, and state plainly when a "
+        "point does not apply rather than inventing content — never fabricate "
+        "references.\n\n"
+        + _medical_field_lines(MEDICAL_CORE_FIELDS)
+        + "\n\n"
+        '{% if document_type == "research" %}\n'
+        "## Document-Type-Specific Sections: Research\n"
+        "This is a primary research study — also extend your response with these "
+        "fields:\n\n"
+        + _medical_field_lines(MEDICAL_RESEARCH_FIELDS)
+        + "\n"
+        '{% elif document_type == "clinical_guide" %}\n'
+        "## Document-Type-Specific Sections: Clinical Guide\n"
+        "This is a clinical guide or how-to resource, not a primary study — also extend "
+        "your response with these fields instead of study-design questions that don't "
+        "apply to a guide:\n\n"
+        + _medical_field_lines(MEDICAL_CLINICAL_GUIDE_FIELDS)
+        + "\n"
+        '{% elif document_type == "review" %}\n'
+        "## Document-Type-Specific Sections: Review\n"
+        "This is a review or meta-analysis, not a single primary study — also extend "
+        "your response with these fields:\n\n"
+        + _medical_field_lines(MEDICAL_REVIEW_FIELDS)
+        + "\n"
+        "{% endif %}"
     ),
     # Stub only, per this task's own instruction — the full AI/ML domain
     # module (benchmark rigor, ablations, compute/licensing reporting,
     # etc.) is a separate, later task, not written here.
     "domain_ai_ml": (
-        'You are analyzing an AI/ML research paper. The user has asked: "{{ query }}"\n\n'
+        "You are analyzing an AI/ML research paper. The user has asked: \"{{ query }}\"\n\n"
         "**Paper Content:**\n{{ text }}\n\n"
         "**Paper Metadata:**\n"
         "- Title: {{ title }}\n"
@@ -362,7 +419,7 @@ DEFAULT_PERSONAS = {
     "Research Assistant": {
         "description": "General-purpose research assistant for literature, methodology, and writing help.",
         "system_prompt": (
-            "You are a meticulous research assistant helping a PhD student. "
+            "You are a meticulous research assistant helping a PhD and MPhill student. "
             "Prioritize accuracy over confidence — flag uncertainty rather than "
             "guessing. Cite specific papers/sections when referencing evidence. "
             "Default to concise, structured answers over long prose."
@@ -469,12 +526,8 @@ def seed_prompts(db_session) -> dict:
             result[name] = existing
             continue
         result[name] = registry.create_prompt(
-            name=name,
-            description=f"Default seed prompt: {name}",
-            template_text=template,
-            status="active",
-            category=name,
-        )
+            name=name, description=f"Default seed prompt: {name}", template_text=template,
+            status="active", category=name)
         print(f"OK    prompt '{name}' seeded")
 
     for name, template in DOMAIN_MODULES.items():
@@ -484,12 +537,8 @@ def seed_prompts(db_session) -> dict:
             result[name] = existing
             continue
         result[name] = registry.create_prompt(
-            name=name,
-            description=f"Domain module: {name}",
-            template_text=template,
-            status="active",
-            category="domain_module",
-        )
+            name=name, description=f"Domain module: {name}", template_text=template,
+            status="active", category="domain_module")
         print(f"OK    domain module '{name}' seeded")
 
     return result
@@ -581,7 +630,8 @@ if __name__ == "__main__":
     # would re-execute that file under a second module identity since
     # it runs as __main__ — see auth/magic_link.py's docstring for the
     # full explanation of why that's a hard rule in this project).
-    url = (os.environ.get("DATABASE_URL") or "sqlite:///chat_dev.db").replace("postgres://", "postgresql://", 1)
+    url = (os.environ.get("DATABASE_URL") or "sqlite:///chat_dev.db").replace(
+        "postgres://", "postgresql://", 1)
     engine = create_engine(url, pool_pre_ping=True)
     SessionLocal = sessionmaker(bind=engine)
 

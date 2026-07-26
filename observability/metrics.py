@@ -85,9 +85,14 @@ def render_metrics() -> bytes:
     return generate_latest(REGISTRY)
 
 
-def start_worker_metrics_server(port: int) -> None:
+def start_worker_metrics_server(port: int, addr: str = "127.0.0.1") -> None:
     """worker.py has no Flask app of its own to hang a /metrics route
     off of — prometheus_client's built-in HTTP server fills that gap.
     Uses the same REGISTRY as record_ai_call() above, so counters
-    incremented in worker.py's job handlers actually show up here."""
-    start_http_server(port, registry=REGISTRY)
+    incremented in worker.py's job handlers actually show up here.
+
+    Binds to loopback by default (PR2) so the worker metrics port is not
+    reachable from other hosts. Override with WORKER_METRICS_BIND if a
+    sidecar scraper on another interface must reach it.
+    """
+    start_http_server(port, addr=addr, registry=REGISTRY)

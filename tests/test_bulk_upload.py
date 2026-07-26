@@ -148,9 +148,15 @@ def _upload(client, files, token=None):
 
 # ------------------------------------------------------------ 1. success
 def test_bulk_upload_success(client, db_models):
+    import zipfile
+
+    epub_buf = io.BytesIO()
+    with zipfile.ZipFile(epub_buf, "w") as zf:
+        zf.writestr("mimetype", "application/epub+zip")
+        zf.writestr("META-INF/container.xml", "<container/>")
     files = [
         (io.BytesIO(b"%PDF fake"), "a.pdf"),
-        (io.BytesIO(b"epub fake"), "b.epub"),
+        (io.BytesIO(epub_buf.getvalue()), "b.epub"),
         (io.BytesIO(b"plain text"), "c.txt"),
     ]
     resp = _upload(client, files)
@@ -211,10 +217,10 @@ def test_bulk_upload_invalid_file_type(client):
 
 # ------------------------------------------------------------ 4. too large
 def test_bulk_upload_file_too_large(client, mocker):
-    import backend.upload.bulk as bulk_module
+    import backend.upload.validation as validation_module
 
     mocker.patch.object(
-        bulk_module,
+        validation_module,
         "validate_size",
         side_effect=ValidationError("too_large", "File exceeds the 50 MB limit"),
     )

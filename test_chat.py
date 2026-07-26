@@ -132,18 +132,9 @@ def test_log_chat_cost_is_best_effort_on_failure(mocker):
 
 
 # ------------------------------------------------------------ preview_chat_prompt_builder_migration
-def test_preview_chat_migration_returns_legacy_and_candidate_side_by_side(db):
-    # Same "chat_system" name /api/chat's own _get_chat_system_opening
-    # already uses — see docs/chat-migration-roadmap.md §3 on why this
-    # is deliberately NOT SystemPromptManager's separate "system_prompt".
-    # PromptBuilder.build() always resolves SystemPromptManager's own
-    # "system_prompt" first regardless of task_name, so both need seeding
-    # here — found by actually running this, not assumed: the first
-    # version of this test only seeded "chat_system" and hit exactly the
-    # ValueError this comment now explains.
+def test_preview_chat_migration_parity_with_legacy(db):
     registry = server.PromptRegistry(db)
     registry.create_prompt("chat_system", "test", "Custom opening line.", status="active")
-    registry.create_prompt("system_prompt", "test", "Global system text.", status="active")
 
     user = server.User(email="chatmigrationtest@example.com", name="Ada Lovelace", auth_provider="dev")
     db.add(user)
@@ -152,17 +143,24 @@ def test_preview_chat_migration_returns_legacy_and_candidate_side_by_side(db):
     try:
         result = server.preview_chat_prompt_builder_migration(user, project=None, memory_enabled=False)
 
+        assert result["parity_match"] is True
         assert "Custom opening line." in result["legacy_system_prompt"]
-        assert "Ada Lovelace" in result["legacy_system_prompt"]
-        assert result["prompt_builder_task"] == "Custom opening line."
-        assert result["prompt_builder_system"] == "Global system text."
-        assert "Ada Lovelace" in result["not_yet_covered_by_prompt_builder"]["user_identity_and_date"]
-        # The candidate's own assembled text doesn't yet include user
-        # identity/date — confirms the roadmap's §2 gap is real, not
-        # just asserted in a comment.
-        assert "Ada Lovelace" not in result["prompt_builder_final"]
+        assert "Ada Lovelace" in result["prompt_builder_final"]
+        assert "## " not in result["prompt_builder_final"]
+        assert result["prompt_builder_system"] == "Custom opening line."
     finally:
         db.delete(user)
         db.query(PromptVersion).filter_by(name="chat_system").delete()
-        db.query(PromptVersion).filter_by(name="system_prompt").delete()
         db.commit()
+
+
+def test_build_system_prompt_uses_prompt_builder_by_default(db, monkeypatch):
+    monkeypatch.delenv("CHAT_USE_PROMPT_BUILDER", raising=False)
+    user = server.User(email="promptbuildtest2@example.com", name="Ada Lovelace", auth_provider="dev")
+    db.add(user)
+    db.commit()
+    prompt = server.build_system_prompt(user, project=None, memory_enabled=False)
+    assert "Ada Lovelace" in prompt
+    assert "## " not in prompt
+    db.delete(user)
+    db.commit()

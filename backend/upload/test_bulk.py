@@ -200,7 +200,7 @@ def test_bulk_upload_quota_exceeded_returns_403_and_uploads_nothing(env):
     db.commit()
     db.close()
 
-    resp = _upload_bulk(env["client"], env["access"], [("a.pdf", b"x" * 100)])
+    resp = _upload_bulk(env["client"], env["access"], [("a.txt", b"x" * 100)])
     body = resp.get_json()
     assert resp.status_code == 403, body
     assert body["error"] == "storage_quota_exceeded"
@@ -226,9 +226,9 @@ def test_bulk_upload_rejects_invalid_extension_and_aborts_whole_batch(env):
 
 
 def test_bulk_upload_rejects_oversized_file(env, monkeypatch):
-    import backend.upload.bulk as bulk_module
+    import backend.upload.validation as validation_module
 
-    monkeypatch.setattr(bulk_module, "validate_size", _raise_too_large)
+    monkeypatch.setattr(validation_module, "validate_size", _raise_too_large)
     resp = _upload_bulk(env["client"], env["access"], [("a.pdf", b"%PDF fake")])
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "too_large"

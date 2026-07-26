@@ -112,14 +112,32 @@ IS_PRODUCTION = (
 # that a normal GC pause or slow job doesn't false-positive as "down".
 WORKER_HEALTH_THRESHOLD_SECONDS = int(os.environ.get("WORKER_HEALTH_THRESHOLD_SECONDS", "60"))
 
+# PR1: refuse production boot without explicit secrets (never silent random keys).
+from security.startup import require_production_secrets, resolve_flask_secret_key, resolve_limiter_storage_uri
+from security.authz import project_owned_by_user, resolve_owned_project_id
+from security.metrics_access import check_metrics_access
+from security.headers import apply_security_headers
+from security.session_ttl import (
+    enforce_session_ttl,
+    mark_session_login,
+    session_absolute_seconds,
+)
+
+require_production_secrets(os.environ, is_production=IS_PRODUCTION)
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
+app.secret_key = resolve_flask_secret_key(os.environ, is_production=IS_PRODUCTION)
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_MB * 1024 * 1024
 # Secure session-cookie defaults (Secure flag only in production/HTTPS).
+# Absolute cookie lifetime matches SESSION_ABSOLUTE_HOURS; idle is enforced
+# in enforce_session_ttl (PR4).
+_abs_secs = session_absolute_seconds(os.environ) or (12 * 3600)
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=IS_PRODUCTION,
+    PERMANENT_SESSION_LIFETIME=timedelta(seconds=_abs_secs),
+    SESSION_REFRESH_EACH_REQUEST=False,  # idle sliding is handled explicitly
 )
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -128,9 +146,7 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 # existing @login_required + session["user_id"] path is untouched. This
 # is for future API/programmatic clients that can't hold a browser
 # session cookie. JWT_SECRET_KEY defaults to the same secret as Flask
-# sessions (inherits the same "set it explicitly in production" caveat
-# already flagged for FLASK_SECRET_KEY — production-hardening.md §8 —
-# not re-solved here, just not made worse by a second silent fallback).
+# sessions when unset — production already required FLASK_SECRET_KEY above.
 app.config.update(
     JWT_SECRET_KEY=os.environ.get("JWT_SECRET_KEY", app.secret_key),
     JWT_ACCESS_TOKEN_EXPIRES=timedelta(minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MIN", "15"))),
@@ -228,19 +244,76 @@ email_service = EmailService(RESEND_API_KEY, EMAIL_FROM)
 
 # ------------------------------------------------------------------ rate limiting + CSRF
 from flask_limiter import Limiter
+from flask_limiter.errors import RateLimitExceeded
 from flask_limiter.util import get_remote_address
 
-# Opt-in per-route limits (no global throttle so normal chat use is unaffected).
-# Uses in-memory storage — switch to redis:// for multi-process production.
+# Opt-in per-route limits. Redis when REDIS_URL is reachable; memory:// otherwise
+# (shared limits across workers require Redis — see security/startup.py).
+_LIMITER_STORAGE = resolve_limiter_storage_uri(REDIS_URL, is_production=IS_PRODUCTION)
 limiter = Limiter(
     key_func=get_remote_address,
     app=app,
     default_limits=[],
-    storage_uri="memory://",
+    storage_uri=_LIMITER_STORAGE,
     strategy="fixed-window",
 )
 
+
+@app.errorhandler(RateLimitExceeded)
+def _rate_limit_exceeded(e):
+    uid = session.get("user_id")
+    log_security_event(
+        "rate_limit_exceeded",
+        path=request.path,
+        method=request.method,
+        user_id=uid or "",
+        remote=get_remote_address(),
+        description=getattr(e, "description", "") or str(e),
+    )
+    return (
+        jsonify(
+            {
+                "error": "rate_limit_exceeded",
+                "message": "Too many requests. Please try again later.",
+            }
+        ),
+        429,
+    )
+
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+# `npm run dev` (Vite, localhost:5173) proxies /api/* to this process but the
+# browser's own Origin header on state-changing requests reflects Vite's
+# origin, not this one — request.host/APP_BASE_URL are always localhost:5000.
+# Without this, every POST/PUT/PATCH/DELETE from the SPA in local dev 403s.
+# Gated on DEV_AUTO_LOGIN (already this codebase's "local dev, not
+# production" signal) so production — where Flask serves the built frontend
+# itself, genuinely same-origin — never widens this check.
+DEV_FRONTEND_ORIGINS = {"localhost:5173", "127.0.0.1:5173"} if DEV_AUTO_LOGIN else set()
+
+
+@app.before_request
+def _enforce_session_ttl():
+    """Idle + absolute session timeout (PR4)."""
+    if "user_id" not in session:
+        return
+    expired, reason = enforce_session_ttl(session, environ=os.environ)
+    if not expired:
+        return
+    session.clear()
+    log_security_event("session_expired", reason=reason, path=request.path)
+    if request.path.startswith("/api/"):
+        return (
+            jsonify(
+                {
+                    "error": "session_expired",
+                    "reason": reason,
+                    "message": "Your session has expired. Please sign in again.",
+                }
+            ),
+            401,
+        )
+    return redirect(url_for("login_page"))
 
 
 @app.before_request
@@ -253,7 +326,7 @@ def csrf_protect():
     if not src:
         return
     src_host = urlparse(src).netloc
-    allowed = {request.host, urlparse(APP_BASE_URL).netloc}
+    allowed = {request.host, urlparse(APP_BASE_URL).netloc} | DEV_FRONTEND_ORIGINS
     if src_host not in allowed:
         log_security_event("csrf_blocked", path=request.path, origin=src_host)
         return jsonify({"error": "csrf_origin_mismatch"}), 403
@@ -292,6 +365,7 @@ def _finish_request_observability(response):
             "duration_ms": round(duration * 1000, 1),
         },
     )
+    apply_security_headers(response, is_production=IS_PRODUCTION, environ=os.environ)
     return response
 
 
@@ -535,7 +609,7 @@ class UploadJob(Base):
     upload_batch_id = Column(Integer, ForeignKey("upload_batches.id"), nullable=True)
     file_id = Column(Integer, ForeignKey("files.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    job_type = Column(String(30), nullable=False)  # import|extract_metadata|paper_analysis
+    job_type = Column(String(40), nullable=False)  # import|extract_metadata|paper_analysis|phase1_analysis
     status = Column(String(20), default="pending")  # pending|running|done|failed
     attempts = Column(Integer, default=0)
     run_after = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # due time; backoff pushes this out
@@ -748,6 +822,32 @@ class PaperAnalysis(Base):
     content_hash = Column(String(64), default="")
     model = Column(String(100), default="")
     data = Column(Text, default="")  # JSON: ANALYSIS_FIELDS
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class AnalysisPipelineResult(Base):
+    """Persisted Phase 1.1–1.7 outputs for one file (Phase 2 integration).
+
+    `phase_results` is a JSON object keyed by phase name
+    (document_understanding, classification, …). Lazy migration: rows are
+    created when a document is analyzed; older files remain without a row
+    until first access."""
+
+    __tablename__ = "analysis_pipeline_results"
+    id = Column(Integer, primary_key=True)
+    file_id = Column(Integer, ForeignKey("files.id"), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content_hash = Column(String(64), default="")
+    status = Column(String(20), default="pending")  # pending|running|done|failed|partial
+    error = Column(Text, default="")
+    phase_results = Column(Text, default="{}")  # JSON
+    pipeline_version = Column(String(50), default="")
+    total_processing_time_ms = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime,
@@ -979,6 +1079,7 @@ def login_page():
             session["user_email"] = user.email
             access, refresh = create_jwt(user.id)
             session["jwt"] = {"access": access, "refresh": refresh}
+            mark_session_login(session)
         finally:
             db.close()
         return redirect("/")
@@ -992,12 +1093,14 @@ def login_page():
 
 
 @app.route("/auth/google")
+@limiter.limit("30 per hour")
 def auth_google():
     redirect_uri = url_for("auth_callback", _external=True)
     return google.authorize_redirect(redirect_uri)
 
 
 @app.route("/auth/callback")
+@limiter.limit("60 per hour")
 def auth_callback():
     token = google.authorize_access_token()
     info = token.get("userinfo") or {}
@@ -1012,6 +1115,7 @@ def auth_callback():
             403,
         )
     if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+        log_security_event("oauth_denied", email=email, reason="not_allowlisted")
         return (
             render_template(
                 "login.html",
@@ -1037,6 +1141,7 @@ def auth_callback():
         # session; nothing about the redirect/session flow above changed.
         access, refresh = create_jwt(user.id)
         session["jwt"] = {"access": access, "refresh": refresh}
+        mark_session_login(session)
     finally:
         db.close()
     return redirect("/")
@@ -1044,7 +1149,10 @@ def auth_callback():
 
 @app.route("/logout")
 def logout():
+    uid = session.get("user_id")
     session.clear()
+    if uid:
+        log_security_event("logout", user_id=uid)
     return redirect(url_for("login_page"))
 
 
@@ -1077,6 +1185,7 @@ def dev_login():
         session["user_email"] = user.email
         access, refresh = create_jwt(user.id)
         session["jwt"] = {"access": access, "refresh": refresh}
+        mark_session_login(session)
         return jsonify({"ok": True, "user_id": user.id})
     finally:
         db.close()
@@ -1141,6 +1250,7 @@ app.register_blueprint(
         OutboxEvent=OutboxEvent,
         quota_service=quota_service,
         storage_backend=get_storage_backend(),
+        limiter=limiter,
     )
 )
 
@@ -1293,7 +1403,7 @@ from backend.ai.domain_registry import DomainRegistry
 from backend.ai.memory_engine import MemoryEngine
 from backend.ai.model_router import ModelRouter
 from backend.ai.persona_engine import PersonaEngine
-from backend.ai.prompt_builder import PromptBuilder
+from backend.ai.prompt_builder import CHAT_SYSTEM_FALLBACK, PromptBuilder
 
 # ══════════════════════════════════════════════════════════════════════════
 # Prompt Engine (docs/prompt-engine-architecture.md) — SystemPromptManager,
@@ -1399,6 +1509,10 @@ app.register_blueprint(
         quota_service=quota_service,
         storage_backend=get_storage_backend(),
         model_router=model_router,
+        get_prompt_builder=get_prompt_builder,
+        domain_registry=domain_registry,
+        AnalysisPipelineResult=AnalysisPipelineResult,
+        limiter=limiter,
     )
 )
 
@@ -1510,10 +1624,23 @@ def prompt_usage_by_user():
 
 @app.route("/metrics")
 def metrics():
-    """Unauthenticated, same reasoning as /api/worker/health right below
-    — a Prometheus scrape target, not a user-facing route. Firewall it at
-    the network/reverse-proxy level in a real deploy rather than gating
-    it behind app auth, same as any standard Prometheus setup."""
+    """Prometheus scrape target. Gated by METRICS_TOKEN (Bearer) or
+    loopback-only when the token is unset — see security/metrics_access.py.
+    Set METRICS_ALLOW_UNAUTHENTICATED=1 only for local/dev open scrapes."""
+    allowed, reason = check_metrics_access(
+        authorization=request.headers.get("Authorization"),
+        remote_addr=request.remote_addr,
+        environ=os.environ,
+    )
+    if not allowed:
+        log_security_event(
+            "metrics_access_denied",
+            reason=reason,
+            remote=request.remote_addr or "",
+            path=request.path,
+        )
+        return jsonify({"error": "unauthorized", "message": "Metrics endpoint requires authentication"}), 401
+
     db = SessionLocal()
     try:
         for status in ("pending", "running", "failed", "done"):
@@ -2010,7 +2137,9 @@ def _extract_meta_from_text(text: str, user_id=None) -> dict:
 
 
 def _apply_metadata(file_id: int, text: str, content_hash: str, job_id=None) -> None:
-    """Background task: extract metadata and write it to the UserFile row.
+    """DEPRECATED: prefer AnalysisPipelineService / phase1_analysis job.
+
+    Background task: extract metadata and write it to the UserFile row.
 
     Runs in a daemon thread so the upload HTTP response is already sent by
     the time this does its model call.  It is idempotent: if the content_hash
@@ -2020,6 +2149,9 @@ def _apply_metadata(file_id: int, text: str, content_hash: str, job_id=None) -> 
     to skip creating/finishing a second, duplicate tracking row — the
     worker owns that row's lifecycle instead. Left None (default) for the
     legacy thread-spawned callers, which still manage their own row here."""
+    from backend.analysis_pipeline.deprecation import warn_legacy
+
+    warn_legacy("server._apply_metadata")
     db = SessionLocal()
     owns_job = job_id is None
     try:
@@ -2148,7 +2280,9 @@ _ANALYSIS_MAX_CHARS = 12_000  # covers most papers; keeps prompt cost bounded
 
 
 def _run_paper_analysis(file_id: int, text: str, content_hash: str, job_id=None) -> None:
-    """Background worker: generate and persist the 14-field paper analysis.
+    """DEPRECATED: prefer worker phase1_analysis → paper_analysis chain.
+
+    Background worker: generate and persist the 14-field paper analysis.
 
     Idempotent on content_hash: if the stored hash matches and status=='done'
     we skip the model call. 'force' refreshes bypass this check (see route).
@@ -2157,6 +2291,9 @@ def _run_paper_analysis(file_id: int, text: str, content_hash: str, job_id=None)
     to skip creating/finishing a second, duplicate tracking row. Left
     None (default) for the legacy thread-spawned callers.
     """
+    from backend.analysis_pipeline.deprecation import warn_legacy
+
+    warn_legacy("server._run_paper_analysis")
     db = SessionLocal()
     owns_job = job_id is None
     try:
@@ -2361,19 +2498,21 @@ def build_paper_chat_prompt(user, paper):
 
 # Static opening sentence only — everything else build_system_prompt()
 # assembles below (user name, date, custom instructions, project,
-# memories) is computed per-request and was never a good fit for a
-# template row. backfill.py already seeds this exact text under the name
-# "chat_system"; PromptRegistry is tried first, with this literal string
-# as the fallback for a fresh DB backfill.py hasn't run against yet (or
-# a deleted/corrupted row) — a chat request must never fail just because
-# a prompt lookup did.
-_CHAT_SYSTEM_FALLBACK = (
-    "You are Personal AI, a helpful assistant specialised in academic "
-    "research and thesis writing, but able to help with anything. "
-    "Use markdown. Be precise with citations and honest about "
-    "uncertainty. When you used web search results or document excerpts, "
-    "cite the sources inline."
-)
+# memories) is computed per-request. Opening text lives in PromptRegistry
+# ("chat_system") with CHAT_SYSTEM_FALLBACK when unseeded.
+# Phase A: normal chat assembly is PromptBuilder.build_chat_instructions().
+# CHAT_USE_PROMPT_BUILDER (default true) can force the legacy assembler
+# for emergency rollback during soak; remove after stability is confirmed.
+_CHAT_SYSTEM_FALLBACK = CHAT_SYSTEM_FALLBACK
+
+
+def _chat_use_prompt_builder() -> bool:
+    return os.environ.get("CHAT_USE_PROMPT_BUILDER", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 def _get_chat_system_opening(db):
@@ -2385,6 +2524,104 @@ def _get_chat_system_opening(db):
     except Exception:
         logging.getLogger(__name__).warning("chat_system prompt fetch failed, using fallback", exc_info=True)
         return _CHAT_SYSTEM_FALLBACK
+
+
+def _build_system_prompt_legacy(user, project, memory_enabled=True, now=None):
+    """Legacy flat chat assembler (rollback when CHAT_USE_PROMPT_BUILDER=false).
+
+    PR2: never inject another user's project instructions even if the caller
+    passed a cross-owned Project row.
+    """
+    if project is not None and not project_owned_by_user(project, user.id):
+        project = None
+    global_mems, proj_mems = [], []
+    db = SessionLocal()
+    try:
+        if memory_enabled:
+            global_mems = [
+                m.fact
+                for m in db.execute(
+                    select(Memory).where(Memory.user_id == user.id, Memory.project_id.is_(None))
+                ).scalars()
+            ]
+            if project:
+                proj_mems = [
+                    m.fact
+                    for m in db.execute(
+                        select(Memory).where(Memory.user_id == user.id, Memory.project_id == project.id)
+                    ).scalars()
+                ]
+        opening = _get_chat_system_opening(db)
+    finally:
+        db.close()
+
+    when = now or datetime.now()
+    parts = [
+        opening,
+        f"The user's name is {user.name}.",
+        f"Current date/time: {when.strftime('%Y-%m-%d %H:%M')}.",
+    ]
+    if user.custom_instructions:
+        parts.append("The user's custom instructions (always follow):\n" + user.custom_instructions)
+    if project:
+        parts.append(f'Current project: "{project.name}".')
+        if project.instructions:
+            parts.append("Project instructions from the user:\n" + project.instructions)
+    if global_mems:
+        parts.append("Things you remember about the user:\n" + "\n".join(f"- {m}" for m in global_mems))
+    if proj_mems:
+        parts.append("Things you remember in this project:\n" + "\n".join(f"- {m}" for m in proj_mems))
+    return "\n\n".join(parts)
+
+
+def build_system_prompt(user, project, memory_enabled=True):
+    """Normal-chat system instructions. Default path: PromptBuilder chat parity."""
+    if not _chat_use_prompt_builder():
+        return _build_system_prompt_legacy(user, project, memory_enabled=memory_enabled)
+
+    db = SessionLocal()
+    try:
+        builder = get_prompt_builder(db)
+        assembled = builder.build_chat_instructions(
+            user_id=user.id,
+            user_name=user.name or "",
+            custom_instructions=user.custom_instructions or "",
+            project_id=project.id if project else None,
+            memory_enabled=memory_enabled,
+        )
+        return assembled.final
+    finally:
+        db.close()
+
+
+def preview_chat_prompt_builder_migration(user, project, memory_enabled=True):
+    """Compare legacy flat assembler vs PromptBuilder.build_chat_instructions()."""
+    now = datetime.now()
+    legacy = _build_system_prompt_legacy(user, project, memory_enabled=memory_enabled, now=now)
+
+    db = SessionLocal()
+    try:
+        builder = get_prompt_builder(db)
+        assembled = builder.build_chat_instructions(
+            user_id=user.id,
+            user_name=user.name or "",
+            custom_instructions=user.custom_instructions or "",
+            project_id=project.id if project else None,
+            memory_enabled=memory_enabled,
+            now=now,
+        )
+    finally:
+        db.close()
+
+    return {
+        "legacy_system_prompt": legacy,
+        "prompt_builder_final": assembled.final,
+        "prompt_builder_system": assembled.system,
+        "prompt_builder_task": assembled.task,
+        "prompt_builder_project_context": assembled.project_context,
+        "prompt_builder_memory": assembled.memory,
+        "parity_match": legacy == assembled.final,
+    }
 
 
 def _log_chat_cost(user_id, model, usage):
@@ -2419,93 +2656,6 @@ def _log_chat_cost(user_id, model, usage):
             db.close()
     except Exception:
         logging.getLogger(__name__).warning("chat cost logging failed", exc_info=True)
-
-
-def build_system_prompt(user, project, memory_enabled=True):
-    global_mems, proj_mems = [], []
-    db = SessionLocal()
-    try:
-        if memory_enabled:
-            global_mems = [
-                m.fact
-                for m in db.execute(
-                    select(Memory).where(Memory.user_id == user.id, Memory.project_id.is_(None))
-                ).scalars()
-            ]
-            if project:
-                proj_mems = [
-                    m.fact
-                    for m in db.execute(
-                        select(Memory).where(Memory.user_id == user.id, Memory.project_id == project.id)
-                    ).scalars()
-                ]
-        opening = _get_chat_system_opening(db)
-    finally:
-        db.close()
-
-    parts = [
-        opening,
-        f"The user's name is {user.name}.",
-        f"Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}.",
-    ]
-    if user.custom_instructions:
-        parts.append("The user's custom instructions (always follow):\n" + user.custom_instructions)
-    if project:
-        parts.append(f'Current project: "{project.name}".')
-        if project.instructions:
-            parts.append("Project instructions from the user:\n" + project.instructions)
-    if global_mems:
-        parts.append("Things you remember about the user:\n" + "\n".join(f"- {m}" for m in global_mems))
-    if proj_mems:
-        parts.append("Things you remember in this project:\n" + "\n".join(f"- {m}" for m in proj_mems))
-    return "\n\n".join(parts)
-
-
-def preview_chat_prompt_builder_migration(user, project, memory_enabled=True):
-    """Stub for testing the /api/chat -> Prompt Builder migration (see
-    docs/chat-migration-roadmap.md) — NOT called from /api/chat itself,
-    or from anywhere else; a manual comparison tool for whoever picks up
-    that migration later. Builds the same "what does the model see"
-    content two ways — today's build_system_prompt() (legacy) and
-    PromptBuilder.preview() (candidate) — so the two can be diffed by
-    hand before anything real is switched over, and returns the specific
-    fields the candidate doesn't cover yet (roadmap §2) rather than
-    silently omitting them.
-
-    task_name="chat_system" deliberately exercises the exact prompt name
-    /api/chat already uses today (via _get_chat_system_opening), not
-    SystemPromptManager's separate "system_prompt" name — the roadmap's
-    §3 naming collision is something to resolve before a real migration,
-    not something to paper over here."""
-    legacy = build_system_prompt(user, project, memory_enabled=memory_enabled)
-
-    db = SessionLocal()
-    try:
-        builder = get_prompt_builder(db)
-        assembled = builder.preview(
-            "",
-            "chat_system",
-            project_id=project.id if project else None,
-            user_id=user.id if memory_enabled else None,
-        )
-    finally:
-        db.close()
-
-    return {
-        "legacy_system_prompt": legacy,
-        "prompt_builder_final": assembled.final,
-        "prompt_builder_system": assembled.system,
-        "prompt_builder_task": assembled.task,
-        "prompt_builder_project_context": assembled.project_context,
-        "prompt_builder_memory": assembled.memory,
-        "not_yet_covered_by_prompt_builder": {
-            "user_identity_and_date": (
-                f"The user's name is {user.name}. " f"Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}."
-            ),
-            "user_custom_instructions": user.custom_instructions or "",
-            "project_name_framing": f'Current project: "{project.name}".' if project else "",
-        },
-    }
 
 
 # ------------------------------------------------------------------ API: profile / models
@@ -2554,6 +2704,14 @@ def api_models():
 # ------------------------------------------------------------------ API: files
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp")  # vision-API formats
 MAX_UPLOAD_BYTES = MAX_FILE_MB * 1024 * 1024
+
+from backend.upload.validation import (  # noqa: E402
+    ALLOWED_EXTENSIONS,
+    ValidationError as UploadValidationError,
+    kind_for_extension,
+    validate_extension,
+    validate_upload_path,
+)
 
 # ---- storage architecture: presigned/multipart upload config -------------
 MULTIPART_THRESHOLD_BYTES = int(os.environ.get("MULTIPART_THRESHOLD_MB", "25")) * 1024 * 1024
@@ -2637,6 +2795,21 @@ def _enqueue_job(db, user_id, file_id, job_type, upload_batch_id=None):
         )
     )
     return job.id
+
+
+from backend.analysis_pipeline.routes import create_analysis_pipeline_blueprint
+
+app.register_blueprint(
+    create_analysis_pipeline_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        UploadJob=UploadJob,
+        OutboxEvent=OutboxEvent,
+        AnalysisPipelineResult=AnalysisPipelineResult,
+        enqueue_job=_enqueue_job,
+        storage_backend=get_storage_backend(),
+    )
+)
 
 
 _redis_client = None
@@ -2895,6 +3068,7 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
 
 @app.route("/api/files", methods=["POST"])
 @login_required
+@limiter.limit("60 per hour")
 def upload_file():
     """Validate, store, and enqueue — nothing else. Extraction/chunking/
     embedding no longer happen here (compare to confirm_upload(), which
@@ -2911,37 +3085,55 @@ def upload_file():
     if not f or not f.filename:
         return jsonify({"error": "no_file"}), 400
     name = f.filename
-    lower = name.lower()
-    # Accept ANY file type. Images go to the vision path; everything else is
-    # treated as a document and run through the text extractor.
-    kind = "image" if lower.endswith(IMAGE_EXT) else "document"
+    try:
+        ext = validate_extension(name, allowed=ALLOWED_EXTENSIONS)
+    except UploadValidationError as e:
+        log_security_event("invalid_mime", code=e.code, filename=name, message=e.message)
+        return jsonify({"error": e.code, "detail": e.message}), 400
 
     conversation_id = request.form.get("conversation_id", type=int)
     project_id = request.form.get("project_id", type=int)
     batch_id = request.form.get("batch_id", type=int)  # not sent by any UI yet
-    ext = os.path.splitext(lower)[1]
     disk_name = uuid.uuid4().hex + ext
-    # Saved locally only long enough to size-check, hash, and upload —
+    # Saved locally only long enough to size-check, hash, sniff, and upload —
     # extraction no longer happens in this request. Removed in the
     # `finally` below either way.
     path = os.path.join(UPLOAD_DIR, disk_name)
     f.save(path)
     size = os.path.getsize(path)
-    if size > MAX_UPLOAD_BYTES:
+    try:
+        _, mime = validate_upload_path(
+            path,
+            name,
+            allowed=ALLOWED_EXTENSIONS,
+            size_bytes=size,
+            max_mb=MAX_FILE_MB,
+        )
+    except UploadValidationError as e:
+        event = "virus_detected" if e.code == "virus_detected" else "invalid_mime"
+        log_security_event(event, code=e.code, filename=name, message=e.message)
         try:
             os.remove(path)
         except OSError:
             pass
-        return (
-            jsonify({"error": "too_large", "detail": f"Max file size is {MAX_FILE_MB} MB"}),
-            400,
-        )
+        return jsonify({"error": e.code, "detail": e.message}), 400
+
+    kind = kind_for_extension(ext)
 
     checksum = storage.sha256_file(path)
     uid = session["user_id"]
 
     db = SessionLocal()
     try:
+        project_id, project_denied = resolve_owned_project_id(db, Project, project_id, uid)
+        if project_denied:
+            log_security_event(
+                "authz_denied",
+                resource="project",
+                action="upload",
+                user_id=uid,
+                project_id=request.form.get("project_id"),
+            )
         # Duplicate detection: this exact content already lives in the
         # user's library — skip the storage upload and the queue entirely
         # and hand back the existing file instead of paying for either.
@@ -3014,7 +3206,7 @@ def upload_file():
             project_id=project_id,
             conversation_id=conversation_id,
             name=name[:300],
-            mime=f.mimetype,
+            mime=mime,
             kind=kind,
             path=disk_name,
             size=size,
@@ -3130,6 +3322,7 @@ def job_status(job_id):
 
 @app.route("/api/uploads/presign", methods=["POST"])
 @login_required
+@limiter.limit("60 per hour")
 def presign_upload():
     data = request.get_json(force=True, silent=True) or {}
     name = (data.get("filename") or "").strip()
@@ -3146,9 +3339,29 @@ def presign_upload():
             jsonify({"error": "too_large", "detail": f"Max file size is {MAX_FILE_MB} MB"}),
             400,
         )
+    try:
+        ext = validate_extension(name, allowed=ALLOWED_EXTENSIONS)
+        from backend.upload.magic_bytes import CANONICAL_MIME
+
+        mime = CANONICAL_MIME.get(ext, mime)
+    except UploadValidationError as e:
+        log_security_event("invalid_mime", code=e.code, filename=name, message=e.message)
+        return jsonify({"error": e.code, "detail": e.message}), 400
 
     db = SessionLocal()
     try:
+        project_id, project_denied = resolve_owned_project_id(
+            db, Project, project_id, session["user_id"]
+        )
+        if project_denied:
+            log_security_event(
+                "authz_denied",
+                resource="project",
+                action="presign",
+                user_id=session["user_id"],
+                project_id=data.get("project_id"),
+            )
+
         if checksum:
             dup = _find_duplicate_file(db, session["user_id"], checksum)
             if dup:
@@ -3239,6 +3452,7 @@ def complete_multipart_upload_route():
 
 @app.route("/api/uploads/confirm", methods=["POST"])
 @login_required
+@limiter.limit("60 per hour")
 def confirm_upload():
     data = request.get_json(force=True, silent=True) or {}
     session_id = data.get("session_id")
@@ -3286,13 +3500,46 @@ def confirm_upload():
                 return jsonify(result)
 
         lower = us.name.lower()
-        kind = "image" if lower.endswith(IMAGE_EXT) else "document"
+        ext = os.path.splitext(lower)[1]
+        try:
+            validate_extension(us.name, allowed=ALLOWED_EXTENSIONS)
+        except UploadValidationError as e:
+            provider.delete(us.key)
+            us.status = "aborted"
+            db.commit()
+            log_security_event("invalid_mime", code=e.code, filename=us.name, message=e.message)
+            return jsonify({"error": e.code, "detail": e.message}), 400
+
+        # Sniff + optional ClamAV on a local copy before we commit the file row.
+        try:
+            with provider.local_copy(us.key, suffix=ext or ".bin") as local_path:
+                _, sniffed_mime = validate_upload_path(
+                    local_path,
+                    us.name,
+                    allowed=ALLOWED_EXTENSIONS,
+                    size_bytes=info.size,
+                    max_mb=MAX_FILE_MB,
+                )
+        except UploadValidationError as e:
+            provider.delete(us.key)
+            us.status = "aborted"
+            db.commit()
+            log_security_event("invalid_mime", code=e.code, filename=us.name, message=e.message)
+            return jsonify({"error": e.code, "detail": e.message}), 400
+        except Exception:
+            logging.exception("upload confirm content validation failed for session %s", session_id)
+            provider.delete(us.key)
+            us.status = "aborted"
+            db.commit()
+            return jsonify({"error": "validation_failed"}), 502
+
+        kind = kind_for_extension(ext)
         uf = UserFile(
             user_id=session["user_id"],
             project_id=us.project_id,
             conversation_id=us.conversation_id,
             name=us.name,
-            mime=us.mime,
+            mime=sniffed_mime,
             kind=kind,
             path=us.key,
             size=info.size,
@@ -3305,8 +3552,8 @@ def confirm_upload():
 
         note = None
         if kind == "document":
-            with provider.local_copy(us.key, suffix=os.path.splitext(lower)[1]) as local_path:
-                note = _process_document(db, uf, local_path, us.name, us.mime)
+            with provider.local_copy(us.key, suffix=ext) as local_path:
+                note = _process_document(db, uf, local_path, us.name, sniffed_mime)
 
         db3 = SessionLocal()
         try:
@@ -4113,9 +4360,15 @@ def create_note():
     try:
         # Validate project ownership
         if project_id:
-            p = db.get(Project, project_id)
-            if not p or p.user_id != uid:
-                project_id = None
+            project_id, denied = resolve_owned_project_id(db, Project, project_id, uid)
+            if denied:
+                log_security_event(
+                    "authz_denied",
+                    resource="project",
+                    action="create_note",
+                    user_id=uid,
+                    project_id=data.get("project_id"),
+                )
 
         # Validate file ownership
         if file_id:
@@ -4123,7 +4376,19 @@ def create_note():
             if not f or f.user_id != uid:
                 file_id = None
             elif not project_id and f.project_id:
-                project_id = f.project_id  # inherit from paper
+                inherited, inherited_denied = resolve_owned_project_id(
+                    db, Project, f.project_id, uid
+                )
+                if inherited_denied:
+                    log_security_event(
+                        "authz_denied",
+                        resource="project",
+                        action="create_note_inherit",
+                        user_id=uid,
+                        project_id=f.project_id,
+                        file_id=file_id,
+                    )
+                project_id = inherited
 
         n = Note(
             user_id=uid,
@@ -4363,9 +4628,15 @@ def create_citation():
         # Validate project ownership
         project_id = d.get("project_id")
         if project_id:
-            p = db.get(Project, project_id)
-            if not p or p.user_id != uid:
-                project_id = None
+            project_id, denied = resolve_owned_project_id(db, Project, project_id, uid)
+            if denied:
+                log_security_event(
+                    "authz_denied",
+                    resource="project",
+                    action="create_citation",
+                    user_id=uid,
+                    project_id=d.get("project_id"),
+                )
         c = Citation(
             user_id=uid,
             project_id=project_id,
@@ -4486,7 +4757,17 @@ def citation_from_paper(fid):
             return jsonify({**_citation_to_dict(existing), "existing": True})
 
         body = request.get_json(silent=True) or {}
-        project_id = body.get("project_id") or uf.project_id
+        raw_project_id = body.get("project_id") if "project_id" in body else uf.project_id
+        project_id, project_denied = resolve_owned_project_id(db, Project, raw_project_id, uid)
+        if project_denied:
+            log_security_event(
+                "authz_denied",
+                resource="project",
+                action="citation_from_paper",
+                user_id=uid,
+                project_id=raw_project_id,
+                file_id=fid,
+            )
 
         c = Citation(
             user_id=uid,
@@ -4795,9 +5076,17 @@ def create_conversation():
     db = SessionLocal()
     try:
         if project_id:
-            p = db.get(Project, project_id)
-            if not p or p.user_id != session["user_id"]:
-                project_id = None
+            project_id, denied = resolve_owned_project_id(
+                db, Project, project_id, session["user_id"]
+            )
+            if denied:
+                log_security_event(
+                    "authz_denied",
+                    resource="project",
+                    action="create_conversation",
+                    user_id=session["user_id"],
+                    project_id=data.get("project_id"),
+                )
 
         # Validate file ownership; inherit project from the paper if not given
         paper_title = None
@@ -4808,7 +5097,19 @@ def create_conversation():
             else:
                 paper_title = uf.title or uf.name or None
                 if not project_id and uf.project_id:
-                    project_id = uf.project_id
+                    inherited, inherited_denied = resolve_owned_project_id(
+                        db, Project, uf.project_id, session["user_id"]
+                    )
+                    if inherited_denied:
+                        log_security_event(
+                            "authz_denied",
+                            resource="project",
+                            action="create_conversation_inherit",
+                            user_id=session["user_id"],
+                            project_id=uf.project_id,
+                            file_id=file_id,
+                        )
+                    project_id = inherited
 
         c = Conversation(
             user_id=session["user_id"],
@@ -5424,6 +5725,7 @@ def run_tool(name, args, user_id, project_id):
 
 @app.route("/api/chat", methods=["POST"])
 @login_required
+@limiter.limit("60 per minute")
 def chat():
     data = request.get_json(silent=True) or {}
     cid = data.get("conversation_id")
@@ -5441,6 +5743,16 @@ def chat():
             return jsonify({"error": "conversation_not_found"}), 404
         model = data.get("model") if data.get("model") in get_models() else convo.model
         project = db.get(Project, convo.project_id) if convo.project_id else None
+        if project is not None and not project_owned_by_user(project, user_id):
+            log_security_event(
+                "authz_denied",
+                resource="project",
+                action="chat",
+                user_id=user_id,
+                project_id=convo.project_id,
+                conversation_id=convo.id,
+            )
+            project = None
 
         atts = []
         for fid in attachment_ids[:8]:

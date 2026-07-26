@@ -26,6 +26,32 @@ class MemoryEngine:
         self.db = db_session
         self.Memory = Memory
 
+    def get_chat_memories(
+        self, user_id: int, project_id: Optional[int] = None
+    ) -> tuple[list[str], list[str]]:
+        """All memories for chat parity with server.build_system_prompt().
+
+        Returns (global_facts, project_facts). Unlike get_relevant_memories(),
+        this does not rank or truncate — Phase A chat migration requires
+        identical behavior to the legacy assembler.
+        """
+        M = self.Memory
+        global_mems = [
+            m.fact
+            for m in self.db.query(M)
+            .filter(M.user_id == user_id, M.project_id.is_(None))
+            .all()
+        ]
+        proj_mems: list[str] = []
+        if project_id is not None:
+            proj_mems = [
+                m.fact
+                for m in self.db.query(M)
+                .filter(M.user_id == user_id, M.project_id == project_id)
+                .all()
+            ]
+        return global_mems, proj_mems
+
     def get_relevant_memories(
         self,
         user_id: int,

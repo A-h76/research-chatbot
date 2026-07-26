@@ -34,6 +34,7 @@ import server
 from backend.ai import ModelRegistry, PromptRegistry
 from observability import configure_logging, correlation_id_var, start_worker_metrics_server
 from server import (
+    AnalysisPipelineResult,
     OutboxEvent,
     PaperAnalysis,
     SessionLocal,
@@ -53,6 +54,8 @@ POLL_INTERVAL_SECONDS = int(os.environ.get("WORKER_POLL_INTERVAL", "2"))
 BATCH_SIZE = int(os.environ.get("WORKER_BATCH_SIZE", "10"))
 MAX_ATTEMPTS = int(os.environ.get("WORKER_MAX_ATTEMPTS", "5"))
 METRICS_PORT = int(os.environ.get("WORKER_METRICS_PORT", "9101"))
+# Loopback by default so the worker scrape port is not world-reachable (PR2).
+METRICS_BIND = (os.environ.get("WORKER_METRICS_BIND") or "127.0.0.1").strip() or "127.0.0.1"
 
 
 def _require_postgres():
@@ -85,7 +88,9 @@ from backend.ai.prompts import (
     ANALYSIS_ARRAY_FIELDS,
     ANALYSIS_MAX_CHARS,
     META_EXCERPT_CHARS,
+    PAPER_ANALYSIS_RESPONSE_FORMAT,
     ensure_default_prompts,
+    medical_response_format,
 )
 
 
@@ -106,11 +111,12 @@ def _handle_import(db, job):
     with server.storage.storage_manager.provider.local_copy(uf.path, suffix=ext) as local_path:
 
         def enqueue_followups(file_id, text, content_hash):
-            # Replaces _process_document's old extract_metadata()/
-            # trigger_paper_analysis() thread spawns — same follow-on
-            # stages, enqueued transactionally instead.
-            _enqueue_job(db, uf.user_id, file_id, "extract_metadata", job.upload_batch_id)
-            _enqueue_job(db, uf.user_id, file_id, "paper_analysis", job.upload_batch_id)
+            # Phase 2: Phase 1 pipeline is the primary structured analysis path.
+            # paper_analysis (LLM overview) runs after phase1 so PromptBuilder
+            # can consume persisted Phase 1 outputs. extract_metadata remains
+            # available for legacy queued jobs but is no longer enqueued here —
+            # Phase 1.1 bibliographic fields fill UserFile when present.
+            _enqueue_job(db, uf.user_id, file_id, "phase1_analysis", job.upload_batch_id)
 
         _process_document(
             db,
@@ -126,15 +132,83 @@ def _handle_import(db, job):
 _YEAR_RE = re.compile(r"(19|20)\d{2}")
 
 
+def _handle_phase1_analysis(db, job):
+    """Run Phase 1.1–1.7 via AnalysisPipelineService, persist results, apply
+    bibliographic metadata, then enqueue LLM paper_analysis as a consumer."""
+    from backend.analysis_pipeline.models import AnalysisOptions
+    from backend.analysis_pipeline.persistence import apply_metadata_to_user_file, save_analysis_result
+    from backend.analysis_pipeline.service import AnalysisPipelineService, extract_bibliographic_fields
+
+    uf = db.get(UserFile, job.file_id)
+    if not uf:
+        raise RuntimeError(f"file {job.file_id} no longer exists")
+
+    # Idempotency: reuse completed row for same content_hash
+    existing = db.execute(
+        select(AnalysisPipelineResult).where(AnalysisPipelineResult.file_id == job.file_id)
+    ).scalar_one_or_none()
+    if (
+        existing
+        and existing.status == "done"
+        and uf.content_hash
+        and existing.content_hash == uf.content_hash
+    ):
+        _enqueue_job(db, uf.user_id, job.file_id, "paper_analysis", job.upload_batch_id)
+        db.commit()
+        return
+
+    if existing is None:
+        existing = AnalysisPipelineResult(file_id=job.file_id, user_id=uf.user_id, status="running")
+        db.add(existing)
+    else:
+        existing.status = "running"
+        existing.error = ""
+    db.commit()
+
+    ext = os.path.splitext(uf.name.lower())[1]
+    try:
+        with server.storage.storage_manager.provider.local_copy(uf.path, suffix=ext) as local_path:
+            result = AnalysisPipelineService().analyze_file_path(
+                local_path,
+                file_id=job.file_id,
+                options=AnalysisOptions(),
+                document_id=str(job.file_id),
+            )
+        save_analysis_result(db, AnalysisPipelineResult, result, user_id=uf.user_id)
+        uf = db.get(UserFile, job.file_id)
+        if not uf:
+            raise RuntimeError(f"file {job.file_id} no longer exists")
+        fields = extract_bibliographic_fields(result.phase_results)
+        apply_metadata_to_user_file(uf, fields, only_empty=True)
+        if result.content_hash:
+            uf.content_hash = result.content_hash
+        if fields:
+            uf.meta_status = "done"
+        db.commit()
+        if result.status.value == "failed":
+            raise RuntimeError("; ".join(result.errors) or "phase1_analysis failed")
+        _enqueue_job(db, uf.user_id, job.file_id, "paper_analysis", job.upload_batch_id)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        row = db.execute(
+            select(AnalysisPipelineResult).where(AnalysisPipelineResult.file_id == job.file_id)
+        ).scalar_one_or_none()
+        if row:
+            row.status = "failed"
+            row.error = str(exc)[:500]
+            db.commit()
+        raise
+
+
 def _handle_extract_metadata(db, job):
-    """Root cause: kept the exact idempotency/field-validation semantics
-    server.py's _apply_metadata already had (content_hash short-circuit,
-    4-digit year regex, per-field length caps) — only the AI backend
-    changed, from responses_text()/Responses API to ModelRegistry/Chat
-    Completions. job lifecycle (status/attempts/retry) is entirely
-    run_job()'s job; this function's only contract is "do the work, or
-    raise" — no _start_upload_job/_finish_upload_job bookkeeping needed,
-    unlike the legacy thread-spawned callers _apply_metadata still serves."""
+    """DEPRECATED: prefer Phase 1.1 metadata via phase1_analysis.
+
+    Kept for in-flight legacy queue jobs. Idempotent if meta_status already done.
+    """
+    from backend.analysis_pipeline.deprecation import warn_legacy
+
+    warn_legacy("worker._handle_extract_metadata")
     uf = db.get(UserFile, job.file_id)
     if not uf:
         raise RuntimeError(f"file {job.file_id} no longer exists")
@@ -198,9 +272,10 @@ def _handle_extract_metadata(db, job):
 
 
 def _handle_paper_analysis(db, job):
-    """Same relationship to server.py's _run_paper_analysis as
-    _handle_extract_metadata has to _apply_metadata above — idempotency
-    and field-normalization behavior preserved, AI backend swapped."""
+    """LLM paper overview — consumes Phase 1 outputs when available."""
+    from backend.analysis_pipeline.persistence import load_analysis_result
+    from backend.analysis_pipeline.summary import build_phase1_prompt_context, classification_domain_hint
+
     uf = db.get(UserFile, job.file_id)
     if not uf:
         raise RuntimeError(f"file {job.file_id} no longer exists")
@@ -222,18 +297,52 @@ def _handle_paper_analysis(db, job):
     db.commit()
 
     try:
+        phase1 = load_analysis_result(db, AnalysisPipelineResult, job.file_id)
+        phase1_context = build_phase1_prompt_context(phase1.phase_results) if phase1 else ""
+        domain_hint = classification_domain_hint(phase1.phase_results if phase1 else None)
+
         prompt_registry = PromptRegistry(db)
         model_registry = ModelRegistry(db)
-        prompt, _prompt_version = prompt_registry.get_prompt(
-            "paper_analysis",
-            variables={"text": text[:ANALYSIS_MAX_CHARS], "max_chars": ANALYSIS_MAX_CHARS},
-        )
-        result = model_registry.call(
-            server.UTILITY_MODEL,
-            [{"role": "user", "content": prompt}],
-            user_id=uf.user_id,
-            response_format={"type": "json_object"},
-        )
+        # Prefer PromptBuilder when Phase 1 context exists so structured
+        # analysis is in the Retrieved Context section; fall back to registry.
+        if phase1_context:
+            builder = server.get_prompt_builder(db)
+            assembled = builder.build(
+                "Analyze this paper",
+                "paper_analysis",
+                project_id=uf.project_id,
+                user_id=uf.user_id,
+                rag_context=text[:ANALYSIS_MAX_CHARS],
+                domain=domain_hint,
+                metadata={
+                    "title": uf.title or "",
+                    "authors": uf.authors or "",
+                    "year": uf.year or "",
+                    "venue": uf.venue or "",
+                },
+                phase1_context=phase1_context,
+            )
+            prompt_text = assembled.final
+            response_format = PAPER_ANALYSIS_RESPONSE_FORMAT
+            if assembled.domain == "medical":
+                response_format = medical_response_format(assembled.document_type)
+            result = model_registry.call(
+                server.UTILITY_MODEL,
+                [{"role": "user", "content": prompt_text}],
+                user_id=uf.user_id,
+                response_format=response_format,
+            )
+        else:
+            prompt, _prompt_version = prompt_registry.get_prompt(
+                "paper_analysis",
+                variables={"text": text[:ANALYSIS_MAX_CHARS], "max_chars": ANALYSIS_MAX_CHARS},
+            )
+            result = model_registry.call(
+                server.UTILITY_MODEL,
+                [{"role": "user", "content": prompt}],
+                user_id=uf.user_id,
+                response_format=PAPER_ANALYSIS_RESPONSE_FORMAT,
+            )
         data = json.loads(result["content"])
 
         for field in ANALYSIS_ARRAY_FIELDS:
@@ -242,8 +351,8 @@ def _handle_paper_analysis(db, job):
                 data[field] = [v] if v else []
             elif not isinstance(v, list):
                 data[field] = []
-        if not isinstance(data.get("important_terms"), dict):
-            data["important_terms"] = {}
+        if not isinstance(data.get("important_terms"), list):
+            data["important_terms"] = []
 
         pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == job.file_id)).scalar_one_or_none()
         if pa is None:
@@ -267,6 +376,7 @@ def _handle_paper_analysis(db, job):
 HANDLERS = {
     "import": _handle_import,
     "extract_metadata": _handle_extract_metadata,
+    "phase1_analysis": _handle_phase1_analysis,
     "paper_analysis": _handle_paper_analysis,
 }
 
@@ -428,12 +538,13 @@ def _heartbeat():
 def main():
     _require_postgres()
     _ensure_prompts()
-    start_worker_metrics_server(METRICS_PORT)
+    start_worker_metrics_server(METRICS_PORT, addr=METRICS_BIND)
     log.info(
-        "worker starting — poll every %ss, batch size %s, max attempts %s, " "metrics on :%s",
+        "worker starting — poll every %ss, batch size %s, max attempts %s, " "metrics on %s:%s",
         POLL_INTERVAL_SECONDS,
         BATCH_SIZE,
         MAX_ATTEMPTS,
+        METRICS_BIND,
         METRICS_PORT,
     )
     while True:

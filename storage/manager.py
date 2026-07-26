@@ -43,9 +43,18 @@ def get_default_manager(local_dir: str, base_url: str) -> StorageManager:
             secret_key=os.environ.get("R2_SECRET_ACCESS_KEY", ""),
         )
     else:
+        explicit = (os.environ.get("FLASK_SECRET_KEY") or "").strip()
+        if not explicit and (
+            os.environ.get("FLASK_ENV", "").lower() == "production"
+            or os.environ.get("APP_ENV", "").lower() == "production"
+        ):
+            raise SystemExit(
+                "Production startup refused: FLASK_SECRET_KEY required for LocalProvider "
+                "signed URLs (refusing silent random generation)."
+            )
         provider = LocalProvider(
             root_dir=local_dir,
-            secret_key=os.environ.get("FLASK_SECRET_KEY") or os.urandom(32).hex(),
+            secret_key=explicit or os.urandom(32).hex(),
             base_url=base_url,
         )
     return StorageManager(provider)
