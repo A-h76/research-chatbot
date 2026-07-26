@@ -1,0 +1,9 @@
+# Explicit install so Railway/Nixpacks always pulls gunicorn from requirements.txt
+[phases.setup]
+nixPkgs = ["python311", "gcc"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "python -m gunicorn -w 2 -k gthread --threads 8 -b 0.0.0.0:$PORT server:app"
