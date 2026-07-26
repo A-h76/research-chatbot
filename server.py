@@ -7248,5 +7248,7 @@ def spa(path):
 
 
 if __name__ == "__main__":
-    print("Personal AI running -> http://localhost:5000")
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+    # Railway/Render/Fly set PORT; local default stays 5000.
+    port = int(os.environ.get("PORT", "5000"))
+    print(f"Personal AI running -> http://0.0.0.0:{port}")
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
