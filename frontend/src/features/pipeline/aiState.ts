@@ -179,21 +179,57 @@ function ladderActiveId(
 
 /**
  * Map pipeline derived → stepper node states (Paper Overview).
+ *
+ * Important: ``UserFile.meta_status === "done"`` only means upload/extract
+ * finished (RAG chat can work). It must NOT paint Understanding→Chat Ready
+ * as complete — those steps require Phase 1 ``document_understanding`` etc.
  */
 export function resolveAiStepper(
   derived: PipelineDerived | null | undefined,
   opts: { uploading?: boolean; metaStatus?: string | null } = {},
 ): AiStepperNode[] {
+  const hasPhase1 = Boolean(derived && !derived.isAbsent);
+
+  // Don't let upload meta_status shortcut the Phase 1 ladder on the stepper.
+  const stepperMeta = hasPhase1
+    ? opts.metaStatus
+    : opts.metaStatus === "done"
+      ? null
+      : opts.metaStatus;
+
   const headline = resolveAiState({
     derived: derived ?? null,
     uploading: opts.uploading,
-    metaStatus: opts.metaStatus,
+    metaStatus: stepperMeta,
   });
 
   const error = headline.id === "needs_attention";
   const activeId = opts.uploading ? "uploading" : ladderActiveId(headline, derived);
   const activeIdx = stageIndex(activeId);
-  const allComplete = headline.id === "chat_ready" && !error;
+
+  const pipelineFullyDone =
+    hasPhase1 &&
+    !error &&
+    (derived!.status === "done" ||
+      (Boolean(derived!.isReady) &&
+        derived!.remaining.length === 0 &&
+        has(derived!.completed, "knowledge_graph")));
+
+  // Upload finished, Phase 1 never run → next real step is Understanding.
+  if (!hasPhase1 && !opts.uploading && opts.metaStatus === "done") {
+    return AI_STEPPER_STAGES.map((id) => ({
+      id,
+      label: AI_STATE_LABELS[id],
+      state:
+        id === "uploading" || id === "queued"
+          ? "complete"
+          : id === "understanding"
+            ? "active"
+            : "pending",
+    }));
+  }
+
+  const allComplete = pipelineFullyDone;
 
   return AI_STEPPER_STAGES.map((id, idx) => {
     let state: AiStepperNodeState = "pending";

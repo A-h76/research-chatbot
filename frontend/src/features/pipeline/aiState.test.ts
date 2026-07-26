@@ -116,6 +116,16 @@ describe("resolveAiStepper", () => {
     expect(nodes.every((n) => n.state === "complete")).toBe(true);
   });
 
+  it("does not paint Phase 1 complete when only upload meta_status is done", () => {
+    const derived = adaptPipeline(null);
+    const nodes = resolveAiStepper(derived, { metaStatus: "done" });
+    expect(nodes.find((n) => n.id === "uploading")?.state).toBe("complete");
+    expect(nodes.find((n) => n.id === "queued")?.state).toBe("complete");
+    expect(nodes.find((n) => n.id === "understanding")?.state).toBe("active");
+    expect(nodes.find((n) => n.id === "chat_ready")?.state).toBe("pending");
+    expect(nodes.every((n) => n.state === "complete")).toBe(false);
+  });
+
   it("marks error on the active ladder step", () => {
     const derived: PipelineDerived = {
       ...adaptPipeline(
