@@ -147,7 +147,7 @@ export function MemorySection() {
     <div className="rounded-xl border border-border bg-muted/40 p-5 text-sm text-muted-foreground">
       <p className="font-medium text-foreground">Long-term memory</p>
       <p className="mt-1">
-        Personal AI selectively remembers durable facts about you. You can view, edit importance, and delete
+        Soro selectively remembers durable facts about you. You can view, edit importance, and delete
         memories on the Memory page.
       </p>
       <Button variant="outline" className="mt-3" onClick={() => navigate("/memory")}>

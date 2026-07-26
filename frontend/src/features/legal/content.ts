@@ -9,7 +9,7 @@ export interface LegalDoc {
 
 const UPDATED = "July 14, 2026";
 const CONTACT = "[support@your-domain.com]";
-const ENTITY = "Personal AI (“we”, “us”)";
+const ENTITY = "Soro (“we”, “us”)";
 
 export const LEGAL: Record<string, LegalDoc> = {
   privacy: {
@@ -124,15 +124,15 @@ Questions about cookies: ${CONTACT}.`,
 
   about: {
     slug: "about",
-    title: "About Personal AI",
+    title: "About Soro",
     updated: UPDATED,
-    body: `**Personal AI** is a private research and writing assistant.
+    body: `**Soro** is a private research and writing assistant.
 
 ## What it is
 A ChatGPT-style assistant built for focused research and thesis work — with your own documents, projects, and long-term memory.
 
 ## Why it exists
-General chatbots forget your context and can't read your sources. Personal AI keeps your projects, remembers durable facts you allow, and answers grounded in the files you upload.
+General chatbots forget your context and can't read your sources. Soro keeps your projects, remembers durable facts you allow, and answers grounded in the files you upload.
 
 ## Features
 - Streaming responses with a live, account-derived model list

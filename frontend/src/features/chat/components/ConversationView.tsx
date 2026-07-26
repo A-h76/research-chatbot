@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { ChevronLeft } from "lucide-react";
 import { MessageList, type LiveStream } from "./MessageList";
 import { Composer } from "./Composer";
 import { ChatTopControls } from "./ChatTopControls";
+import { ProjectInquiryRail } from "./ProjectInquiryRail";
 import { useConversation, useUpdateConversation } from "../hooks/useConversation";
 import { useChatStream } from "../hooks/useChatStream";
 import { useUI } from "@/context/UIContext";
@@ -12,6 +15,7 @@ import type { ChatSettings, PendingFile, SendPayload } from "../types";
 import type { Attachment, SearchMode } from "@/types/api";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 
+/** D6 T3 — demoted global / project inquiry conversation. */
 export function ConversationView({ conversationId }: { conversationId: number }) {
   const qc = useQueryClient();
   const { data: conv, isLoading } = useConversation(conversationId);
@@ -21,10 +25,11 @@ export function ConversationView({ conversationId }: { conversationId: number })
   const [searchMode, setSearchMode] = useState<SearchMode>(defaultSearchMode);
 
   const messages = conv?.messages ?? [];
+  const projectId = conv?.project_id ?? null;
+  const fileId = conv?.file_id ?? null;
 
   const buildAndSend = (payload: SendPayload) => stream.send(payload);
 
-  // Consume the first message queued by the welcome screen for this new chat.
   useEffect(() => {
     const item = chatOutbox.take(conversationId);
     if (item) {
@@ -104,11 +109,48 @@ export function ConversationView({ conversationId }: { conversationId: number })
         }
       : null;
 
+  const showProjectRail = projectId != null && fileId == null;
+
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
+      {fileId != null && (
+        <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-[13px]">
+          <Link
+            to={`/papers/${fileId}/chat/${conversationId}`}
+            className="inline-flex items-center gap-1 text-primary hover:underline"
+          >
+            Open paper chat
+          </Link>
+          <span className="text-muted-foreground">· evidence rail and workspace refs</span>
+        </div>
+      )}
+      {projectId != null && fileId == null && (
+        <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-[13px]">
+          <Link
+            to={`/projects/${projectId}`}
+            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+          >
+            <ChevronLeft className="size-3.5" /> Project
+          </Link>
+          <span className="text-muted-foreground">· project-scoped inquiry</span>
+        </div>
+      )}
       <ChatTopControls settings={settings} onSettingsChange={onSettingsChange} conversation={conv} />
-      <div className="min-h-0 flex-1">
-        <MessageList messages={messages} live={live} onRegenerate={onRegenerate} />
+      <div
+        className={
+          showProjectRail
+            ? "grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_17rem]"
+            : "min-h-0 flex-1"
+        }
+      >
+        <div className="min-h-0 min-w-0">
+          <MessageList messages={messages} live={live} onRegenerate={onRegenerate} />
+        </div>
+        {showProjectRail && (
+          <aside className="hidden min-h-0 min-w-0 overflow-hidden border-l border-border p-3 lg:block">
+            <ProjectInquiryRail projectId={projectId} />
+          </aside>
+        )}
       </div>
       <div className="px-4 pb-4">
         <Composer
@@ -121,7 +163,9 @@ export function ConversationView({ conversationId }: { conversationId: number })
           projectId={conv.project_id}
         />
         <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          Personal AI can make mistakes. Check important info.
+          {projectId
+            ? "Project-scoped answers · prefer Paper Chat for evidence links"
+            : "General inquiry · open a paper for evidence-grounded chat"}
         </p>
       </div>
     </div>

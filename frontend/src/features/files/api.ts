@@ -32,6 +32,18 @@ export interface DocumentAnalysisResult {
   status: string;
   model: string;
   analysis: PaperAnalysis["data"];
+  domain_detected: string;
+}
+
+// Optional body for POST /api/documents/<id>/analysis — see
+// backend/upload/routes.py's analyze_document docstring for the exact
+// contract (domain must be a real domain_registry key or omitted/null;
+// metadata keys are individually optional; user_query blank -> server
+// defaults it to "Analyze this paper").
+export interface AnalyzeDocumentBody {
+  domain?: string | null;
+  metadata?: { title?: string; authors?: string; venue?: string; year?: string };
+  user_query?: string;
 }
 
 // POST /api/uploads/bulk (backend/upload/bulk.py) — same allowlist as
@@ -212,8 +224,8 @@ export const filesApi = {
   // JWT-authenticated, synchronous counterpart to refreshAnalysis above —
   // writes to the same PaperAnalysis row (keyed by file id) via a separate
   // prompt/model/cost-logging path, see backend/upload/routes.py.
-  analyzeDocument: async (id: number): Promise<DocumentAnalysisResult> => {
+  analyzeDocument: async (id: number, body?: AnalyzeDocumentBody): Promise<DocumentAnalysisResult> => {
     const token = await getBearerToken();
-    return api.post<DocumentAnalysisResult>(`/api/documents/${id}/analysis`, undefined, token);
+    return api.post<DocumentAnalysisResult>(`/api/documents/${id}/analysis`, body, token);
   },
 };

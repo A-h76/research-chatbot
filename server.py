@@ -282,14 +282,21 @@ def _rate_limit_exceeded(e):
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
-# `npm run dev` (Vite, localhost:5173) proxies /api/* to this process but the
-# browser's own Origin header on state-changing requests reflects Vite's
-# origin, not this one — request.host/APP_BASE_URL are always localhost:5000.
-# Without this, every POST/PUT/PATCH/DELETE from the SPA in local dev 403s.
-# Gated on DEV_AUTO_LOGIN (already this codebase's "local dev, not
-# production" signal) so production — where Flask serves the built frontend
-# itself, genuinely same-origin — never widens this check.
-DEV_FRONTEND_ORIGINS = {"localhost:5173", "127.0.0.1:5173"} if DEV_AUTO_LOGIN else set()
+# `npm run dev` (Vite) proxies /api/* to this process but the browser's own
+# Origin header on state-changing requests reflects Vite's origin, not this
+# one — request.host/APP_BASE_URL are always localhost:5000. Without this,
+# every POST/PUT/PATCH/DELETE from the SPA in local dev 403s.
+# Vite falls back to 5174, 5175, … when 5173 is already taken, so allow a
+# small localhost port range. Gated on non-production so prod (Flask serves
+# the built frontend, genuinely same-origin) never widens this check.
+# Note: do not gate only on DEV_AUTO_LOGIN — local Vite + Google/session
+# login is a common setup with DEV_AUTO_LOGIN unset.
+_DEV_VITE_PORTS = range(5173, 5183)
+DEV_FRONTEND_ORIGINS = (
+    {f"localhost:{p}" for p in _DEV_VITE_PORTS} | {f"127.0.0.1:{p}" for p in _DEV_VITE_PORTS}
+    if not IS_PRODUCTION
+    else set()
+)
 
 
 @app.before_request
@@ -2459,41 +2466,29 @@ def generate_title(first_user_msg, first_reply):
         return None
 
 
-def build_paper_chat_prompt(user, paper):
+def build_paper_chat_prompt(user, paper, now=None):
     """Focused system prompt for Paper Chat (M7).
 
-    The AI is restricted to the single uploaded paper — it must not fabricate,
-    must cite by page/section, and must say so when the answer is not present.
+    Canonical text lives in ``backend.ai_core.prompts.legacy_paper_chat``
+    (``LEGACY_PAPER_CHAT_PROMPT_VERSION``). Stage 1 pipeline path resolves the
+    same string via ``PromptRouter.route_legacy_paper_chat``.
     """
-    paper_title = paper.title or paper.name
-    header = (
-        "You are an expert research assistant helping a researcher understand "
-        "the paper titled: " + repr(paper_title) + "."
+    from backend.ai_core.prompts.legacy_paper_chat import render_legacy_paper_chat_prompt
+
+    return render_legacy_paper_chat_prompt(
+        user_name=user.name,
+        paper_title=paper.title or paper.name,
+        authors=paper.authors,
+        year=paper.year,
+        venue=paper.venue,
+        now=now,
     )
-    body = (
-        "Answer questions, explain concepts, and clarify content from THIS PAPER ONLY.\n\n"
-        "Rules:\n"
-        "1. Answer ONLY using content from the retrieved excerpts of this paper.\n"
-        "2. Never fabricate data, citations, numbers, or conclusions.\n"
-        "3. When citing, specify page and section where available: "
-        "e.g. 'According to p. 4, Section: Methodology...'.\n"
-        "4. If the answer is not in the excerpts, say: "
-        "'I cannot find that in this paper. Try rephrasing your question or "
-        "specifying a section.'\n"
-        "5. Do not use web search or external knowledge.\n"
-        "6. Use markdown for clarity."
-    )
-    meta = [
-        f"User: {user.name}",
-        f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-    ]
-    if paper.authors:
-        meta.append(f"Authors: {paper.authors}")
-    if paper.year:
-        meta.append(f"Year: {paper.year}")
-    if paper.venue:
-        meta.append(f"Venue: {paper.venue}")
-    return header + "\n\n" + body + "\n\n" + "\n".join(meta)
+
+
+def _paper_chat_pipeline_mode():
+    from backend.ai_core.paper_chat import paper_chat_pipeline_mode
+
+    return paper_chat_pipeline_mode()
 
 
 # Static opening sentence only — everything else build_system_prompt()
@@ -4005,11 +4000,18 @@ def dashboard():
             key=lambda x: -x["count"],
         )[:5]
 
+        analysed = sum(1 for f in docs if (f.meta_status or "") == "done")
+        processing = sum(
+            1 for f in docs if (f.meta_status or "") in ("pending", "running")
+        )
+
         library = {
             "total_papers": len(docs),
             "unread": rs_cnt["unread"],
             "reading": rs_cnt["reading"],
             "read": rs_cnt["read"],
+            "analysed": analysed,
+            "processing": processing,
             "top_tags": top_tags,
         }
 
@@ -5806,13 +5808,37 @@ def chat():
         temperature = convo.temperature
         reasoning_effort = convo.reasoning_effort
         paper_file_id = convo.file_id  # M7: paper chat scope (may be None)
+        paper_plan = None
+        paper_pipeline_mode = "false"
 
         # M7: if this is a paper chat, use a focused system prompt and
         # hard-scope retrieval to the single paper.
+        # Stage 1: optional ai_core pipeline (PAPER_CHAT_PIPELINE_ENABLED).
+        # Soak-safe: any plan failure falls back to legacy so shadow/true
+        # never take Paper Chat down.
         if paper_file_id:
             paper = db.get(UserFile, paper_file_id)
             if paper and paper.user_id == user_id:
-                system_prompt = build_paper_chat_prompt(user, paper)
+                try:
+                    from backend.ai_core.paper_chat import resolve_paper_chat_system_prompt
+
+                    system_prompt, paper_plan, paper_pipeline_mode = resolve_paper_chat_system_prompt(
+                        user_name=user.name,
+                        paper_title=paper.title or paper.name,
+                        authors=paper.authors,
+                        year=paper.year,
+                        venue=paper.venue,
+                        file_id=paper_file_id,
+                        project_id=convo.project_id,
+                        question=(user_message or "")[:500] or None,
+                    )
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "paper_chat_stage1_plan_failed; falling back to legacy"
+                    )
+                    system_prompt = build_paper_chat_prompt(user, paper)
+                    paper_plan = None
+                    paper_pipeline_mode = "false"
             else:
                 paper_file_id = None  # safety: invalid file, fall back
                 system_prompt = build_system_prompt(user, project, memory_enabled)
@@ -5825,10 +5851,20 @@ def chat():
     finally:
         db.close()
 
+    # Stage 1 executor — only used when pipeline mode is ``true`` for paper chat.
+    paper_executor = None
+    if paper_plan is not None and paper_pipeline_mode == "true":
+        from backend.ai_core.orchestration import AIExecutor, OpenAIResponsesStreamClient
+
+        paper_executor = AIExecutor(
+            stream_client=OpenAIResponsesStreamClient(client),
+            default_model=model,
+        )
     def generate():
         input_items = list(history)
         sources = []
         full_text = ""
+        stage1_started = time.perf_counter() if paper_executor is not None else None
         try:
             last_query = user_message or (history[-1]["content"] if history else "")
 
@@ -5970,24 +6006,50 @@ def chat():
                     kwargs["temperature"] = temperature
                 if reasoning_effort and supports_reasoning_effort(model):
                     kwargs["reasoning"] = {"effort": reasoning_effort}
-                stream = client.responses.create(**kwargs)
 
                 final = None
-                for event in stream:
-                    et = getattr(event, "type", "")
-                    if et == "response.output_text.delta":
-                        full_text += event.delta
-                        yield sse("delta", {"text": event.delta})
-                    elif et == "response.completed":
-                        final = event.response
-                    elif et == "response.failed":
-                        raise RuntimeError(
-                            getattr(
-                                getattr(event.response, "error", None),
-                                "message",
-                                "response failed",
+                # Stage 1 (flag true): model invocation via AIExecutor — no
+                # direct responses.create on this path.
+                if paper_executor is not None and paper_plan is not None:
+                    stream_kwargs = {}
+                    if temperature is not None and supports_temperature(model):
+                        stream_kwargs["temperature"] = temperature
+                    reasoning = None
+                    if reasoning_effort and supports_reasoning_effort(model):
+                        reasoning = {"effort": reasoning_effort}
+                    for event in paper_executor.stream_round(
+                        paper_plan,
+                        input_items=input_items,
+                        tools=tools,
+                        model=model,
+                        reasoning=reasoning,
+                        **stream_kwargs,
+                    ):
+                        et = event.type
+                        if et == "response.output_text.delta":
+                            full_text += event.delta
+                            yield sse("delta", {"text": event.delta})
+                        elif et == "response.completed":
+                            final = event.response
+                        elif et == "response.failed":
+                            raise RuntimeError(event.error_message or "response failed")
+                else:
+                    stream = client.responses.create(**kwargs)
+                    for event in stream:
+                        et = getattr(event, "type", "")
+                        if et == "response.output_text.delta":
+                            full_text += event.delta
+                            yield sse("delta", {"text": event.delta})
+                        elif et == "response.completed":
+                            final = event.response
+                        elif et == "response.failed":
+                            raise RuntimeError(
+                                getattr(
+                                    getattr(event.response, "error", None),
+                                    "message",
+                                    "response failed",
+                                )
                             )
-                        )
 
                 _log_chat_cost(user_id, model, getattr(final, "usage", None))
 
@@ -6023,6 +6085,33 @@ def chat():
                         )
                     continue
                 break
+
+            if paper_executor is not None and paper_plan is not None:
+                from backend.ai_core.paper_chat import log_stage1_execution
+                from backend.ai_core.schemas.execution import TokenUsage
+
+                usage_obj = getattr(final, "usage", None) if final else None
+                usage_dict = None
+                if usage_obj is not None:
+                    usage_dict = {
+                        "input_tokens": getattr(usage_obj, "input_tokens", None),
+                        "output_tokens": getattr(usage_obj, "output_tokens", None),
+                        "total_tokens": getattr(usage_obj, "total_tokens", None),
+                        "prompt_tokens": getattr(usage_obj, "prompt_tokens", None),
+                        "completion_tokens": getattr(usage_obj, "completion_tokens", None),
+                    }
+                latency_ms = (
+                    int((time.perf_counter() - stage1_started) * 1000) if stage1_started is not None else 0
+                )
+                exec_result = paper_executor.observe_answer(
+                    paper_plan,
+                    full_text,
+                    model=model,
+                    usage=TokenUsage.from_openai(usage_dict),
+                    latency_ms=latency_ms,
+                    rag_excerpt_count=len(excerpts) if excerpts else 0,
+                )
+                log_stage1_execution(exec_result)
 
             new_title = None
             dbi = SessionLocal()

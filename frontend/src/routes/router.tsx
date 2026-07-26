@@ -1,10 +1,11 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { RootLayout }               from "./RootLayout";
+import { RedirectPreserveSearch }   from "./RedirectPreserveSearch";
+import { RouteErrorFallback }       from "@/components/common/RouteErrorFallback";
 import { ChatPage }                 from "@/features/chat/pages/ChatPage";
 import { ProjectsPage }             from "@/features/projects/pages/ProjectsPage";
 import { ProjectDetailPage }        from "@/features/projects/pages/ProjectDetailPage";
 import { FilesPage }                from "@/features/files/pages/FilesPage";
-import { FileDetailPage }           from "@/features/files/pages/FileDetailPage";
 import { CitationsPage }            from "@/features/citations/pages/CitationsPage";
 import { MemoryPage }               from "@/features/memory/pages/MemoryPage";
 import { NotesPage }                from "@/features/notes/pages/NotesPage";
@@ -19,26 +20,30 @@ import { SearchPage }               from "@/features/search/pages/SearchPage";
 import { WritingPage }              from "@/features/writing/pages/WritingPage";
 
 export const router = createBrowserRouter([
-  { path: "/privacy",  element: <LegalPage slug="privacy" /> },
-  { path: "/terms",    element: <LegalPage slug="terms" /> },
-  { path: "/cookies",  element: <LegalPage slug="cookies" /> },
-  { path: "/about",    element: <LegalPage slug="about" /> },
-  { path: "/support",  element: <SupportPage /> },
+  { path: "/privacy",  element: <LegalPage slug="privacy" />, errorElement: <RouteErrorFallback /> },
+  { path: "/terms",    element: <LegalPage slug="terms" />, errorElement: <RouteErrorFallback /> },
+  { path: "/cookies",  element: <LegalPage slug="cookies" />, errorElement: <RouteErrorFallback /> },
+  { path: "/about",    element: <LegalPage slug="about" />, errorElement: <RouteErrorFallback /> },
+  { path: "/support",  element: <SupportPage />, errorElement: <RouteErrorFallback /> },
   {
     path: "/",
     element: <RootLayout />,
+    errorElement: <RouteErrorFallback />,
     children: [
       { index: true,                                   element: <DashboardPage /> },
       { path: "chat",                                  element: <ChatPage /> },
       { path: "c/:conversationId",                     element: <ChatPage /> },
       { path: "projects",                              element: <ProjectsPage /> },
       { path: "projects/:projectId",                   element: <ProjectDetailPage /> },
-      { path: "files",                                 element: <FilesPage /> },
-      { path: "files/:fileId",                         element: <FileDetailPage /> },
+      // Library — canonical /library; /files kept as alias
+      { path: "library",                               element: <FilesPage /> },
+      { path: "files",                                 element: <RedirectPreserveSearch to="/library" /> },
       { path: "papers/:fileId",                        element: <PaperOverviewPage /> },
       { path: "papers/:fileId/chat",                   element: <PaperChatPage /> },
       { path: "papers/:fileId/chat/:conversationId",   element: <PaperChatPage /> },
-      { path: "analysis/compare",                      element: <MultiPaperAnalysisPage /> },
+      // Compare — canonical /research/compare; /analysis/compare kept as alias
+      { path: "research/compare",                      element: <MultiPaperAnalysisPage /> },
+      { path: "analysis/compare",                      element: <RedirectPreserveSearch to="/research/compare" /> },
       { path: "citations",                             element: <CitationsPage /> },
       { path: "notes",                                 element: <NotesPage /> },
       { path: "memory",                                element: <MemoryPage /> },

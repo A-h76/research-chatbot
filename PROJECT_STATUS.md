@@ -3,10 +3,10 @@
 **Document type:** Engineering architecture audit (source of truth for development)  
 **Audience:** Staff / senior engineers taking ownership of this codebase  
 **Audit date:** 2026-07-26  
-**Last updated:** 2026-07-26 (Phase 1.1–1.7 complete; Phase 2 integration wired)  
+**Last updated:** 2026-07-26 (Phase 1 UI + Design System D1–D9 shipped in SPA; backend Phase 1.1–1.7 + Phase 2 unchanged)  
 **Method:** Codebase inspection — features described as Implemented must exist in code; planned-only design docs are called out explicitly  
 
-**Branding note (inconsistency):** The product is referred to as **Personal AI** (README, login copy, many UI strings), **Soro** (`frontend/index.html`, sidebar), **Research Workspace** (`templates/login.html`), and **ResearchOS** (CI workflow name, `brain.md`, systemd units). These are the same application, not forks.
+**Branding note (inconsistency):** The product is referred to as **Personal AI** (README, login copy, many UI strings), **Soro** (`frontend/index.html`, sidebar, Design System v2), **Research Workspace** (`templates/login.html`), and **ResearchOS** (CI workflow name, `brain.md`, systemd units). These are the same application, not forks. SPA chrome now brands primarily as **Soro**; login/legal templates may still say Personal AI.
 
 ---
 
@@ -14,13 +14,15 @@
 
 ## Current maturity
 
-**Late prototype → early beta (research pipeline now live on the upload path).**
+**Early beta (research pipeline live on upload; Paper Workspace + Design System v2 chrome in SPA).**
 
-The core product loop works: authenticated users can chat (streaming), upload documents, run async import → embed → **Phase 1 structured analysis** → LLM paper overview, manage projects/notes/citations/memory, search locally, and use multi-paper compare/gaps tooling. Observability (Prometheus + JSON logs), quotas, dual auth (session + JWT), and a Prompt Engine exist for parts of the AI surface.
+The core product loop works: authenticated users can chat (streaming), upload documents, run async import → embed → **Phase 1 structured analysis** → LLM paper overview, inspect Phase 1 outputs in the Paper Workspace (Structure / Classification / Entities / Evidence / Graph), manage projects/notes/citations/memory, search locally, and use multi-paper compare/gaps tooling. Observability (Prometheus + JSON logs), quotas, dual auth (session + JWT), and a Prompt Engine exist for parts of the AI surface.
 
-**Phase 1 (1.1–1.7)** research engines are implemented, tested, and integrated via `AnalysisPipelineService` (Phase 2). Uploads enqueue `phase1_analysis`; results persist in `analysis_pipeline_results`; PromptBuilder/worker paper analysis consume Phase 1 JSON when present.
+**Phase 1 (1.1–1.7)** research engines are implemented, tested, and integrated via `AnalysisPipelineService` (Phase 2). Uploads enqueue `phase1_analysis`; results persist in `analysis_pipeline_results`; PromptBuilder/worker paper analysis consume Phase 1 JSON when present. The SPA consumes `/pipeline` + `/phases/*` via `features/pipeline` + paper tab mappers.
 
-It is **not** production-hardened for a public multi-tenant SaaS launch: missing security headers/CSP, no virus/MIME sniffing, no session TTL, unauthenticated `/metrics`, incomplete chat quota/rate limits, dual parallel stacks (chat vs Prompt Engine; two storage facades; two upload APIs). Chat still uses the legacy prompt path (not PromptBuilder).
+**Design System v2 (D0 → D9)** is implemented in the live React app: tokens, slim sidebar (Home · Library · Projects · Writing; Ask Soro under More), Home launchpad, `PipelineStatus`, densified Library + CollectionToolbar, demoted global Chat, T4 Writing/Compare/Citations, ⌘K command palette v1, ErrorBoundary + session-expired modal + a11y skip link. Specs: `docs/DESIGN-SYSTEM-v2.md`, `docs/Interaction-Guidelines.md`.
+
+It is **not** production-hardened for a public multi-tenant SaaS launch: incomplete chat quota coverage in places, dual parallel stacks (chat vs Prompt Engine; two storage facades; two upload APIs), branding split on login templates. Chat still uses mixed prompt paths (normal chat PromptBuilder; paper chat legacy). Several production-hardening PRs (headers, MIME, metrics auth, chat rate limit) are marked done in §17 — verify deploy config before treating as live.
 
 ## Current version
 
@@ -75,14 +77,16 @@ Private / personal **research & thesis writing assistant**: ChatGPT-style chat g
 
 ## What the application currently does
 
-1. Authenticate via Google OAuth, magic link, or local DEV auto-login  
-2. Stream chat replies (OpenAI Responses API) with optional web search + save_citation tools  
-3. Upload documents/images; queue **import → chunk/embed → Phase 1.1–1.7 → LLM paper analysis**  
+1. Authenticate via Google OAuth, magic link, or local DEV auto-login; SPA shows **Session expired** modal on 401 (no silent dump)  
+2. Stream chat replies (OpenAI Responses API) with optional web search + save_citation tools; global Ask Soro demoted under sidebar More / ⌘K  
+3. Upload documents/images from **Library** (toolbar + zone) or chat; queue **import → chunk/embed → Phase 1.1–1.7 → LLM paper analysis**  
 4. Persist Phase 1 outputs (`analysis_pipeline_results`); expose `/api/documents/<id>/analyze|pipeline|phases/*`  
-5. RAG over user chunks (in-Python cosine similarity) in chat and via JWT `/api/rag`  
-6. Manage projects, files/library, paper pages, notes, citations (BibTeX export), memories  
-7. Dashboard, corpus search, writing transforms, compare/gaps analysis, settings, support tickets, legal pages  
-8. Admin-gated prompt authoring + usage analytics APIs (session `is_admin`)  
+5. **Paper Workspace** tabs: Overview · Structure · Classification · Entities · Evidence · Graph · Narrative · Chat — pipeline AI-state chrome  
+6. RAG over user chunks (in-Python cosine similarity) in chat and via JWT `/api/rag`  
+7. Manage projects, files/library, notes, citations (table + BibTeX export), memories  
+8. Dashboard (research launchpad), corpus search, writing transforms, compare/gaps, settings, support tickets, legal pages  
+9. ⌘K command palette (find papers/projects/chats + core commands)  
+10. Admin-gated prompt authoring + usage analytics APIs (session `is_admin`)  
 
 ---
 
@@ -99,7 +103,7 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | Area | Detail |
 |------|--------|
 | Backend | `server.py` (OAuth, session, `/api/me`, account delete); `auth/jwt_utils.py`, `auth/decorators.py`, `auth/magic_link.py`, `auth/context.py` |
-| Frontend | No React login page — `/login` is Flask `templates/login.html`; `useMe`, logout redirect, JWT bridge in `frontend/src/lib/apiClient.ts` |
+| Frontend | No React login page — `/login` is Flask `templates/login.html`; `useMe`, logout redirect, JWT bridge in `frontend/src/lib/apiClient.ts`; **D9** `SessionExpiredModal` on `soro:session-expired` (401) |
 | Endpoints | `GET /login`, `GET /auth/google`, `GET /auth/callback`, `GET /logout`, `POST /api/dev-login`, `POST /auth/magic-link`, `POST /auth/magic-link/verify`, `GET /api/auth/jwt`, `POST /api/auth/token`, `GET /api/me`, `PATCH /api/profile`, `DELETE /api/account` |
 | Database | `users` (`auth_provider`, quotas, `is_admin`) |
 | Dependencies | Authlib, Flask-JWT-Extended, itsdangerous (magic link), Resend (email) |
@@ -114,11 +118,11 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | Area | Detail |
 |------|--------|
 | Backend | `server.py` `POST /api/chat` — Responses API streaming, tools, RAG inject, memory |
-| Frontend | `features/chat/` — `useChatStream`, Composer, MessageList, model/temp/reasoning controls, voice input, memory toggle |
+| Frontend | `features/chat/` — `useChatStream`, Composer, MessageList, model/temp/reasoning controls, voice input, memory toggle; global entry demoted to **Ask Soro** (sidebar More + ⌘K); Paper/Project inquiry chrome (D6) |
 | Endpoints | `POST /api/chat`; conversation CRUD under `/api/conversations` |
 | Database | `conversations`, `messages` |
 | Dependencies | OpenAI; ddgs (web search tool) |
-| Known issues | PromptBuilder for normal chat (`build_chat_instructions`); paper chat still `build_paper_chat_prompt`; **no** route-level rate limit; **no** monthly token quota on chat; share button copies URL only |
+| Known issues | PromptBuilder for normal chat; Paper Chat Stage 1 pipeline behind `PAPER_CHAT_PIPELINE_ENABLED` (default OFF); share button copies URL only; confirm chat rate/token limits enabled on deploy (§17) |
 
 ---
 
@@ -129,17 +133,17 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | Area | Detail |
 |------|--------|
 | Backend | `POST/GET/PATCH/DELETE /api/files*`, library tags/stats; JWT `POST /api/documents/upload`; bulk `POST /api/uploads/bulk` |
-| Frontend | `features/files/` — FilesPage, bulk progress; dual upload paths in `api.ts` |
+| Frontend | `features/files/` — dense Library (D5), `CollectionToolbar`, `LibraryUploadZone` / queue, dual upload paths in `api.ts` |
 | Endpoints | See §6 |
 | Database | `files`, `chunks`, `upload_jobs`, `upload_batches`, `storage_usage`, `upload_sessions` |
 | Dependencies | `storage/` + `backend/storage/`, `imports/`, worker |
-| Known issues | Two upload APIs with different allowlists/size limits; session path accepts any extension; no magic-byte MIME check; `FilePreviewDialog.tsx` dead |
+| Known issues | Two upload APIs with different allowlists/size limits historically; `FilePreviewDialog.tsx` still dead |
 
 ---
 
 ### Paper Analysis / Research Pipeline
 
-**Status:** Implemented (Phase 1 structured + LLM overview; UI still primarily LLM `PaperAnalysis`)
+**Status:** Implemented (Phase 1 structured + LLM overview; **SPA Paper Workspace surfaces Phase 1**)
 
 | Area | Detail |
 |------|--------|
@@ -147,9 +151,9 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | Backend live — LLM | Worker `paper_analysis` (consumes Phase 1 via `phase1_context`); sync `POST /api/documents/<id>/analysis` (PromptBuilder + Phase 1 when cached); `GET/POST /api/files/<id>/analysis*` |
 | Phase 1 packages (black boxes) | `document_understanding` (1.1), `classification/pass2` (1.2), `analysis_context` (1.3), `medical_understanding` (1.4), `evidence_grading` (1.5), `prompt_assembly` (1.6), `knowledge_graph` (1.7) |
 | APIs | `POST /api/documents/<id>/analyze`, `GET …/pipeline`, `GET …/phases/<phase>`; plus existing analysis/compare/gaps |
-| Frontend | `PaperOverviewPage`, analysis components, `MultiPaperAnalysisPage` (compare/gaps) — **not yet** surfacing full Phase 1 JSON UI |
+| Frontend | `features/pipeline/` (hooks, AI-state, `PipelineStatusPanel`); Paper Workspace tabs + mappers for DU / classification / entities / evidence / graph; Narrative = LLM overview; Chat = paper-scoped |
 | Database | `paper_analyses`, `derived_analyses`, **`analysis_pipeline_results`** (migration 0017) |
-| Known issues | Confirm-upload / thread legacy paths still exist (deprecated warnings); chat does not consume Phase 1; frontend Phase 1 views missing; lazy migration for old files |
+| Known issues | Confirm-upload / thread legacy paths still exist (deprecated warnings); chat does not consume Phase 1 structured JSON; lazy migration for old files; some tabs still deepen UX polish |
 
 ---
 
@@ -213,7 +217,7 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 
 ### Prompt Engine
 
-**Status:** Partial (wired for RAG + sync/worker paper analysis + admin; not chat)
+**Status:** Partial (wired for RAG + sync/worker paper analysis + normal chat + admin; **paper chat** still legacy)
 
 | Area | Detail |
 |------|--------|
@@ -222,7 +226,7 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | Database | `prompt_versions`, `personas`, `prompt_executions`, `model_registry_cost_ledger`, `model_presets` |
 | Phase 2 | `PromptBuilder.build(..., phase1_context=)` injects Phase 1 summary; worker + sync analysis use it when cached |
 | Distinct from | `backend/prompt_assembly` (Phase 1.6 research AssembledPrompt) — different type/purpose |
-| Known issues | Chat normal path uses PromptBuilder; paper chat still legacy; DomainRegistry parallel to Phase 1.2; dual cost ledgers; domain modules mostly stubs (medical + ai_ml real) |
+| Known issues | Chat normal path uses PromptBuilder; Paper Chat Stage 1 flagged (`PAPER_CHAT_PIPELINE_ENABLED`); DomainRegistry parallel to Phase 1.2; dual cost ledgers; domain modules mostly stubs (medical + ai_ml real) |
 
 ---
 
@@ -233,39 +237,53 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | Area | Detail |
 |------|--------|
 | Backend | CRUD, from-paper, BibTeX export; chat tool `save_citation` |
-| Frontend | CitationsPage, CitationFormDialog |
+| Frontend | CitationsPage + dense `CitationTable` (D7 T4); CitationFormDialog; Library/Writing toolbar entry |
 | Database | `citations` |
-| Known issues | Seeded `citation_generation` prompt **not** called from any live path; `CitationTable.tsx` dead |
+| Known issues | Seeded `citation_generation` prompt **not** called from any live path |
 
 ---
 
 ### Notes
 
-**Status:** Implemented — `/api/notes`, `features/notes/`
+**Status:** Implemented — `/api/notes`, `features/notes/`; also reachable via ⌘K / toolbars
 
 ---
 
 ### Dashboard
 
-**Status:** Implemented — `GET /api/dashboard`, `features/dashboard/`
+**Status:** Implemented — `GET /api/dashboard`, Home launchpad (D2): Today’s Focus, library analysed/processing counts, open workspace CTA
 
 ---
 
 ### Web search (in chat)
 
-**Status:** Implemented — `ddgs` tool in chat Responses API loop (`server.py`)
+**Status:** Implemented — `ddgs` tool in chat Responses API loop (`server.py`); disabled in paper-scoped chat
 
 ---
 
 ### Writing assistant
 
-**Status:** Implemented — `POST /api/writing`, `features/writing/`; page uses raw `fetch` instead of shared `writingApi.transform`
+**Status:** Implemented — `POST /api/writing`, `features/writing/`; D7 T4 Draft/Export chrome; page still uses raw `fetch` in places vs shared `writingApi.transform`
 
 ---
 
 ### Multi-paper compare & gap analysis
 
-**Status:** Implemented — rate-limited; cached in `derived_analyses`
+**Status:** Implemented — rate-limited; cached in `derived_analyses`; D7 T4 tool UI; Library CollectionToolbar + Project + ⌘K entry
+
+---
+
+### Shell / Design System (SPA)
+
+**Status:** Implemented (D1–D9)
+
+| Area | Detail |
+|------|--------|
+| Tokens | Teal signal primary; denser spacing/type (`frontend/src/index.css`) |
+| Shell | Slim sidebar, `ObjectHeader`, sticky paper tabs, ⌘K `CommandPalette`, skip link + `<main>` |
+| Tools | CollectionToolbar (Compare / Citations / Writing / Filters / Upload) |
+| Trust | `ErrorBoundary`, route `errorElement`, `SessionExpiredModal` |
+| Specs | `docs/DESIGN-SYSTEM-v2.md`, `docs/Interaction-Guidelines.md`, `docs/prototypes/d0.5/` |
 
 ---
 
@@ -330,8 +348,8 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | **Authentication** | Identity | Google OAuth, magic link, DEV login, session, JWT mint/refresh | Authlib, JWT-Extended, Resend | **Implemented** |
 | **Projects** | Workspace scoping | CRUD, instructions, filter chats/files | `projects` table | **Implemented** |
 | **Knowledge Library** | Document store | Upload, list, tags, stats, ownership | storage, worker, files | **Implemented** |
-| **Paper Analysis** | Per-paper LLM summary + Phase 1 structured pipeline | Worker phase1→paper_analysis, HTTP analysis, AnalysisPipelineService | OpenAI, prompts, Phase 1 engines | **Implemented** (UI still LLM-centric) |
-| **Prompt Engine** | Versioned prompts / personas / assembly | Registry, builder, seed, analytics, admin API; `phase1_context` | Jinja2 sandbox, DB | **Partial** (not on chat) |
+| **Paper Analysis** | Per-paper LLM summary + Phase 1 structured pipeline | Worker phase1→paper_analysis, HTTP analysis, AnalysisPipelineService; SPA Paper Workspace tabs | OpenAI, prompts, Phase 1 engines | **Implemented** |
+| **Prompt Engine** | Versioned prompts / personas / assembly | Registry, builder, seed, analytics, admin API; `phase1_context` | Jinja2 sandbox, DB | **Partial** (Paper Chat Stage 1 flagged OFF by default) |
 | **RAG** | Retrieval + optional answer | Chunk embeddings, cosine, `/api/rag` | OpenAI embed | **Implemented** (simple) |
 | **Memory** | Durable user facts | Chat write + Memory page + MemoryEngine | `memories` | **Implemented** |
 | **Citation Manager** | Bibliography | CRUD, export, tool | `citations` | **Implemented** |
@@ -343,12 +361,14 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | **Notifications** | User alerts | — | — | **Not Implemented** |
 | **Settings** | Preferences | Theme, models, data controls, privacy | profile/export APIs | **Implemented** |
 | **Admin** | Ops control | Prompt CRUD, usage | `is_admin` | **Partial** (API only) |
-| **Explain / explainability UI** | Model decision UI | — | — | **Not Implemented** as a product feature |
-| **Document Understanding** | Structured PDF parse | `DocumentUnderstandingPipeline` | pymupdf, etc. | **Library + tests only** |
-| **Classification pass1/pass2** | Domain/type/study design | Rule/LLM-ish pipelines | processing / DU models | **Library + tests only** |
-| **Medical Understanding** | PICO / entities | Extractors, registry, security guards | — | **Library + tests only** |
-| **Evidence Grading** | GRADE/Oxford/NIH/SIGN | Assessments + aggregators | — | **Library + tests only** |
-| **Analysis Context** | Routing/prompt profiles | Profiles pipeline | classification outputs | **Library + tests only** |
+| **Explain / explainability UI** | Model decision UI | Paper Evidence / Classification / Entities / Graph tabs + chat confidence chips | Phase 1 APIs + mappers | **Partial** (structured inspect yes; no global tool-call inspector) |
+| **Document Understanding** | Structured PDF parse | `DocumentUnderstandingPipeline` + SPA Structure tab | pymupdf, etc. | **Implemented** (engine + UI) |
+| **Classification pass1/pass2** | Domain/type/study design | Rule/LLM-ish pipelines + SPA Classification tab | processing / DU models | **Implemented** (engine + UI; pass2 primary) |
+| **Medical Understanding** | PICO / entities | Extractors, registry + SPA Entities tab | — | **Implemented** (engine + UI; routing-gated) |
+| **Evidence Grading** | GRADE/Oxford/NIH/SIGN | Assessments + aggregators + SPA Evidence tab | — | **Implemented** (engine + UI; routing-gated) |
+| **Analysis Context** | Routing/prompt profiles | Profiles pipeline + classification context UI | classification outputs | **Implemented** (engine + partial UI) |
+| **Knowledge Graph** | Entity-relation graph | Pipeline + SPA Graph tab (read-only) | — | **Implemented** (in-memory JSON; no graph DB) |
+| **Design System / Shell** | Research OS chrome | D1–D9 tokens, sidebar, palette, a11y, session modal | React SPA | **Implemented** |
 | **Processing (legacy)** | Older PDF section pipeline | Feed for pass1 tests | — | **Library** (superseded conceptually by DU) |
 | **Storage** | Object blobs | R2/local/S3 | boto3 | **Implemented** (two facades) |
 | **Imports** | Text extraction | pdf/docx/pptx/xlsx/epub/zip/text | PyMuPDF, etc. | **Implemented** (live) |
@@ -955,11 +975,11 @@ CI sets unused `SECRET_KEY` (app expects `FLASK_SECRET_KEY`).
 | **Scalability** | 4 | Single-node friendly; no vector index; in-memory limiter; SQLite not worker-capable |
 | **Maintainability** | 5 | `server.py` monolith; three Bases; Phase 1 packages modular; branding inconsistency |
 | **Code Quality** | 7 | Strong pytest on Phase 1 + analysis_pipeline + upload; flake8 CI; some legacy deprecation left in place |
-| **UX** | 7 | Broad feature SPA; streaming chat; Phase 1 results API exists but UI not surfacing full structured output |
+| **UX** | 8 | Research OS chrome (D1–D9); Paper Workspace surfaces Phase 1; upload on Library; ⌘K; session/error UX |
 | **Deployment** | 5 | systemd units + Procfile; migration 0017 required for Phase 2 persist; no Docker/k8s |
 | **Observability** | 6 | Prometheus + JSON logs; no Sentry/alerts/product analytics |
 | **Testing** | 7 | Large pytest surface including Phase 1.1–1.7 + Phase 2 service tests; frontend Vitest not in CI |
-| **Overall readiness** | **6 / 10** | Suitable for **trusted private deploy** with allowlist + HTTPS + secrets hygiene + migration 0017; **not** ready for open public multi-tenant production |
+| **Overall readiness** | **6.5 / 10** | Suitable for **trusted private deploy** with allowlist + HTTPS + secrets hygiene + migration 0017; SPA research UX much stronger; **not** ready for open public multi-tenant production |
 
 ---
 
@@ -1012,7 +1032,10 @@ Checklist (items not done or incomplete):
 - [ ] Per-route titles / OG tags (SPA auth-gated — limited value)
 
 ### Accessibility
-- [ ] Skip links; consistent aria-labels on icon controls  
+- [x] Skip link + main landmark (D9)  
+- [x] Icon control labels on shell chrome (ThemeToggle, nav, ⌘K) — deeper page audit still useful  
+- [x] Paper workspace keyboard shortcuts with typing guard (D9)  
+- [x] Command palette keyboard-first (D8)  
 
 ### Admin
 - [ ] First-admin bootstrap UI; full admin dashboard  
@@ -1030,6 +1053,13 @@ Checklist (items not done or incomplete):
 - [ ] Docker Compose / k8s manifests  
 - [ ] Require secrets (fail closed if `FLASK_SECRET_KEY` unset in prod)  
 
+### Frontend product (post–Design System)
+- [x] Design System v2 D1–D9 (tokens → shell → pages → palette → a11y/session)  
+- [x] Phase 1 Paper Workspace tabs wired to `/pipeline` + `/phases/*`  
+- [ ] Resizable rails with persisted widths  
+- [ ] Login/legal template brand sweep → Soro  
+- [ ] Frontend Vitest in CI   
+
 ---
 
 # 18. Technical Debt
@@ -1041,14 +1071,14 @@ Checklist (items not done or incomplete):
 | Chat vs Prompt Engine divergence | High | Finish chat migration to PromptBuilder |
 | Legacy confirm-upload / thread analysis paths | Medium | Route all analysis through AnalysisPipelineService + worker jobs |
 | `extract_metadata` LLM job still in HANDLERS | Medium | Remove after queue drain; Phase 1.1 fills meta when available |
-| Phase 1 UI not surfacing structured results | Medium | Wire PaperOverview / library to `/pipeline` + phase endpoints |
+| Phase 1 UI not surfacing structured results | ~~Medium~~ | **Done** — Paper Workspace tabs + `features/pipeline` |
 | `feature_flags` / `search_index` / unused `import_sessions` | Medium | Implement or drop |
 | Worker LLM overview vs Phase 1.6 AssembledPrompt unused by chat | Medium | Decide product path for research AssembledPrompt |
 | `PipelineVersion` not on live Base | Medium | Register or remove FK usage |
 | Dual cost ledgers | Medium | Consolidate attribution |
 | ORM vs migration type drift (`bytes_used`, jsonb vs Text) | Medium | Align types; prefer BigInteger |
 | Missing FK indexes (messages, conversations, …) | Medium | Add migrations |
-| Dead frontend: ProjectList, CitationTable, FilePreviewDialog | Low | Delete or wire |
+| Dead frontend: ProjectList, FilePreviewDialog | Low | Delete or wire (`CitationTable` now used on CitationsPage) |
 | Branding: Personal AI / Soro / ResearchOS / Research Workspace | Medium | Pick one product name |
 | Obsolete docs (`prompt-engine-architecture.md` “not implemented”, shipping-plan claiming no CI) | Medium | Mark superseded; point to this file |
 | `get_current_user` / `jwt_optional` unused | Low | Use or remove |
@@ -1109,6 +1139,8 @@ Based **only** on current implementation state (not aspirational design docs):
 - Upload → Postgres worker → extract/chunk/embed  
 - **Phase 1.1–1.7** research engines (DU, classification, analysis context, medical, evidence grading, prompt assembly, knowledge graph) — code + tests  
 - **Phase 2 integration** — `AnalysisPipelineService`, `analysis_pipeline_results` (0017), worker `phase1_analysis`, APIs `/analyze|/pipeline|/phases/*`, PromptBuilder `phase1_context`  
+- **Phase 1 Paper Workspace UI** — Structure / Classification / Entities / Evidence / Graph + pipeline AI-state chrome  
+- **Design System v2 D1–D9** — tokens, shell/Home, PipelineStatus, Paper Overview, Library, Chat demotion, Writing/Compare/Citations, ⌘K, ErrorBoundary + session modal + a11y  
 - RAG (cosine) + JWT search/RAG endpoints  
 - Prompt Engine (registry, builder, personas, analytics APIs) for RAG + paper analysis  
 - Quotas (storage; partial tokens)  
@@ -1118,31 +1150,30 @@ Based **only** on current implementation state (not aspirational design docs):
 
 ## In Progress / inconsistent
 - Dual auth/upload/storage stacks  
-- Branding rename (Soro vs Personal AI)  
-- Prompt Engine adoption (**chat** still legacy)  
+- Branding rename (Soro SPA vs Personal AI login/legal)  
+- Prompt Engine adoption (**paper chat** still legacy)  
 - Legacy confirm-upload / `extract_metadata` deprecation drain  
 - Admin role (API yes, UI no)  
 - Legal/support production copy  
-- Frontend surfacing of Phase 1 structured results  
 
 ## Next (highest leverage before public launch)
-1. Production hardening: secrets fail-closed, allowlist, security headers, MIME sniff, firewall metrics  
-2. Rate-limit + token quota on chat  
-3. Fix PromptBuilder project ownership  
-4. Finish legacy path removal (confirm-upload threads → queue-only)  
-5. Surface Phase 1 results in Paper Overview UI  
-6. Add chat/message indexes; decide pgvector timeline  
-7. Run frontend tests in CI; fix legal placeholders  
-8. Apply migration **0017** on all deployed Postgres environments  
+1. Verify production hardening PRs (§17) on every deploy (secrets, allowlist, headers, MIME, metrics, chat limits)  
+2. Finish legacy path removal (confirm-upload threads → queue-only)  
+3. Paper-scoped chat → PromptBuilder (+ optional Phase 1 inject)  
+4. Add chat/message indexes; decide pgvector timeline  
+5. Run frontend tests in CI; fix legal placeholders + brand templates  
+6. Apply migration **0017** on all deployed Postgres environments  
+7. Delete or wire remaining dead FE (`ProjectList`, `FilePreviewDialog`)  
 
 ## Future
-- Chat → PromptBuilder migration (optionally inject Phase 1 for paper-scoped chats)  
 - ImportSession checkpointing  
 - Feature flags service (or drop table)  
 - Populate or remove `search_index`  
 - Product analytics + Sentry  
 - Admin UI  
+- Resizable rails persistence  
 - Graph DB persistence / query engine (Phase 1.7 non-goals)  
+- Competitive track M13+ (compare→outline, claim blocks, writing studio) per `docs/soro-vs-jenni-roadmap.md`  
 
 ## Long-term
 - Vector index / hybrid search  
@@ -1176,12 +1207,14 @@ Based **only** on current implementation state (not aspirational design docs):
 | Imports | `imports/` |
 | Quotas | `quotas/` |
 | Observability | `observability/` |
-| Frontend | `frontend/src/` |
+| Frontend | `frontend/src/` (`features/pipeline`, `features/papers`, Design System shell) |
+| Design System | `docs/DESIGN-SYSTEM-v2.md`, `docs/Interaction-Guidelines.md`, `docs/prototypes/d0.5/` |
 | CI | `.github/workflows/ci.yml` |
 | Deploy | `deploy/systemd/`, `Procfile` |
 | Internal map (may drift) | `brain.md` |
 | Design docs (partially superseded) | `docs/` |
 | Architecture note (Phase 2) | `backend/analysis_pipeline/ARCHITECTURE.md` |
+| UI audit (D9 closure in §20) | `UI-State.md` |
 
 ## Appendix B — Explicit “Unable to verify”
 
@@ -1190,7 +1223,8 @@ Based **only** on current implementation state (not aspirational design docs):
 - Operational backup/restore procedures outside the repo  
 - Every individual endpoint’s complete OpenAPI-style request/response schema  
 - Dependency CVE status at audit time (no scanner in CI)  
+- Whether every §17 “PR1–PR4” hardening item is enabled on the live host  
 
 ---
 
-*End of PROJECT_STATUS.md — audited 2026-07-26; refreshed same day after Phase 1.1–1.7 completion and Phase 2 integration.*
+*End of PROJECT_STATUS.md — audited 2026-07-26; refreshed after Phase 1.1–1.7 + Phase 2; updated same day for Phase 1 Paper Workspace UI + Design System D1–D9.*

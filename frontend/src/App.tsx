@@ -8,25 +8,30 @@ import { UIProvider } from "@/context/UIContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { CookieConsent } from "@/components/common/CookieConsent";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { SessionExpiredModal } from "@/components/common/SessionExpiredModal";
 import { router } from "@/routes/router";
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <UIProvider>
-          <TooltipProvider>
-            {/* reducedMotion="user" respects prefers-reduced-motion. */}
-            <MotionConfig reducedMotion="user">
-              <RouterProvider router={router} />
-              <CookieConsent />
-              <Toaster position="bottom-center" />
-            </MotionConfig>
-          </TooltipProvider>
-        </UIProvider>
-      </ThemeProvider>
-      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <UIProvider>
+            <TooltipProvider>
+              {/* reducedMotion="user" respects prefers-reduced-motion. */}
+              <MotionConfig reducedMotion="user">
+                <RouterProvider router={router} />
+                <SessionExpiredModal />
+                <CookieConsent />
+                <Toaster position="bottom-center" />
+              </MotionConfig>
+            </TooltipProvider>
+          </UIProvider>
+        </ThemeProvider>
+        {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

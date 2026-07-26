@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, FolderKanban } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
@@ -18,8 +18,19 @@ export function ProjectsPage() {
   const { data: files = [] }         = useAllFiles();
   const { data: memories = [] }      = useMemories();
   const navigate                     = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [dialogOpen,  setDialogOpen]  = useState(false);
   const [editing,     setEditing]     = useState<Project | null>(null);
+
+  // D8 — ⌘K “New project”
+  useEffect(() => {
+    if (searchParams.get("new") !== "1") return;
+    setEditing(null);
+    setDialogOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("new");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   return (
     <PageContainer

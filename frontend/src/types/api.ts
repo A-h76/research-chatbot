@@ -112,7 +112,41 @@ export interface PaperAnalysis {
     limitations?: string[];
     future_work?: string[];
     keywords?: string[];
-    important_terms?: Record<string, string>;
+    // Array of {term, definition} pairs, not a free-form dict — matches
+    // backend/ai/prompts.py's PAPER_ANALYSIS_RESPONSE_FORMAT, whose strict
+    // JSON Schema mode has no way to express an arbitrarily-keyed object.
+    important_terms?: { term: string; definition: string }[];
+
+    // Present only when domain="medical" — always these 3 (backend/ai/
+    // prompts.py's MEDICAL_CORE_FIELDS), regardless of document_type.
+    clinical_relevance?: string;
+    clinical_translation?: string;
+    clinical_bottom_line?: string;
+
+    // domain="medical" + document_type="research" (MEDICAL_RESEARCH_FIELDS).
+    pico_extraction?: string;
+    evidence_quality?: string;
+    risk_of_bias_assessment?: string;
+    clinical_outcomes?: string;
+    grade_assessment?: string;
+    patient_population?: string;
+    ethics_patient_consent?: string;
+
+    // domain="medical" + document_type="clinical_guide" (MEDICAL_CLINICAL_GUIDE_FIELDS).
+    target_audience?: string;
+    scope_of_content?: string;
+    practical_value?: string;
+    evidence_base?: string;
+    critical_assessment?: string;
+    comparison_to_other_resources?: string;
+
+    // domain="medical" + document_type="review" (MEDICAL_REVIEW_FIELDS).
+    review_coverage?: string;
+    search_strategy?: string;
+    quality_of_included_studies?: string;
+    key_findings?: string;
+    gaps_in_literature?: string;
+    future_research_directions?: string;
   };
 }
 
