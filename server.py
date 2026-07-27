@@ -1305,7 +1305,13 @@ def login_page():
 @app.route("/auth/google")
 @limiter.limit("5 per minute")
 def auth_google():
-    redirect_uri = url_for("auth_callback", _external=True)
+    # Prefer APP_BASE_URL so Railway/proxy doesn't emit http:// redirect_uris
+    # (Google rejects redirect_uri_mismatch). Fall back to url_for locally.
+    base = (APP_BASE_URL or "").rstrip("/")
+    if base.startswith("https://") or base.startswith("http://"):
+        redirect_uri = f"{base}/auth/callback"
+    else:
+        redirect_uri = url_for("auth_callback", _external=True)
     return google.authorize_redirect(redirect_uri)
 
 
