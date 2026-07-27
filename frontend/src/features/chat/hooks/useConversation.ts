@@ -23,6 +23,9 @@ export function useCreateConversation() {
     onSuccess: (conv) => {
       qc.invalidateQueries({ queryKey: queryKeys.conversations });
       qc.setQueryData(queryKeys.conversation(conv.id), { ...conv, messages: [] });
+      if (conv.project_id != null) {
+        void qc.invalidateQueries({ queryKey: queryKeys.projectHub(conv.project_id) });
+      }
     },
   });
 }

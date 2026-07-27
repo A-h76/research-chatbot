@@ -13,15 +13,28 @@ function PaperBreadcrumb() {
   const { data: file } = useFile(fileId ? Number(fileId) : null);
   const navigate       = useNavigate();
   const title = file?.title || file?.name || "Paper";
+  const parent = file?.project;
 
   return (
     <div className="flex items-center gap-1.5 text-sm">
-      <button
-        onClick={() => navigate("/library")}
-        className="text-muted-foreground transition-colors hover:text-foreground"
-      >
-        Library
-      </button>
+      {parent ? (
+        <button
+          type="button"
+          onClick={() => navigate(`/projects/${parent.id}`)}
+          className="max-w-[18ch] truncate text-muted-foreground transition-colors hover:text-foreground"
+          title={parent.name}
+        >
+          {parent.emoji} {parent.name}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => navigate("/library")}
+          className="text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Library
+        </button>
+      )}
       <ChevronRight className="size-3.5 text-muted-foreground/50" />
       <span className="max-w-[22ch] truncate font-medium text-foreground" title={title}>
         {title}
@@ -51,10 +64,12 @@ export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void 
   const location = useLocation();
   const path     = location.pathname;
 
-  const isHome         = path === "/";
+  const isHome         = path === "/" || path === "/projects";
   const staticTitle    = isHome
-    ? "Continue research"
-    : path.startsWith("/c/")
+    ? "Projects"
+    : path === "/home"
+      ? "Launchpad"
+      : path.startsWith("/c/")
       ? "Ask Soro"
       : STATIC_TITLES.find((t) => path.startsWith(t.prefix))?.label;
   const isPaperPage    = path.startsWith("/papers/") && !path.includes("/chat");

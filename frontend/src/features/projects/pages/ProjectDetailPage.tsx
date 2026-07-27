@@ -1,26 +1,70 @@
-import { useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  ChevronLeft, Pencil, MessageSquare, Brain,
-  FileText, CheckCircle2, BookMarked, BookOpen,
-  ArrowRight, FolderKanban, Library, Plus, GitCompare, Quote,
+  ChevronLeft,
+  Pencil,
+  MessageSquare,
+  Brain,
+  FileText,
+  CheckCircle2,
+  BookMarked,
+  BookOpen,
+  FolderKanban,
+  Library,
+  GitCompare,
+  StickyNote,
+  HelpCircle,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { ProjectDialog } from "../components/ProjectDialog";
-import { useProject } from "../useProjects";
-import { useFiles } from "@/features/files/useFiles";
-import { useConversations } from "@/features/chat/hooks/useConversation";
-import { AiStateBadge, AiStateMixStrip, usePipelines, type AiStateResolved } from "@/features/pipeline";
+import { ProjectQuestionsPanel } from "../components/ProjectQuestionsPanel";
+import { ProjectPapersPanel } from "../components/ProjectPapersPanel";
+import { ProjectNotesPanel } from "../components/ProjectNotesPanel";
+import { ProjectInsightsPanel } from "../components/ProjectInsightsPanel";
+import { ProjectResearchConsole } from "../components/ProjectResearchConsole";
+import { ProjectChatPanel } from "../components/ProjectChatPanel";
+import { useProjectHub } from "../useProjects";
 import { useUI } from "@/context/UIContext";
 import { cn, formatDate } from "@/lib/utils";
-import type { ConversationSummary, UserFile } from "@/types/api";
+import type {
+  ProjectHub,
+  ProjectHubInsight,
+  ProjectHubPaper,
+  ProjectHubQuestion,
+} from "@/types/api";
 
-// ── Small stat block ──────────────────────────────────────────────────────
-function StatBadge({ icon, value, label }: {
-  icon: React.ReactNode; value: number; label: string
+export type ProjectTab =
+  | "overview"
+  | "papers"
+  | "notes"
+  | "questions"
+  | "insights"
+  | "compare"
+  | "research"
+  | "chat";
+
+const TABS: { id: ProjectTab; label: string; icon: React.ReactNode }[] = [
+  { id: "overview", label: "Overview", icon: <FolderKanban className="size-3.5" /> },
+  { id: "papers", label: "Papers", icon: <FileText className="size-3.5" /> },
+  { id: "notes", label: "Notes", icon: <StickyNote className="size-3.5" /> },
+  { id: "questions", label: "Questions", icon: <HelpCircle className="size-3.5" /> },
+  { id: "insights", label: "Insights & Memory", icon: <Sparkles className="size-3.5" /> },
+  { id: "research", label: "Research", icon: <GitCompare className="size-3.5" /> },
+  { id: "chat", label: "Chat", icon: <MessageSquare className="size-3.5" /> },
+];
+
+function StatBadge({
+  icon,
+  value,
+  label,
+}: {
+  icon: React.ReactNode;
+  value: number;
+  label: string;
 }) {
   return (
     <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -31,9 +75,14 @@ function StatBadge({ icon, value, label }: {
   );
 }
 
-// ── Reading mini progress ─────────────────────────────────────────────────
-function MiniProgress({ reading, read, unread }: {
-  reading: number; read: number; unread: number;
+function MiniProgress({
+  reading,
+  read,
+  unread,
+}: {
+  reading: number;
+  read: number;
+  unread: number;
 }) {
   const total = reading + read + unread;
   if (total === 0) return null;
@@ -46,44 +95,30 @@ function MiniProgress({ reading, read, unread }: {
       </div>
       <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
         <div className="bg-emerald-500" style={{ width: `${pct(read)}%` }} />
-        <div className="bg-amber-400"   style={{ width: `${pct(reading)}%` }} />
-      </div>
-      <div className="flex gap-3 text-[10px] text-muted-foreground">
-        <span className="flex items-center gap-1">
-          <span className="inline-block size-2 rounded-full bg-emerald-500" /> {read} read
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block size-2 rounded-full bg-amber-400" /> {reading} reading
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block size-2 rounded-full bg-muted-foreground/30" /> {unread} unread
-        </span>
+        <div className="bg-amber-400" style={{ width: `${pct(reading)}%` }} />
       </div>
     </div>
   );
 }
 
-// ── Paper row ──────────────────────────────────────────────────────────────
 const RS_ICON = {
-  read:    <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />,
-  reading: <BookMarked   className="size-3.5 shrink-0 text-amber-600  dark:text-amber-400" />,
-  unread:  <BookOpen     className="size-3.5 shrink-0 text-muted-foreground" />,
+  read: <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />,
+  reading: <BookMarked className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />,
+  unread: <BookOpen className="size-3.5 shrink-0 text-muted-foreground" />,
 };
 
 function PaperRow({
-  file,
+  paper,
   onClick,
-  aiState,
 }: {
-  file: UserFile;
+  paper: ProjectHubPaper;
   onClick: () => void;
-  aiState?: AiStateResolved;
 }) {
-  const title = file.title || file.name;
-  const rs = (file.reading_status ?? "unread") as "read" | "reading" | "unread";
-
+  const title = paper.title || paper.name;
+  const rs = paper.reading_status;
   return (
     <button
+      type="button"
       onClick={onClick}
       className="group flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition-colors hover:bg-muted/50"
     >
@@ -91,70 +126,239 @@ function PaperRow({
         <FileText className="size-4 text-primary" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium" title={title}>{title}</p>
+        <p className="truncate text-sm font-medium" title={title}>
+          {title}
+        </p>
         <p className="truncate text-xs text-muted-foreground">
-          {[file.authors?.split(";")[0]?.trim(), file.year].filter(Boolean).join(" · ") || "No metadata"}
+          {[paper.authors?.split(";")[0]?.trim(), paper.year].filter(Boolean).join(" · ") ||
+            "No metadata"}
         </p>
       </div>
-      <div className="flex items-center gap-2">
-        <AiStateBadge state={aiState} metaStatus={file.meta_status} />
-        {RS_ICON[rs]}
-      </div>
+      {RS_ICON[rs]}
     </button>
   );
 }
 
-// ── Chat row ───────────────────────────────────────────────────────────────
-function ChatRow({ convo, onClick }: { convo: ConversationSummary; onClick: () => void }) {
-  const isPaper = convo.file_id !== null;
+function InsightRow({ insight }: { insight: ProjectHubInsight }) {
   return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition-colors hover:bg-muted/50"
-    >
-      <div className={cn(
-        "flex size-8 shrink-0 items-center justify-center rounded-lg",
-        isPaper ? "bg-accent-soft" : "bg-muted",
-      )}>
-        <MessageSquare className={cn("size-4", isPaper ? "text-primary" : "text-muted-foreground")} />
-      </div>
+    <div className="flex items-center gap-3 rounded-xl border border-border px-3 py-2.5">
+      <Sparkles className="size-4 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{convo.title}</p>
-        {isPaper && <p className="text-[10px] text-primary/80">Paper chat</p>}
+        <p className="truncate text-sm font-medium">{insight.title}</p>
+        <p className="text-xs text-muted-foreground capitalize">{insight.kind}</p>
       </div>
-      <ArrowRight className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-    </button>
+    </div>
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────
+function OverviewTab({
+  hub,
+  onOpenPaper,
+  onTab,
+}: {
+  hub: ProjectHub;
+  onOpenPaper: (id: number) => void;
+  onTab: (t: ProjectTab) => void;
+}) {
+  const {
+    project,
+    stats,
+    recent_papers,
+    recent_notes,
+    recent_insights,
+    open_questions,
+    pipeline_summary,
+  } = hub;
+  const pipeTotal =
+    pipeline_summary.done +
+    pipeline_summary.running +
+    pipeline_summary.pending +
+    pipeline_summary.failed +
+    pipeline_summary.partial;
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-wrap gap-4">
+        <StatBadge icon={<FileText className="size-4" />} value={stats.papers} label="papers" />
+        <StatBadge icon={<StickyNote className="size-4" />} value={stats.notes} label="notes" />
+        <StatBadge
+          icon={<HelpCircle className="size-4" />}
+          value={stats.open_questions}
+          label="questions"
+        />
+        <StatBadge icon={<Sparkles className="size-4" />} value={stats.insights} label="insights" />
+        <StatBadge icon={<MessageSquare className="size-4" />} value={stats.chats} label="chats" />
+      </div>
+
+      {open_questions.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Open questions</h2>
+            <button
+              type="button"
+              onClick={() => onTab("questions")}
+              className="text-xs text-primary hover:underline"
+            >
+              Manage
+            </button>
+          </div>
+          <ul className="space-y-1.5">
+            {open_questions.map((q: ProjectHubQuestion) => (
+              <li
+                key={q.id}
+                className="flex items-start gap-2 rounded-lg border border-border px-3 py-2 text-sm"
+              >
+                <HelpCircle className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span className="min-w-0 flex-1 leading-relaxed">{q.text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {stats.papers > 0 && (
+        <MiniProgress reading={stats.reading} read={stats.read} unread={stats.unread} />
+      )}
+
+      {pipeTotal > 0 && (
+        <div className="rounded-xl border border-border bg-card px-3 py-2.5 text-xs text-muted-foreground">
+          Pipeline: {pipeline_summary.done} ready · {pipeline_summary.running} running ·{" "}
+          {pipeline_summary.pending} pending
+          {pipeline_summary.failed > 0 ? ` · ${pipeline_summary.failed} failed` : ""}
+        </div>
+      )}
+
+      {project.instructions && (
+        <section className="space-y-2">
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            AI Instructions
+          </h2>
+          <div className="rounded-xl border border-border bg-muted/30 p-3.5">
+            <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+              {project.instructions}
+            </p>
+          </div>
+        </section>
+      )}
+
+      <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-accent-soft/50 p-4">
+        <Brain className="mt-0.5 size-4 shrink-0 text-primary" />
+        <div>
+          <p className="text-sm font-medium">Isolated knowledge context</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Chat and research in this project only retrieve from papers assigned here.
+          </p>
+        </div>
+      </div>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Papers ({stats.papers})</h2>
+          <button
+            type="button"
+            onClick={() => onTab("papers")}
+            className="text-xs text-primary hover:underline"
+          >
+            View all
+          </button>
+        </div>
+        {recent_papers.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No papers yet — add some from the Papers tab.</p>
+        ) : (
+          <div className="space-y-0.5">
+            {recent_papers.map((p) => (
+              <PaperRow key={p.id} paper={p} onClick={() => onOpenPaper(p.id)} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Notes ({stats.notes})</h2>
+          <button
+            type="button"
+            onClick={() => onTab("notes")}
+            className="text-xs text-primary hover:underline"
+          >
+            View all
+          </button>
+        </div>
+        {recent_notes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No notes yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {recent_notes.map((n) => (
+              <div key={n.id} className="rounded-xl border border-border px-3 py-2.5">
+                <p className="text-sm font-medium truncate">{n.title || "Untitled note"}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+                  {n.content_preview || "Empty"}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Insights ({stats.insights})</h2>
+          <button
+            type="button"
+            onClick={() => onTab("insights")}
+            className="text-xs text-primary hover:underline"
+          >
+            View all
+          </button>
+        </div>
+        {recent_insights.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            AI insights from compare &amp; gaps will appear here.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {recent_insights.map((i) => (
+              <InsightRow key={i.id} insight={i} />
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const navigate      = useNavigate();
-  const id            = projectId ? Number(projectId) : null;
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const id = projectId ? Number(projectId) : null;
 
-  const { data: project, isLoading } = useProject(id);
-  const { setCurrentProjectId }      = useUI();
-
-  // Scoped lists
-  const { data: filesData } = useFiles({ project_id: id, kind: "document", limit: 8 });
-  const papers = filesData?.items ?? [];
-  const paperIds = useMemo(() => papers.map((f) => f.id), [papers]);
-  const metaById = useMemo(() => {
-    const m: Record<number, string> = {};
-    for (const f of papers) m[f.id] = f.meta_status;
-    return m;
-  }, [papers]);
-  const { byId: pipelineById } = usePipelines(paperIds, metaById);
-  const mixStates = useMemo(
-    () => paperIds.map((fid) => pipelineById.get(fid)?.aiState).filter(Boolean) as AiStateResolved[],
-    [paperIds, pipelineById],
-  );
-
-  const { data: allConvos = [] } = useConversations();
-  const scopedConvos = allConvos.filter((c) => c.project_id === id).slice(0, 6);
-
+  const { data: hub, isLoading } = useProjectHub(id);
+  const { setCurrentProjectId } = useUI();
   const [editOpen, setEditOpen] = useState(false);
+
+  useEffect(() => {
+    if (id != null) setCurrentProjectId(id);
+  }, [id, setCurrentProjectId]);
+
+  const tabParam = searchParams.get("tab") as ProjectTab | null;
+  const activeTab: ProjectTab = useMemo(() => {
+    if (tabParam === "compare") return "research";
+    if (tabParam && TABS.some((t) => t.id === tabParam)) return tabParam;
+    return "overview";
+  }, [tabParam]);
+
+  function setTab(t: ProjectTab) {
+    if (t === "overview") {
+      setSearchParams({}, { replace: true });
+    } else {
+      setSearchParams({ tab: t }, { replace: true });
+    }
+  }
+
+  function openPaper(fileId: number) {
+    navigate(`/papers/${fileId}`);
+  }
 
   function openLibrary() {
     if (!id) return;
@@ -165,12 +369,13 @@ export function ProjectDetailPage() {
   function openAsk() {
     if (!id) return;
     setCurrentProjectId(id);
-    navigate("/chat");
+    setTab("chat");
   }
 
-  function openFirstPaper() {
-    if (papers[0]) navigate(`/papers/${papers[0].id}`);
-    else openLibrary();
+  function openCompare() {
+    if (!id) return;
+    setCurrentProjectId(id);
+    setTab("research");
   }
 
   if (isLoading) {
@@ -179,15 +384,18 @@ export function ProjectDetailPage() {
         <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-4 w-64" />
+          <Skeleton className="h-10 w-full" />
           <div className="grid grid-cols-3 gap-3">
-            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 rounded-xl" />
+            ))}
           </div>
         </div>
       </div>
     );
   }
 
-  if (!project) {
+  if (!hub) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center space-y-3">
@@ -201,21 +409,19 @@ export function ProjectDetailPage() {
     );
   }
 
-  const stats = project.stats;
+  const { project, stats, recent_papers } = hub;
 
   return (
     <div className="scrollbar-thin h-full overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-6 py-8 space-y-8">
-
-        {/* Back nav */}
+      <div className="mx-auto max-w-3xl px-6 py-8 space-y-6">
         <button
+          type="button"
           onClick={() => navigate("/projects")}
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronLeft className="size-4" /> Research Projects
         </button>
 
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
@@ -246,197 +452,91 @@ export function ProjectDetailPage() {
             </Button>
           </div>
 
-          {/* Stat row */}
-          <div className="flex flex-wrap gap-4">
-            <StatBadge icon={<FileText className="size-4" />} value={stats.papers} label="papers" />
-            <StatBadge icon={<MessageSquare className="size-4" />} value={stats.chats} label="conversations" />
-            {stats.memories > 0 && (
-              <StatBadge icon={<Brain className="size-4" />} value={stats.memories} label="memories" />
-            )}
-          </div>
-
-          {mixStates.length > 0 && (
-            <div className="rounded-xl border border-border bg-card px-3 py-2.5">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Pipeline mix
-              </p>
-              <AiStateMixStrip states={mixStates} />
-            </div>
-          )}
-
-          {/* Reading progress */}
-          {stats.papers > 0 && (
-            <MiniProgress
-              reading={stats.reading}
-              read={stats.read}
-              unread={stats.unread}
-            />
-          )}
-
-          {/* Quick actions — research first; ask is secondary (D6) */}
           <div className="flex flex-wrap gap-2">
-            <Button onClick={openFirstPaper} className="gap-2">
+            <Button
+              onClick={() =>
+                recent_papers[0] ? openPaper(recent_papers[0].id) : setTab("papers")
+              }
+              className="gap-2"
+            >
               <FileText className="size-4" />
-              {papers.length > 0 ? "Open research workspace" : "Add papers"}
+              {stats.papers > 0 ? "Open research" : "Add papers"}
             </Button>
             <Button variant="outline" onClick={openLibrary} className="gap-2">
-              <Library className="size-4" /> View library
+              <Library className="size-4" /> Library
             </Button>
             <Button variant="outline" onClick={openAsk} className="gap-2">
               <MessageSquare className="size-4" /> Ask in project
             </Button>
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() => {
-                if (id) setCurrentProjectId(id);
-                navigate("/research/compare");
-              }}
-            >
-              <GitCompare className="size-4" /> Compare
-            </Button>
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() => {
-                if (id) setCurrentProjectId(id);
-                navigate("/citations");
-              }}
-            >
-              <Quote className="size-4" /> Citations
+            <Button variant="outline" onClick={openCompare} className="gap-2">
+              <GitCompare className="size-4" /> Research
             </Button>
           </div>
         </motion.div>
 
-        <Separator />
-
-        {/* Instructions */}
-        {project.instructions && (
-          <section className="space-y-2">
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              AI Instructions
-            </h2>
-            <div className="rounded-xl border border-border bg-muted/30 p-3.5">
-              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                {project.instructions}
-              </p>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              These instructions are injected into every AI chat in this project.
-            </p>
-          </section>
-        )}
-
-        {/* RAG isolation note */}
-        <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-accent-soft/50 p-4">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <Brain className="size-4 text-primary" />
-          </div>
-          <div>
-            <p className="text-sm font-medium">Isolated knowledge context</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              When you chat inside this project, the AI only retrieves from papers assigned here —
-              not from your full library. Upload papers to this project to keep research focused.
-            </p>
-          </div>
+        {/* Workspace tabs — deeper data lazy-loaded when opened */}
+        <div className="sticky top-0 z-10 -mx-1 border-b border-border bg-background/95 px-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <nav className="flex gap-0.5 overflow-x-auto scrollbar-thin py-1" aria-label="Project sections">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] transition-colors",
+                  activeTab === t.id
+                    ? "bg-accent-soft font-medium text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                )}
+              >
+                {t.icon}
+                {t.label}
+              </button>
+            ))}
+          </nav>
         </div>
 
-        {/* Papers */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Papers ({stats.papers})</h2>
-            <button
-              onClick={openLibrary}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
-            >
-              View all <ArrowRight className="size-3" />
-            </button>
-          </div>
+        <Separator className="!mt-0" />
 
-          {papers.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border p-6 text-center space-y-2">
-              <FileText className="mx-auto size-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">No papers in this project yet.</p>
-              <p className="text-xs text-muted-foreground">
-                Attach a PDF in chat — it'll be assigned here automatically.
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-border bg-card divide-y divide-border overflow-hidden">
-              {papers.map((f) => (
-                <PaperRow
-                  key={f.id}
-                  file={f}
-                  aiState={pipelineById.get(f.id)?.aiState}
-                  onClick={() => navigate(`/papers/${f.id}`)}
-                />
-              ))}
-              {(filesData?.total ?? 0) > papers.length && (
-                <button
-                  onClick={openLibrary}
-                  className="flex w-full items-center justify-center gap-1.5 py-2.5 text-xs text-muted-foreground hover:text-primary transition-colors"
-                >
-                  {(filesData?.total ?? 0) - papers.length} more papers
-                  <ArrowRight className="size-3" />
-                </button>
-              )}
-            </div>
-          )}
-        </section>
+        {activeTab === "overview" && (
+          <OverviewTab hub={hub} onOpenPaper={openPaper} onTab={setTab} />
+        )}
 
-        {/* Recent conversations */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Conversations ({stats.chats})</h2>
-            <button
-              type="button"
-              onClick={openAsk}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
-            >
-              Ask in project <Plus className="size-3" />
-            </button>
-          </div>
+        {activeTab === "papers" && id != null && (
+          <ProjectPapersPanel projectId={id} />
+        )}
 
-          {scopedConvos.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border p-6 text-center">
-              <p className="text-sm text-muted-foreground">No conversations yet.</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Prefer Paper Chat for evidence-linked answers.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3"
-                onClick={openAsk}
-              >
-                Ask in this project
-              </Button>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-border bg-card divide-y divide-border overflow-hidden">
-              {scopedConvos.map((c) => (
-                <ChatRow
-                  key={c.id}
-                  convo={c}
-                  onClick={() =>
-                    c.file_id
-                      ? navigate(`/papers/${c.file_id}/chat/${c.id}`)
-                      : navigate(`/c/${c.id}`)
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </section>
+        {activeTab === "notes" && id != null && (
+          <ProjectNotesPanel projectId={id} />
+        )}
 
-        <div className="h-6" />
+        {activeTab === "questions" && id != null && (
+          <ProjectQuestionsPanel projectId={id} />
+        )}
+
+        {activeTab === "insights" && id != null && (
+          <ProjectInsightsPanel projectId={id} />
+        )}
+
+        {activeTab === "research" && id != null && (
+          <ProjectResearchConsole projectId={id} />
+        )}
+
+        {activeTab === "chat" && id != null && (
+          <ProjectChatPanel projectId={id} />
+        )}
       </div>
 
-      {/* Edit dialog */}
       <ProjectDialog
         open={editOpen}
         onOpenChange={setEditOpen}
-        project={project}
+        project={{
+          id: project.id,
+          name: project.name,
+          emoji: project.emoji,
+          description: project.description,
+          instructions: project.instructions,
+        }}
       />
     </div>
   );

@@ -13,36 +13,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-
-interface S2Paper {
-  paper_id: string;
-  doi: string;
-  title: string;
-  authors: string;
-  year: number | null;
-  venue: string;
-  abstract: string;
-  citation_count: number;
-  open_access_url: string;
-  source: string;
-}
-
-interface RelatedBundle {
-  related: S2Paper[];
-  citing: S2Paper[];
-  recommended: S2Paper[];
-  cached_at: string;
-  provider_version: string;
-}
-
-async function fetchRelated(fileId: number): Promise<RelatedBundle> {
-  const res = await fetch(`/api/files/${fileId}/related`, { credentials: "include" });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || "unavailable");
-  }
-  return res.json();
-}
+import { fetchRelated, type RelatedBundle, type S2Paper } from "../relatedApi";
 
 function PaperCard({ paper }: { paper: S2Paper }) {
   const [expanded, setExpanded] = useState(false);

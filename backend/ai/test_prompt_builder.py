@@ -493,6 +493,56 @@ def test_build_chat_instructions_project_ownership(env):
     assert "Secret" not in blocked.final
 
 
+def test_build_paper_chat_instructions_parity_with_legacy(env):
+    from datetime import datetime
+
+    from backend.ai_core.prompts.legacy_paper_chat import render_legacy_paper_chat_prompt
+    from backend.ai_core.versions import LEGACY_PAPER_CHAT_PROMPT_VERSION
+
+    now = datetime(2026, 7, 26, 15, 30, 0)
+    legacy = render_legacy_paper_chat_prompt(
+        user_name="Ada",
+        paper_title="CRP and Inflammation",
+        authors="Smith et al.",
+        year=2024,
+        venue="Nature Med",
+        now=now,
+    )
+    assembled = env["builder"].build_paper_chat_instructions(
+        user_name="Ada",
+        paper_title="CRP and Inflammation",
+        authors="Smith et al.",
+        year=2024,
+        venue="Nature Med",
+        now=now,
+    )
+    assert assembled.final == legacy
+    assert assembled.system == legacy
+    assert assembled.rag == ""
+    assert assembled.document_type == LEGACY_PAPER_CHAT_PROMPT_VERSION
+
+
+def test_build_paper_chat_instructions_phase1_on_rag_not_final(env):
+    from datetime import datetime
+
+    from backend.ai_core.prompts.legacy_paper_chat import render_legacy_paper_chat_prompt
+
+    now = datetime(2026, 7, 26, 15, 30, 0)
+    phase1 = "=== Phase 1 Structured Analysis ===\n## Classification\n- domain: medical"
+    assembled = env["builder"].build_paper_chat_instructions(
+        user_name="Ada",
+        paper_title="Paper",
+        phase1_context=phase1,
+        now=now,
+    )
+    legacy = render_legacy_paper_chat_prompt(
+        user_name="Ada", paper_title="Paper", now=now
+    )
+    assert assembled.final == legacy
+    assert phase1 not in assembled.final
+    assert assembled.rag == phase1
+
+
 def test_build_rejects_foreign_project_context_when_user_id_set(env):
     db = env["db"]
     Project = env["Project"]

@@ -1,7 +1,9 @@
-# ✦ Personal AI
+# ✦ Personal AI (Soro)
 
 Private ChatGPT-style assistant for research & thesis writing.
 Your OpenAI API key stays on the backend — never exposed to the browser.
+
+**Product north star:** A researcher should be able to complete an entire research loop inside a project without needing to leave Soro.
 
 Premium SPA frontend built with **React + TypeScript + Tailwind + shadcn/ui +
 Framer Motion** (in `frontend/`), served by the Flask backend.

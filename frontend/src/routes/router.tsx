@@ -30,7 +30,9 @@ export const router = createBrowserRouter([
     element: <RootLayout />,
     errorElement: <RouteErrorFallback />,
     children: [
-      { index: true,                                   element: <DashboardPage /> },
+      // Projects are home — research happens inside a project, not a PDF list.
+      { index: true,                                   element: <ProjectsPage /> },
+      { path: "home",                                  element: <DashboardPage /> },
       { path: "chat",                                  element: <ChatPage /> },
       { path: "c/:conversationId",                     element: <ChatPage /> },
       { path: "projects",                              element: <ProjectsPage /> },

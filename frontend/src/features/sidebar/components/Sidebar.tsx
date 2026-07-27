@@ -108,7 +108,8 @@ function RecentPapersList({ projectId }: { projectId: number | null }) {
 }
 
 /**
- * D6 — Primary: Home · Library · Projects · Writing.
+ * Primary: Projects · Library · Writing.
+ * Projects are home (`/`). Launchpad lives at `/home` under More.
  * Global Chat demoted under More (routes kept).
  */
 export function SidebarContents({
@@ -125,18 +126,19 @@ export function SidebarContents({
   const location = useLocation();
   const path = location.pathname;
 
-  const isHome = path === "/";
+  const isProjects = path === "/" || path.startsWith("/projects");
+  const isLaunchpad = path === "/home";
   const isLibrary =
     path.startsWith("/library") ||
     path.startsWith("/files") ||
     (path.startsWith("/papers/") && !path.includes("/chat"));
-  const isProjects = path.startsWith("/projects");
   const isWriting = path.startsWith("/writing");
   const isGlobalChat =
     path.startsWith("/chat") || path.startsWith("/c/");
   const isPaperChat = path.startsWith("/papers/") && path.includes("/chat");
   const isSettings = path.startsWith("/settings");
   const isMoreActive =
+    isLaunchpad ||
     isGlobalChat ||
     path.startsWith("/search") ||
     path.startsWith("/research") ||
@@ -178,17 +180,17 @@ export function SidebarContents({
                 type="button"
                 role="menuitem"
                 className="flex w-full px-3 py-1.5 text-left text-[13px] hover:bg-muted"
-                onClick={() => go("library", "/library")}
+                onClick={() => go("projects", "/projects?new=1")}
               >
-                Upload paper
+                New project
               </button>
               <button
                 type="button"
                 role="menuitem"
                 className="flex w-full px-3 py-1.5 text-left text-[13px] hover:bg-muted"
-                onClick={() => go("projects", "/projects")}
+                onClick={() => go("library", "/library")}
               >
-                New project
+                Upload paper
               </button>
               <button
                 type="button"
@@ -214,22 +216,16 @@ export function SidebarContents({
 
       <nav className="space-y-0.5 px-2 pb-1" aria-label="Primary">
         <NavItem
-          icon={<Home className="size-4" />}
-          label="Home"
-          active={isHome}
-          onClick={() => go("library", "/")}
+          icon={<FolderKanban className="size-4" />}
+          label="Projects"
+          active={isProjects}
+          onClick={() => go("projects", "/")}
         />
         <NavItem
           icon={<Library className="size-4" />}
           label="Library"
           active={isLibrary}
           onClick={() => go("library", "/library")}
-        />
-        <NavItem
-          icon={<FolderKanban className="size-4" />}
-          label="Projects"
-          active={isProjects}
-          onClick={() => go("projects", "/projects")}
         />
         <NavItem
           icon={<Wand2 className="size-4" />}
@@ -262,6 +258,13 @@ export function SidebarContents({
         </button>
         {(moreOpen || isMoreActive) && (
           <div className="mt-0.5 space-y-0.5 pl-1">
+            <NavItem
+              muted
+              icon={<Home className="size-4" />}
+              label="Launchpad"
+              active={isLaunchpad}
+              onClick={() => go("library", "/home")}
+            />
             <NavItem
               muted
               icon={<Search className="size-4" />}

@@ -257,8 +257,10 @@ def ensure_prompt(registry, name, template_text):
 
 def ensure_default_prompts(db_session):
     from .prompt_registry import PromptRegistry
+    from backend.projects.prompts import PROJECT_RESEARCH_PROMPT
 
     registry = PromptRegistry(db_session)
     ensure_prompt(registry, "extract_metadata", EXTRACT_METADATA_PROMPT)
     ensure_prompt(registry, "paper_analysis", PAPER_ANALYSIS_PROMPT)
     ensure_prompt(registry, "semantic_search", SEMANTIC_SEARCH_PROMPT)
+    ensure_prompt(registry, "project_research", PROJECT_RESEARCH_PROMPT)

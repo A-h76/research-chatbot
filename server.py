@@ -524,6 +524,12 @@ class Message(Base):
 
 
 class Memory(Base):
+    """User / research memories.
+
+    Sprint C: research memories are AI-promoted from DerivedAnalysis(kind=research).
+    Chat-extracted rows use source='chat' and must not enter research context.
+    """
+
     __tablename__ = "memories"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -531,6 +537,14 @@ class Memory(Base):
     fact = Column(Text, nullable=False)
     importance = Column(Integer, default=3)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # Sprint C research memory
+    kind = Column(String(30), default="fact")  # finding|claim|contradiction|open_question|insight|fact
+    source = Column(String(20), default="chat")  # research|compare|gaps|manual|chat
+    source_ref = Column(String(80), default="")
+    payload = Column(Text, default="{}")  # JSON
+    pinned = Column(Integer, default=0)
+    status = Column(String(20), default="active")  # active|archived|deleted
+    claim_hash = Column(String(64), default="")
 
 
 class UserFile(Base):
@@ -611,11 +625,12 @@ class UploadBatch(Base):
 
 
 class UploadJob(Base):
-    """One row per pipeline stage per file (import | extract_metadata |
-    paper_analysis) — the actual queue worker.py polls with FOR UPDATE
-    SKIP LOCKED, claims, executes, and marks done/failed. Written by
-    upload_file()'s transactional outbox and by worker.py itself when
-    chaining follow-on stages — see processing-pipeline-architecture.md."""
+    """One row per pipeline stage per file (import | phase1_analysis |
+    paper_analysis; extract_metadata is legacy drain-only) — the actual
+    queue worker.py polls with FOR UPDATE SKIP LOCKED, claims, executes,
+    and marks done/failed. Written by upload_file()/confirm_upload()'s
+    transactional outbox and by worker.py itself when chaining follow-on
+    stages — see processing-pipeline-architecture.md."""
 
     __tablename__ = "upload_jobs"
     id = Column(Integer, primary_key=True)
@@ -878,7 +893,7 @@ class DerivedAnalysis(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
-    kind = Column(String(20), nullable=False)  # compare|gaps
+    kind = Column(String(20), nullable=False)  # compare|gaps|research
     selection_hash = Column(String(64), nullable=False)
     file_ids = Column(Text, default="[]")  # JSON list[int]
     data = Column(Text, default="")  # JSON
@@ -894,6 +909,29 @@ class Note(Base):
     file_id = Column(Integer, ForeignKey("files.id"), nullable=True)  # paper note
     title = Column(String(300), default="")
     content = Column(Text, default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class ProjectQuestion(Base):
+    """Research question scoped to a project (Sprint A).
+
+    User-authored tracking — not notes (freeform prose) and not memories
+    (AI-curated findings). Status: open | answered | parked.
+    """
+
+    __tablename__ = "project_questions"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    text = Column(Text, nullable=False)
+    status = Column(String(20), default="open")  # open|answered|parked
+    source = Column(String(20), default="manual")  # manual|ai
+    linked_insight_id = Column(Integer, nullable=True)  # derived_analyses.id (no cross-Base FK)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime,
@@ -945,6 +983,13 @@ def ensure_columns():
         "ALTER TABLE messages ADD COLUMN attachments TEXT",
         "ALTER TABLE users ADD COLUMN custom_instructions TEXT",
         "ALTER TABLE memories ADD COLUMN importance INTEGER DEFAULT 3",
+        "ALTER TABLE memories ADD COLUMN kind VARCHAR(30) DEFAULT 'fact'",
+        "ALTER TABLE memories ADD COLUMN source VARCHAR(20) DEFAULT 'chat'",
+        "ALTER TABLE memories ADD COLUMN source_ref VARCHAR(80) DEFAULT ''",
+        "ALTER TABLE memories ADD COLUMN payload TEXT DEFAULT '{}'",
+        "ALTER TABLE memories ADD COLUMN pinned INTEGER DEFAULT 0",
+        "ALTER TABLE memories ADD COLUMN status VARCHAR(20) DEFAULT 'active'",
+        "ALTER TABLE memories ADD COLUMN claim_hash VARCHAR(64) DEFAULT ''",
         "ALTER TABLE conversations ADD COLUMN temperature FLOAT",
         "ALTER TABLE conversations ADD COLUMN reasoning_effort VARCHAR(20)",
         "ALTER TABLE conversations ADD COLUMN memory_enabled INTEGER DEFAULT 1",
@@ -1050,6 +1095,27 @@ def ensure_columns():
         "CREATE INDEX IF NOT EXISTS ix_upload_jobs_user_status ON upload_jobs (user_id, status)",
         "CREATE INDEX IF NOT EXISTS ix_outbox_events_pending ON outbox_events (status, created_at) WHERE status = 'pending'",
         "CREATE INDEX IF NOT EXISTS ix_usage_logs_user ON usage_logs (user_id, created_at)",
+        # ── Hot-path chat / library / queue indexes (migrations/0022) ──
+        # Keep definitions identical to 0022 so CREATE INDEX IF NOT EXISTS
+        # does not leave a weaker SQLite-only definition that blocks Postgres.
+        "CREATE INDEX IF NOT EXISTS ix_messages_conversation_created ON messages (conversation_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_conversations_user_updated ON conversations (user_id, updated_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_conversations_user_project ON conversations (user_id, project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_conversations_user_file ON conversations (user_id, file_id)",
+        "CREATE INDEX IF NOT EXISTS ix_conversations_project ON conversations (project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_conversations_file ON conversations (file_id)",
+        "CREATE INDEX IF NOT EXISTS ix_files_user_project ON files (user_id, project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_files_conversation ON files (conversation_id)",
+        "CREATE INDEX IF NOT EXISTS ix_upload_jobs_type_status ON upload_jobs (job_type, status)",
+        "CREATE INDEX IF NOT EXISTS ix_upload_jobs_status_created ON upload_jobs (status, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_upload_jobs_file_type ON upload_jobs (file_id, job_type)",
+        "CREATE INDEX IF NOT EXISTS ix_outbox_events_status_created ON outbox_events (status, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_projects_user ON projects (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_memories_user ON memories (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_memories_user_project ON memories (user_id, project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_memories_project_status ON memories (project_id, status)",
+        "CREATE INDEX IF NOT EXISTS ix_memories_claim_hash ON memories (user_id, project_id, kind, claim_hash)",
+        "CREATE INDEX IF NOT EXISTS ix_citations_user ON citations (user_id)",
     ):
         try:
             with engine.begin() as conn:
@@ -1551,6 +1617,28 @@ app.register_blueprint(
         PromptExecution=PromptExecution,
     )
 )
+
+# Sprint A — Project workspace hub (single read model). CRUD stays below
+# until a later slice migrates those routes onto ProjectService.
+from backend.projects import create_project_service
+from backend.projects.research import create_project_research_service
+from backend.projects.memory import create_memory_promotion_service
+from backend.projects.routes import create_projects_blueprint
+from backend.analysis_pipeline.summary import build_phase1_prompt_context
+
+project_service = create_project_service(
+    SessionLocal=SessionLocal,
+    select=select,
+    Project=Project,
+    UserFile=UserFile,
+    Note=Note,
+    Memory=Memory,
+    Conversation=Conversation,
+    DerivedAnalysis=DerivedAnalysis,
+    ProjectQuestion=ProjectQuestion,
+    AnalysisPipelineResult=AnalysisPipelineResult,
+)
+# project_research_service + projects blueprint registered after responses_text().
 
 
 def _parse_usage_date_range():
@@ -2127,6 +2215,40 @@ def responses_text(prompt, json_mode=False, kind=None, user_id=None):
     return resp.output_text
 
 
+# Sprint B/C — project research + memory promotion (needs responses_text above).
+memory_promotion_service = create_memory_promotion_service(
+    SessionLocal=SessionLocal,
+    select=select,
+    Project=Project,
+    UserFile=UserFile,
+    Memory=Memory,
+    DerivedAnalysis=DerivedAnalysis,
+)
+project_research_service = create_project_research_service(
+    SessionLocal=SessionLocal,
+    select=select,
+    Project=Project,
+    UserFile=UserFile,
+    PaperAnalysis=PaperAnalysis,
+    DerivedAnalysis=DerivedAnalysis,
+    AnalysisPipelineResult=AnalysisPipelineResult,
+    get_prompt_builder=get_prompt_builder,
+    responses_text=responses_text,
+    utility_model=UTILITY_MODEL,
+    build_phase1_prompt_context=build_phase1_prompt_context,
+    memory_promotion_service=memory_promotion_service,
+)
+app.register_blueprint(
+    create_projects_blueprint(
+        project_service=project_service,
+        project_research_service=project_research_service,
+        memory_promotion_service=memory_promotion_service,
+        login_required=login_required,
+        limiter=limiter,
+    )
+)
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # RESEARCH WORKSPACE — Milestone 3: automatic paper metadata extraction
 # ══════════════════════════════════════════════════════════════════════════
@@ -2265,16 +2387,30 @@ def _apply_metadata(file_id: int, text: str, content_hash: str, job_id=None) -> 
 
 
 def extract_metadata(file_id: int, text: str, content_hash: str) -> None:
-    """Fire-and-forget wrapper: starts _apply_metadata in a daemon thread."""
-    threading.Thread(
-        target=_apply_metadata,
-        args=(file_id, text, content_hash),
-        daemon=True,
-    ).start()
+    """DEPRECATED: enqueue phase1_analysis (no daemon threads).
+
+    Bibliographic fields come from Phase 1.1 via the worker chain
+    ``import → phase1_analysis → paper_analysis``. Kept as a named
+    entry point so any leftover callers still hit the queue.
+    """
+    from backend.analysis_pipeline.deprecation import warn_legacy
+
+    warn_legacy("server.extract_metadata")
+    db = SessionLocal()
+    try:
+        uf = db.get(UserFile, file_id)
+        if not uf:
+            return
+        if content_hash and not uf.content_hash:
+            uf.content_hash = content_hash
+        _enqueue_job(db, uf.user_id, file_id, "phase1_analysis")
+        db.commit()
+    finally:
+        db.close()
 
 
 def extract_metadata_sync(file_id: int, text: str, content_hash: str) -> None:
-    """Synchronous variant for use in tests where threading complicates things."""
+    """DEPRECATED: synchronous legacy metadata path for tests only."""
     _apply_metadata(file_id, text, content_hash)
 
 
@@ -2421,15 +2557,28 @@ def _run_paper_analysis(file_id: int, text: str, content_hash: str, job_id=None)
 
 
 def trigger_paper_analysis(file_id: int, text: str, content_hash: str, sync: bool = False) -> None:
-    """Fire paper analysis in a background thread (or inline when sync=True)."""
+    """DEPRECATED: enqueue paper_analysis (or run legacy inline when sync=True).
+
+    Prefer worker ``phase1_analysis → paper_analysis``. The async path no
+    longer spawns daemon threads — it writes UploadJob + OutboxEvent.
+    """
+    from backend.analysis_pipeline.deprecation import warn_legacy
+
+    warn_legacy("server.trigger_paper_analysis")
     if sync:
         _run_paper_analysis(file_id, text, content_hash)
-    else:
-        threading.Thread(
-            target=_run_paper_analysis,
-            args=(file_id, text, content_hash),
-            daemon=True,
-        ).start()
+        return
+    db = SessionLocal()
+    try:
+        uf = db.get(UserFile, file_id)
+        if not uf:
+            return
+        if content_hash and not uf.content_hash:
+            uf.content_hash = content_hash
+        _enqueue_job(db, uf.user_id, file_id, "paper_analysis")
+        db.commit()
+    finally:
+        db.close()
 
 
 def _analysis_to_dict(pa: PaperAnalysis) -> dict:
@@ -2497,7 +2646,17 @@ def extract_memories(user_id, project_id, convo_messages):
         facts = json.loads(text).get("facts", [])
         for f in facts[:5]:
             if f and f not in existing:
-                db.add(Memory(user_id=user_id, project_id=project_id, fact=f[:1000]))
+                db.add(
+                    Memory(
+                        user_id=user_id,
+                        project_id=project_id,
+                        fact=f[:1000],
+                        kind="fact",
+                        source="chat",
+                        status="active",
+                        payload="{}",
+                    )
+                )
         db.commit()
     except Exception:
         db.rollback()
@@ -2522,7 +2681,8 @@ def build_paper_chat_prompt(user, paper, now=None):
 
     Canonical text lives in ``backend.ai_core.prompts.legacy_paper_chat``
     (``LEGACY_PAPER_CHAT_PROMPT_VERSION``). Stage 1 pipeline path resolves the
-    same string via ``PromptRouter.route_legacy_paper_chat``.
+    same string via ``PromptRouter.route_legacy_paper_chat``. Prefer
+    ``build_paper_chat_system_prompt`` from /api/chat (PromptBuilder path).
     """
     from backend.ai_core.prompts.legacy_paper_chat import render_legacy_paper_chat_prompt
 
@@ -2540,6 +2700,70 @@ def _paper_chat_pipeline_mode():
     from backend.ai_core.paper_chat import paper_chat_pipeline_mode
 
     return paper_chat_pipeline_mode()
+
+
+def _paper_chat_use_prompt_builder() -> bool:
+    return os.environ.get("PAPER_CHAT_USE_PROMPT_BUILDER", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _paper_chat_phase1_context_enabled() -> bool:
+    """Inject persisted Phase 1 JSON as a developer message (does not replace RAG)."""
+    return os.environ.get("PAPER_CHAT_PHASE1_CONTEXT", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _load_paper_phase1_context(db, file_id: int) -> str:
+    """Compact Phase 1 block for paper chat, or empty if missing/failed."""
+    if not file_id or not _paper_chat_phase1_context_enabled():
+        return ""
+    try:
+        from backend.analysis_pipeline.persistence import load_analysis_result
+        from backend.analysis_pipeline.summary import build_phase1_prompt_context
+
+        result = load_analysis_result(db, AnalysisPipelineResult, file_id)
+        if not result or not result.phase_results:
+            return ""
+        return build_phase1_prompt_context(result.phase_results) or ""
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "paper_chat phase1 context load failed file_id=%s", file_id, exc_info=True
+        )
+        return ""
+
+
+def build_paper_chat_system_prompt(user, paper, now=None, phase1_context: str = ""):
+    """Paper chat system instructions via PromptBuilder (legacy text parity).
+
+    Returns ``(system_prompt, phase1_for_developer_message)``. Phase 1 is never
+    folded into the system string so Stage 1 shadow hashes stay comparable.
+    """
+    if not _paper_chat_use_prompt_builder():
+        return build_paper_chat_prompt(user, paper, now=now), (phase1_context or "").strip()
+
+    db = SessionLocal()
+    try:
+        builder = get_prompt_builder(db)
+        assembled = builder.build_paper_chat_instructions(
+            user_name=user.name or "",
+            paper_title=paper.title or paper.name or "",
+            authors=paper.authors,
+            year=paper.year,
+            venue=paper.venue,
+            phase1_context=phase1_context or "",
+            now=now,
+        )
+        return assembled.final, (assembled.rag or "").strip()
+    finally:
+        db.close()
 
 
 # Static opening sentence only — everything else build_system_prompt()
@@ -2819,10 +3043,11 @@ def _finish_upload_job(db, job_id, ok, error=None):
 
 def _enqueue_job(db, user_id, file_id, job_type, upload_batch_id=None):
     """Create an UploadJob + its paired OutboxEvent in one transaction —
-    the same transactional-outbox pattern upload_file() uses, factored out
-    so the queue worker can chain follow-on stages (import -> extract_
-    metadata -> paper_analysis) the same way instead of spawning threads.
-    Does not commit: caller folds this into its own transaction."""
+    the same transactional-outbox pattern upload_file() / confirm_upload()
+    use, factored out so the queue worker can chain follow-on stages
+    (import → phase1_analysis → paper_analysis) the same way instead of
+    spawning threads. Does not commit: caller folds this into its own
+    transaction."""
     job = UploadJob(
         upload_batch_id=upload_batch_id,
         file_id=file_id,
@@ -3015,20 +3240,20 @@ def _adjust_storage_usage(db, user_id, delta_bytes, delta_files):
 
 def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
     """Extract, chunk, embed, and persist Chunk rows for a document that's
-    already stored. Shared by the direct-upload route, the presigned-upload
-    confirm route, and the queue worker, so all three go through identical
-    processing. Returns the user-facing `note` (None on a normal successful
-    index).
+    already stored. Shared by the queue worker (and any caller that already
+    holds a local copy). HTTP upload routes enqueue an ``import`` job and
+    never call this in-request.
+
+    Returns the user-facing `note` (None on a normal successful index).
 
     `job_id`: pass an already-claimed UploadJob id (the queue worker does)
     to skip creating/finishing a second, duplicate tracking row — the
     worker owns that row's lifecycle instead.
 
     `on_processed(file_id, text, content_hash)`: called once real text has
-    been extracted and chunked, instead of the default behaviour (spawning
-    the legacy extract_metadata()/trigger_paper_analysis() daemon threads).
-    The queue worker passes one that enqueues the next jobs transactionally
-    instead of spawning threads."""
+    been extracted and chunked. The queue worker passes one that enqueues
+    ``phase1_analysis``. When omitted, this function enqueues
+    ``phase1_analysis`` itself (queue-only — no daemon threads)."""
     owns_job = job_id is None
     if owns_job:
         job_id = _start_upload_job(db, uf.user_id, uf.id, "import")
@@ -3082,11 +3307,10 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
             n_chunks = len(pieces)
         db.commit()
 
-        # Fire metadata + paper analysis asynchronously so the HTTP response is
-        # not blocked by model calls. Only for documents with real extracted text.
+        # Queue follow-up analysis — never spawn daemon threads here.
         if text and not is_note and n_chunks > 0:
             h = _sha256(text)
-            # Persist hash immediately so both background jobs can use it for
+            # Persist hash immediately so follow-up jobs can use it for
             # their idempotency checks.
             db2 = SessionLocal()
             try:
@@ -3099,8 +3323,9 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
             if on_processed:
                 on_processed(uf.id, text, h)
             else:
-                extract_metadata(uf.id, text, h)  # M3: bibliographic fields
-                trigger_paper_analysis(uf.id, text, h)  # M4: 14-field analysis
+                # Fallback for any non-worker caller: same chain as worker.
+                _enqueue_job(db, uf.user_id, uf.id, "phase1_analysis")
+                db.commit()
 
         if owns_job:
             _finish_upload_job(db, job_id, ok=True)
@@ -3117,16 +3342,16 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
 @limiter.limit("60 per hour")
 def upload_file():
     """Validate, store, and enqueue — nothing else. Extraction/chunking/
-    embedding no longer happen here (compare to confirm_upload(), which
-    still processes inline for now): this route's only job is to commit
-    an UploadJob + its OutboxEvent in the same transaction as the file
-    row, so a Queue Worker polling upload_jobs/outbox_events can pick the
-    work up. Replaces the old threading.Thread(daemon=True) call — that
-    approach had a real gap this closes: if the process died between
-    committing the file row and starting the thread, the work was silently
-    lost forever. Here, either the whole transaction commits (job + event
-    together) or none of it does — there is no window where a job exists
-    without the event that will get it picked up."""
+    embedding happen in the queue worker (same as confirm_upload): this
+    route's only job is to commit an UploadJob + its OutboxEvent in the
+    same transaction as the file row, so a Queue Worker polling
+    upload_jobs/outbox_events can pick the work up. Replaces the old
+    threading.Thread(daemon=True) call — that approach had a real gap
+    this closes: if the process died between committing the file row and
+    starting the thread, the work was silently lost forever. Here, either
+    the whole transaction commits (job + event together) or none of it
+    does — there is no window where a job exists without the event that
+    will get it picked up."""
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify({"error": "no_file"}), 400
@@ -3500,6 +3725,12 @@ def complete_multipart_upload_route():
 @login_required
 @limiter.limit("60 per hour")
 def confirm_upload():
+    """Verify the presigned object, create the file row, and enqueue import.
+
+    Matches ``upload_file()``: no inline extraction/analysis in the request
+    thread. Documents get an ``import`` UploadJob + OutboxEvent; the worker
+    chain is ``import → phase1_analysis → paper_analysis``.
+    """
     data = request.get_json(force=True, silent=True) or {}
     session_id = data.get("session_id")
     content_md5_b64 = data.get("content_md5_b64")
@@ -3580,8 +3811,9 @@ def confirm_upload():
             return jsonify({"error": "validation_failed"}), 502
 
         kind = kind_for_extension(ext)
+        uid = session["user_id"]
         uf = UserFile(
-            user_id=session["user_id"],
+            user_id=uid,
             project_id=us.project_id,
             conversation_id=us.conversation_id,
             name=us.name,
@@ -3592,22 +3824,28 @@ def confirm_upload():
             checksum_sha256=us.checksum_sha256,
         )
         db.add(uf)
+        db.flush()  # assigns uf.id
         us.status = "confirmed"
-        _adjust_storage_usage(db, session["user_id"], delta_bytes=info.size, delta_files=1)
+        _adjust_storage_usage(db, uid, delta_bytes=info.size, delta_files=1)
+
+        job_id = None
+        if kind == "document":
+            batch = UploadBatch(
+                user_id=uid,
+                project_id=us.project_id,
+                conversation_id=us.conversation_id,
+                source="presign",
+                file_count=1,
+            )
+            db.add(batch)
+            db.flush()
+            job_id = _enqueue_job(db, uid, uf.id, "import", upload_batch_id=batch.id)
+
         db.commit()
 
-        note = None
-        if kind == "document":
-            with provider.local_copy(us.key, suffix=ext) as local_path:
-                note = _process_document(db, uf, local_path, us.name, sniffed_mime)
-
-        db3 = SessionLocal()
-        try:
-            uf_out = db3.get(UserFile, uf.id)
-            result = _file_to_dict(uf_out) if uf_out else {}
-        finally:
-            db3.close()
-        result["note"] = note
+        result = _file_to_dict(uf)
+        result["note"] = None
+        result["job_id"] = job_id
         return jsonify(result)
     finally:
         db.close()
@@ -4130,13 +4368,30 @@ def dashboard():
 @app.route("/api/files/<int:fid>", methods=["GET"])
 @login_required
 def get_file(fid):
-    """Return full metadata for a single file, including analysis status."""
+    """Return full metadata for a single file, including analysis status.
+
+    When the paper belongs to a project, includes a nested ``project``
+    brief so the Paper Workspace can show Project → Paper (not Library → Paper).
+    """
     db = SessionLocal()
     try:
         x = db.get(UserFile, fid)
         if not x or x.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
-        return jsonify(_file_to_dict(x))
+        payload = _file_to_dict(x)
+        if x.project_id:
+            p = db.get(Project, x.project_id)
+            if p and p.user_id == session["user_id"]:
+                payload["project"] = {
+                    "id": p.id,
+                    "name": p.name,
+                    "emoji": p.emoji or "📁",
+                }
+            else:
+                payload["project"] = None
+        else:
+            payload["project"] = None
+        return jsonify(payload)
     finally:
         db.close()
 
@@ -4214,19 +4469,18 @@ def get_analysis(fid):
         pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
 
         if pa is None:
-            # No record yet — start analysis now and return pending
-            uf2 = db.get(UserFile, fid)
-            h = uf2.content_hash or ""
-            if h:
-                text = ""
-            else:
-                with storage.local_copy(uf2.path) as local_path:
-                    text = extract_text(local_path, uf2.mime, uf2.name)
-            if not h and text:
-                h = _sha256(text)
-                uf2.content_hash = h
-                db.commit()
-            trigger_paper_analysis(fid, text, h)
+            # No record yet — enqueue the worker chain and return pending.
+            # phase1_analysis chains to paper_analysis when done (or immediately
+            # if Phase 1 is already cached for this content_hash).
+            h = uf.content_hash or ""
+            if not h:
+                with storage.local_copy(uf.path) as local_path:
+                    text = extract_text(local_path, uf.mime, uf.name)
+                if text:
+                    h = _sha256(text)
+                    uf.content_hash = h
+            _enqueue_job(db, uf.user_id, fid, "phase1_analysis")
+            db.commit()
             return jsonify(
                 {
                     "file_id": fid,
@@ -4265,12 +4519,17 @@ def refresh_analysis(fid):
         if pa:
             pa.content_hash = ""
             pa.status = "pending"
-            db.commit()
+        else:
+            pa = PaperAnalysis(file_id=fid, user_id=uf.user_id, status="pending")
+            db.add(pa)
 
         with storage.local_copy(uf.path) as local_path:
             text = extract_text(local_path, uf.mime, uf.name)
         h = _sha256(text) if text else ""
-        trigger_paper_analysis(fid, text, h)
+        if h:
+            uf.content_hash = h
+        _enqueue_job(db, uf.user_id, fid, "paper_analysis")
+        db.commit()
         return jsonify({"ok": True, "status": "running"})
     finally:
         db.close()
@@ -5224,66 +5483,11 @@ def create_project():
 @app.route("/api/projects/<int:pid>", methods=["GET"])
 @login_required
 def get_project(pid):
-    """Full project detail with scoped counts (papers, chats, memories).
-
-    Used by the Project Detail Page to populate the overview without
-    requiring the frontend to aggregate from multiple list queries.
-    """
-    uid = session["user_id"]
-    db = SessionLocal()
-    try:
-        p = db.get(Project, pid)
-        if not p or p.user_id != uid:
-            return jsonify({"error": "not_found"}), 404
-
-        # Scoped counts
-        paper_count = (
-            db.execute(
-                select(UserFile).where(
-                    UserFile.user_id == uid,
-                    UserFile.project_id == pid,
-                    UserFile.kind == "document",
-                )
-            )
-            .scalars()
-            .all()
-        )
-
-        chat_count = (
-            db.execute(select(Conversation).where(Conversation.user_id == uid, Conversation.project_id == pid))
-            .scalars()
-            .all()
-        )
-
-        memory_count = db.execute(select(Memory).where(Memory.user_id == uid, Memory.project_id == pid)).scalars().all()
-
-        # Reading status breakdown for papers in this project
-        rs_counts = {"unread": 0, "reading": 0, "read": 0}
-        for f in paper_count:
-            rs = f.reading_status or "unread"
-            if rs in rs_counts:
-                rs_counts[rs] += 1
-
-        return jsonify(
-            {
-                "id": p.id,
-                "name": p.name,
-                "emoji": p.emoji,
-                "description": p.description or "",
-                "instructions": p.instructions or "",
-                "created_at": p.created_at.isoformat() if p.created_at else None,
-                "stats": {
-                    "papers": len(paper_count),
-                    "chats": len(chat_count),
-                    "memories": len(memory_count),
-                    "unread": rs_counts["unread"],
-                    "reading": rs_counts["reading"],
-                    "read": rs_counts["read"],
-                },
-            }
-        )
-    finally:
-        db.close()
+    """Project detail with scoped counts (legacy). Prefer GET …/hub for workspace."""
+    detail = project_service.get_detail(pid, session["user_id"])
+    if detail is None:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(detail)
 
 
 @app.route("/api/projects/<int:pid>", methods=["PATCH"])
@@ -5983,6 +6187,10 @@ def update_memory(mid):
         if not m or m.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
         if "fact" in data:
+            # AI-generated research memories are immutable
+            src = getattr(m, "source", None) or "chat"
+            if src != "manual" and src != "chat":
+                return jsonify({"error": "immutable", "detail": "AI research memories cannot be edited."}), 400
             m.fact = str(data["fact"])[:1000]
         if "importance" in data:
             m.importance = max(1, min(5, int(data["importance"])))
@@ -6135,18 +6343,25 @@ def chat():
         paper_file_id = convo.file_id  # M7: paper chat scope (may be None)
         paper_plan = None
         paper_pipeline_mode = "false"
+        paper_phase1_context = ""
 
         # M7: if this is a paper chat, use a focused system prompt and
         # hard-scope retrieval to the single paper.
+        # PromptBuilder assembles the legacy M7 system text (parity).
         # Stage 1: optional ai_core pipeline (PAPER_CHAT_PIPELINE_ENABLED).
         # Soak-safe: any plan failure falls back to legacy so shadow/true
-        # never take Paper Chat down.
+        # never take Paper Chat down. Phase 1 JSON is injected as a
+        # developer message (does not alter Stage 1 system-prompt hashes).
         if paper_file_id:
             paper = db.get(UserFile, paper_file_id)
             if paper and paper.user_id == user_id:
+                paper_phase1_context = _load_paper_phase1_context(db, paper_file_id)
                 try:
                     from backend.ai_core.paper_chat import resolve_paper_chat_system_prompt
 
+                    legacy_base, paper_phase1_context = build_paper_chat_system_prompt(
+                        user, paper, phase1_context=paper_phase1_context
+                    )
                     system_prompt, paper_plan, paper_pipeline_mode = resolve_paper_chat_system_prompt(
                         user_name=user.name,
                         paper_title=paper.title or paper.name,
@@ -6156,12 +6371,15 @@ def chat():
                         file_id=paper_file_id,
                         project_id=convo.project_id,
                         question=(user_message or "")[:500] or None,
+                        legacy_prompt=legacy_base,
                     )
                 except Exception:
                     logging.getLogger(__name__).exception(
                         "paper_chat_stage1_plan_failed; falling back to legacy"
                     )
-                    system_prompt = build_paper_chat_prompt(user, paper)
+                    system_prompt, paper_phase1_context = build_paper_chat_system_prompt(
+                        user, paper, phase1_context=paper_phase1_context
+                    )
                     paper_plan = None
                     paper_pipeline_mode = "false"
             else:
@@ -6201,6 +6419,23 @@ def chat():
                 (i for i, m in enumerate(input_items) if m["role"] == "user"),
                 default=None,
             )
+
+            # Optional Phase 1 structured context (before RAG) — grounds
+            # answers without replacing excerpt retrieval.
+            if paper_file_id and paper_phase1_context:
+                input_items.append(
+                    {
+                        "role": "developer",
+                        "content": (
+                            "Structured analysis of this paper (Phase 1 pipeline). "
+                            "Use it to orient your answer (domain, study design, "
+                            "entities, evidence). Still ground specific claims in "
+                            "the retrieved excerpts that follow — do not invent "
+                            "details that are only implied by this summary.\n\n"
+                            + paper_phase1_context
+                        ),
+                    }
+                )
 
             # M7: paper chat hard-scopes RAG to the single paper file
             excerpts = rag_retrieve(user_id, convo_id, project_id, last_query[:500], file_id=paper_file_id)

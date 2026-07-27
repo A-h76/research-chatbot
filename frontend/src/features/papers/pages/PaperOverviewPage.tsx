@@ -280,10 +280,26 @@ export function PaperOverviewPage() {
       <div className="mx-auto max-w-5xl px-5 py-5 sm:px-8 space-y-4">
         <button
           type="button"
-          onClick={() => navigate("/library")}
+          onClick={() => {
+            if (file.project?.id) navigate(`/projects/${file.project.id}`);
+            else if (file.project_id) navigate(`/projects/${file.project_id}`);
+            else navigate("/library");
+          }}
           className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground transition-colors"
         >
-          <ChevronLeft className="size-4" /> Library
+          <ChevronLeft className="size-4" />
+          {file.project ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden>{file.project.emoji}</span>
+              <span className="max-w-[28ch] truncate">{file.project.name}</span>
+              <span className="text-muted-foreground/60">/</span>
+              <span>Paper</span>
+            </span>
+          ) : file.project_id ? (
+            <span>Project / Paper</span>
+          ) : (
+            "Library"
+          )}
         </button>
 
         <ObjectHeader

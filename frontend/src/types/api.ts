@@ -32,6 +32,145 @@ export interface ProjectDetail extends Project {
   };
 }
 
+/** GET /api/projects/:id/hub — single read model for Project Workspace. */
+export interface ProjectHubPaper {
+  id: number;
+  name: string;
+  title: string;
+  authors: string;
+  year: string;
+  reading_status: ReadingStatus;
+  meta_status: "pending" | "running" | "done" | "failed";
+  created_at: string | null;
+}
+
+export interface ProjectHubNote {
+  id: number;
+  title: string;
+  content_preview: string;
+  file_id: number | null;
+  updated_at: string | null;
+}
+
+export interface ProjectHubInsight {
+  id: number;
+  kind: string;
+  title: string;
+  created_at: string | null;
+}
+
+export interface ProjectHubQuestion {
+  id: number;
+  project_id?: number;
+  text: string;
+  status: ProjectQuestionStatus;
+  source?: ProjectQuestionSource;
+  linked_insight_id?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export type ProjectQuestionStatus = "open" | "answered" | "parked";
+export type ProjectQuestionSource = "manual" | "ai";
+
+export interface ProjectQuestion extends ProjectHubQuestion {
+  project_id: number;
+  source: ProjectQuestionSource;
+  linked_insight_id: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ProjectHubActivity {
+  kind: string;
+  id: number;
+  title: string;
+  at: string | null;
+}
+
+export interface ProjectHub {
+  project: Project & { created_at: string | null };
+  stats: {
+    papers: number;
+    chats: number;
+    memories: number;
+    notes: number;
+    open_questions: number;
+    insights: number;
+    unread: number;
+    reading: number;
+    read: number;
+  };
+  recent_papers: ProjectHubPaper[];
+  recent_notes: ProjectHubNote[];
+  open_questions: ProjectHubQuestion[];
+  recent_insights: ProjectHubInsight[];
+  pipeline_summary: {
+    done: number;
+    running: number;
+    pending: number;
+    failed: number;
+    partial: number;
+  };
+  unread_activity: ProjectHubActivity[];
+}
+
+/** Full insight row from GET /api/projects/:id/insights */
+export interface ProjectInsight extends ProjectHubInsight {
+  file_ids: number[];
+  preview: string;
+  model: string;
+}
+
+/** Sprint B — project research support citation */
+export interface ResearchSupport {
+  paper_id: number;
+  title: string;
+  section: string;
+  snippet: string;
+  citation: string;
+}
+
+export interface ResearchClaim {
+  claim: string;
+  support: ResearchSupport[];
+}
+
+export type ProjectResearchPreset =
+  | "evidence"
+  | "disagree"
+  | "methodology"
+  | "open_questions"
+  | "compare"
+  | "datasets";
+
+export interface ProjectResearchResult {
+  id: number;
+  kind: "research";
+  status: "running" | "done" | "failed" | "pending";
+  preset: ProjectResearchPreset | null;
+  query: string;
+  file_ids: number[];
+  skipped: { id: number; name?: string; reason: string }[];
+  summary: string;
+  answer: string;
+  claims: ResearchClaim[];
+  supporting_file_ids: number[];
+  derived_analysis_id: number;
+  incomplete?: boolean;
+  created_at: string | null;
+}
+
+export interface ProjectResearchHistoryItem {
+  id: number;
+  status: string;
+  preset: string;
+  query: string;
+  label: string;
+  summary: string;
+  created_at: string | null;
+}
+
 export interface ConversationSummary {
   id: number;
   title: string;
@@ -78,6 +217,8 @@ export interface UserFile {
   kind: "image" | "document";
   size: number;
   project_id: number | null;
+  /** Present on GET /api/files/:id when the paper belongs to a project. */
+  project?: { id: number; name: string; emoji: string } | null;
   conversation_id: number | null;
   chunks: number;
   title: string;
@@ -182,6 +323,58 @@ export interface Memory {
   project_id: number | null;
   importance: number;
   created_at: string;
+  kind?: ProjectMemoryKind;
+  source?: ProjectMemorySource;
+  source_ref?: string;
+  payload?: ProjectMemoryPayload;
+  pinned?: boolean;
+  status?: ProjectMemoryStatus;
+  claim_hash?: string;
+}
+
+export type ProjectMemoryKind =
+  | "finding"
+  | "claim"
+  | "contradiction"
+  | "open_question"
+  | "insight"
+  | "fact";
+
+export type ProjectMemorySource =
+  | "research"
+  | "compare"
+  | "gaps"
+  | "manual"
+  | "chat";
+
+export type ProjectMemoryStatus = "active" | "archived" | "deleted";
+
+export interface ProjectMemoryPayload {
+  paper_ids?: number[];
+  claim?: string;
+  citations?: {
+    paper_id: number;
+    title?: string;
+    section?: string;
+    snippet?: string;
+    citation?: string;
+  }[];
+}
+
+/** Project research memory row (Sprint C). */
+export interface ProjectMemory {
+  id: number;
+  project_id: number | null;
+  fact: string;
+  kind: ProjectMemoryKind;
+  source: ProjectMemorySource;
+  source_ref: string;
+  payload: ProjectMemoryPayload;
+  pinned: boolean;
+  status: ProjectMemoryStatus;
+  importance: number;
+  claim_hash: string;
+  created_at: string | null;
 }
 
 export type SearchMode = "off" | "auto" | "on";

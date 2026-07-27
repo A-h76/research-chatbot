@@ -14,4 +14,9 @@ describe("parsePaperTab", () => {
       expect(PAPER_TAB_LABELS[tab]).toBeTruthy();
     }
   });
+
+  it("includes Related Papers in the workspace tab set", () => {
+    expect(PAPER_TAB_LABELS.related).toBe("Related Papers");
+    expect(parsePaperTab("related")).toBe("related");
+  });
 });
