@@ -1,6 +1,6 @@
 import { api } from "@/lib/apiClient";
 
-export type SupportCategory = "general" | "bug" | "feature" | "account";
+export type SupportCategory = "general" | "bug" | "feature" | "account" | "beta";
 
 export interface SupportInput {
   email: string;

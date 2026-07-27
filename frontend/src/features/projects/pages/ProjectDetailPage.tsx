@@ -151,6 +151,60 @@ function InsightRow({ insight }: { insight: ProjectHubInsight }) {
   );
 }
 
+function GettingStartedChecklist({ onTab }: { onTab: (t: ProjectTab) => void }) {
+  const steps = [
+    {
+      title: "Add papers to this project",
+      detail: "Upload PDFs or assign papers from your library.",
+      action: () => onTab("papers"),
+      label: "Go to Papers",
+    },
+    {
+      title: "Wait for analysis to finish",
+      detail: "Each paper is indexed so research can cite evidence.",
+      action: null,
+      label: null,
+    },
+    {
+      title: "Ask a research question",
+      detail: "Run cross-paper research — findings promote to Memory.",
+      action: () => onTab("research"),
+      label: "Open Research",
+    },
+  ];
+
+  return (
+    <section className="rounded-xl border border-primary/25 bg-accent-soft/40 p-4">
+      <h2 className="text-sm font-semibold">Getting started</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Closed beta workflow — complete these steps to unlock project research.
+      </p>
+      <ol className="mt-4 space-y-3">
+        {steps.map((step, i) => (
+          <li key={step.title} className="flex gap-3">
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+              {i + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">{step.title}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{step.detail}</p>
+              {step.action && step.label && (
+                <button
+                  type="button"
+                  onClick={step.action}
+                  className="mt-1.5 text-xs font-medium text-primary hover:underline"
+                >
+                  {step.label} →
+                </button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 function OverviewTab({
   hub,
   onOpenPaper,
@@ -178,6 +232,8 @@ function OverviewTab({
 
   return (
     <div className="space-y-8">
+      {stats.papers === 0 && <GettingStartedChecklist onTab={onTab} />}
+
       <div className="flex flex-wrap gap-4">
         <StatBadge icon={<FileText className="size-4" />} value={stats.papers} label="papers" />
         <StatBadge icon={<StickyNote className="size-4" />} value={stats.notes} label="notes" />

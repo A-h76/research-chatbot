@@ -164,7 +164,7 @@ def create_projects_blueprint(
 
         @bp.route("/<int:pid>/research", methods=["POST"])
         @login_required
-        @_rate_limit("20 per hour")
+        @_rate_limit("5 per minute")
         def start_project_research(pid: int):
             data = request.get_json(silent=True) or {}
             preset = data.get("preset")
@@ -209,6 +209,29 @@ def create_projects_blueprint(
                 )
             if err == "too_many":
                 return jsonify({"error": "too_many", "detail": "Maximum 10 papers."}), 400
+            if err == "too_many_active":
+                return (
+                    jsonify(
+                        {
+                            "error": "too_many_active",
+                            "detail": "Please wait until your current research finishes (max 2 active).",
+                        }
+                    ),
+                    429,
+                )
+            if err in {
+                "ai_disabled",
+                "email_unverified",
+                "account_inactive",
+                "token_quota_exceeded",
+                "cost_quota_exceeded",
+                "daily_budget_exceeded",
+                "ai_denied",
+            }:
+                status = 503 if err == "ai_disabled" else 429
+                if err in {"email_unverified", "account_inactive"}:
+                    status = 403
+                return jsonify({"error": err, "detail": "AI request blocked."}), status
             return jsonify(payload)
 
         @bp.route("/<int:pid>/research/<int:rid>", methods=["GET"])

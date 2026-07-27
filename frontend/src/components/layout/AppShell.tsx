@@ -4,6 +4,8 @@ import { MobileDrawer } from "./MobileDrawer";
 import { TopBar } from "./TopBar";
 import { CommandPalette } from "./CommandPalette";
 import { RightPanel } from "@/features/right-panel/components/RightPanel";
+import { BetaBanner } from "@/components/common/BetaBanner";
+import { BetaWelcomeModal } from "@/components/common/BetaWelcomeModal";
 import { useUI } from "@/context/UIContext";
 import { isTypingTarget } from "@/lib/keyboard";
 import type { Me } from "@/types/api";
@@ -35,6 +37,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
       <Sidebar me={me} />
       <MobileDrawer me={me} open={mobileOpen} onOpenChange={setMobileOpen} />
       <div className="flex min-w-0 flex-1 flex-col">
+        <BetaBanner me={me} />
         <TopBar onOpenMobileDrawer={() => setMobileOpen(true)} />
         <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 outline-none">
           {children}
@@ -42,6 +45,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
       </div>
       <RightPanel />
       <CommandPalette />
+      <BetaWelcomeModal me={me} />
     </div>
   );
 }

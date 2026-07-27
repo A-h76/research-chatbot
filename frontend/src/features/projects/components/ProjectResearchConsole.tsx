@@ -22,10 +22,16 @@ import {
 const RESEARCH_ERROR_MESSAGES: Record<string, string> = {
   too_few_ready: "At least 2 analysed papers are needed in this project.",
   too_many: "You can research at most 10 papers at once.",
+  too_many_active: "Please wait until your current research finishes (max 2 at a time).",
   invalid_preset: "That research option isn’t available. Try another.",
   preset_or_query_required: "Pick a preset or type a question.",
   not_found: "This project couldn’t be found.",
   research_failed: "Research couldn’t finish. Please try again.",
+  ai_disabled: "AI is temporarily disabled by the operator. Try again later.",
+  token_quota_exceeded: "Monthly AI token quota exceeded.",
+  cost_quota_exceeded: "Monthly AI cost limit exceeded.",
+  daily_budget_exceeded: "Daily AI budget exceeded. Try again tomorrow.",
+  email_unverified: "Verify your email before using AI.",
 };
 
 function researchErrorMessage(err: unknown): string {
@@ -202,7 +208,20 @@ export function ProjectResearchConsole({ projectId }: { projectId: number }) {
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
           Researching across project papers…
+          {result?.estimated_cost_usd != null && (
+            <span className="text-xs">
+              · est. ${Number(result.estimated_cost_usd).toFixed(3)}
+            </span>
+          )}
         </div>
+      )}
+
+      {result?.status === "done" && result.estimated_cost_usd != null && (
+        <p className="text-[11px] text-muted-foreground">
+          Cost: est. ${Number(result.estimated_cost_usd).toFixed(3)}
+          {result.actual_cost_usd != null &&
+            ` · actual $${Number(result.actual_cost_usd).toFixed(3)}`}
+        </p>
       )}
 
       {result?.status === "done" && (

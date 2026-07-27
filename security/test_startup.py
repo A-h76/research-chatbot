@@ -46,9 +46,23 @@ def test_require_production_secrets_ok_with_minimum():
             "FLASK_SECRET_KEY": "prod-secret-key-at-least-32-chars!!",
             "GOOGLE_CLIENT_ID": "id",
             "GOOGLE_CLIENT_SECRET": "secret",
+            "ALLOWED_EMAILS": "beta@dhund.com",
         },
         is_production=True,
     )
+
+
+def test_require_production_secrets_requires_invite_gate():
+    with pytest.raises(SystemExit, match="ALLOWED_EMAILS or BETA_INVITE_ONLY"):
+        require_production_secrets(
+            {
+                "FLASK_ENV": "production",
+                "FLASK_SECRET_KEY": "prod-secret-key-at-least-32-chars!!",
+                "GOOGLE_CLIENT_ID": "id",
+                "GOOGLE_CLIENT_SECRET": "secret",
+            },
+            is_production=True,
+        )
 
 
 def test_require_production_secrets_r2_requires_creds():
@@ -59,6 +73,7 @@ def test_require_production_secrets_r2_requires_creds():
                 "FLASK_SECRET_KEY": "prod-secret-key-at-least-32-chars!!",
                 "GOOGLE_CLIENT_ID": "id",
                 "GOOGLE_CLIENT_SECRET": "secret",
+                "ALLOWED_EMAILS": "a@b.com",
                 "STORAGE_PROVIDER": "r2",
                 "R2_BUCKET": "bucket",
             },

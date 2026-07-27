@@ -75,6 +75,17 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 # NEVER set this in production.
 DEV_AUTO_LOGIN = os.environ.get("DEV_AUTO_LOGIN", "")
 ALLOWED_EMAILS = [e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()]
+# Closed beta: when true (or when ALLOWED_EMAILS is non-empty), unknown emails
+# cannot sign up. Production startup requires ALLOWED_EMAILS or this flag.
+BETA_INVITE_ONLY = (os.environ.get("BETA_INVITE_ONLY", "") or "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+CLOSED_BETA = BETA_INVITE_ONLY or bool(ALLOWED_EMAILS) or (
+    os.environ.get("CLOSED_BETA", "").strip().lower() in {"1", "true", "yes", "on"}
+)
 
 # Defaults kept to models with confident, verified pricing (see
 # backend/ai/cost_ledger.py's PRICING table and its own note on why
@@ -324,6 +335,36 @@ def _enforce_session_ttl():
 
 
 @app.before_request
+def _enforce_session_version():
+    """Logout-all: bump User.session_version to invalidate other cookies."""
+    uid = session.get("user_id")
+    if not uid:
+        return
+    # Ops models may not be ready during very early import hooks — skip safely.
+    try:
+        db = SessionLocal()
+        try:
+            user = db.get(User, uid)
+            if not user:
+                return
+            current = int(getattr(user, "session_version", 0) or 0)
+            stamped = session.get("session_version")
+            if stamped is None:
+                session["session_version"] = current
+                return
+            if int(stamped) != current:
+                session.clear()
+                log_security_event("session_expired", reason="revoked", user_id=uid)
+                if request.path.startswith("/api/"):
+                    return jsonify({"error": "session_expired", "reason": "revoked"}), 401
+                return redirect(url_for("login_page"))
+        finally:
+            db.close()
+    except Exception:
+        return
+
+
+@app.before_request
 def csrf_protect():
     """Same-origin check for state-changing API calls — defense-in-depth on top
     of SameSite=Lax cookies. Non-browser clients (no Origin/Referer) pass."""
@@ -470,6 +511,17 @@ class User(Base):
     # — default false for everyone; no signup flow ever sets this, the
     # first admin is always a manual DB update.
     is_admin = Column(Boolean, default=False)
+
+    # Closed-beta ops (migrations/0025) — extend, don't replace auth.
+    status = Column(String(30), default="active")  # pending_verification|active|suspended|deleted
+    email_verified = Column(Boolean, default=False)
+    email_verified_at = Column(DateTime, nullable=True)
+    password_hash = Column(String(255), nullable=True)
+    plan = Column(String(30), default="beta")  # free|beta|student|pro
+    session_version = Column(Integer, default=0)
+    monthly_cost_used = Column(Float, default=0.0)
+    monthly_cost_limit = Column(Float, default=20.0)
+    last_login_at = Column(DateTime, nullable=True)
 
 
 class Project(Base):
@@ -963,6 +1015,27 @@ class SearchIndex(Base):
     )
 
 
+# Closed-beta ops tables (migrations/0025) — registered on this Base so
+# SQLite create_all creates them; Postgres gets them via run_migrations.
+from security.ops import (
+    create_email_token_models,
+    create_invite_token_model,
+    create_security_event_model,
+    create_system_settings_model,
+)
+from backend.library.models import (
+    create_library_collection_models,
+    create_library_connection_model,
+)
+
+SystemSetting = create_system_settings_model(Base)
+SecurityEvent = create_security_event_model(Base)
+InviteToken = create_invite_token_model(Base)
+EmailVerificationToken, PasswordResetToken = create_email_token_models(Base)
+LibraryConnection = create_library_connection_model(Base)
+LibraryCollection, LibraryCollectionPaper = create_library_collection_models(Base)
+
+
 # checkfirst=True is SQLAlchemy's own default (verified: MetaData.create_all's
 # signature already defaults to it) — spelled out explicitly so it's not
 # a fact a reader has to already know. It's what makes this call safe to
@@ -1049,6 +1122,18 @@ def ensure_columns():
         # users.is_admin — migrations/0016, backend/prompts/routes.py's
         # admin-gated create/update routes.
         "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
+        # Closed-beta ops (migrations/0025)
+        "ALTER TABLE users ADD COLUMN status VARCHAR(30) DEFAULT 'active'",
+        "ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)",
+        "ALTER TABLE users ADD COLUMN plan VARCHAR(30) DEFAULT 'beta'",
+        "ALTER TABLE users ADD COLUMN session_version INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN monthly_cost_used FLOAT DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN monthly_cost_limit FLOAT DEFAULT 20",
+        "ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP",
+        "ALTER TABLE model_registry_cost_ledger ADD COLUMN estimated_cost FLOAT",
+        "ALTER TABLE model_registry_cost_ledger ADD COLUMN currency VARCHAR(8) DEFAULT 'USD'",
         # ── Scholarly provider integrations (migration 0018) ─────────────
         "ALTER TABLE files ADD COLUMN doi_verified BOOLEAN DEFAULT 0",
         "ALTER TABLE files ADD COLUMN crossref_last_synced TIMESTAMP",
@@ -1116,6 +1201,12 @@ def ensure_columns():
         "CREATE INDEX IF NOT EXISTS ix_memories_project_status ON memories (project_id, status)",
         "CREATE INDEX IF NOT EXISTS ix_memories_claim_hash ON memories (user_id, project_id, kind, claim_hash)",
         "CREATE INDEX IF NOT EXISTS ix_citations_user ON citations (user_id)",
+        # ── Library search (Phase 1.5) ───────────────────────────────────
+        "CREATE INDEX IF NOT EXISTS ix_files_user_created ON files (user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_files_user_year ON files (user_id, year)",
+        "CREATE INDEX IF NOT EXISTS ix_files_user_reading ON files (user_id, reading_status)",
+        "CREATE INDEX IF NOT EXISTS ix_files_user_meta ON files (user_id, meta_status)",
+        "CREATE INDEX IF NOT EXISTS ix_files_user_doi ON files (user_id, doi)",
     ):
         try:
             with engine.begin() as conn:
@@ -1171,6 +1262,7 @@ def login_page():
             access, refresh = create_jwt(user.id)
             session["jwt"] = {"access": access, "refresh": refresh}
             mark_session_login(session)
+            _record_user_login(user.id)
         finally:
             db.close()
         return redirect("/")
@@ -1179,19 +1271,22 @@ def login_page():
     return render_template(
         "login.html",
         oauth_ready=bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
-        error=None,
+        closed_beta=CLOSED_BETA,
+        error=request.args.get("error"),
+        verified=request.args.get("verified") == "1",
+        app_base_url=APP_BASE_URL,
     )
 
 
 @app.route("/auth/google")
-@limiter.limit("30 per hour")
+@limiter.limit("5 per minute")
 def auth_google():
     redirect_uri = url_for("auth_callback", _external=True)
     return google.authorize_redirect(redirect_uri)
 
 
 @app.route("/auth/callback")
-@limiter.limit("60 per hour")
+@limiter.limit("20 per minute")
 def auth_callback():
     token = google.authorize_access_token()
     info = token.get("userinfo") or {}
@@ -1205,13 +1300,15 @@ def auth_callback():
             ),
             403,
         )
-    if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
-        log_security_event("oauth_denied", email=email, reason="not_allowlisted")
+    ok, reason = _signup_allowed(email)
+    if not ok:
+        log_security_event("oauth_denied", email=email, reason=reason)
+        _ops_events.record("oauth_denied", email=email, reason=reason, ip=request.remote_addr or "")
         return (
             render_template(
                 "login.html",
                 oauth_ready=True,
-                error="Access denied — this account is not allowed.",
+                error="Access denied — this account is not invited to the closed beta.",
             ),
             403,
         )
@@ -1223,16 +1320,22 @@ def auth_callback():
             db.add(user)
         user.name = info.get("name") or email
         user.picture = info.get("picture") or ""
+        # Google email is verified by the provider
+        user.email_verified = True
+        user.email_verified_at = user.email_verified_at or datetime.now(timezone.utc)
+        if not user.status or user.status == "pending_verification":
+            user.status = "active"
+        if reason == "invite":
+            _ops_invites.consume_invite_for_email(email)
+            _ops_events.record("invite_accepted", user_id=user.id, email=email)
         db.commit()
         session["user_id"] = user.id
         session["user_email"] = user.email
-        # Extra capability alongside the session, not a replacement for
-        # it — API/programmatic clients that can't hold a browser cookie
-        # can pick this up via GET /api/auth/jwt once the user has a
-        # session; nothing about the redirect/session flow above changed.
+        session["session_version"] = int(getattr(user, "session_version", 0) or 0)
         access, refresh = create_jwt(user.id)
         session["jwt"] = {"access": access, "refresh": refresh}
         mark_session_login(session)
+        _record_user_login(user.id)
     finally:
         db.close()
     return redirect("/")
@@ -1277,34 +1380,15 @@ def dev_login():
         access, refresh = create_jwt(user.id)
         session["jwt"] = {"access": access, "refresh": refresh}
         mark_session_login(session)
+        _record_user_login(user.id)
         return jsonify({"ok": True, "user_id": user.id})
     finally:
         db.close()
 
 
-# Magic-link auth — a third login method (session-based, same shape as
-# Google OAuth/dev-login), not a replacement for either. Built via a
-# factory taking explicit dependencies rather than `import server` inside
-# auth/magic_link.py — this file is normally run directly as __main__, so
-# a module named "server" importing "server" back would re-execute this
-# whole file under a second module identity and recurse. See
-# auth/magic_link.py's module docstring for the full explanation.
-from auth.magic_link import create_magic_link_blueprint
+# Magic-link blueprint is registered after closed-beta ops services are
+# wired (needs signup_allowed_fn) — see below near create_ops_blueprint.
 
-app.register_blueprint(
-    create_magic_link_blueprint(
-        secret_key=app.secret_key,
-        limiter=limiter,
-        email_service=email_service,
-        SessionLocal=SessionLocal,
-        User=User,
-        select=select,
-        ALLOWED_EMAILS=ALLOWED_EMAILS,
-        APP_BASE_URL=APP_BASE_URL,
-        create_jwt=create_jwt,
-        log_security_event=log_security_event,
-    )
-)
 
 from backend.storage import get_storage_backend
 from backend.upload.routes import create_documents_blueprint
@@ -1488,6 +1572,91 @@ def get_cost_ledger():
     return _cost_ledger
 
 
+# ── Closed-beta ops services (AI gate, kill switch, invites, password auth) ─
+from security.ops import (
+    AiAccessGate,
+    BetaMetricsService,
+    InviteService,
+    PasswordAuthService,
+    SecurityEventStore,
+    SystemSettingsService,
+    record_last_login,
+)
+from security.ops.estimates import estimate_chat_tokens
+from security.ops.invites import signup_allowed
+from security.ops.routes import create_ops_blueprint
+
+_ops_events = SecurityEventStore(SessionLocal, SecurityEvent, log_fn=log_security_event)
+_ops_settings = SystemSettingsService(SessionLocal, SystemSetting)
+_ops_invites = InviteService(SessionLocal, InviteToken)
+_ops_password = PasswordAuthService(
+    SessionLocal,
+    User,
+    EmailVerificationToken,
+    PasswordResetToken,
+    email_service=email_service,
+    app_base_url=APP_BASE_URL,
+    events=_ops_events,
+)
+ai_gate = AiAccessGate(
+    SessionLocal=SessionLocal,
+    User=User,
+    settings=_ops_settings,
+    quota_service=quota_service,
+    events=_ops_events,
+    select=select,
+)
+_beta_metrics = BetaMetricsService(
+    SessionLocal,
+    User,
+    Project,
+    UserFile,
+    DerivedAnalysis,
+    Memory,
+    select,
+)
+
+
+def _record_user_login(user_id: int) -> None:
+    record_last_login(SessionLocal, User, user_id)
+
+
+def _signup_allowed(email: str) -> tuple[bool, str]:
+    return signup_allowed(
+        email,
+        allowed_emails=ALLOWED_EMAILS,
+        invite_service=_ops_invites,
+        require_invite=BETA_INVITE_ONLY or bool(ALLOWED_EMAILS),
+    )
+
+
+_ops_password.signup_allowed_fn = _signup_allowed
+
+from auth.magic_link import create_magic_link_blueprint
+
+app.register_blueprint(
+    create_magic_link_blueprint(
+        secret_key=app.secret_key,
+        limiter=limiter,
+        email_service=email_service,
+        SessionLocal=SessionLocal,
+        User=User,
+        select=select,
+        ALLOWED_EMAILS=ALLOWED_EMAILS,
+        APP_BASE_URL=APP_BASE_URL,
+        create_jwt=create_jwt,
+        log_security_event=log_security_event,
+        signup_allowed_fn=_signup_allowed,
+        on_user_created=lambda user, email: (
+            _ops_invites.consume_invite_for_email(email),
+            _ops_events.record("invite_accepted", user_id=user.id, email=email),
+            _record_user_login(user.id),
+        ),
+        record_last_login_fn=_record_user_login,
+    )
+)
+
+
 from auth.decorators import create_admin_required
 from backend.ai.analytics import PromptAnalytics
 from backend.ai.domain_registry import DomainRegistry
@@ -1570,6 +1739,63 @@ def get_prompt_analytics(db_session):
 
 
 admin_required = create_admin_required(SessionLocal, User)
+
+app.register_blueprint(
+    create_ops_blueprint(
+        settings_service=_ops_settings,
+        event_store=_ops_events,
+        invite_service=_ops_invites,
+        password_auth=_ops_password,
+        ai_gate=ai_gate,
+        quota_service=quota_service,
+        beta_metrics=_beta_metrics,
+        email_service=email_service,
+        app_base_url=APP_BASE_URL,
+        login_required=login_required,
+        admin_required=admin_required,
+        mark_session_login=mark_session_login,
+        create_jwt=create_jwt,
+        record_last_login_fn=_record_user_login,
+        limiter=limiter,
+    )
+)
+
+# Library Bridge — BibTeX/RIS + Connect Library + Collections (Phase 1.6)
+from backend.library.collections import CollectionService
+from backend.library.routes import create_library_bridge_blueprint
+from backend.library.service import LibraryImportService
+from backend.scholarly.crossref import enrich_file_from_doi as _enrich_file_from_doi
+
+_collection_service = CollectionService(
+    SessionLocal,
+    LibraryCollection,
+    LibraryCollectionPaper,
+    UserFile,
+    select,
+)
+_library_import = LibraryImportService(
+    SessionLocal,
+    UserFile,
+    Project,
+    select,
+    enrich_file_from_doi=_enrich_file_from_doi,
+    collection_service=_collection_service,
+)
+app.register_blueprint(
+    create_library_bridge_blueprint(
+        import_service=_library_import,
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        LibraryConnection=LibraryConnection,
+        Project=Project,
+        select_fn=select,
+        login_required=login_required,
+        app_base_url=APP_BASE_URL,
+        enrich_file_from_doi=_enrich_file_from_doi,
+        limiter=limiter,
+        collection_service=_collection_service,
+    )
+)
 
 app.register_blueprint(
     create_prompts_blueprint(
@@ -2237,6 +2463,10 @@ project_research_service = create_project_research_service(
     utility_model=UTILITY_MODEL,
     build_phase1_prompt_context=build_phase1_prompt_context,
     memory_promotion_service=memory_promotion_service,
+    ai_gate=ai_gate,
+    cost_ledger=_cost_ledger,
+    events=_ops_events,
+    max_active_research=2,
 )
 app.register_blueprint(
     create_projects_blueprint(
@@ -2907,6 +3137,7 @@ def _log_chat_cost(user_id, model, usage):
     prompt_tokens = getattr(usage, "input_tokens", 0) or 0
     completion_tokens = getattr(usage, "output_tokens", 0) or 0
     record_ai_call(model, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
+    cost = 0.0
     try:
         ledger = get_cost_ledger()
         cost = ledger.estimate_cost(model, prompt_tokens, completion_tokens)
@@ -2926,6 +3157,14 @@ def _log_chat_cost(user_id, model, usage):
             db.close()
     except Exception:
         logging.getLogger(__name__).warning("chat cost logging failed", exc_info=True)
+    try:
+        ai_gate.record_usage(
+            user_id,
+            tokens=prompt_tokens + completion_tokens,
+            cost_usd=cost,
+        )
+    except Exception:
+        logging.getLogger(__name__).warning("chat quota increment failed", exc_info=True)
 
 
 # ------------------------------------------------------------------ API: profile / models
@@ -2943,6 +3182,7 @@ def api_me():
                 "picture": user.picture or "",
                 "custom_instructions": user.custom_instructions or "",
                 "default_model": DEFAULT_MODEL,
+                "beta_mode": CLOSED_BETA,
             }
         )
     finally:
@@ -3972,131 +4212,42 @@ def reconcile_storage_cmd(apply):
 @app.route("/api/files", methods=["GET"])
 @login_required
 def list_files():
-    """Knowledge Library listing with server-side filtering, sorting, and
-    project-scoping.
+    """Knowledge Library listing — SQL-backed search, filters, pagination.
 
     Query params (all optional):
       project_id      int     – scope to one project (0 = unassigned)
-      kind            str     – "document" | "image" (default: all)
-      reading_status  str     – "unread" | "reading" | "read"
-      meta_status     str     – "done" | "pending" | "running" | "failed"
-      tag             str     – exact tag match (can repeat: ?tag=nlp&tag=cv)
-      q               str     – full-text search across name/title/authors/venue
-      sort            str     – "recent" (default) | "title" | "authors" |
-                                "year" | "reading_status" | "size"
-      order           str     – "asc" | "desc" (default: desc for recent/size,
-                                asc for everything else)
-      limit           int     – max rows (default 200, max 500)
-      offset          int     – pagination offset (default 0)
+      kind            str     – document | image
+      reading_status  str     – unread | reading | read
+      meta_status     str     – done | pending | running | failed
+      tag             str     – repeat for AND tag match
+      q               str     – full-text + field syntax (doi:, author:, title:, year:, venue:, tag:)
+      title, author, doi, year, venue, journal
+      year_from, year_to
+      import_source   str     – zotero | bibtex | ris | discover | upload | import
+      collection_id   int     – papers in this Library collection
+      recent_days     int     – added within N days
+      sort            str     – recent | title | authors | year | reading_status | size
+      order           str     – asc | desc
+      limit           int     – default 50, max 500
+      offset          int
     """
+    from backend.library.search import params_from_request, search_library
+
     uid = session["user_id"]
-    args = request.args
-
-    # ── parse params ─────────────────────────────────────────────────────
-    project_id_raw = args.get("project_id")
-    kind = args.get("kind", "").strip().lower() or None
-    reading_status = args.get("reading_status", "").strip().lower() or None
-    meta_status = args.get("meta_status", "").strip().lower() or None
-    tags_filter = args.getlist("tag")  # multi-value
-    q = args.get("q", "").strip().lower() or None
-    sort = args.get("sort", "recent").strip().lower()
-    order = args.get("order", "").strip().lower()  # "" → auto
-    try:
-        limit = max(1, min(500, int(args.get("limit", 200))))
-        offset = max(0, int(args.get("offset", 0)))
-    except (TypeError, ValueError):
-        limit, offset = 200, 0
-
-    # ── base query ───────────────────────────────────────────────────────
+    params = params_from_request(request.args, uid)
+    if params.collection_id:
+        file_ids = _collection_service.file_ids_in_collection(uid, params.collection_id)
+        if file_ids is None:
+            return jsonify({"error": "collection_not_found"}), 404
+        params.file_ids = file_ids
     db = SessionLocal()
     try:
-        q_stmt = select(UserFile).where(UserFile.user_id == uid)
-
-        # Project scoping
-        if project_id_raw is not None:
-            try:
-                pid = int(project_id_raw)
-                if pid == 0:
-                    q_stmt = q_stmt.where(UserFile.project_id.is_(None))
-                else:
-                    q_stmt = q_stmt.where(UserFile.project_id == pid)
-            except (TypeError, ValueError):
-                pass
-
-        # Kind filter
-        if kind in ("document", "image"):
-            q_stmt = q_stmt.where(UserFile.kind == kind)
-
-        # Reading status filter
-        if reading_status in ("unread", "reading", "read"):
-            q_stmt = q_stmt.where(UserFile.reading_status == reading_status)
-
-        # Meta status filter (e.g. "done" to show only fully processed papers)
-        if meta_status in ("pending", "running", "done", "failed"):
-            q_stmt = q_stmt.where(UserFile.meta_status == meta_status)
-
-        # Execute and load into memory for Python-side filtering
-        # (SQLite doesn't support JSON_CONTAINS; Postgres would let us push
-        # this down, but we keep it portable at MVP scale)
-        files = db.execute(q_stmt).scalars().all()
-
-        # ── tag filter (Python-side JSON scan) ───────────────────────────
-        if tags_filter:
-            wanted = {t.lower() for t in tags_filter if t}
-            filtered = []
-            for f in files:
-                try:
-                    ftags = {t.lower() for t in json.loads(f.tags or "[]")}
-                except Exception:
-                    ftags = set()
-                if wanted <= ftags:  # all wanted tags must be present
-                    filtered.append(f)
-            files = filtered
-
-        # ── full-text search (Python-side) ───────────────────────────────
-        if q:
-            words = q.split()
-
-            def _matches(f):
-                haystack = " ".join(
-                    filter(
-                        None,
-                        [
-                            f.name,
-                            f.title,
-                            f.authors,
-                            f.venue,
-                            f.abstract[:500] if f.abstract else "",
-                            " ".join(json.loads(f.tags or "[]")),
-                        ],
-                    )
-                ).lower()
-                return all(w in haystack for w in words)
-
-            files = [f for f in files if _matches(f)]
-
-        # ── sort ─────────────────────────────────────────────────────────
-        SORT_KEYS = {
-            "recent": lambda f: f.created_at or datetime.min,
-            "title": lambda f: (f.title or f.name or "").lower(),
-            "authors": lambda f: (f.authors or "").lower(),
-            "year": lambda f: f.year or "",
-            "reading_status": lambda f: {"reading": 0, "unread": 1, "read": 2}.get(f.reading_status or "unread", 1),
-            "size": lambda f: f.size or 0,
-        }
-        key_fn = SORT_KEYS.get(sort, SORT_KEYS["recent"])
-        reverse = (order == "desc") if order else sort in ("recent", "size")
-        files = sorted(files, key=key_fn, reverse=reverse)
-
-        # ── pagination ───────────────────────────────────────────────────
-        total = len(files)
-        page = files[offset : offset + limit]
-
+        total, page = search_library(db, UserFile, params)
         return jsonify(
             {
                 "total": total,
-                "offset": offset,
-                "limit": limit,
+                "offset": params.offset,
+                "limit": params.limit,
                 "items": [_file_to_dict(x) for x in page],
             }
         )
@@ -4665,6 +4816,10 @@ def scholarly_discover_import():
     open_access_url = (body.get("open_access_url") or "").strip()
     openalex_id = (body.get("openalex_id") or body.get("id") or "").strip()
     project_id = body.get("project_id")
+    # Shared import pipeline entry: discover | related (Semantic Scholar).
+    import_source = (body.get("import_source") or "discover").strip().lower()
+    if import_source not in ("discover", "related", "openalex"):
+        import_source = "discover"
 
     if not title and not doi:
         return jsonify({"error": "title_or_doi_required"}), 400
@@ -4696,9 +4851,13 @@ def scholarly_discover_import():
                 })
 
         display_name = (title or f"openalex:{openalex_id}" or "openalex-import")[:300]
-        tags = ["from-discover"]
+        tags = ["from-related"] if import_source == "related" else ["from-discover"]
         if openalex_id:
-            tags.append(f"openalex:{openalex_id[:80]}")
+            # Related imports pass s2:<paperId>; Discover passes OpenAlex ids.
+            if openalex_id.startswith("s2:"):
+                tags.append(openalex_id[:80])
+            else:
+                tags.append(f"openalex:{openalex_id[:80]}")
 
         uf = UserFile(
             user_id=uid,
@@ -4756,7 +4915,16 @@ def scholarly_related(fid):
     Cache: 7 days per file.
     Returns {related, citing, recommended, cached_at, provider_version} | 503.
     """
+    from backend.scholarly import provider_enabled
     from backend.scholarly.semantic_scholar import get_related_papers
+
+    if not provider_enabled("semantic_scholar"):
+        return jsonify({
+            "error": "related_disabled",
+            "message": "Related papers are temporarily disabled.",
+            "related": [], "citing": [], "recommended": [],
+        }), 503
+
     db = SessionLocal()
     try:
         uf = db.get(UserFile, fid)
@@ -6067,7 +6235,7 @@ def delete_account():
 
 
 # ------------------------------------------------------------------ support
-SUPPORT_CATEGORIES = {"general", "bug", "feature", "account"}
+SUPPORT_CATEGORIES = {"general", "bug", "feature", "account", "beta"}
 
 
 def _valid_email(e):
@@ -6260,7 +6428,7 @@ def run_tool(name, args, user_id, project_id):
 
 @app.route("/api/chat", methods=["POST"])
 @login_required
-@limiter.limit("60 per minute")
+@limiter.limit("20 per minute")
 def chat():
     data = request.get_json(silent=True) or {}
     cid = data.get("conversation_id")
@@ -6269,6 +6437,21 @@ def chat():
     regenerate = bool(data.get("regenerate"))
     search_mode = data.get("search", "auto")
     user_id = session["user_id"]
+
+    # Unified AI gate: kill switch, verification, daily budget, quotas
+    from security.ops.gate import AiAccessDenied
+
+    try:
+        ai_gate.preflight(
+            user_id,
+            token_estimate=estimate_chat_tokens(user_message),
+            cost_estimate=0.01,
+        )
+    except AiAccessDenied as exc:
+        return (
+            jsonify({"error": exc.code, "detail": exc.message}),
+            exc.http_status,
+        )
 
     db = SessionLocal()
     try:
@@ -6286,6 +6469,13 @@ def chat():
                 user_id=user_id,
                 project_id=convo.project_id,
                 conversation_id=convo.id,
+            )
+            _ops_events.record(
+                "authz_denied",
+                user_id=user_id,
+                resource="project",
+                action="chat",
+                project_id=convo.project_id,
             )
             project = None
 

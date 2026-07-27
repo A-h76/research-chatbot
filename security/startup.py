@@ -69,6 +69,30 @@ def require_production_secrets(
     if not (environ.get("GOOGLE_CLIENT_SECRET") or "").strip():
         missing.append("GOOGLE_CLIENT_SECRET")
 
+    # Closed beta: refuse open signup in production.
+    allowed = (environ.get("ALLOWED_EMAILS") or "").strip()
+    invite_only = (environ.get("BETA_INVITE_ONLY") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not allowed and not invite_only:
+        missing.append("ALLOWED_EMAILS or BETA_INVITE_ONLY")
+
+    if not (environ.get("REDIS_URL") or "").strip():
+        log.warning(
+            "REDIS_URL unset in production — Flask-Limiter falls back to memory:// "
+            "(limits are NOT shared across workers)."
+        )
+
+    clam = (environ.get("CLAMAV_ENABLED") or "").strip().lower()
+    if clam not in {"1", "true", "yes", "on"}:
+        log.warning(
+            "CLAMAV_ENABLED is off in production — uploads are magic-byte validated "
+            "but not virus-scanned. Set CLAMAV_ENABLED=1 with a reachable clamd."
+        )
+
     if _r2_is_configured(environ):
         for key in ("R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"):
             if not (environ.get(key) or "").strip():

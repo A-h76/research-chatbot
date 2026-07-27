@@ -5,6 +5,7 @@ export interface Me {
   picture: string;
   custom_instructions: string;
   default_model: string;
+  beta_mode?: boolean;
 }
 
 export interface ModelsResponse {
@@ -158,6 +159,8 @@ export interface ProjectResearchResult {
   supporting_file_ids: number[];
   derived_analysis_id: number;
   incomplete?: boolean;
+  estimated_cost_usd?: number | null;
+  actual_cost_usd?: number | null;
   created_at: string | null;
 }
 

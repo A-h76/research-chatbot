@@ -24,6 +24,13 @@
   h1 { font-size:22px; font-weight:600; margin-bottom:6px; }
   p.sub { color:#888; margin-bottom:32px; font-size:14px; line-height:1.5; }
 
+  .beta-note {
+    background:#141a14; border:1px solid #2a3a2a; color:#b8d4b8;
+    padding:12px 16px; border-radius:10px; margin-bottom:24px;
+    font-size:13px; line-height:1.5; text-align:left;
+  }
+  .beta-note a { color:#8fd48f; }
+
   .gbtn {
     display:inline-flex; align-items:center; gap:12px;
     background:#fff; color:#1f1f1f; border:none; border-radius:12px;
@@ -36,6 +43,11 @@
 
   .err {
     background:#3f1919; border:1px solid #6b2020; color:#ffb4b4;
+    padding:12px 16px; border-radius:10px; margin-bottom:24px;
+    font-size:13px; line-height:1.5; text-align:left;
+  }
+  .ok {
+    background:#142014; border:1px solid #2a4a2a; color:#b4e0b4;
     padding:12px 16px; border-radius:10px; margin-bottom:24px;
     font-size:13px; line-height:1.5; text-align:left;
   }
@@ -73,16 +85,50 @@
     transition:border-color .15s, color .15s;
   }
   .dev-btn:hover { border-color:#555; color:#999; }
+
+  .magic-form { text-align:left; margin-top:8px; }
+  .magic-form label { display:block; font-size:13px; color:#888; margin-bottom:6px; }
+  .magic-form input {
+    width:100%; padding:12px 14px; border-radius:10px;
+    border:1px solid #333; background:#111; color:#ececec;
+    font-size:14px; margin-bottom:10px;
+  }
+  .magic-form input:focus { outline:none; border-color:#555; }
+  .magic-btn {
+    width:100%; padding:12px; border-radius:10px; border:none;
+    background:#2a2a2a; color:#ececec; font-size:14px; font-weight:500;
+    cursor:pointer; transition:background .15s;
+  }
+  .magic-btn:hover { background:#333; }
+  .magic-btn:disabled { opacity:0.5; cursor:not-allowed; }
+  .support-link { display:block; margin-top:16px; font-size:13px; color:#666; }
+  .support-link a { color:#a0cfff; text-decoration:none; }
+  .support-link a:hover { text-decoration:underline; }
 </style>
 </head>
 <body>
   <div class="card">
     <div class="logo">✦</div>
     <h1>Dhund</h1>
+    {% if closed_beta %}
+    <p class="sub">Closed beta — invite-only research workspace</p>
+    {% else %}
     <p class="sub">Your AI-powered research workspace</p>
+    {% endif %}
 
     {% if error %}
     <div class="err">{{ error }}</div>
+    {% endif %}
+
+    {% if verified %}
+    <div class="ok">Email verified — you can sign in now.</div>
+    {% endif %}
+
+    {% if closed_beta %}
+    <div class="beta-note">
+      Access is limited to invited researchers. Sign in with the email address on your invite.
+      Need access? <a href="/support">Request an invite</a>.
+    </div>
     {% endif %}
 
     {% if oauth_ready %}
@@ -95,6 +141,21 @@
         </svg>
         Continue with Google
       </a>
+
+      <div class="or">or</div>
+
+      <form class="magic-form" id="magic-form" onsubmit="return sendMagicLink(event)">
+        <label for="magic-email">Email me a sign-in link</label>
+        <input id="magic-email" type="email" name="email" placeholder="you@university.edu" required autocomplete="email">
+        <button type="submit" class="magic-btn" id="magic-btn">Send magic link</button>
+        <p id="magic-msg" style="margin-top:10px;font-size:12px;color:#888;display:none"></p>
+      </form>
+
+      {% if closed_beta %}
+      <p class="support-link">
+        No invite yet? <a href="/support">Contact us for beta access</a>
+      </p>
+      {% endif %}
     {% else %}
       <div class="setup-box">
         <h3>⚙️ Google OAuth not configured</h3>
@@ -135,5 +196,36 @@
       </p>
     {% endif %}
   </div>
+
+  <script>
+    async function sendMagicLink(e) {
+      e.preventDefault();
+      var btn = document.getElementById('magic-btn');
+      var msg = document.getElementById('magic-msg');
+      var email = document.getElementById('magic-email').value.trim();
+      btn.disabled = true;
+      msg.style.display = 'none';
+      try {
+        var res = await fetch('/auth/magic-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email })
+        });
+        var data = await res.json().catch(function() { return {}; });
+        msg.style.display = 'block';
+        msg.style.color = res.ok ? '#b4e0b4' : '#ffb4b4';
+        msg.textContent = data.detail || (res.ok
+          ? 'If that email is allowed, check your inbox for a sign-in link.'
+          : 'Could not send link. Try again.');
+      } catch (err) {
+        msg.style.display = 'block';
+        msg.style.color = '#ffb4b4';
+        msg.textContent = 'Network error — try again.';
+      } finally {
+        btn.disabled = false;
+      }
+      return false;
+    }
+  </script>
 </body>
 </html>

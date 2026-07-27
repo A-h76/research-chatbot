@@ -127,6 +127,10 @@ class ProjectResearchService:
     utility_model: str
     build_phase1_prompt_context: Callable[[dict[str, Any], int], str] | None = None
     memory_promotion_service: Any | None = None
+    ai_gate: Any | None = None
+    cost_ledger: Any | None = None
+    events: Any | None = None
+    max_active_research: int = 2
     _spawn_background: Callable[[Any, tuple], None] = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -136,6 +140,32 @@ class ProjectResearchService:
     @staticmethod
     def _default_spawn_background(target, args: tuple) -> None:
         threading.Thread(target=target, args=args, daemon=True).start()
+
+    def _count_active_research(self, db: Any, user_id: int) -> int:
+        """In-flight research jobs for this user (empty/running payloads)."""
+        rows = db.execute(
+            self.select(self.DerivedAnalysis).where(
+                self.DerivedAnalysis.user_id == user_id,
+                self.DerivedAnalysis.kind == "research",
+            )
+        ).scalars().all()
+        active = 0
+        for da in rows:
+            raw = (da.data or "").strip()
+            if not raw:
+                active += 1
+                continue
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                continue
+            if payload.get("error"):
+                continue
+            if payload.get("answer") or payload.get("summary"):
+                continue
+            # Placeholder / still running
+            active += 1
+        return active
 
     def _get_owned(self, db: Any, project_id: int, user_id: int) -> Any | None:
         p = db.get(self.Project, project_id)
@@ -342,6 +372,8 @@ class ProjectResearchService:
             status = "failed"
         elif payload.get("answer") or payload.get("summary"):
             status = "done"
+        elif payload.get("status") == "running":
+            status = "running"
         elif da.data:
             status = "done"
 
@@ -378,6 +410,8 @@ class ProjectResearchService:
             "supporting_file_ids": supporting,
             "derived_analysis_id": da.id,
             "incomplete": bool(payload.get("incomplete")),
+            "estimated_cost_usd": payload.get("estimated_cost_usd"),
+            "actual_cost_usd": payload.get("actual_cost_usd"),
             "created_at": _iso(getattr(da, "created_at", None)),
         }
 
@@ -397,6 +431,40 @@ class ProjectResearchService:
 
             raw = self.responses_text(prompt, json_mode=True, kind="project_research", user_id=da.user_id)
             data = json.loads(raw)
+            # Best-effort actual cost from estimate table (token usage not always available)
+            actual_cost = None
+            if self.cost_ledger is not None:
+                try:
+                    prompt_tokens = max(800, len(prompt) // 4)
+                    completion_tokens = max(400, len(raw) // 4)
+                    actual_cost = self.cost_ledger.estimate_cost(
+                        self.utility_model, prompt_tokens, completion_tokens
+                    )
+                    db_cost = self.SessionLocal()
+                    try:
+                        self.cost_ledger.log(
+                            db_cost,
+                            user_id=da.user_id,
+                            model=self.utility_model,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            total_tokens=prompt_tokens + completion_tokens,
+                            cost=actual_cost,
+                            action="research",
+                            estimated_cost=request_meta.get("estimated_cost_usd"),
+                        )
+                    finally:
+                        db_cost.close()
+                    if self.ai_gate is not None:
+                        self.ai_gate.record_usage(
+                            da.user_id,
+                            tokens=prompt_tokens + completion_tokens,
+                            cost_usd=actual_cost,
+                        )
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "research cost logging failed derived_id=%s", derived_id, exc_info=True
+                    )
 
             claims, supporting, incomplete = self._normalize_claims(
                 data.get("claims"),
@@ -413,6 +481,8 @@ class ProjectResearchService:
                 "query": request_meta.get("query") or "",
                 "intent": request_meta.get("intent") or "",
                 "incomplete": incomplete,
+                "estimated_cost_usd": request_meta.get("estimated_cost_usd"),
+                "actual_cost_usd": actual_cost,
             }
 
             da = db.get(self.DerivedAnalysis, derived_id)
@@ -521,7 +591,49 @@ class ProjectResearchService:
                 except Exception:
                     pass
 
+            # Queue limit — protect workers + OpenAI spend (CTO ops rule).
+            # Cached hits above return early; only new/retry runs count.
+            active = self._count_active_research(db, user_id)
+            # If reusing an existing failed/empty row, it already counts as active.
+            reusing = bool(existing)
+            if active >= self.max_active_research and not reusing:
+                if self.events:
+                    self.events.record(
+                        "research_queue_full",
+                        user_id=user_id,
+                        active=active,
+                        limit=self.max_active_research,
+                    )
+                return None, "too_many_active"
+
             papers_json = json.dumps([c["json_blob"] for c in packed], ensure_ascii=False, indent=1)
+            papers_json = papers_json[:_MAX_PAPERS_JSON_CHARS]
+
+            cost_estimate = {
+                "estimated_cost_usd": 0.0,
+                "estimated_prompt_tokens": 0,
+                "estimated_completion_tokens": 0,
+            }
+            if self.cost_ledger is not None:
+                from security.ops.estimates import estimate_research_cost_usd
+
+                cost_estimate = estimate_research_cost_usd(
+                    self.cost_ledger,
+                    model=self.utility_model,
+                    papers_json_chars=len(papers_json),
+                )
+
+            if self.ai_gate is not None:
+                try:
+                    self.ai_gate.preflight(
+                        user_id,
+                        token_estimate=int(cost_estimate.get("estimated_prompt_tokens") or 800)
+                        + int(cost_estimate.get("estimated_completion_tokens") or 2500),
+                        cost_estimate=float(cost_estimate.get("estimated_cost_usd") or 0),
+                    )
+                except Exception as exc:
+                    code = getattr(exc, "code", None) or "ai_denied"
+                    return None, code
 
             builder = self.get_prompt_builder(db)
             # Light research-memory injection: pinned + contradictions + open questions only
@@ -547,19 +659,33 @@ class ProjectResearchService:
                 "preset": preset or "",
                 "query": query,
                 "intent": intent,
+                "estimated_cost_usd": cost_estimate.get("estimated_cost_usd"),
+                "estimated_prompt_tokens": cost_estimate.get("estimated_prompt_tokens"),
+                "estimated_completion_tokens": cost_estimate.get("estimated_completion_tokens"),
             }
 
             if existing and force:
-                existing.data = ""
+                existing.data = json.dumps(
+                    {"status": "running", **{k: v for k, v in request_meta.items() if v is not None}},
+                    ensure_ascii=False,
+                )
                 existing.model = ""
                 existing.file_ids = json.dumps(valid_ids)
                 db.commit()
                 da_id = existing.id
             elif existing and not existing.data:
+                existing.data = json.dumps(
+                    {"status": "running", **{k: v for k, v in request_meta.items() if v is not None}},
+                    ensure_ascii=False,
+                )
+                db.commit()
                 da_id = existing.id
             elif existing:
                 # Prior failed attempt for this selection — reuse the row.
-                existing.data = ""
+                existing.data = json.dumps(
+                    {"status": "running", **{k: v for k, v in request_meta.items() if v is not None}},
+                    ensure_ascii=False,
+                )
                 existing.model = ""
                 existing.file_ids = json.dumps(valid_ids)
                 db.commit()
@@ -571,6 +697,10 @@ class ProjectResearchService:
                     kind="research",
                     selection_hash=sel_hash,
                     file_ids=json.dumps(valid_ids),
+                    data=json.dumps(
+                        {"status": "running", **{k: v for k, v in request_meta.items() if v is not None}},
+                        ensure_ascii=False,
+                    ),
                 )
                 db.add(da)
                 db.commit()
@@ -584,6 +714,7 @@ class ProjectResearchService:
             db.expire_all()
             da = db.get(self.DerivedAnalysis, da_id)
             result = self._research_to_dict(da, skipped)
+            result["estimated_cost_usd"] = cost_estimate.get("estimated_cost_usd")
             return result, None
         finally:
             db.close()
@@ -666,6 +797,10 @@ def create_project_research_service(
     utility_model: str,
     build_phase1_prompt_context=None,
     memory_promotion_service=None,
+    ai_gate=None,
+    cost_ledger=None,
+    events=None,
+    max_active_research: int = 2,
 ) -> ProjectResearchService:
     return ProjectResearchService(
         SessionLocal=SessionLocal,
@@ -680,4 +815,8 @@ def create_project_research_service(
         utility_model=utility_model,
         build_phase1_prompt_context=build_phase1_prompt_context,
         memory_promotion_service=memory_promotion_service,
+        ai_gate=ai_gate,
+        cost_ledger=cost_ledger,
+        events=events,
+        max_active_research=max_active_research,
     )
