@@ -6,6 +6,16 @@ export class ApiError extends Error {
   }
 }
 
+/** Prevents a stampede of 401s from opening the modal repeatedly. */
+let sessionExpiredDispatched = false;
+
+/** D9 / M11 — notify shell instead of hard-redirecting mid-flight. */
+function handleUnauthorized() {
+  if (sessionExpiredDispatched) return;
+  sessionExpiredDispatched = true;
+  window.dispatchEvent(new CustomEvent("soro:session-expired"));
+}
+
 async function request<T>(url: string, opts: RequestInit = {}): Promise<T> {
   const isForm = opts.body instanceof FormData;
   const res = await fetch(url, {
@@ -13,8 +23,8 @@ async function request<T>(url: string, opts: RequestInit = {}): Promise<T> {
     headers: isForm ? opts.headers : { "Content-Type": "application/json", ...(opts.headers || {}) },
   });
   if (res.status === 401) {
-    window.location.href = "/login";
-    throw new ApiError("not_authenticated", 401);
+    handleUnauthorized();
+    throw new ApiError("session_expired", 401);
   }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {

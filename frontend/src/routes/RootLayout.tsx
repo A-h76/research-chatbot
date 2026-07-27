@@ -8,14 +8,24 @@ export function RootLayout() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex h-screen items-center justify-center bg-background" aria-busy="true">
         <LoadingSpinner />
+        <span className="sr-only">Loading workspace</span>
       </div>
     );
   }
   if (isError || !me) {
-    // apiClient already redirected to /login on 401
-    return null;
+    // SessionExpiredModal (App-level) handles 401; keep a calm shell while it opens.
+    return (
+      <div
+        className="flex h-screen items-center justify-center bg-background px-6 text-center"
+        role="status"
+      >
+        <p className="text-[13px] text-muted-foreground">
+          Waiting for sign-in…
+        </p>
+      </div>
+    );
   }
 
   return (

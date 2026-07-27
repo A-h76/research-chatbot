@@ -5,15 +5,14 @@ Every section is idempotent (checks for existing rows before inserting),
 so an accidental second run is a no-op, not a duplicate-data bug.
 """
 
-import os
 import json
+import os
+
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 load_dotenv()
-url = (os.environ.get("DATABASE_URL") or "sqlite:///chat_dev.db").replace(
-    "postgres://", "postgresql://", 1
-)
+url = (os.environ.get("DATABASE_URL") or "sqlite:///chat_dev.db").replace("postgres://", "postgresql://", 1)
 engine = create_engine(url, pool_pre_ping=True)
 
 # Prompt templates copied verbatim from server.py's module-level prompt
@@ -177,9 +176,7 @@ with engine.begin() as conn:
     model_ids = {}
     for logical_name, provider_model_id in MODELS.items():
         row = conn.execute(
-            text(
-                "SELECT id FROM model_versions WHERE logical_name = :n AND version = 1"
-            ),
+            text("SELECT id FROM model_versions WHERE logical_name = :n AND version = 1"),
             {"n": logical_name},
         ).first()
         if row:
@@ -199,12 +196,7 @@ with engine.begin() as conn:
         )
 
     # pipeline_versions: version 1 = the bundle the seeds above represent.
-    if (
-        conn.execute(
-            text("SELECT count(*) FROM pipeline_versions WHERE version = 1")
-        ).scalar()
-        == 0
-    ):
+    if conn.execute(text("SELECT count(*) FROM pipeline_versions WHERE version = 1")).scalar() == 0:
         conn.execute(
             text("""
             INSERT INTO pipeline_versions
@@ -223,6 +215,4 @@ with engine.begin() as conn:
     else:
         print("SKIP  pipeline_versions v1 already seeded")
 
-print(
-    "\nai_usage_ledger, outbox_events, feature_flags: left empty — no backfill for any of them."
-)
+print("\nai_usage_ledger, outbox_events, feature_flags: left empty — no backfill for any of them.")

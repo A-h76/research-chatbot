@@ -16,17 +16,19 @@ to fake.
 
 Run: pytest backend/prompts/test_routes.py -v
 """
+
 from functools import wraps
 
 import pytest
-from flask import Flask, session, jsonify
-from sqlalchemy import create_engine, Column, Integer, Boolean
+from flask import Flask, jsonify, session
+from sqlalchemy import Boolean, Column, Integer, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from auth.decorators import create_admin_required
-from backend.ai.prompt_registry import PromptRegistry, PromptVersion, Persona, _Base as prompt_base
 from backend.ai.persona_engine import PersonaEngine
 from backend.ai.prompt_builder import AssembledPrompt
+from backend.ai.prompt_registry import Persona, PromptRegistry, PromptVersion
+from backend.ai.prompt_registry import _Base as prompt_base
 from backend.prompts.routes import create_prompts_blueprint
 
 
@@ -36,13 +38,14 @@ def _login_required(f):
         if "user_id" not in session:
             return jsonify({"error": "not_authenticated"}), 401
         return f(*args, **kwargs)
+
     return wrapper
 
 
 @pytest.fixture
 def env(mocker):
     engine = create_engine("sqlite:///:memory:")
-    prompt_base.metadata.create_all(engine)   # prompt_versions + personas
+    prompt_base.metadata.create_all(engine)  # prompt_versions + personas
 
     UserBase = declarative_base()
 
@@ -63,23 +66,32 @@ def env(mocker):
 
     fake_builder = mocker.Mock()
     fake_builder.preview.return_value = AssembledPrompt(
-        system="sys", persona="", project_context="", memory="", rag="",
-        task="task text", output_schema="", final="FINAL PREVIEW TEXT",
-        prompt_version_id=1, persona_id=None,
+        system="sys",
+        persona="",
+        project_context="",
+        memory="",
+        rag="",
+        task="task text",
+        output_schema="",
+        final="FINAL PREVIEW TEXT",
+        prompt_version_id=1,
+        persona_id=None,
     )
 
     app = Flask(__name__)
     app.secret_key = "test-secret"
-    app.register_blueprint(create_prompts_blueprint(
-        SessionLocal=SessionLocal,
-        PromptVersion=PromptVersion,
-        Persona=Persona,
-        PromptRegistry=PromptRegistry,
-        PersonaEngine=PersonaEngine,
-        get_prompt_builder=lambda db_session: fake_builder,
-        login_required=_login_required,
-        admin_required=create_admin_required(SessionLocal, User),
-    ))
+    app.register_blueprint(
+        create_prompts_blueprint(
+            SessionLocal=SessionLocal,
+            PromptVersion=PromptVersion,
+            Persona=Persona,
+            PromptRegistry=PromptRegistry,
+            PersonaEngine=PersonaEngine,
+            get_prompt_builder=lambda db_session: fake_builder,
+            login_required=_login_required,
+            admin_required=create_admin_required(SessionLocal, User),
+        )
+    )
 
     return {"client": app.test_client(), "SessionLocal": SessionLocal, "fake_builder": fake_builder}
 
@@ -101,7 +113,7 @@ def test_create_prompt_requires_login(env):
 
 
 def test_create_prompt_requires_admin(env):
-    _login(env["client"], 2)   # logged in, not admin
+    _login(env["client"], 2)  # logged in, not admin
     resp = env["client"].post("/api/prompts", json={"name": "x", "template": "y"})
     assert resp.status_code == 403
 
@@ -136,7 +148,7 @@ def test_list_prompts_filters_by_category(env):
 def test_list_prompts_filters_by_status(env):
     _login(env["client"], 1)
     env["client"].post("/api/prompts", json={"name": "a", "template": "A", "status": "active"})
-    env["client"].post("/api/prompts", json={"name": "b", "template": "B"})   # draft default
+    env["client"].post("/api/prompts", json={"name": "b", "template": "B"})  # draft default
 
     resp = env["client"].get("/api/prompts?status=active")
     names = {p["name"] for p in resp.get_json()["prompts"]}
@@ -161,7 +173,7 @@ def test_get_prompt_not_found(env):
 # ------------------------------------------------------------ prompts: create
 def test_create_prompt_missing_fields_returns_400(env):
     _login(env["client"], 1)
-    resp = env["client"].post("/api/prompts", json={"name": "a"})   # no template
+    resp = env["client"].post("/api/prompts", json={"name": "a"})  # no template
     assert resp.status_code == 400
 
 
@@ -182,10 +194,17 @@ def test_create_prompt_defaults_to_draft(env):
 
 def test_create_prompt_stores_examples_and_metadata(env):
     _login(env["client"], 1)
-    resp = env["client"].post("/api/prompts", json={
-        "name": "a", "template": "A", "description": "desc", "category": "cat",
-        "expected_output_type": "json", "examples": [{"input": "x", "output": "y"}],
-    })
+    resp = env["client"].post(
+        "/api/prompts",
+        json={
+            "name": "a",
+            "template": "A",
+            "description": "desc",
+            "category": "cat",
+            "expected_output_type": "json",
+            "examples": [{"input": "x", "output": "y"}],
+        },
+    )
     body = resp.get_json()
     assert body["description"] == "desc"
     assert body["category"] == "cat"
@@ -206,9 +225,13 @@ def test_update_prompt_changes_metadata_fields(env):
     _login(env["client"], 1)
     created = env["client"].post("/api/prompts", json={"name": "a", "template": "A"}).get_json()
 
-    resp = env["client"].patch(f"/api/prompts/{created['id']}", json={
-        "description": "updated desc", "category": "new-cat",
-    })
+    resp = env["client"].patch(
+        f"/api/prompts/{created['id']}",
+        json={
+            "description": "updated desc",
+            "category": "new-cat",
+        },
+    )
     body = resp.get_json()
     assert body["description"] == "updated desc"
     assert body["category"] == "new-cat"
@@ -268,8 +291,7 @@ def test_create_version_is_active_without_status_active_returns_400(env):
     # is_active=True with the default status="draft" violates the state
     # machine (PromptRegistry.add_version) — the route surfaces that as
     # a 400, not a 500.
-    resp = env["client"].post(
-        f"/api/prompts/{created['id']}/versions", json={"template": "A2", "is_active": True})
+    resp = env["client"].post(f"/api/prompts/{created['id']}/versions", json={"template": "A2", "is_active": True})
     assert resp.status_code == 400
 
 
@@ -280,7 +302,7 @@ def test_preview_requires_login(env):
 
 
 def test_preview_does_not_require_admin(env):
-    _login(env["client"], 2)   # logged in, not admin
+    _login(env["client"], 2)  # logged in, not admin
     resp = env["client"].post("/api/prompts/preview", json={"task_name": "x", "user_query": "q"})
     assert resp.status_code == 200
 
@@ -339,7 +361,7 @@ def test_create_persona_duplicate_name_returns_409(env):
 
 def test_create_persona_missing_fields_returns_400(env):
     _login(env["client"], 1)
-    resp = env["client"].post("/api/personas", json={"name": "X"})   # no system_prompt
+    resp = env["client"].post("/api/personas", json={"name": "X"})  # no system_prompt
     assert resp.status_code == 400
 
 

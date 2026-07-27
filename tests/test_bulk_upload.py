@@ -21,20 +21,20 @@ import pytest
 from flask import Flask
 from flask_jwt_extended import JWTManager
 from sqlalchemy import (
-    create_engine,
     Column,
-    Integer,
-    String,
     DateTime,
     ForeignKey,
+    Integer,
+    String,
+    create_engine,
     select,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from auth.jwt_utils import create_jwt
-from quotas.service import QuotaExceededError
-from backend.upload.bulk import create_bulk_upload_blueprint, MAX_BATCH_SIZE
+from backend.upload.bulk import MAX_BATCH_SIZE, create_bulk_upload_blueprint
 from backend.upload.validation import ValidationError
+from quotas.service import QuotaExceededError
 
 
 @pytest.fixture
@@ -148,9 +148,15 @@ def _upload(client, files, token=None):
 
 # ------------------------------------------------------------ 1. success
 def test_bulk_upload_success(client, db_models):
+    import zipfile
+
+    epub_buf = io.BytesIO()
+    with zipfile.ZipFile(epub_buf, "w") as zf:
+        zf.writestr("mimetype", "application/epub+zip")
+        zf.writestr("META-INF/container.xml", "<container/>")
     files = [
         (io.BytesIO(b"%PDF fake"), "a.pdf"),
-        (io.BytesIO(b"epub fake"), "b.epub"),
+        (io.BytesIO(epub_buf.getvalue()), "b.epub"),
         (io.BytesIO(b"plain text"), "c.txt"),
     ]
     resp = _upload(client, files)
@@ -166,11 +172,7 @@ def test_bulk_upload_success(client, db_models):
     db = db_models["SessionLocal"]()
     batch = db.get(db_models["UploadBatch"], body["batch_id"])
     jobs = (
-        db.execute(
-            select(db_models["UploadJob"]).where(
-                db_models["UploadJob"].upload_batch_id == batch.id
-            )
-        )
+        db.execute(select(db_models["UploadJob"]).where(db_models["UploadJob"].upload_batch_id == batch.id))
         .scalars()
         .all()
     )
@@ -179,9 +181,7 @@ def test_bulk_upload_success(client, db_models):
     assert len(jobs) == 3
     assert all(j.job_type == "import" and j.status == "pending" for j in jobs)
 
-    status_resp = client.get(
-        f"/api/uploads/batch/{batch.id}/status", headers=_auth(client.access_token)
-    )
+    status_resp = client.get(f"/api/uploads/batch/{batch.id}/status", headers=_auth(client.access_token))
     assert status_resp.status_code == 200, status_resp.get_json()
     assert status_resp.get_json()["total_files"] == 3
 
@@ -217,10 +217,10 @@ def test_bulk_upload_invalid_file_type(client):
 
 # ------------------------------------------------------------ 4. too large
 def test_bulk_upload_file_too_large(client, mocker):
-    import backend.upload.bulk as bulk_module
+    import backend.upload.validation as validation_module
 
     mocker.patch.object(
-        bulk_module,
+        validation_module,
         "validate_size",
         side_effect=ValidationError("too_large", "File exceeds the 50 MB limit"),
     )
@@ -240,11 +240,7 @@ def test_bulk_upload_batch_status(client, db_models):
 
     db = db_models["SessionLocal"]()
     jobs = (
-        db.execute(
-            select(db_models["UploadJob"]).where(
-                db_models["UploadJob"].upload_batch_id == batch_id
-            )
-        )
+        db.execute(select(db_models["UploadJob"]).where(db_models["UploadJob"].upload_batch_id == batch_id))
         .scalars()
         .all()
     )
@@ -254,15 +250,18 @@ def test_bulk_upload_batch_status(client, db_models):
     db.commit()
     db.close()
 
-    resp = client.get(
-        f"/api/uploads/batch/{batch_id}/status", headers=_auth(client.access_token)
-    )
+    resp = client.get(f"/api/uploads/batch/{batch_id}/status", headers=_auth(client.access_token))
     body = resp.get_json()
 
     assert resp.status_code == 200, body
     assert set(body.keys()) >= {
-        "batch_id", "total_files", "processed_files", "failed_files", "status",
-        "jobs", "created_at",
+        "batch_id",
+        "total_files",
+        "processed_files",
+        "failed_files",
+        "status",
+        "jobs",
+        "created_at",
     }
     assert body["total_files"] == 2
     assert body["processed_files"] == 2

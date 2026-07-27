@@ -17,10 +17,10 @@ function PaperBreadcrumb() {
   return (
     <div className="flex items-center gap-1.5 text-sm">
       <button
-        onClick={() => navigate("/files")}
+        onClick={() => navigate("/library")}
         className="text-muted-foreground transition-colors hover:text-foreground"
       >
-        Knowledge Library
+        Library
       </button>
       <ChevronRight className="size-3.5 text-muted-foreground/50" />
       <span className="max-w-[22ch] truncate font-medium text-foreground" title={title}>
@@ -31,30 +31,39 @@ function PaperBreadcrumb() {
 }
 
 const STATIC_TITLES: { prefix: string; label: string }[] = [
-  { prefix: "/projects",  label: "Research Projects" },
-  { prefix: "/files",     label: "Knowledge Library" },
-  { prefix: "/citations", label: "Citations" },
-  { prefix: "/memory",    label: "Memory" },
-  { prefix: "/notes",          label: "Notes" },
-  { prefix: "/analysis",         label: "Paper Analysis" },
-  { prefix: "/settings",  label: "Settings" },
-  { prefix: "/chat",      label: "AI Chat" },
-  { prefix: "/search",    label: "Search" },
-  { prefix: "/writing",   label: "Writing & Export" },
+  { prefix: "/projects",          label: "Projects" },
+  { prefix: "/library",           label: "Library" },
+  { prefix: "/files",             label: "Library" },
+  { prefix: "/citations",         label: "Citations" },
+  { prefix: "/memory",            label: "Memory" },
+  { prefix: "/notes",             label: "Notes" },
+  { prefix: "/research",          label: "Compare & Gaps" },
+  { prefix: "/analysis",          label: "Compare & Gaps" },
+  { prefix: "/settings",          label: "Settings" },
+  { prefix: "/chat",              label: "Ask Soro" },
+  { prefix: "/search",            label: "Search" },
+  { prefix: "/writing",           label: "Writing" },
 ];
 
 export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void }) {
   const { sidebarCollapsed, setSidebarCollapsed, rightPanelOpen, setRightPanelOpen, currentProjectId } = useUI();
   const { data: projects = [] } = useProjects();
   const location = useLocation();
-  const navigate = useNavigate();
   const path     = location.pathname;
 
-  const staticTitle    = STATIC_TITLES.find((t) => path.startsWith(t.prefix))?.label;
+  const isHome         = path === "/";
+  const staticTitle    = isHome
+    ? "Continue research"
+    : path.startsWith("/c/")
+      ? "Ask Soro"
+      : STATIC_TITLES.find((t) => path.startsWith(t.prefix))?.label;
   const isPaperPage    = path.startsWith("/papers/") && !path.includes("/chat");
   const isPaperChat    = path.startsWith("/papers/") && path.includes("/chat");
-  const isChat         = path.startsWith("/c/") || isPaperChat;
-  const isLibraryScope = path.startsWith("/files") || path.startsWith("/papers/");
+  const isChat         = path.startsWith("/c/") || path.startsWith("/chat") || isPaperChat;
+  const isLibraryScope =
+    path.startsWith("/library") ||
+    path.startsWith("/files") ||
+    path.startsWith("/papers/");
 
   // Active project name shown as a subtle chip when library or chat is scoped
   const activeProject = currentProjectId
@@ -62,10 +71,10 @@ export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void 
     : null;
 
   return (
-    <header className="flex h-13 shrink-0 items-center gap-1 border-b border-border/50 px-2">
+    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
       {/* Mobile menu */}
-      <Button variant="ghost" size="icon" className="md:hidden" onClick={onOpenMobileDrawer}>
-        <Menu className="size-4" />
+      <Button variant="ghost" size="icon" className="md:hidden" onClick={onOpenMobileDrawer} aria-label="Open navigation">
+        <Menu className="size-4" aria-hidden />
       </Button>
 
       {/* Expand collapsed sidebar */}
@@ -86,14 +95,14 @@ export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void 
         <PaperBreadcrumb />
       ) : (
         staticTitle && (
-          <h1 className="ml-1 text-sm font-medium text-muted-foreground">{staticTitle}</h1>
+          <h1 className="ml-1 text-[13px] font-medium text-muted-foreground">{staticTitle}</h1>
         )
       )}
 
       {/* Project scope chip */}
       {activeProject && (isLibraryScope || isChat) && (
         <span className={cn(
-          "hidden sm:inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground",
+          "hidden sm:inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground",
           "ml-2",
         )}>
           {activeProject.emoji}
@@ -104,12 +113,19 @@ export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void 
       <div className="ml-auto flex items-center gap-1">
         <Button
           variant="ghost"
-          size="icon"
-          className="hidden md:inline-flex"
-          onClick={() => navigate("/search")}
-          title="Search (S)"
+          size="sm"
+          className="hidden h-8 gap-1.5 px-2 text-muted-foreground md:inline-flex"
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent("soro:command-palette"));
+          }}
+          title="Command palette (⌘K)"
+          aria-label="Open command palette"
         >
-          <Search className="size-4" />
+          <Search className="size-3.5" />
+          <span className="text-[12px]">Search</span>
+          <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] text-muted-foreground">
+            ⌘K
+          </kbd>
         </Button>
         {isChat && (
           <Button

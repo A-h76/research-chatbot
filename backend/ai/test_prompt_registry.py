@@ -4,11 +4,12 @@ prompt_versions table it maps onto, created via its own private Base
 
 Run: pytest backend/ai/test_prompt_registry.py -v
 """
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.ai.prompt_registry import PromptRegistry, TemplateError, PromptVersion, _Base
+from backend.ai.prompt_registry import PromptRegistry, PromptVersion, TemplateError, _Base
 
 
 @pytest.fixture
@@ -54,15 +55,21 @@ def test_create_prompt_rejects_duplicate_name_and_version(registry):
 
 def test_create_prompt_stores_all_new_fields(registry):
     row = registry.create_prompt(
-        "greeting", "a friendly opener", "Hi {{ name }}", status="active",
-        category="onboarding", examples=[{"input": "Ada", "output": "Hi Ada"}],
-        expected_output_type="markdown", author_user_id=42,
+        "greeting",
+        "a friendly opener",
+        "Hi {{ name }}",
+        status="active",
+        category="onboarding",
+        examples=[{"input": "Ada", "output": "Hi Ada"}],
+        expected_output_type="markdown",
+        author_user_id=42,
     )
     assert row.description == "a friendly opener"
     assert row.category == "onboarding"
     assert row.expected_output_type == "markdown"
     assert row.author_user_id == 42
     import json
+
     assert json.loads(row.examples) == [{"input": "Ada", "output": "Hi Ada"}]
 
 
@@ -98,7 +105,7 @@ def test_add_version_active_deactivates_previous(registry):
 
 def test_add_version_inactive_by_default_leaves_original_active(registry):
     registry.create_prompt("greeting", "desc", "v1 {{ name }}", status="active")
-    registry.add_version("greeting", "v2 {{ name }}")   # is_active=False, status="draft" default
+    registry.add_version("greeting", "v2 {{ name }}")  # is_active=False, status="draft" default
     active = registry.get_active_version("greeting")
     assert active.version == 1
 
@@ -106,7 +113,7 @@ def test_add_version_inactive_by_default_leaves_original_active(registry):
 def test_add_version_is_active_without_status_active_raises(registry):
     registry.create_prompt("greeting", "desc", "v1 {{ name }}", status="active")
     with pytest.raises(ValueError):
-        registry.add_version("greeting", "v2 {{ name }}", is_active=True)   # status defaults to "draft"
+        registry.add_version("greeting", "v2 {{ name }}", is_active=True)  # status defaults to "draft"
 
 
 def test_add_version_is_active_with_status_draft_raises(registry):
@@ -142,7 +149,7 @@ def test_get_prompt_returns_the_resolved_version_row(registry):
 def test_get_prompt_renders_specific_version_regardless_of_status(registry):
     # Explicit-version lookups aren't gated by status/is_active — only
     # the no-version "give me whatever's active" path is.
-    registry.create_prompt("greeting", "desc", "v1: {{ name }}")   # draft
+    registry.create_prompt("greeting", "desc", "v1: {{ name }}")  # draft
     registry.add_version("greeting", "v2: {{ name }}", is_active=True, status="active")
 
     v1_text, v1_row = registry.get_prompt("greeting", version=1, variables={"name": "Ada"})
@@ -219,9 +226,9 @@ def test_get_prompt_normal_template_unaffected_by_sandboxing(registry):
 
 # ------------------------------------------------------------ list_prompts
 def test_list_prompts_returns_every_version_regardless_of_status(registry):
-    registry.create_prompt("a", "desc", "A {{ x }}")                    # draft, v1
-    registry.create_prompt("b", "desc", "B {{ x }}", status="active")   # active, v1
-    registry.add_version("a", "A v2 {{ x }}")                            # draft, v2
+    registry.create_prompt("a", "desc", "A {{ x }}")  # draft, v1
+    registry.create_prompt("b", "desc", "B {{ x }}", status="active")  # active, v1
+    registry.add_version("a", "A v2 {{ x }}")  # draft, v2
 
     prompts = registry.list_prompts()
     assert len(prompts) == 3
@@ -246,7 +253,7 @@ def test_get_prompts_by_category_filters(registry):
 
     results = registry.get_prompts_by_category("analysis")
     assert {p.name for p in results} == {"a"}
-    assert len(results) == 2   # both versions of "a"
+    assert len(results) == 2  # both versions of "a"
 
 
 def test_get_prompts_by_category_empty_when_no_match(registry):
@@ -257,7 +264,7 @@ def test_get_prompts_by_category_empty_when_no_match(registry):
 # ------------------------------------------------------------ get_active_prompts
 def test_get_active_prompts_filters_by_status_not_is_active(registry):
     registry.create_prompt("a", "desc", "A", status="active")
-    registry.create_prompt("b", "desc", "B")   # draft
+    registry.create_prompt("b", "desc", "B")  # draft
     # A second active-status version of "a" that isn't the served one —
     # get_active_prompts() should still surface it (status, not is_active).
     registry.add_version("a", "A v2", status="active")
@@ -268,7 +275,7 @@ def test_get_active_prompts_filters_by_status_not_is_active(registry):
 
 
 def test_get_active_prompts_empty_when_none_active(registry):
-    registry.create_prompt("a", "desc", "A")   # draft
+    registry.create_prompt("a", "desc", "A")  # draft
     assert registry.get_active_prompts() == []
 
 
@@ -302,7 +309,7 @@ def test_archive_prompt_leaves_no_active_version(registry):
 
 
 def test_archive_prompt_raises_when_nothing_active(registry):
-    registry.create_prompt("a", "desc", "A")   # draft, never activated
+    registry.create_prompt("a", "desc", "A")  # draft, never activated
     with pytest.raises(ValueError):
         registry.archive_prompt("a")
 
@@ -322,7 +329,7 @@ def test_activate_prompt_activates_latest_version(registry):
 
 def test_activate_prompt_deactivates_previous_active_version(registry):
     registry.create_prompt("a", "desc", "A v1", status="active")
-    registry.add_version("a", "A v2")   # draft
+    registry.add_version("a", "A v2")  # draft
 
     registry.activate_prompt("a")
 

@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { useProjects } from "@/features/projects/useProjects";
 import { useDeleteConversation, useUpdateConversation } from "../hooks/useConversation";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { toast } from "@/components/common/Toast";
 import type { ChatSettings } from "../types";
 import type { Conversation } from "@/types/api";
@@ -37,12 +37,15 @@ export function ChatTopControls({
   return (
     <div className="flex h-12 items-center gap-2 border-b border-border px-4">
       {project && (
-        <span className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+        <Link
+          to={`/projects/${project.id}`}
+          className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+        >
           <span>{project.emoji}</span>
-          {project.name}
-        </span>
+          <span className="max-w-[14ch] truncate">{project.name}</span>
+        </Link>
       )}
-      <span className="min-w-0 truncate text-sm font-medium">{conversation.title}</span>
+      <span className="min-w-0 truncate text-[13px] font-medium">{conversation.title}</span>
       <div className="ml-auto flex items-center gap-1">
         <ModelPickerPopover value={settings.model} onChange={(m) => onSettingsChange({ model: m })} compact />
         <ShareChatButton />

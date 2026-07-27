@@ -51,6 +51,8 @@ export function Composer({
   conversationId,
   projectId,
   autoFocus,
+  /** Paper-scoped chat: hide web search + memory (answers are paper-only). */
+  paperScoped,
 }: {
   settings: ChatSettings;
   onSettingsChange: (partial: Partial<ChatSettings>) => void;
@@ -60,6 +62,7 @@ export function Composer({
   conversationId?: number | null;
   projectId?: number | null;
   autoFocus?: boolean;
+  paperScoped?: boolean;
 }) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState<PendingFile[]>([]);
@@ -261,7 +264,7 @@ export function Composer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Message Personal AI…"
+          placeholder="Message Soro…"
           className="max-h-50 w-full resize-none bg-transparent px-2.5 py-1.5 text-[0.95rem] outline-none placeholder:text-muted-foreground"
         />
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -302,20 +305,24 @@ export function Composer({
             </DropdownMenuContent>
           </DropdownMenu>
           <ModelPickerPopover value={settings.model} onChange={(m) => onSettingsChange({ model: m })} />
-          <SearchModePicker value={settings.searchMode} onChange={(m) => onSettingsChange({ searchMode: m })} />
+          {!paperScoped && (
+            <SearchModePicker value={settings.searchMode} onChange={(m) => onSettingsChange({ searchMode: m })} />
+          )}
           {showReasoning && (
             <ReasoningEffortControl
               value={settings.reasoningEffort}
               onChange={(v) => onSettingsChange({ reasoningEffort: v })}
             />
           )}
-          {showTemp && (
+          {showTemp && !paperScoped && (
             <TemperatureControl
               value={settings.temperature}
               onChange={(v) => onSettingsChange({ temperature: v })}
             />
           )}
-          <MemoryToggle enabled={settings.memoryEnabled} onChange={(v) => onSettingsChange({ memoryEnabled: v })} />
+          {!paperScoped && (
+            <MemoryToggle enabled={settings.memoryEnabled} onChange={(v) => onSettingsChange({ memoryEnabled: v })} />
+          )}
           <div className="ml-auto flex items-center gap-1">
             <VoiceInputButton onTranscript={(t) => setText((prev) => (prev ? prev + " " + t : t))} />
             <button

@@ -1,11 +1,13 @@
-import os, re, glob, sys
+import glob
+import os
+import re
+import sys
+
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 load_dotenv()
-url = (os.environ.get("DATABASE_URL") or "sqlite:///chat_dev.db").replace(
-    "postgres://", "postgresql://", 1
-)
+url = (os.environ.get("DATABASE_URL") or "sqlite:///chat_dev.db").replace("postgres://", "postgresql://", 1)
 engine = create_engine(url, pool_pre_ping=True)
 
 
@@ -21,7 +23,7 @@ def split_sql_statements(sql):
     statements = []
     current = []
     i, n = 0, len(sql)
-    dollar_tag = None   # None outside a dollar-quoted region, else its tag (e.g. "$$")
+    dollar_tag = None  # None outside a dollar-quoted region, else its tag (e.g. "$$")
     while i < n:
         ch = sql[i]
         if dollar_tag is None:
@@ -52,6 +54,7 @@ def split_sql_statements(sql):
         statements.append(tail)
     return statements
 
+
 with engine.begin() as conn:
     conn.execute(
         text(
@@ -59,19 +62,13 @@ with engine.begin() as conn:
             "(filename TEXT PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
     )
-    applied = {
-        row[0] for row in conn.execute(text("SELECT filename FROM schema_migrations"))
-    }
+    applied = {row[0] for row in conn.execute(text("SELECT filename FROM schema_migrations"))}
 
-for path in sorted(
-    glob.glob(os.path.join(os.path.dirname(__file__), "migrations", "*.sql"))
-):
+for path in sorted(glob.glob(os.path.join(os.path.dirname(__file__), "migrations", "*.sql"))):
     name = os.path.basename(path)
     if name in applied:
         continue
-    sql = re.sub(
-        r"--[^\n]*", "", open(path).read()
-    )  # strip line comments before splitting on ";"
+    sql = re.sub(r"--[^\n]*", "", open(path).read())  # strip line comments before splitting on ";"
     try:
         with engine.begin() as conn:
             for stmt in split_sql_statements(sql):

@@ -10,9 +10,9 @@ import os
 import time
 from dataclasses import dataclass, field
 
+from .local_provider import LocalProvider
 from .provider import StorageProvider
 from .r2_provider import R2Provider
-from .local_provider import LocalProvider
 
 
 class StorageManager:
@@ -31,9 +31,7 @@ def get_default_manager(local_dir: str, base_url: str) -> StorageManager:
     provider_choice = os.environ.get("STORAGE_PROVIDER", "").strip().lower()
     bucket = os.environ.get("R2_BUCKET", "")
     account_id = os.environ.get("R2_ACCOUNT_ID", "")
-    endpoint = os.environ.get("R2_ENDPOINT") or (
-        f"https://{account_id}.r2.cloudflarestorage.com" if account_id else ""
-    )
+    endpoint = os.environ.get("R2_ENDPOINT") or (f"https://{account_id}.r2.cloudflarestorage.com" if account_id else "")
 
     use_r2 = provider_choice == "r2" or (not provider_choice and bucket and endpoint)
 
@@ -45,9 +43,18 @@ def get_default_manager(local_dir: str, base_url: str) -> StorageManager:
             secret_key=os.environ.get("R2_SECRET_ACCESS_KEY", ""),
         )
     else:
+        explicit = (os.environ.get("FLASK_SECRET_KEY") or "").strip()
+        if not explicit and (
+            os.environ.get("FLASK_ENV", "").lower() == "production"
+            or os.environ.get("APP_ENV", "").lower() == "production"
+        ):
+            raise SystemExit(
+                "Production startup refused: FLASK_SECRET_KEY required for LocalProvider "
+                "signed URLs (refusing silent random generation)."
+            )
         provider = LocalProvider(
             root_dir=local_dir,
-            secret_key=os.environ.get("FLASK_SECRET_KEY") or os.urandom(32).hex(),
+            secret_key=explicit or os.urandom(32).hex(),
             base_url=base_url,
         )
     return StorageManager(provider)
@@ -102,9 +109,7 @@ class ReconcileReport:
     deleted: list[str] = field(default_factory=list)  # orphans actually removed
 
 
-def reconcile(
-    provider: StorageProvider, known_keys: set[str], dry_run: bool = True
-) -> ReconcileReport:
+def reconcile(provider: StorageProvider, known_keys: set[str], dry_run: bool = True) -> ReconcileReport:
     """Compare what's actually in storage against what the DB references.
     Defaults to dry-run: this can find real drift either direction, but
     deleting orphans is destructive, so it only happens when explicitly

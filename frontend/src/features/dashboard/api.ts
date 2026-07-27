@@ -40,7 +40,9 @@ export interface DashboardData {
     unread: number;
     reading: number;
     read: number;
-    top_tags: { tag: string; count: number }[];
+  analysed?: number;
+  processing?: number;
+  top_tags: { tag: string; count: number }[];
   };
   recent_papers: DashboardPaperBrief[];
   current_papers: DashboardPaperBrief[];

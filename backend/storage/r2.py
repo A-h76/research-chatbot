@@ -38,9 +38,7 @@ class R2Backend(StorageBackend):
     def __init__(self, provider: Optional[R2Provider] = None):
         self._provider = provider or R2Provider(**_r2_config_from_env())
 
-    def upload(
-        self, file_obj: BinaryIO, key: str, content_type: Optional[str] = None
-    ) -> str:
+    def upload(self, file_obj: BinaryIO, key: str, content_type: Optional[str] = None) -> str:
         # The real provider's upload() takes a local path (it's built
         # for the app's actual flow: save-then-upload, never bytes in
         # memory) — bridge with a throwaway temp file rather than

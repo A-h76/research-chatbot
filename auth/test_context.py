@@ -10,8 +10,9 @@ Run: python -m auth.test_context
 import sys
 
 sys.path.insert(0, r"D:\chatbot (v1)")
-import server
 from flask import jsonify
+
+import server
 
 EMAIL = "context-test@example.com"
 
@@ -25,9 +26,7 @@ def _whoami():
 def _cleanup():
     db = server.SessionLocal()
     try:
-        u = db.execute(
-            server.select(server.User).where(server.User.email == EMAIL)
-        ).scalar_one_or_none()
+        u = db.execute(server.select(server.User).where(server.User.email == EMAIL)).scalar_one_or_none()
         if u:
             db.delete(u)
             db.commit()
@@ -89,9 +88,7 @@ def test_bearer_token_returns_user_when_no_session():
         with server.app.app_context():
             access, _ = server.create_jwt(uid)
         with server.app.test_client() as client:
-            resp = client.get(
-                "/__test_whoami", headers={"Authorization": f"Bearer {access}"}
-            )
+            resp = client.get("/__test_whoami", headers={"Authorization": f"Bearer {access}"})
             data = resp.get_json()
             print("   bearer path:", data)
             assert data == {"user_id": uid, "email": EMAIL}
@@ -106,9 +103,7 @@ def test_session_takes_priority_over_bearer():
     try:
         db = server.SessionLocal()
         try:
-            other = server.User(
-                email="context-other@example.com", name="other", auth_provider="google"
-            )
+            other = server.User(email="context-other@example.com", name="other", auth_provider="google")
             db.add(other)
             db.commit()
             other_uid = other.id
@@ -126,9 +121,7 @@ def test_session_takes_priority_over_bearer():
             )
             data = resp.get_json()
             print("   session-priority path:", data)
-            assert (
-                data["user_id"] == uid
-            ), "session should win over a present Bearer header"
+            assert data["user_id"] == uid, "session should win over a present Bearer header"
     finally:
         _cleanup()
         if other_uid:
@@ -149,12 +142,8 @@ def test_refresh_token_is_rejected_as_bearer_credential():
         with server.app.app_context():
             _, refresh = server.create_jwt(uid)
         with server.app.test_client() as client:
-            resp = client.get(
-                "/__test_whoami", headers={"Authorization": f"Bearer {refresh}"}
-            )
-            assert (
-                resp.get_json() is None
-            ), "a refresh token must not authenticate a request"
+            resp = client.get("/__test_whoami", headers={"Authorization": f"Bearer {refresh}"})
+            assert resp.get_json() is None, "a refresh token must not authenticate a request"
     finally:
         _cleanup()
 

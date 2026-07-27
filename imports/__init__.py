@@ -7,5 +7,7 @@ registry (one class per format) instead of an if/elif chain — nothing
 calling it needs to change.
 """
 
-from .registry import extract_text, resolve
 from .interface import Importer
+from .registry import extract_text, resolve
+
+__all__ = ["Importer", "extract_text", "resolve"]

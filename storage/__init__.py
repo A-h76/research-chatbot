@@ -11,17 +11,17 @@ directly instead.
 
 import os
 
+from .checksum import md5_file_b64, sha256_file
 from .manager import (
-    StorageManager,
-    get_default_manager,
-    sweep_temp_dir,
-    garbage_collect,
-    reconcile,
     GCReport,
     ReconcileReport,
+    StorageManager,
+    garbage_collect,
+    get_default_manager,
+    reconcile,
+    sweep_temp_dir,
 )
 from .provider import ObjectInfo, UploadPart
-from .checksum import sha256_file, md5_file_b64
 
 _LOCAL_DIR = os.environ.get(
     "LOCAL_STORAGE_DIR",
@@ -30,6 +30,24 @@ _LOCAL_DIR = os.environ.get(
 _BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000")
 
 storage_manager = get_default_manager(local_dir=_LOCAL_DIR, base_url=_BASE_URL)
+
+__all__ = [
+    "md5_file_b64",
+    "sha256_file",
+    "GCReport",
+    "ReconcileReport",
+    "StorageManager",
+    "garbage_collect",
+    "reconcile",
+    "sweep_temp_dir",
+    "ObjectInfo",
+    "UploadPart",
+    "storage_manager",
+    "upload",
+    "delete",
+    "presigned_url",
+    "local_copy",
+]
 
 
 # ------------------------------------------------------ legacy module-level API

@@ -34,14 +34,14 @@ one out, not a consistency improvement.
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column,
-    Integer,
-    Text,
     Boolean,
+    Column,
     DateTime,
     ForeignKey,
-    UniqueConstraint,
     Index,
+    Integer,
+    Text,
+    UniqueConstraint,
 )
 
 
@@ -111,19 +111,15 @@ def create_pipeline_version_model(Base):
         whole bundle)."""
 
         __tablename__ = "pipeline_versions"
-        __table_args__ = (
-            Index("ix_pipeline_versions_active", "is_active"),
-        )
+        __table_args__ = (Index("ix_pipeline_versions_active", "is_active"),)
 
         id = Column(Integer, primary_key=True)
         version = Column(Integer, nullable=False, unique=True)
         importer_registry_version = Column(Text, nullable=False)
-        chunking_params = Column(Text, nullable=False)     # JSON
-        embed_model_version_id = Column(
-            Integer, ForeignKey("model_versions.id"), nullable=False)
-        utility_model_version_id = Column(
-            Integer, ForeignKey("model_versions.id"), nullable=True)
-        prompt_versions = Column(Text, nullable=False)     # JSON snapshot, see docstring
+        chunking_params = Column(Text, nullable=False)  # JSON
+        embed_model_version_id = Column(Integer, ForeignKey("model_versions.id"), nullable=False)
+        utility_model_version_id = Column(Integer, ForeignKey("model_versions.id"), nullable=True)
+        prompt_versions = Column(Text, nullable=False)  # JSON snapshot, see docstring
         is_active = Column(Boolean, nullable=False, default=False)
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -174,10 +170,10 @@ def create_prompt_execution_model(Base):
         project_id = Column(Integer, nullable=True)
         user_id = Column(Integer, nullable=False)
         assembled_prompt = Column(Text, nullable=False)
-        output_schema = Column(Text, nullable=True)   # JSON-as-text, nullable
+        output_schema = Column(Text, nullable=True)  # JSON-as-text, nullable
         tokens_used = Column(Integer, nullable=True)
         latency_ms = Column(Integer, nullable=True)
-        status = Column(Text, nullable=False, default="pending")   # pending|success|failed
+        status = Column(Text, nullable=False, default="pending")  # pending|success|failed
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     return PromptExecution

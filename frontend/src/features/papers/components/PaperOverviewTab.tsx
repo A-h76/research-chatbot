@@ -1,0 +1,313 @@
+import { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  MessageSquare,
+  StickyNote,
+  ArrowRight,
+  Quote,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { UserFile } from "@/types/api";
+import { useNotes } from "@/features/notes/useNotes";
+import { usePipeline, usePipelinePhase } from "@/features/pipeline";
+import { mapStructure } from "../mappers/structure";
+import { mapClassification } from "../mappers/classification";
+import { mapEntities, formatEntityLabel } from "../mappers/entities";
+import { mapEvidence, formatConfidence, formatLabel } from "../mappers/evidence";
+import { mapKnowledgeGraph } from "../mappers/graph";
+import type { PaperTabId } from "../tabs";
+import { PaperStatStrip } from "./PaperStatStrip";
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      {children}
+    </p>
+  );
+}
+
+function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
+  if (value == null || value === "") return null;
+  return (
+    <div className="grid grid-cols-[6.5rem_1fr] gap-2 py-1 text-[13px] sm:grid-cols-[7.5rem_1fr]">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words text-foreground">{value}</dd>
+    </div>
+  );
+}
+
+/** D4 — Overview = StatStrip → Summary → compact meta (no duplicate Chat cards). */
+export function PaperOverviewTab({
+  file,
+  fileId,
+  onChat,
+  onCite,
+  citePending,
+  chatPending,
+  onJumpTab,
+}: {
+  file: UserFile;
+  fileId: number;
+  onChat: () => void;
+  onCite: () => void;
+  citePending: boolean;
+  chatPending: boolean;
+  onJumpTab: (tab: PaperTabId) => void;
+}) {
+  const navigate = useNavigate();
+  const { data: notesData, isLoading: notesLoading } = useNotes({ file_id: fileId });
+  const notes = notesData?.items ?? [];
+
+  const { pipeline, isLoading: pipelineLoading } = usePipeline(fileId);
+  const has = (phase: string) =>
+    pipeline != null &&
+    (pipeline.phases.includes(phase as never) || phase in (pipeline.phase_results ?? {}));
+
+  const duQ = usePipelinePhase(fileId, "document_understanding", {
+    enabled: has("document_understanding"),
+  });
+  const clfQ = usePipelinePhase(fileId, "classification", { enabled: has("classification") });
+  const ctxQ = usePipelinePhase(fileId, "analysis_context", { enabled: has("analysis_context") });
+  const medQ = usePipelinePhase(fileId, "medical_understanding", {
+    enabled: has("medical_understanding"),
+  });
+  const egQ = usePipelinePhase(fileId, "evidence_grading", { enabled: has("evidence_grading") });
+  const kgQ = usePipelinePhase(fileId, "knowledge_graph", { enabled: has("knowledge_graph") });
+
+  const summary = useMemo(() => {
+    const structure = mapStructure(
+      duQ.data?.result ?? pipeline?.phase_results?.document_understanding ?? null,
+    );
+    const classification = mapClassification(
+      clfQ.data?.result ?? pipeline?.phase_results?.classification ?? null,
+      ctxQ.data?.result ?? pipeline?.phase_results?.analysis_context ?? null,
+    );
+    const entities = mapEntities(
+      medQ.data?.result ?? pipeline?.phase_results?.medical_understanding ?? null,
+    );
+    const evidence = mapEvidence(
+      egQ.data?.result ?? pipeline?.phase_results?.evidence_grading ?? null,
+    );
+    const graph = mapKnowledgeGraph(
+      kgQ.data?.result ?? pipeline?.phase_results?.knowledge_graph ?? null,
+    );
+    return { structure, classification, entities, evidence, graph };
+  }, [pipeline, duQ.data, clfQ.data, ctxQ.data, medQ.data, egQ.data, kgQ.data]);
+
+  const loadingPhases =
+    pipelineLoading ||
+    (has("document_understanding") && duQ.isLoading) ||
+    (has("classification") && clfQ.isLoading) ||
+    (has("medical_understanding") && medQ.isLoading) ||
+    (has("evidence_grading") && egQ.isLoading) ||
+    (has("knowledge_graph") && kgQ.isLoading);
+
+  const { structure, classification, entities, evidence, graph } = summary;
+
+  const studyType = classification?.decisions.find((d) => d.family === "document_type");
+  const studyDesign = classification?.decisions.find((d) => d.family === "study_design");
+  const domain = classification?.decisions.find((d) => d.family === "domain");
+
+  const topEntities =
+    entities && !entities.skipped
+      ? [
+          ...entities.groups.clinicalEntities.flatMap((g) => g.items),
+          ...entities.groups.pico.interventions,
+          ...entities.groups.pico.outcomes,
+        ].slice(0, 6)
+      : [];
+
+  const journal = structure?.journal || structure?.venue || file.venue || undefined;
+  const year = structure?.publicationYear ?? file.year ?? undefined;
+  const authors = structure?.authors?.length
+    ? structure.authors.join("; ")
+    : file.authors || undefined;
+  const abstractText = structure?.abstract || file.abstract || "";
+
+  const entityCount =
+    entities && !entities.skipped
+      ? entities.summary.clinicalEntityCount +
+        entities.summary.interventionCount +
+        entities.summary.outcomeCount
+      : null;
+
+  return (
+    <div className="space-y-5">
+      {/* 1. StatStrip — scan first */}
+      {loadingPhases && !classification && !evidence && !entities ? (
+        <div className="space-y-2" aria-busy="true">
+          <Skeleton className="h-3 w-28" />
+          <Skeleton className="h-16 w-full rounded-lg" />
+        </div>
+      ) : (
+        <PaperStatStrip
+          evidenceLabel={
+            evidence?.overallGrade?.displayValue ??
+            (evidence?.studyQuality ? formatLabel(evidence.studyQuality) : null)
+          }
+          evidenceHint={
+            evidence?.summaryConfidence != null
+              ? formatConfidence(evidence.summaryConfidence)
+              : evidence?.studyQuality
+                ? formatLabel(evidence.studyQuality)
+                : null
+          }
+          entityCount={entityCount}
+          entitySkipped={entities?.skipped}
+          graphNodes={graph && !graph.skipped ? graph.summary.nodeCount : null}
+          graphEdges={graph && !graph.skipped ? graph.summary.edgeCount : null}
+          classificationLabel={domain?.displayLabel ?? studyType?.displayLabel ?? null}
+          classificationHint={
+            [studyDesign?.displayLabel, studyType?.displayLabel].filter(Boolean).join(" · ") ||
+            null
+          }
+          onJump={onJumpTab}
+        />
+      )}
+
+      {/* 2. Actions — one CTA row, not a marketing card */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={onChat} disabled={chatPending} size="sm" className="gap-1.5">
+          <MessageSquare className="size-3.5" />
+          Ask about this paper
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onCite}
+          disabled={citePending || !file.title}
+          className="gap-1.5"
+          title={!file.title ? "Metadata extraction pending" : "Save to citations"}
+        >
+          <Quote className="size-3.5" />
+          Cite
+        </Button>
+        <button
+          type="button"
+          onClick={() => onJumpTab("evidence")}
+          className="text-[12px] text-muted-foreground hover:text-foreground"
+        >
+          Open Evidence →
+        </button>
+      </div>
+
+      {/* 3. Summary */}
+      {(abstractText || studyType || domain) && (
+        <section aria-labelledby="overview-summary-heading">
+          <SectionLabel>Summary</SectionLabel>
+          <div className="rounded-lg border border-border bg-card px-4 py-3 space-y-2">
+            {(studyType || domain) && (
+              <p className="text-[13px] text-muted-foreground">
+                {[studyType?.displayLabel, domain?.displayLabel, studyDesign?.displayLabel]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            )}
+            {abstractText ? (
+              <p className="text-[14px] leading-relaxed text-foreground/90 line-clamp-6">
+                {abstractText}
+              </p>
+            ) : (
+              <p className="text-[13px] text-muted-foreground">No abstract extracted yet.</p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* 4. Top entities */}
+      {topEntities.length > 0 && (
+        <section>
+          <SectionLabel>Key entities</SectionLabel>
+          <ul className="flex flex-wrap gap-1.5" role="list">
+            {topEntities.map((item) => (
+              <li key={item.key}>
+                <button
+                  type="button"
+                  onClick={() => onJumpTab("entities")}
+                  className="inline-flex max-w-full items-center rounded-md border border-border bg-card px-2 py-0.5 text-xs hover:bg-muted/50"
+                  title={formatEntityLabel(item.category)}
+                >
+                  <span className="truncate">{item.displayName}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* 5. Compact document meta */}
+      <section aria-labelledby="overview-doc-heading">
+        <SectionLabel>Document</SectionLabel>
+        <dl className="rounded-lg border border-border bg-card px-4 py-2">
+          <MetaRow label="Title" value={file.title || file.name} />
+          <MetaRow label="Authors" value={authors} />
+          <MetaRow label="Journal" value={journal} />
+          <MetaRow label="Year" value={year} />
+          <MetaRow
+            label="Sections"
+            value={
+              structure?.sections?.length ? (
+                <button
+                  type="button"
+                  onClick={() => onJumpTab("structure")}
+                  className="text-primary hover:underline"
+                >
+                  {structure.sections.length} detected
+                </button>
+              ) : null
+            }
+          />
+        </dl>
+      </section>
+
+      {file.tags?.length > 0 && (
+        <section>
+          <SectionLabel>Tags</SectionLabel>
+          <div className="flex flex-wrap gap-1.5">
+            {file.tags.map((t) => (
+              <Badge key={t} variant="secondary" className="text-xs">
+                {t}
+              </Badge>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* 6. Notes — compact */}
+      <section>
+        <SectionLabel>Notes</SectionLabel>
+        {notesLoading ? (
+          <Skeleton className="h-9 w-full rounded-lg" />
+        ) : notes.length === 0 ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
+            <p className="text-[13px] text-muted-foreground">No notes yet.</p>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 gap-1 text-[12px]"
+              onClick={() => navigate(`/notes?file_id=${fileId}`)}
+            >
+              <StickyNote className="size-3.5" />
+              Add note
+            </Button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => navigate(`/notes?file_id=${fileId}`)}
+            className="flex w-full items-center justify-between rounded-lg border border-border bg-card px-3 py-2 text-left hover:bg-muted/40"
+          >
+            <span className="text-[13px]">
+              {notes.length} note{notes.length === 1 ? "" : "s"}
+            </span>
+            <span className="inline-flex items-center gap-1 text-[12px] text-primary">
+              View <ArrowRight className="size-3" />
+            </span>
+          </button>
+        )}
+      </section>
+    </div>
+  );
+}

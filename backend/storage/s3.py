@@ -8,7 +8,7 @@ its own AWS default) makes the exact same class talk to real S3.
 """
 
 import os
-from typing import BinaryIO, Optional
+from typing import Optional
 
 from storage.r2_provider import R2Provider
 

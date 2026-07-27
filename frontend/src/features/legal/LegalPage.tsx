@@ -15,7 +15,7 @@ export function LegalPage({ slug }: { slug?: string }) {
         <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-4">
           <Link to="/" className="flex items-center gap-2 text-sm font-medium">
             <span className="flex size-7 items-center justify-center rounded-full border border-border">✦</span>
-            Personal AI
+            Soro
           </Link>
           <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="size-4" /> Back to app
@@ -38,7 +38,7 @@ export function LegalPage({ slug }: { slug?: string }) {
               {l.label}
             </Link>
           ))}
-          <span className="ml-auto">© {new Date().getFullYear()} Personal AI</span>
+          <span className="ml-auto">© {new Date().getFullYear()} Soro</span>
         </div>
       </footer>
     </div>

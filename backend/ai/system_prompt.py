@@ -9,6 +9,7 @@ Constructor-injected with an existing PromptRegistry (not a Session) —
 this class has nothing to add to "how do I get a database session,"
 PromptRegistry already owns that.
 """
+
 from typing import List
 
 from .prompt_registry import PromptRegistry, PromptVersion
@@ -43,8 +44,7 @@ class SystemPromptManager:
         unservable, and a global system prompt with no way to be inactive
         by policy is the entire point of this class."""
         if self.registry.get_active_version(self.NAME) is None:
-            self.registry.create_prompt(
-                self.NAME, "Global system prompt", content, status="active")
+            self.registry.create_prompt(self.NAME, "Global system prompt", content, status="active")
         else:
             self.registry.add_version(self.NAME, content, is_active=True, status="active")
 
@@ -52,10 +52,5 @@ class SystemPromptManager:
         """Every historical version's template text, oldest first — the
         full history of the one system prompt, not PromptRegistry.list_prompts()'s
         "every name's current state" (different question, same-looking name)."""
-        rows = (
-            self.registry.db.query(PromptVersion)
-            .filter_by(name=self.NAME)
-            .order_by(PromptVersion.version)
-            .all()
-        )
+        rows = self.registry.db.query(PromptVersion).filter_by(name=self.NAME).order_by(PromptVersion.version).all()
         return [r.template for r in rows]

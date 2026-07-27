@@ -4,12 +4,13 @@ thin wrapper over PromptRegistry, not a separate storage layer.
 
 Run: pytest backend/ai/test_system_prompt.py -v
 """
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.ai.prompt_registry import PromptRegistry, _Base
-from backend.ai.system_prompt import SystemPromptManager, DEFAULT_SYSTEM_PROMPT
+from backend.ai.system_prompt import DEFAULT_SYSTEM_PROMPT, SystemPromptManager
 
 
 @pytest.fixture

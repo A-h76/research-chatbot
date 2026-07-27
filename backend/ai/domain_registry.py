@@ -20,10 +20,41 @@ that means "nothing more specific applies" should reuse the existing
 default analysis prompt, not require a second, redundant one seeded
 just for symmetry with the other eight names.
 """
-from typing import Optional, Dict, Any, List
+
+from typing import Any, Dict, List, Optional
 
 
 class DomainRegistry:
+    # Document TYPE (research paper vs. clinical guide vs. review, ...) is a
+    # different axis from DOMAIN (medical vs. ai_ml, ...) below — a "medical"
+    # paper can be a randomized trial, a systematic review, or a how-to
+    # guide, and the right analysis framing differs for each regardless of
+    # domain. Order matters here the same way it does for DOMAINS' own
+    # keyword lists below: first-match-wins, most-specific-first, so a case
+    # report that happens to mention "study" still lands on "case_report"
+    # rather than the much more generic "research".
+    DOCUMENT_TYPE_KEYWORDS: Dict[str, List[str]] = {
+        "case_report": ["case report", "case series", "presented with"],
+        "review": ["systematic review", "meta-analysis", "literature review"],
+        "editorial": ["editorial", "opinion", "commentary"],
+        "clinical_guide": [
+            "guide",
+            "clinical guide",
+            "practical guide",
+            "how to",
+            "step by step",
+            "recommendation",
+        ],
+        "research": [
+            "randomized",
+            "controlled trial",
+            "cohort",
+            "study",
+            "data analysis",
+            "clinical trial",
+        ],
+    }
+
     DOMAINS: Dict[str, Dict[str, Any]] = {
         "medical": {
             "name": "medical",
@@ -32,8 +63,15 @@ class DomainRegistry:
             "prompt_name": "domain_medical",
             "enabled": True,
             "keywords": [
-                "rct", "randomized", "clinical trial", "patient", "hospital",
-                "drug", "therapy", "diagnosis", "treatment",
+                "rct",
+                "randomized",
+                "clinical trial",
+                "patient",
+                "hospital",
+                "drug",
+                "therapy",
+                "diagnosis",
+                "treatment",
             ],
             "venues": ["lancet", "nejm", "jama", "bmj", "nature medicine"],
         },
@@ -44,8 +82,15 @@ class DomainRegistry:
             "prompt_name": "domain_ai_ml",
             "enabled": True,
             "keywords": [
-                "neural network", "deep learning", "benchmark", "model",
-                "training", "dataset", "accuracy", "f1", "llm",
+                "neural network",
+                "deep learning",
+                "benchmark",
+                "model",
+                "training",
+                "dataset",
+                "accuracy",
+                "f1",
+                "llm",
             ],
             "venues": ["neurips", "icml", "iclr", "acl", "cvpr", "aaai"],
         },
@@ -56,8 +101,14 @@ class DomainRegistry:
             "prompt_name": "domain_biology",
             "enabled": True,
             "keywords": [
-                "gene", "protein", "dna", "rna", "cell", "molecular",
-                "organism", "evolution",
+                "gene",
+                "protein",
+                "dna",
+                "rna",
+                "cell",
+                "molecular",
+                "organism",
+                "evolution",
             ],
             "venues": ["cell", "nature", "science", "pnas", "elife"],
         },
@@ -68,8 +119,14 @@ class DomainRegistry:
             "prompt_name": "domain_psychology",
             "enabled": True,
             "keywords": [
-                "behavior", "cognitive", "participants", "questionnaire",
-                "psychological", "anxiety", "depression", "personality",
+                "behavior",
+                "cognitive",
+                "participants",
+                "questionnaire",
+                "psychological",
+                "anxiety",
+                "depression",
+                "personality",
             ],
             "venues": ["psychological science", "journal of personality", "apa"],
         },
@@ -80,8 +137,13 @@ class DomainRegistry:
             "prompt_name": "domain_engineering",
             "enabled": True,
             "keywords": [
-                "prototype", "actuator", "control system", "sensor",
-                "finite element", "circuit", "mechanical stress",
+                "prototype",
+                "actuator",
+                "control system",
+                "sensor",
+                "finite element",
+                "circuit",
+                "mechanical stress",
             ],
             "venues": ["ieee", "asme", "elsevier"],
         },
@@ -92,8 +154,14 @@ class DomainRegistry:
             "prompt_name": "domain_social_sciences",
             "enabled": True,
             "keywords": [
-                "society", "policy", "demographic", "socioeconomic",
-                "social", "community", "inequality", "governance",
+                "society",
+                "policy",
+                "demographic",
+                "socioeconomic",
+                "social",
+                "community",
+                "inequality",
+                "governance",
             ],
             "venues": ["american sociological review", "journal of politics"],
         },
@@ -104,8 +172,13 @@ class DomainRegistry:
             "prompt_name": "domain_chemistry",
             "enabled": True,
             "keywords": [
-                "synthesis", "compound", "reaction", "catalyst", "molecule",
-                "spectroscopy", "chemical bond",
+                "synthesis",
+                "compound",
+                "reaction",
+                "catalyst",
+                "molecule",
+                "spectroscopy",
+                "chemical bond",
             ],
             "venues": ["jacs", "angewandte chemie", "chemical science"],
         },
@@ -116,8 +189,13 @@ class DomainRegistry:
             "prompt_name": "domain_physics",
             "enabled": True,
             "keywords": [
-                "quantum", "particle", "field theory", "relativity",
-                "electromagnetic", "thermodynamics", "wavefunction",
+                "quantum",
+                "particle",
+                "field theory",
+                "relativity",
+                "electromagnetic",
+                "thermodynamics",
+                "wavefunction",
             ],
             "venues": ["physical review", "nature physics", "arxiv"],
         },
@@ -125,7 +203,7 @@ class DomainRegistry:
             "name": "general",
             "label": "General / Unclassified",
             "description": "Fallback for papers that don't match a specific domain.",
-            "prompt_name": "paper_analysis",   # reuses the existing default, see module docstring
+            "prompt_name": "paper_analysis",  # reuses the existing default, see module docstring
             "enabled": True,
             "keywords": [],
             "venues": [],
@@ -155,7 +233,9 @@ class DomainRegistry:
 
     # ------------------------------------------------------------ detection
     def detect_domain(
-        self, metadata: Optional[Dict[str, Any]] = None, content: str = "",
+        self,
+        metadata: Optional[Dict[str, Any]] = None,
+        content: str = "",
         user_selected: Optional[str] = None,
     ) -> str:
         """Priority: user_selected -> venue match -> keyword match ->
@@ -185,5 +265,41 @@ class DomainRegistry:
                     continue
                 if any(k in text for k in entry["keywords"]):
                     return name
+
+        return "general"
+
+    def detect_document_type(
+        self,
+        content: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """What kind of document this is (research paper, clinical guide,
+        review, case report, editorial), as opposed to detect_domain()'s
+        "what field" — orthogonal axes, both usable together (e.g. a
+        "medical" "clinical_guide"). Priority: venue/journal match -> title
+        + first 500 characters of content (keyword match, see
+        DOCUMENT_TYPE_KEYWORDS' own comment for the check order) ->
+        "general". Unlike detect_domain(), there's no user_selected
+        override or enabled-flag gate — document type isn't a per-domain
+        concept with its own on/off switch."""
+        meta = metadata or {}
+
+        # A paper published in one of this class's own known peer-reviewed
+        # venues (DOMAINS[*]["venues"] below — nejm, lancet, neurips,
+        # nature, ...) is, by default, a primary research article rather
+        # than a guide or editorial. Reuses the venue lists already
+        # maintained for domain detection instead of a second, separately
+        # curated list that would drift out of sync with it over time.
+        venue = (meta.get("venue") or "").lower()
+        if venue:
+            known_venues = {v for entry in self.DOMAINS.values() for v in entry["venues"]}
+            if any(v in venue for v in known_venues):
+                return "research"
+
+        text = f"{meta.get('title') or ''} {(content or '')[:500]}".lower()
+        if text.strip():
+            for doc_type, keywords in self.DOCUMENT_TYPE_KEYWORDS.items():
+                if any(k in text for k in keywords):
+                    return doc_type
 
         return "general"

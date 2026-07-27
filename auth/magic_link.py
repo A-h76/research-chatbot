@@ -16,8 +16,8 @@ avoids that entirely, and is a cleaner dependency direction anyway
 
 import re
 
-from flask import Blueprint, request, session, jsonify
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from flask import Blueprint, jsonify, request, session
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 TOKEN_MAX_AGE_SECONDS = 15 * 60
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -86,6 +86,7 @@ def create_magic_link_blueprint(
         return generic_response
 
     @bp.route("/verify", methods=["POST"])
+    @limiter.limit("20 per hour")
     def verify_magic_link():
         data = request.get_json(silent=True) or {}
         token = data.get("token")
@@ -95,8 +96,10 @@ def create_magic_link_blueprint(
         try:
             payload = serializer.loads(token, max_age=TOKEN_MAX_AGE_SECONDS)
         except SignatureExpired:
+            log_security_event("magic_link_verify_failed", reason="expired")
             return jsonify({"error": "token_expired"}), 401
         except BadSignature:
+            log_security_event("magic_link_verify_failed", reason="bad_signature")
             return jsonify({"error": "invalid_token"}), 401
 
         email = payload.get("email")
@@ -107,13 +110,12 @@ def create_magic_link_blueprint(
             # Re-checked here too: the allowlist could change between a
             # link being sent and being clicked, and this is the point
             # that actually grants access, not just sends an email.
+            log_security_event("magic_link_denied", email=email, stage="verify")
             return jsonify({"error": "not_allowed"}), 403
 
         db = SessionLocal()
         try:
-            user = db.execute(
-                select(User).where(User.email == email)
-            ).scalar_one_or_none()
+            user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
             if not user:
                 user = User(email=email, name=email, auth_provider="magic")
                 db.add(user)
@@ -123,6 +125,9 @@ def create_magic_link_blueprint(
             session["user_email"] = user.email
             access, refresh = create_jwt(user.id)
             session["jwt"] = {"access": access, "refresh": refresh}
+            from security.session_ttl import mark_session_login
+
+            mark_session_login(session)
 
             return jsonify(
                 {

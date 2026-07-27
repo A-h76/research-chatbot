@@ -7,24 +7,26 @@ would just test that the mocks were called, not that assembly is correct.
 
 Run: pytest backend/ai/test_prompt_builder.py -v
 """
+
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import create_engine, Column, Integer, Text, DateTime
+from sqlalchemy import Column, DateTime, Integer, Text, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from backend.ai.prompt_registry import PromptRegistry, Persona, _Base as prompt_base
-from backend.ai.persona_engine import PersonaEngine
-from backend.ai.memory_engine import MemoryEngine
-from backend.ai.system_prompt import SystemPromptManager
 from backend.ai.domain_registry import DomainRegistry
+from backend.ai.memory_engine import MemoryEngine
+from backend.ai.persona_engine import PersonaEngine
 from backend.ai.prompt_builder import PromptBuilder
+from backend.ai.prompt_registry import Persona, PromptRegistry
+from backend.ai.prompt_registry import _Base as prompt_base
+from backend.ai.system_prompt import SystemPromptManager
 
 
 @pytest.fixture
 def env():
     engine = create_engine("sqlite:///:memory:")
-    prompt_base.metadata.create_all(engine)   # prompt_versions + personas
+    prompt_base.metadata.create_all(engine)  # prompt_versions + personas
 
     ServerBase = declarative_base()
 
@@ -40,6 +42,8 @@ def env():
     class Project(ServerBase):
         __tablename__ = "projects"
         id = Column(Integer, primary_key=True)
+        user_id = Column(Integer, nullable=True)
+        name = Column(Text, default="")
         description = Column(Text, default="")
         instructions = Column(Text, default="")
 
@@ -66,9 +70,14 @@ def env():
     )
 
     return {
-        "db": db, "SessionLocal": SessionLocal, "Memory": Memory, "Project": Project,
-        "registry": registry, "persona_engine": persona_engine,
-        "domain_registry": domain_registry, "builder": builder,
+        "db": db,
+        "SessionLocal": SessionLocal,
+        "Memory": Memory,
+        "Project": Project,
+        "registry": registry,
+        "persona_engine": persona_engine,
+        "domain_registry": domain_registry,
+        "builder": builder,
     }
 
 
@@ -83,10 +92,7 @@ def test_build_assembles_minimal_prompt_system_then_task(env):
 
     assert result.system == "Global system prompt text."
     assert result.task == "Answer the question: what is X?"
-    assert result.final == (
-        "## System\nGlobal system prompt text.\n\n"
-        "## Task\nAnswer the question: what is X?"
-    )
+    assert result.final == ("## System\nGlobal system prompt text.\n\n" "## Task\nAnswer the question: what is X?")
 
 
 def test_build_omits_empty_sections_from_final(env):
@@ -110,14 +116,24 @@ def test_build_section_order_is_system_persona_project_memory_rag_task_schema(en
     env["db"].commit()
 
     result = env["builder"].build(
-        "q", "ask", persona="Reviewer", project_id=proj.id, user_id=1,
-        rag_context="retrieved doc text", output_schema={"type": "object"},
+        "q",
+        "ask",
+        persona="Reviewer",
+        project_id=proj.id,
+        user_id=1,
+        rag_context="retrieved doc text",
+        output_schema={"type": "object"},
     )
 
     order = [line for line in result.final.split("\n") if line.startswith("## ")]
     assert order == [
-        "## System", "## Persona", "## Project Context", "## Memory",
-        "## Retrieved Context", "## Task", "## Output Format",
+        "## System",
+        "## Persona",
+        "## Project Context",
+        "## Memory",
+        "## Retrieved Context",
+        "## Task",
+        "## Output Format",
     ]
 
 
@@ -184,7 +200,7 @@ def test_build_no_user_id_skips_memory_entirely(env):
     env["db"].add(env["Memory"](user_id=1, fact="prefers concise answers"))
     env["db"].commit()
 
-    result = env["builder"].build("q", "ask")   # no user_id
+    result = env["builder"].build("q", "ask")  # no user_id
     assert result.memory == ""
 
 
@@ -196,12 +212,46 @@ def test_build_includes_rag_context_as_its_own_section(env):
     assert "## Retrieved Context\nWidgets are efficient." in result.final
 
 
-def test_build_rag_context_is_not_merged_into_task_text(env):
-    # Security requirement: retrieved context must never leak into the
-    # Task section's own rendering — only its own dedicated section.
+def test_build_rag_context_is_not_merged_into_task_text_when_template_doesnt_reference_it(env):
+    # A task template that only references {{ query }} never sees
+    # rag_context injected into it — rag_context only reaches the Task
+    # section's rendering when the template itself asks for {{ text }}
+    # (see test_build_maps_rag_context_to_text_for_document_body_templates
+    # below for that intentional, opposite case).
     _make_task(env)
     result = env["builder"].build("q", "ask", rag_context="SECRET_RAG_MARKER")
     assert "SECRET_RAG_MARKER" not in result.task
+
+
+def test_build_maps_rag_context_to_text_for_document_body_templates(env):
+    # Deliberate: paper_analysis/extract_metadata-style templates use
+    # {{ text }} to mean "the document being analyzed" — when rag_context
+    # is supplied, it fills that slot (not user_query), so the template's
+    # own "Paper text:"-style label shows the real document, not the
+    # short query. rag_context still also gets its own Retrieved Context
+    # section regardless (checked separately below).
+    _make_task(env, template="Paper text: {{ text }}")
+    result = env["builder"].build("summarize this", "ask", rag_context="THE ACTUAL PAPER CONTENT")
+    assert result.task == "Paper text: THE ACTUAL PAPER CONTENT"
+    assert "## Retrieved Context\nTHE ACTUAL PAPER CONTENT" in result.final
+
+
+def test_build_falls_back_to_user_query_for_text_when_no_rag_context(env):
+    _make_task(env, template="{{ text }}")
+    result = env["builder"].build("hello", "ask")  # no rag_context
+    assert result.task == "hello"
+
+
+def test_build_supplies_max_chars_as_len_of_rag_context(env):
+    _make_task(env, template="first {{ max_chars }} chars: {{ text }}")
+    result = env["builder"].build("q", "ask", rag_context="12345")
+    assert result.task == "first 5 chars: 12345"
+
+
+def test_build_metadata_none_values_render_as_empty_not_literal_none(env):
+    _make_task(env, template="Title: {{ title }}")
+    result = env["builder"].build("q", "ask", metadata={"title": None})
+    assert result.task == "Title: "
 
 
 # ------------------------------------------------------------ output schema
@@ -299,11 +349,49 @@ def test_build_with_domain_detection(env):
     _make_domain_module(env, "domain_medical", "MEDICAL: {{ query }}")
 
     # No domain given at all — auto-detected from content via keyword match.
-    result = env["builder"].build(
-        "This randomized clinical trial enrolled patients at a hospital.", "ask")
+    result = env["builder"].build("This randomized clinical trial enrolled patients at a hospital.", "ask")
 
     assert result.domain == "medical"
     assert "MEDICAL:" in result.task
+
+
+# ------------------------------------------------------------ document_type
+def test_build_with_explicit_document_type(env):
+    _make_task(env, template="CORE: {{ query }}")
+    _make_domain_module(env, "domain_medical", "Type: {{ document_type }}")
+
+    result = env["builder"].build("irrelevant content", "ask", domain="medical", document_type="review")
+
+    assert result.document_type == "review"
+    assert "Type: review" in result.task
+
+
+def test_build_auto_detects_document_type_when_not_given(env):
+    _make_task(env, template="CORE: {{ query }}")
+    _make_domain_module(env, "domain_medical", "Type: {{ document_type }}")
+
+    result = env["builder"].build(
+        "This practical guide explains step by step how to proceed.", "ask", domain="medical"
+    )
+
+    assert result.document_type == "clinical_guide"
+    assert "Type: clinical_guide" in result.task
+
+
+def test_build_document_type_available_to_any_template_not_just_domain_modules(env):
+    _make_task(env, template="CORE for a {{ document_type }} document: {{ query }}")
+
+    result = env["builder"].build("nothing domain-specific here", "ask", document_type="review")
+
+    assert "CORE for a review document" in result.task
+
+
+def test_build_document_type_defaults_to_general_with_no_signal(env):
+    _make_task(env, template="CORE: {{ query }}")
+
+    result = env["builder"].build("Nothing relevant to any known type here.", "ask")
+
+    assert result.document_type == "general"
 
 
 def test_build_domain_missing_gracefully_falls_back_to_core_only(env):
@@ -311,9 +399,9 @@ def test_build_domain_missing_gracefully_falls_back_to_core_only(env):
     # domain_medical is NOT seeded in this test at all.
     result = env["builder"].build("q", "ask", domain="medical")
 
-    assert result.task == "CORE: q"   # unchanged — no crash, no partial/broken text
-    assert result.domain == "medical"          # still records what was requested/detected
-    assert result.domain_version_id is None    # but nothing was actually appended
+    assert result.task == "CORE: q"  # unchanged — no crash, no partial/broken text
+    assert result.domain == "medical"  # still records what was requested/detected
+    assert result.domain_version_id is None  # but nothing was actually appended
 
 
 def test_get_available_domains_returns_enabled_domain_names(env):
@@ -339,3 +427,78 @@ def test_preview_also_applies_domain_injection(env):
 
     assert "MEDICAL:" in result.task
     assert result.domain == "medical"
+
+
+# ------------------------------------------------------------ Phase A: build_chat_instructions
+def test_build_chat_instructions_flat_parity_no_section_headers(env):
+    from backend.ai.prompt_builder import CHAT_SYSTEM_FALLBACK
+
+    now = datetime(2026, 7, 26, 15, 30)
+    result = env["builder"].build_chat_instructions(
+        user_id=1,
+        user_name="Ada Lovelace",
+        custom_instructions="Be brief.",
+        memory_enabled=False,
+        now=now,
+    )
+    assert "## " not in result.final
+    assert CHAT_SYSTEM_FALLBACK in result.final or result.final.startswith(CHAT_SYSTEM_FALLBACK[:20])
+    assert "The user's name is Ada Lovelace." in result.final
+    assert "Current date/time: 2026-07-26 15:30." in result.final
+    assert "The user's custom instructions (always follow):\nBe brief." in result.final
+    assert result.rag == ""
+    assert result.task == ""
+    assert "Global system prompt text." not in result.final
+
+
+def test_build_chat_instructions_uses_chat_system_registry(env):
+    env["registry"].create_prompt("chat_system", "test", "Custom chat opening.", status="active")
+    result = env["builder"].build_chat_instructions(
+        user_id=1, user_name="Ada", memory_enabled=False
+    )
+    assert result.final.startswith("Custom chat opening.")
+    assert result.system == "Custom chat opening."
+
+
+def test_build_chat_instructions_all_memories_not_top5(env):
+    db = env["db"]
+    Memory = env["Memory"]
+    for i in range(8):
+        db.add(Memory(user_id=7, project_id=None, fact=f"global-fact-{i}", importance=1))
+    db.commit()
+    result = env["builder"].build_chat_instructions(user_id=7, user_name="U", memory_enabled=True)
+    for i in range(8):
+        assert f"global-fact-{i}" in result.final
+    assert "Things you remember about the user:" in result.final
+
+
+def test_build_chat_instructions_project_ownership(env):
+    db = env["db"]
+    Project = env["Project"]
+    own = Project(user_id=1, name="Mine", instructions="Do science.")
+    other = Project(user_id=2, name="Theirs", instructions="Secret.")
+    db.add_all([own, other])
+    db.commit()
+
+    ok = env["builder"].build_chat_instructions(
+        user_id=1, user_name="Ada", project_id=own.id, memory_enabled=False
+    )
+    assert 'Current project: "Mine".' in ok.final
+    assert "Project instructions from the user:\nDo science." in ok.final
+
+    blocked = env["builder"].build_chat_instructions(
+        user_id=1, user_name="Ada", project_id=other.id, memory_enabled=False
+    )
+    assert "Theirs" not in blocked.final
+    assert "Secret" not in blocked.final
+
+
+def test_build_rejects_foreign_project_context_when_user_id_set(env):
+    db = env["db"]
+    Project = env["Project"]
+    _make_task(env)
+    foreign = Project(user_id=99, name="X", description="leak", instructions="nope")
+    db.add(foreign)
+    db.commit()
+    result = env["builder"].build("q", "ask", project_id=foreign.id, user_id=1)
+    assert result.project_context == ""

@@ -35,14 +35,16 @@ not this module's — see that file's docstring for why it's a new, narrow
 ledger rather than a reuse of AIUsageLedger/UsageLog (discussed and
 decided explicitly, not a default).
 """
+
 import logging
 import os
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session, declarative_base
 
-from .cost_ledger import CostLedger, create_cost_ledger_model
 from observability import record_ai_call
+
+from .cost_ledger import CostLedger, create_cost_ledger_model
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,7 @@ class ModelRegistry:
 
     def __init__(self, db_session: Optional[Session] = None):
         from openai import OpenAI
+
         self._openai = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
         # Claude/Gemini: no client built here — held as keys only, real
         # clients constructed lazily per call, so a missing SDK or key
@@ -89,8 +92,9 @@ class ModelRegistry:
         self._cost_ledger = CostLedger(CostLedgerEntry)
 
     # ------------------------------------------------------------ public
-    def call(self, model: str, messages: List[Dict], fallback_models: Optional[list] = None,
-             **kwargs) -> Dict[str, Any]:
+    def call(
+        self, model: str, messages: List[Dict], fallback_models: Optional[list] = None, **kwargs
+    ) -> Dict[str, Any]:
         """fallback_models isn't in the original method list — added
         because the brief asks for a caller "with automatic fallbacks"
         without pinning down a mechanism; this is the minimal one:
@@ -117,9 +121,10 @@ class ModelRegistry:
         if len(errors) == 1:
             raise errors[0]
         raise ModelError(
-            f"all {len(candidates)} model candidate(s) failed: "
-            f"{'; '.join(str(e) for e in errors)}",
-            model=model, attempts=len(candidates))
+            f"all {len(candidates)} model candidate(s) failed: " f"{'; '.join(str(e) for e in errors)}",
+            model=model,
+            attempts=len(candidates),
+        )
 
     def embed(self, text: str, model: Optional[str] = None, user_id: Optional[int] = None) -> List[float]:
         """user_id isn't in the original signature either — added
@@ -132,9 +137,15 @@ class ModelRegistry:
 
         cost = self._cost_ledger.estimate_cost(model, tokens, 0)
         if user_id is not None and self.db_session is not None:
-            self._log_cost_safely(user_id=user_id, model=model, prompt_tokens=tokens,
-                                  completion_tokens=0, total_tokens=tokens,
-                                  cost=cost, action="embedding")
+            self._log_cost_safely(
+                user_id=user_id,
+                model=model,
+                prompt_tokens=tokens,
+                completion_tokens=0,
+                total_tokens=tokens,
+                cost=cost,
+                action="embedding",
+            )
         return vector
 
     # ------------------------------------------------------------ routing
@@ -155,20 +166,27 @@ class ModelRegistry:
             try:
                 return fn(model, *args, **kwargs)
             except (ValueError, TypeError):
-                raise   # malformed request / bad args — retrying won't help
+                raise  # malformed request / bad args — retrying won't help
             except Exception as exc:
                 if self._is_non_retryable(exc):
                     raise ModelError(
                         f"{provider} call for {model!r} failed (not retried): {exc}",
-                        provider=provider, model=model, attempts=attempt, cause=exc) from exc
+                        provider=provider,
+                        model=model,
+                        attempts=attempt,
+                        cause=exc,
+                    ) from exc
                 last_exc = exc
-                logger.warning("attempt %d/%d for %s (%s) failed: %s",
-                               attempt, self.MAX_ATTEMPTS, model, provider, exc)
+                logger.warning("attempt %d/%d for %s (%s) failed: %s", attempt, self.MAX_ATTEMPTS, model, provider, exc)
                 if attempt < self.MAX_ATTEMPTS:
                     self._sleep(attempt * 2)
         raise ModelError(
             f"{provider} call for {model!r} failed after {self.MAX_ATTEMPTS} attempts: {last_exc}",
-            provider=provider, model=model, attempts=self.MAX_ATTEMPTS, cause=last_exc)
+            provider=provider,
+            model=model,
+            attempts=self.MAX_ATTEMPTS,
+            cause=last_exc,
+        )
 
     @staticmethod
     def _is_non_retryable(exc: Exception) -> bool:
@@ -187,6 +205,7 @@ class ModelRegistry:
     @staticmethod
     def _sleep(seconds):
         import time
+
         time.sleep(seconds)
 
     @staticmethod
@@ -200,14 +219,19 @@ class ModelRegistry:
 
     def _attach_cost_and_log(self, result: dict, user_id, prompt_version_id=None) -> None:
         record_ai_call(result["model"], result["prompt_tokens"], result["completion_tokens"])
-        cost = self._cost_ledger.estimate_cost(
-            result["model"], result["prompt_tokens"], result["completion_tokens"])
+        cost = self._cost_ledger.estimate_cost(result["model"], result["prompt_tokens"], result["completion_tokens"])
         result["cost"] = cost
         if user_id is not None and self.db_session is not None:
             self._log_cost_safely(
-                user_id=user_id, model=result["model"], prompt_tokens=result["prompt_tokens"],
-                completion_tokens=result["completion_tokens"], total_tokens=result["total_tokens"],
-                cost=cost, action="chat", prompt_version_id=prompt_version_id)
+                user_id=user_id,
+                model=result["model"],
+                prompt_tokens=result["prompt_tokens"],
+                completion_tokens=result["completion_tokens"],
+                total_tokens=result["total_tokens"],
+                cost=cost,
+                action="chat",
+                prompt_version_id=prompt_version_id,
+            )
 
     def _log_cost_safely(self, **kwargs):
         # Best-effort: a logging failure must never take down an
@@ -244,8 +268,7 @@ class ModelRegistry:
         call_streaming() that yields chunks, if a real caller needs
         token-by-token delivery."""
         kwargs.setdefault("stream_options", {"include_usage": True})
-        stream = self._openai.chat.completions.create(
-            model=model, messages=messages, stream=True, **kwargs)
+        stream = self._openai.chat.completions.create(model=model, messages=messages, stream=True, **kwargs)
 
         content_parts, finish_reason, usage, resp_model = [], None, None, model
         for chunk in stream:
@@ -275,18 +298,18 @@ class ModelRegistry:
         try:
             import anthropic
         except ImportError as exc:
-            raise ModelError("anthropic package not installed (pip install anthropic)",
-                            provider="anthropic", model=model) from exc
+            raise ModelError(
+                "anthropic package not installed (pip install anthropic)", provider="anthropic", model=model
+            ) from exc
 
         client = anthropic.Anthropic(api_key=self._anthropic_key)
         system, chat_messages = self._split_system_message(messages)
-        kwargs.setdefault("max_tokens", 1024)   # Anthropic requires this, unlike OpenAI/Gemini
+        kwargs.setdefault("max_tokens", 1024)  # Anthropic requires this, unlike OpenAI/Gemini
         resp = client.messages.create(
-            model=model, messages=chat_messages,
-            **({"system": system} if system else {}), **kwargs)
+            model=model, messages=chat_messages, **({"system": system} if system else {}), **kwargs
+        )
 
-        content = "".join(
-            block.text for block in resp.content if getattr(block, "type", None) == "text")
+        content = "".join(block.text for block in resp.content if getattr(block, "type", None) == "text")
         return {
             "content": content,
             "prompt_tokens": resp.usage.input_tokens,
@@ -303,8 +326,9 @@ class ModelRegistry:
             from google import genai
             from google.genai import types
         except ImportError as exc:
-            raise ModelError("google-genai package not installed (pip install google-genai)",
-                            provider="google", model=model) from exc
+            raise ModelError(
+                "google-genai package not installed (pip install google-genai)", provider="google", model=model
+            ) from exc
 
         client = genai.Client(api_key=self._google_key)
         system, chat_messages = self._split_system_message(messages)
@@ -314,8 +338,7 @@ class ModelRegistry:
         # real SDK: this dict shape is accepted (reaches the network,
         # doesn't raise client-side).
         contents = [
-            {"role": "model" if m.get("role") == "assistant" else "user",
-             "parts": [{"text": m["content"]}]}
+            {"role": "model" if m.get("role") == "assistant" else "user", "parts": [{"text": m["content"]}]}
             for m in chat_messages
         ]
 

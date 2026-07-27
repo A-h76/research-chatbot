@@ -23,21 +23,26 @@ backend/upload/routes.py's own docstring for the canonical explanation).
 """
 
 import json
+import logging
+import io
 import os
 import uuid
 
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select
 
 from auth.decorators import jwt_required
 from quotas.service import QuotaExceededError
 
 from .validation import (
-    validate_extension,
-    validate_size,
-    safe_filename,
+    DOCUMENT_EXTENSIONS,
     ValidationError,
+    kind_for_extension,
+    safe_filename,
+    validate_upload_bytes,
 )
+
+log = logging.getLogger(__name__)
 
 DEFAULT_MAX_BATCH_SIZE = 50
 MAX_BATCH_SIZE = int(os.environ.get("MAX_BATCH_SIZE", str(DEFAULT_MAX_BATCH_SIZE)))
@@ -52,11 +57,21 @@ def create_bulk_upload_blueprint(
     OutboxEvent,
     quota_service,
     storage_backend,
+    limiter=None,
 ):
     bp = Blueprint("bulk_upload", __name__, url_prefix="/api/uploads")
 
+    def _limit(spec):
+        def deco(fn):
+            if limiter is None:
+                return fn
+            return limiter.limit(spec)(fn)
+
+        return deco
+
     @bp.route("/bulk", methods=["POST"])
     @jwt_required()
+    @_limit("20 per hour")
     def upload_bulk():
         user_id = int(g.current_user)
 
@@ -82,22 +97,34 @@ def create_bulk_upload_blueprint(
             if not f or not f.filename:
                 return jsonify({"error": "no_file", "message": "Empty file field in batch"}), 400
             try:
-                ext = validate_extension(f.filename)
-                f.stream.seek(0, 2)  # SEEK_END — size without touching disk
-                size = f.stream.tell()
-                f.stream.seek(0)
-                validate_size(size)
+                data = f.read()
+                ext, mime = validate_upload_bytes(
+                    data, f.filename, allowed=DOCUMENT_EXTENSIONS
+                )
             except ValidationError as e:
+                log.warning(
+                    "event=%s filename=%s message=%s",
+                    e.code,
+                    f.filename,
+                    e.message,
+                )
                 return (
                     jsonify({"error": e.code, "message": f"{f.filename}: {e.message}"}),
                     400,
                 )
+            size = len(data)
             total_bytes += size
-            prepared.append((f, ext, size))
+            prepared.append((data, ext, mime, size, f.filename))
 
         try:
             quota_service.check_storage_quota(user_id, total_bytes)
         except QuotaExceededError as e:
+            log.warning(
+                "event=quota_exceeded kind=storage user_id=%s used=%s limit=%s",
+                user_id,
+                getattr(e, "used", ""),
+                getattr(e, "limit", ""),
+            )
             return (
                 jsonify(
                     {
@@ -119,18 +146,18 @@ def create_bulk_upload_blueprint(
             db.flush()  # assigns batch.id
 
             jobs_out = []
-            for f, ext, size in prepared:
-                filename = safe_filename(f.filename, ext)
+            for data, ext, mime, size, original_name in prepared:
+                filename = safe_filename(original_name, ext)
                 key = f"users/{user_id}/uploads/{batch.id}/{uuid.uuid4().hex}/{filename}"
 
-                storage_backend.upload(f.stream, key, content_type=f.mimetype)
+                storage_backend.upload(io.BytesIO(data), key, content_type=mime)
                 uploaded_keys.append(key)
 
                 uf = UserFile(
                     user_id=user_id,
                     name=filename[:300],
-                    mime=f.mimetype,
-                    kind="document",
+                    mime=mime,
+                    kind=kind_for_extension(ext),
                     path=key,
                     size=size,
                 )

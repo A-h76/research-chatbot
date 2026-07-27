@@ -5,17 +5,27 @@ just "does it insert once."
 
 Run: pytest backend/ai/test_seed.py -v
 """
+
 import json
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.ai.prompt_registry import PromptRegistry, Persona, _Base as prompt_base
 from backend.ai.persona_engine import PersonaEngine
+from backend.ai.prompt_registry import Persona, PromptRegistry
+from backend.ai.prompt_registry import _Base as prompt_base
 from backend.ai.seed import (
-    seed_prompts, seed_pipelines, seed_all, seed_system_prompt, seed_personas,
-    ModelPreset, DEFAULT_PROMPTS, DEFAULT_PIPELINES, DEFAULT_PERSONAS, DOMAIN_MODULES,
+    DEFAULT_PERSONAS,
+    DEFAULT_PIPELINES,
+    DEFAULT_PROMPTS,
+    DOMAIN_MODULES,
+    ModelPreset,
+    seed_all,
+    seed_personas,
+    seed_pipelines,
+    seed_prompts,
+    seed_system_prompt,
 )
 from backend.ai.system_prompt import DEFAULT_SYSTEM_PROMPT
 
@@ -23,7 +33,7 @@ from backend.ai.system_prompt import DEFAULT_SYSTEM_PROMPT
 @pytest.fixture
 def db():
     engine = create_engine("sqlite:///:memory:")
-    prompt_base.metadata.create_all(engine)   # prompt_versions
+    prompt_base.metadata.create_all(engine)  # prompt_versions
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()
     yield session
@@ -54,16 +64,65 @@ def test_seed_prompts_domain_modules_use_domain_module_category(db):
         assert row.is_active is True
 
 
-def test_seed_prompts_domain_medical_contains_all_30_sections(db):
+def test_seed_prompts_domain_medical_is_extension_only(db):
+    """domain_medical is appended (by PromptBuilder.build()) after the base
+    paper_analysis task text, which already covers the paper content,
+    metadata, and core fields — repeating any of that here would send the
+    model two competing JSON shapes in one prompt (see prompt_builder.py's
+    docstring, and backend/ai/prompts.py's medical_response_format()
+    comment for the real call that proved this happens)."""
     seed_prompts(db)
     registry = PromptRegistry(db)
     row = registry.get_active_version("domain_medical")
-    for n in range(1, 31):
-        assert f"## {n}." in row.template, f"section {n} missing from domain_medical"
-    # Spot-check a couple of the medical-specific ones by name, not just number.
-    assert "PICO Extraction" in row.template
-    assert "GRADE Assessment" in row.template
-    assert "Cost-effectiveness" in row.template
+
+    assert "{{ text }}" not in row.template
+    assert "**Paper Content:**" not in row.template
+
+    # Spot-check a couple of the medical-specific topics by name.
+    assert "PICO" in row.template
+    assert "GRADE" in row.template
+    assert "Target audience" in row.template
+
+
+def test_seed_prompts_domain_medical_sections_adapt_to_document_type(db):
+    """The whole point of this module's structure: rendering the same
+    seeded template with a different document_type should show a
+    different document-type-specific section and hide the others —
+    proves the {% if/elif %} branches actually work, not just that the
+    guidance text exists somewhere in the raw template string."""
+    from jinja2.sandbox import SandboxedEnvironment
+
+    seed_prompts(db)
+    registry = PromptRegistry(db)
+    template = registry.get_active_version("domain_medical").template
+    env = SandboxedEnvironment()
+
+    research = env.from_string(template).render(document_type="research")
+    assert "This document appears to be a research." in research
+    assert "PICO extraction" in research
+    assert "Target audience" not in research
+    assert "Review coverage" not in research
+
+    clinical_guide = env.from_string(template).render(document_type="clinical_guide")
+    assert "Target audience" in clinical_guide
+    assert "PICO extraction" not in clinical_guide
+    assert "Review coverage" not in clinical_guide
+
+    review = env.from_string(template).render(document_type="review")
+    assert "Review coverage" in review
+    assert "PICO extraction" not in review
+    assert "Target audience" not in review
+
+    # Core fields (always-on) appear regardless of document_type.
+    for rendered in (research, clinical_guide, review):
+        assert "Clinical bottom line" in rendered
+
+    # An unrecognized/other document_type gets only the core section.
+    other = env.from_string(template).render(document_type="case_report")
+    assert "Clinical bottom line" in other
+    assert "PICO extraction" not in other
+    assert "Target audience" not in other
+    assert "Review coverage" not in other
 
 
 def test_seed_prompts_domain_ai_ml_is_a_labeled_placeholder(db):
@@ -115,8 +174,7 @@ def test_seed_prompts_does_not_overwrite_existing_prompt_with_same_name(db):
     # get_active_version()-based idempotency check, and this test would
     # be exercising the wrong scenario.
     registry = PromptRegistry(db)
-    registry.create_prompt("paper_analysis", "the real one", "REAL EXISTING TEMPLATE {{ text }}",
-                           status="active")
+    registry.create_prompt("paper_analysis", "the real one", "REAL EXISTING TEMPLATE {{ text }}", status="active")
 
     seed_prompts(db)
 
@@ -146,7 +204,7 @@ def test_seed_pipelines_idempotent(db):
 def test_seed_pipelines_creates_table_if_missing(db):
     # The fixture only creates prompt_versions — model_presets must be
     # created by seed_pipelines itself (no migration owns this table).
-    seed_pipelines(db)   # must not raise "no such table"
+    seed_pipelines(db)  # must not raise "no such table"
     assert db.query(ModelPreset).count() == 3
 
 
@@ -166,7 +224,7 @@ def test_seed_system_prompt_idempotent(db):
 
     registry = PromptRegistry(db)
     versions = registry.get_prompts_by_status("active")
-    assert len(versions) == 1   # a second run must not create v2
+    assert len(versions) == 1  # a second run must not create v2
 
 
 # ------------------------------------------------------------ seed_personas

@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Soro — D0.5.1 Launchpad Prototype</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="proto-banner">
+      D0.5.1 · denser Home · brand mark · launchpad layout ·
+      <kbd class="kbd">Ctrl</kbd>+<kbd class="kbd">K</kbd>
+    </div>
+
+    <div class="app">
+      <aside class="sidebar" aria-label="Primary">
+        <div class="brand">
+          <span class="logo-mark" aria-hidden="true">S</span>
+          <span class="brand-name">Soro</span>
+          <div class="brand-new-wrap">
+            <button type="button" class="btn-new" id="newBtn" aria-expanded="false" aria-haspopup="true">
+              ＋ New
+            </button>
+            <div class="new-menu" id="newMenu" role="menu">
+              <button type="button" role="menuitem">Upload paper</button>
+              <button type="button" role="menuitem">New project</button>
+              <button type="button" role="menuitem">New chat</button>
+              <button type="button" role="menuitem">New draft</button>
+            </div>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Main">
+          <button type="button" class="nav-item active" data-view="home">Home</button>
+          <button type="button" class="nav-item" data-view="library">Library</button>
+          <button type="button" class="nav-item" data-view="projects">Projects</button>
+          <button type="button" class="nav-item" data-view="writing">Writing</button>
+          <button type="button" class="nav-item" data-view="chat">Chat</button>
+        </nav>
+
+        <div>
+          <p class="nav-label">Recent</p>
+          <ul class="recent-list">
+            <li><button type="button" data-view="paper">Kupffer cells…</button></li>
+            <li><button type="button" data-view="paper">Windowed-MTP…</button></li>
+            <li><button type="button" data-view="paper">Attention Is All You Need</button></li>
+          </ul>
+        </div>
+
+        <div class="sidebar-foot">
+          <button type="button" class="nav-item">Settings</button>
+          <button type="button" class="nav-item">Dev User</button>
+        </div>
+      </aside>
+
+      <div class="main">
+        <div class="topbar home-top" id="topbar">
+          <div class="view-controls" id="viewControls">
+            <label>
+              View
+              <select id="viewLevel" aria-label="View level">
+                <option>Simple</option>
+                <option selected>Standard</option>
+                <option>Research</option>
+                <option>Expert</option>
+              </select>
+            </label>
+            <label>
+              Mode
+              <select id="modeSelect" aria-label="Workspace mode">
+                <option>Reading</option>
+                <option selected>Analysis</option>
+                <option>Writing</option>
+              </select>
+            </label>
+          </div>
+          <button type="button" class="search-affordance" id="openPalette" aria-label="Search">
+            Search…
+            <span class="kbd">Ctrl K</span>
+          </button>
+        </div>
+
+        <main class="stage">
+          <!-- HOME — scientific launchpad -->
+          <section class="view active" id="view-home" aria-label="Home">
+            <div class="stage-inner launchpad">
+              <div class="block">
+                <h1 class="h1">Continue research</h1>
+                <p class="meta">One focus. Then your library’s scientific signals — not chat counts.</p>
+              </div>
+
+              <!-- Today's Focus — single recommendation -->
+              <div class="block launch-span">
+                <button type="button" class="focus-card" data-view="paper">
+                  <div>
+                    <div class="eyebrow">Today’s focus</div>
+                    <div class="name">Kupffer cells · Evidence quality High</div>
+                    <div class="detail">2 unresolved comparisons · Continue investigation →</div>
+                  </div>
+                  <span class="btn primary">Continue</span>
+                </button>
+              </div>
+
+              <!-- Research metrics only Soro can claim -->
+              <div class="block launch-span">
+                <p class="section-label">Today in your library</p>
+                <div class="activity" aria-label="Research metrics">
+                  <div class="activity-item">
+                    <div class="t"><span class="mark">✓</span> 2 papers analysed</div>
+                    <div class="s">Structure · classify · evidence</div>
+                  </div>
+                  <div class="activity-item">
+                    <div class="t"><span class="mark">✓</span> 128 entities extracted</div>
+                    <div class="s">PICO · clinical · outcomes</div>
+                  </div>
+                  <div class="activity-item">
+                    <div class="t"><span class="mark">✓</span> 14 evidence summaries</div>
+                    <div class="s">GRADE · RoB signals</div>
+                  </div>
+                  <div class="activity-item">
+                    <div class="t"><span class="mark">✓</span> 3 research gaps</div>
+                    <div class="s">Unresolved · from Compare</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Hero paper — scientific identity -->
+              <div class="block launch-span">
+                <p class="section-label">Research workspace</p>
+                <button type="button" class="paper-hero" data-view="paper">
+                  <div>
+                    <div class="kind">Review article · Liver physiology</div>
+                    <div class="name">Kupffer cells: Orchestrators of liver physiology</div>
+                    <div class="meta-line">Qin Cai · 2026 · Ready</div>
+                    <div class="metrics">
+                      <div class="metric">
+                        <div class="k">Evidence quality</div>
+                        <div class="v"><span class="grade-stars" aria-label="High">★★★★★</span></div>
+                        <div class="h">High</div>
+                      </div>
+                      <div class="metric">
+                        <div class="k">Knowledge coverage</div>
+                        <div class="v">52</div>
+                        <div class="h">entities extracted</div>
+                      </div>
+                      <div class="metric">
+                        <div class="k">Relationship network</div>
+                        <div class="v">31</div>
+                        <div class="h">connected nodes</div>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="btn primary cta">Open research workspace →</span>
+                </button>
+              </div>
+
+              <div class="block launch-span">
+                <p class="section-label">Quick actions</p>
+                <div class="quick-actions">
+                  <button type="button" class="btn primary">Upload paper</button>
+                  <button type="button" class="btn" data-view="paper">Open Evidence</button>
+                  <button type="button" class="btn" data-view="writing">Continue writing</button>
+                  <button type="button" class="btn" data-view="projects">Open project</button>
+                </div>
+              </div>
+
+              <div class="launch-grid">
+                <div>
+                  <p class="section-label">Projects</p>
+                  <ul class="plain-list">
+                    <li>
+                      <div class="title">
+                        Liver immunology review
+                        <div class="sci">
+                          <span><b>12</b> papers</span><span class="sep">·</span>
+                          <span><b>6</b> unresolved claims</span><span class="sep">·</span>
+                          <span>Draft <b>72%</b> grounded</span>
+                        </div>
+                      </div>
+                    </li>
+                    <li>
+                      <div class="title">
+                        Thesis · Chapter 2
+                        <div class="sci">
+                          <span><b>12</b> papers</span><span class="sep">·</span>
+                          <span><b>3</b> unresolved claims</span><span class="sep">·</span>
+                          <span>Draft <b>41%</b> grounded</span>
+                        </div>
+                      </div>
+                    </li>
+                    <li>
+                      <div class="title">
+                        Methods survey
+                        <div class="sci">
+                          <span><b>4</b> papers</span><span class="sep">·</span>
+                          <span><b>2</b> gaps open</span><span class="sep">·</span>
+                          <span>Needs attention</span>
+                        </div>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+
+                <div>
+                  <p class="section-label">Recent papers</p>
+                  <ul class="plain-list">
+                    <li>
+                      <div class="title">
+                        Kupffer cells: Orchestrators of liver physiology
+                        <div class="sci">
+                          <span>Review</span><span class="sep">·</span>
+                          <span>Liver physiology</span><span class="sep">·</span>
+                          <span><b>GRADE High</b></span><span class="sep">·</span>
+                          <span><b>52</b> entities</span><span class="sep">·</span>
+                          <span><b>31</b> edges</span>
+                        </div>
+                      </div>
+                      <span class="badge ready">Ready</span>
+                    </li>
+                    <li>
+                      <div class="title">
+                        Windowed-MTP…
+                        <div class="sci">
+                          <span>Methods</span><span class="sep">·</span>
+                          <span>ML systems</span><span class="sep">·</span>
+                          <span><b>18</b> entities</span><span class="sep">·</span>
+                          <span><b>22</b> edges</span>
+                        </div>
+                      </div>
+                      <span class="badge ready">Ready</span>
+                    </li>
+                    <li>
+                      <div class="title">
+                        Attention Is All You Need
+                        <div class="sci">
+                          <span>Conference</span><span class="sep">·</span>
+                          <span>Transformers</span><span class="sep">·</span>
+                          <span>Evidence pending</span>
+                        </div>
+                      </div>
+                      <span class="badge processing">Processing</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <div>
+                  <p class="section-label">Research gaps</p>
+                  <ul class="plain-list gap-list">
+                    <li>
+                      <div class="title">
+                        <span class="urgency">Needs attention</span>
+                        Human translation of KC phenotypes
+                        <div class="sci">
+                          <span>Continue investigation</span><span class="sep">·</span>
+                          <span>Compare · Thesis · Ch.2</span>
+                        </div>
+                      </div>
+                    </li>
+                    <li>
+                      <div class="title">
+                        <span class="urgency">Needs attention</span>
+                        Conflicting GRADE on inflammation outcomes
+                        <div class="sci">
+                          <span>Continue investigation</span><span class="sep">·</span>
+                          <span>2 papers · Evidence</span>
+                        </div>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+
+                <div>
+                  <p class="section-label">Resume inquiry</p>
+                  <ul class="plain-list">
+                    <li>
+                      <div class="title">
+                        Chat: Kupffer cells…
+                        <div class="sci"><span>Paper · last: “Summarise evidence grade”</span></div>
+                      </div>
+                    </li>
+                    <li>
+                      <div class="title">
+                        Draft · Related work
+                        <div class="sci"><span><b>4</b> claim blocks · GRADE-linked</span></div>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- LIBRARY -->
+          <section class="view" id="view-library" aria-label="Library">
+            <div class="stage-inner wide">
+              <div class="block">
+                <h1 class="h1">Library</h1>
+                <p class="meta">Corpus home — Compare and Citations live in the toolbar.</p>
+              </div>
+              <div class="toolbar">
+                <button type="button" class="btn primary">Upload</button>
+                <button type="button" class="btn">Compare</button>
+                <button type="button" class="btn">Citations</button>
+                <button type="button" class="btn">Filter</button>
+                <span class="spacer"></span>
+                <span class="meta">3 papers</span>
+              </div>
+              <ul class="row-list">
+                <li>
+                  <input type="checkbox" aria-label="Select" />
+                  <div class="title">
+                    Kupffer cells: Orchestrators of liver physiology
+                    <div class="sci">
+                      <span>Review</span><span class="sep">·</span>
+                      <span>Liver physiology</span><span class="sep">·</span>
+                      <span><b>GRADE High</b></span><span class="sep">·</span>
+                      <span><b>52</b> entities</span><span class="sep">·</span>
+                      <span><b>31</b> edges</span>
+                    </div>
+                  </div>
+                  <span class="badge ready">Ready</span>
+                  <button type="button" class="btn ghost" data-view="paper">Open</button>
+                </li>
+                <li>
+                  <input type="checkbox" aria-label="Select" />
+                  <div class="title">
+                    Windowed-MTP…
+                    <div class="sci">
+                      <span>Methods</span><span class="sep">·</span>
+                      <span>ML systems</span><span class="sep">·</span>
+                      <span><b>18</b> entities</span><span class="sep">·</span>
+                      <span><b>22</b> edges</span>
+                    </div>
+                  </div>
+                  <span class="badge ready">Ready</span>
+                  <button type="button" class="btn ghost" data-view="paper">Open</button>
+                </li>
+                <li>
+                  <input type="checkbox" aria-label="Select" />
+                  <div class="title">
+                    Attention Is All You Need
+                    <div class="sci">
+                      <span>Conference</span><span class="sep">·</span>
+                      <span>Transformers</span><span class="sep">·</span>
+                      <span>Evidence pending</span>
+                    </div>
+                  </div>
+                  <span class="badge attention">Needs Attention</span>
+                  <button type="button" class="btn ghost" data-view="paper">Open</button>
+                </li>
+              </ul>
+            </div>
+          </section>
+
+          <!-- PROJECTS -->
+          <section class="view" id="view-projects" aria-label="Projects">
+            <div class="stage-inner wide">
+              <div class="block">
+                <h1 class="h1">Projects</h1>
+                <p class="meta">Workstreams that will become the long-term centre.</p>
+              </div>
+              <div class="toolbar">
+                <button type="button" class="btn primary">New project</button>
+              </div>
+              <ul class="plain-list">
+                <li>
+                  <div class="title">
+                    Liver immunology review
+                    <div class="sci">
+                      <span><b>12</b> papers</span><span class="sep">·</span>
+                      <span><b>6</b> unresolved claims</span><span class="sep">·</span>
+                      <span>Draft <b>72%</b> grounded</span>
+                    </div>
+                  </div>
+                </li>
+                <li>
+                  <div class="title">
+                    Thesis · Chapter 2
+                    <div class="sci">
+                      <span><b>12</b> papers</span><span class="sep">·</span>
+                      <span><b>3</b> unresolved claims</span><span class="sep">·</span>
+                      <span>Draft <b>41%</b> grounded</span>
+                    </div>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </section>
+
+          <!-- WRITING -->
+          <section class="view" id="view-writing" aria-label="Writing">
+            <div class="stage-inner wide">
+              <div class="block">
+                <h1 class="h1">Writing</h1>
+                <p class="meta">Projects → Drafts → References → Claim blocks — not a Docs clone.</p>
+              </div>
+              <div class="launch-grid">
+                <div>
+                  <p class="section-label">Drafts</p>
+                  <ul class="plain-list">
+                    <li>
+                      <div class="title">
+                        Related work · Kupffer cells
+                        <div class="sub">4 claim blocks · 3 paper refs</div>
+                      </div>
+                    </li>
+                    <li>
+                      <div class="title">
+                        Methods comparison outline
+                        <div class="sub">From Compare · 2 gaps</div>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+                <div>
+                  <p class="section-label">Claim blocks</p>
+                  <ul class="plain-list">
+                    <li>
+                      <div class="title">
+                        Kupffer cells regulate hepatic inflammation…
+                        <div class="sub">Evidence · Moderate</div>
+                      </div>
+                    </li>
+                    <li>
+                      <div class="title">
+                        Limited to murine models…
+                        <div class="sub">Warning · low directness</div>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- CHAT -->
+          <section class="view" id="view-chat" aria-label="Chat">
+            <div class="stage-inner">
+              <div class="block">
+                <h1 class="h1">Chat</h1>
+                <p class="meta">Secondary list — prefer paper-scoped chat from a Paper workspace.</p>
+              </div>
+              <ul class="plain-list">
+                <li>
+                  <div class="title">
+                    Chat: Kupffer cells…
+                    <div class="sub">Paper · 2h ago</div>
+                  </div>
+                </li>
+                <li>
+                  <div class="title">
+                    General library ask
+                    <div class="sub">Global · yesterday</div>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </section>
+
+          <!-- PAPER — immersive workspace -->
+          <section class="view" id="view-paper" aria-label="Paper workspace">
+            <div class="stage-inner wide stage-paper">
+              <div class="workspace-strip">
+                <a class="crumb" href="#" data-view="home">Home</a>
+                <span class="crumb">/</span>
+                <a class="crumb" href="#" data-view="library">Library</a>
+                <span class="crumb">/</span>
+                <span class="crumb">Workspace</span>
+                <span class="spacer" style="flex:1"></span>
+                <span class="badge ready">Ready</span>
+                <span class="badge neutral">Analysis mode</span>
+              </div>
+
+              <header class="object-header">
+                <p class="meta" style="color: var(--signal-600); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; font-size: 10px;">
+                  Review · Liver physiology · Medicine
+                </p>
+                <h1 class="h1">Kupffer cells: Orchestrators of liver physiology</h1>
+                <p class="meta">Qin Cai · Liver Research · 2026</p>
+              </header>
+
+              <nav class="tabs" aria-label="Paper workspace">
+                <button type="button" class="tab active">Overview</button>
+                <button type="button" class="tab">Structure</button>
+                <button type="button" class="tab">Classification</button>
+                <button type="button" class="tab">Entities</button>
+                <button type="button" class="tab">Evidence</button>
+                <button type="button" class="tab">Knowledge Graph</button>
+                <button type="button" class="tab">Narrative</button>
+                <button type="button" class="tab">Chat</button>
+              </nav>
+
+              <p class="mode-hint">
+                Mode: <strong id="modeLabel">Analysis</strong> · View:
+                <strong id="levelLabel">Standard</strong> — tabs are the product; pipeline stays collapsed.
+              </p>
+
+              <div class="actions-row">
+                <button type="button" class="btn primary">Chat with this paper</button>
+                <button type="button" class="btn">Open Evidence</button>
+                <button type="button" class="btn">Open Graph</button>
+                <button type="button" class="btn">Save to citations</button>
+              </div>
+
+              <p class="section-label">Scientific signals</p>
+              <div class="stat-strip">
+                <button type="button" class="stat signal-stat">
+                  <div class="k">Evidence quality</div>
+                  <div class="v"><span class="grade-stars">★★★★★</span></div>
+                  <div class="h">High · RoB low</div>
+                </button>
+                <button type="button" class="stat signal-stat">
+                  <div class="k">Knowledge coverage</div>
+                  <div class="v">52</div>
+                  <div class="h">entities extracted</div>
+                </button>
+                <button type="button" class="stat signal-stat">
+                  <div class="k">Relationship network</div>
+                  <div class="v">31</div>
+                  <div class="h">connected nodes</div>
+                </button>
+                <button type="button" class="stat signal-stat">
+                  <div class="k">Classification</div>
+                  <div class="v">Review</div>
+                  <div class="h">Medicine · Liver</div>
+                </button>
+              </div>
+
+              <p class="section-label">Notes</p>
+              <div class="inline-empty">
+                No notes yet.
+                <button type="button" class="btn">Create first note</button>
+              </div>
+
+              <button type="button" class="pipeline-collapsed" aria-expanded="false">
+                <span class="check" aria-hidden="true">✓</span>
+                <span class="body">
+                  <strong>Ready</strong>
+                  <span>Processed 2 minutes ago</span>
+                </span>
+                <span class="action">View pipeline details</span>
+              </button>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <div class="palette-backdrop" id="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="palette">
+        <input type="search" placeholder="Search…" autocomplete="off" />
+        <div class="palette-group">
+          <h4>Commands</h4>
+          <button type="button" class="palette-item active">Upload paper <span class="hint">Command</span></button>
+          <button type="button" class="palette-item">Open Evidence <span class="hint">Paper</span></button>
+          <button type="button" class="palette-item">Compare selected <span class="hint">Library</span></button>
+        </div>
+        <div class="palette-group">
+          <h4>Papers</h4>
+          <button type="button" class="palette-item" data-view="paper" data-close-palette>
+            Kupffer cells… <span class="hint">Ready</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const views = document.querySelectorAll(".view");
+      const topbar = document.getElementById("topbar");
+      const palette = document.getElementById("palette");
+      const newBtn = document.getElementById("newBtn");
+      const newMenu = document.getElementById("newMenu");
+      const modeSelect = document.getElementById("modeSelect");
+      const viewLevel = document.getElementById("viewLevel");
+
+      function showView(id) {
+        const app = document.querySelector(".app");
+        views.forEach((v) => v.classList.toggle("active", v.id === "view-" + id));
+        document.querySelectorAll(".sidebar .nav-item[data-view]").forEach((btn) => {
+          btn.classList.toggle("active", btn.getAttribute("data-view") === id);
+        });
+        if (id === "paper") {
+          document.querySelectorAll(".sidebar .nav-item[data-view]").forEach((b) => b.classList.remove("active"));
+        }
+        topbar.classList.toggle("home-top", id !== "paper");
+        app.classList.toggle("immersed", id === "paper");
+      }
+
+      document.querySelectorAll("[data-view]").forEach((el) => {
+        el.addEventListener("click", (e) => {
+          e.preventDefault();
+          const id = el.getAttribute("data-view");
+          if (!id) return;
+          showView(id);
+          if (el.hasAttribute("data-close-palette")) closePalette();
+        });
+      });
+
+      newBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const open = newMenu.classList.toggle("open");
+        newBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+      document.addEventListener("click", () => {
+        newMenu.classList.remove("open");
+        newBtn.setAttribute("aria-expanded", "false");
+      });
+
+      function openPalette() {
+        palette.classList.add("open");
+        palette.querySelector("input").focus();
+      }
+      function closePalette() {
+        palette.classList.remove("open");
+      }
+      document.getElementById("openPalette").addEventListener("click", openPalette);
+      palette.addEventListener("click", (e) => {
+        if (e.target === palette) closePalette();
+      });
+      window.addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+          e.preventDefault();
+          palette.classList.contains("open") ? closePalette() : openPalette();
+        }
+        if (e.key === "Escape") {
+          closePalette();
+          newMenu.classList.remove("open");
+        }
+      });
+
+      modeSelect.addEventListener("change", () => {
+        document.getElementById("modeLabel").textContent = modeSelect.value;
+      });
+      viewLevel.addEventListener("change", () => {
+        document.getElementById("levelLabel").textContent = viewLevel.value;
+      });
+
+      showView("home");
+    </script>
+  </body>
+</html>

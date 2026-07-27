@@ -19,22 +19,25 @@ second copy of that suite.
 
 Run: pytest tests/test_ai.py -v
 """
+
 import os
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.ai.prompt_registry import PromptRegistry, TemplateError, _Base as prompt_base
-from backend.ai.model_registry import ModelRegistry, ModelError, _Base as model_base, CostLedgerEntry
 from backend.ai.cost_ledger import CostLedger
+from backend.ai.model_registry import CostLedgerEntry, ModelError, ModelRegistry
+from backend.ai.model_registry import _Base as model_base
+from backend.ai.prompt_registry import PromptRegistry, TemplateError
+from backend.ai.prompt_registry import _Base as prompt_base
 
 
 @pytest.fixture
 def db():
     engine = create_engine("sqlite:///:memory:")
     prompt_base.metadata.create_all(engine)
-    model_base.metadata.create_all(engine)   # CostLedgerEntry, for the logging test
+    model_base.metadata.create_all(engine)  # CostLedgerEntry, for the logging test
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()
     yield session
@@ -106,8 +109,7 @@ def test_model_registry_call_openai_mocked(model_registry, mocker):
     fake_choice = mocker.Mock(message=mocker.Mock(content="hello"), finish_reason="stop")
     fake_usage = mocker.Mock(prompt_tokens=10, completion_tokens=5, total_tokens=15)
     fake_response = mocker.Mock(choices=[fake_choice], usage=fake_usage, model="gpt-4o-mini")
-    mocker.patch.object(
-        model_registry._openai.chat.completions, "create", return_value=fake_response)
+    mocker.patch.object(model_registry._openai.chat.completions, "create", return_value=fake_response)
 
     result = model_registry._call_openai("gpt-4o-mini", [{"role": "user", "content": "hi"}])
     assert result["content"] == "hello"
@@ -120,9 +122,17 @@ def test_model_registry_call_openai_mocked(model_registry, mocker):
 
 def test_model_registry_routing_dispatches_openai(model_registry, mocker):
     mock_openai = mocker.patch.object(
-        model_registry, "_call_openai",
-        return_value={"content": "x", "model": "gpt-4o-mini", "prompt_tokens": 1,
-                     "completion_tokens": 1, "total_tokens": 2, "finish_reason": "stop"})
+        model_registry,
+        "_call_openai",
+        return_value={
+            "content": "x",
+            "model": "gpt-4o-mini",
+            "prompt_tokens": 1,
+            "completion_tokens": 1,
+            "total_tokens": 2,
+            "finish_reason": "stop",
+        },
+    )
     mock_claude = mocker.patch.object(model_registry, "_call_claude")
 
     model_registry.call("gpt-4o-mini", [{"role": "user", "content": "hi"}])
@@ -134,9 +144,17 @@ def test_model_registry_routing_dispatches_openai(model_registry, mocker):
 def test_model_registry_routing_dispatches_claude(model_registry, mocker):
     mock_openai = mocker.patch.object(model_registry, "_call_openai")
     mock_claude = mocker.patch.object(
-        model_registry, "_call_claude",
-        return_value={"content": "y", "model": "claude-3-5-sonnet", "prompt_tokens": 1,
-                     "completion_tokens": 1, "total_tokens": 2, "finish_reason": "end_turn"})
+        model_registry,
+        "_call_claude",
+        return_value={
+            "content": "y",
+            "model": "claude-3-5-sonnet",
+            "prompt_tokens": 1,
+            "completion_tokens": 1,
+            "total_tokens": 2,
+            "finish_reason": "end_turn",
+        },
+    )
 
     model_registry.call("claude-3-5-sonnet", [{"role": "user", "content": "hi"}])
 
@@ -151,7 +169,7 @@ def test_model_registry_routing_unknown_prefix_raises(model_registry):
 
 # ================================================================ CostLedger
 def test_cost_ledger_estimate_cost_known_model():
-    ledger = CostLedger(Model=None)   # estimate_cost is pure — no DB needed
+    ledger = CostLedger(Model=None)  # estimate_cost is pure — no DB needed
     cost = ledger.estimate_cost("gpt-4o-mini", prompt_tokens=1_000_000, completion_tokens=1_000_000)
     assert cost == pytest.approx(0.15 + 0.60, rel=1e-6)
 
@@ -164,8 +182,16 @@ def test_cost_ledger_estimate_cost_unknown_model_is_zero():
 
 def test_cost_ledger_log_persists_row(db):
     ledger = CostLedger(CostLedgerEntry)
-    ledger.log(db, user_id=7, model="gpt-4o-mini", prompt_tokens=10,
-              completion_tokens=5, total_tokens=15, cost=0.001, action="chat")
+    ledger.log(
+        db,
+        user_id=7,
+        model="gpt-4o-mini",
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        cost=0.001,
+        action="chat",
+    )
 
     rows = db.query(CostLedgerEntry).all()
     assert len(rows) == 1

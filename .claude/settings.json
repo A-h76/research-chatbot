@@ -76,7 +76,29 @@
       "Bash(python -m pytest observability/test_observability.py -v)",
       "Bash(python -m flake8 observability/ server.py worker.py backend/ai/model_registry.py --max-line-length=110)",
       "Bash(python -m pytest imports/test_imports.py -v)",
-      "Bash(python -m pytest test_upload_quota.py -v)"
+      "Bash(python -m pytest test_upload_quota.py -v)",
+      "Bash(python -m flake8 --isolated --max-line-length=120 --max-complexity=20 --exclude=.git,__pycache__,migrations,venv,env,.env,node_modules,frontend --select=F401,F821,E741,E712,E301 .)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(python -m flake8 --isolated --max-line-length=120 --exclude=.git,__pycache__,migrations,venv,env,.env,node_modules,frontend --select=E501 .)",
+      "Bash(awk 'NR==2738{print length\\($0\\), $0}' server.py)",
+      "Bash(awk 'NR==30{print length\\($0\\)}' backend/ai/prompts.py)",
+      "Bash(python -m flake8 --isolated --max-line-length=120 --exclude=.git,__pycache__,migrations,venv,env,.env,node_modules,frontend --select=E402 .)",
+      "Bash(awk -F: '{print $1}')",
+      "Bash(python -m flake8 --isolated --max-line-length=120 --max-complexity=20 --exclude=.git,__pycache__,migrations,venv,env,.env,node_modules,frontend --select=C901 .)",
+      "Bash(git diff *)",
+      "Bash(python -m black --version)",
+      "Bash(python -m isort --version)",
+      "Bash(python -m flake8 --version)",
+      "Bash(python -m flake8 . --count --max-complexity=20 --statistics)",
+      "Bash(awk '{print $1}')",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('server.py', encoding='utf-8'\\).read\\(\\)\\); print\\('server.py parses OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('worker.py', encoding='utf-8'\\).read\\(\\)\\); print\\('worker.py parses OK'\\)\")",
+      "Bash(python -m py_compile server.py worker.py backend/ai/memory_engine.py backend/ai/persona_engine.py backend/ai/analytics.py backend/storage/s3.py observability/metrics.py auth/test_magic_link.py quotas/test_service.py backend/ai/test_model_registry.py backend/ai/test_analytics.py storage/provider.py storage/__init__.py auth/__init__.py imports/__init__.py quotas/__init__.py backend/storage/__init__.py backend/ai/__init__.py)",
+      "Bash(timeout 180 python -m pytest -q backend/ai auth quotas)",
+      "Bash(timeout 180 python -m pytest -q storage imports observability backend/storage backend/upload backend/search backend/prompts)",
+      "Bash(python -)",
+      "Bash(python \"C:\\\\Users\\\\ahmha\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--chatbot--v1-\\\\e5f155a9-8fa1-4eb1-9f64-8b59382da00c\\\\scratchpad\\\\diff_funcs.py\")",
+      "Bash(awk '/^diff --git/{f=$0} /action == .ai_query/{print f}')"
     ]
   }
 }

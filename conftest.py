@@ -15,6 +15,7 @@ chat_dev.db on a full-suite run, not just a single-file run) rather
 than reasoned out in advance. A single root conftest.py, guaranteed to
 run before every test file, avoids that class of bug entirely.
 """
+
 import os
 import tempfile
 

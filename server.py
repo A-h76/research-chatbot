@@ -5,18 +5,18 @@ Flask + Google OAuth + Postgres/SQLite + OpenAI Responses API (streaming)
 + File uploads (PDF/Word/image/text) + vision + RAG + citation manager.
 """
 
-import os
-import io
-import json
-import math
-import time
-import uuid
-import shutil
 import base64
 import binascii
+import io
+import json
 import logging
+import math
+import os
+import shutil
 import threading
-from datetime import datetime, timezone, timedelta
+import time
+import uuid
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from urllib.parse import urlparse
 
@@ -25,41 +25,42 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import click
-import storage
+from authlib.integrations.flask_client import OAuth
 from flask import (
     Flask,
-    request,
-    session,
-    redirect,
-    url_for,
-    jsonify,
-    render_template,
     Response,
-    send_from_directory,
-    send_file,
     abort,
     g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    send_from_directory,
+    session,
+    url_for,
 )
-from authlib.integrations.flask_client import OAuth
+from openai import OpenAI
 from sqlalchemy import (
-    create_engine,
-    Column,
-    Integer,
     BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
     String,
     Text,
-    Float,
-    Boolean,
-    DateTime,
-    ForeignKey,
-    select,
+    create_engine,
     delete,
     func,
-    text as sqltext,
+    select,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from quotas import QuotaService, QuotaExceededError, create_usage_log_model
-from openai import OpenAI
+from sqlalchemy import text as sqltext
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+
+import storage
+from quotas import QuotaService, create_usage_log_model
 
 # ------------------------------------------------------------------ config
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
@@ -73,11 +74,7 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 # When set, visiting /login automatically signs in as a local dev user.
 # NEVER set this in production.
 DEV_AUTO_LOGIN = os.environ.get("DEV_AUTO_LOGIN", "")
-ALLOWED_EMAILS = [
-    e.strip().lower()
-    for e in os.environ.get("ALLOWED_EMAILS", "").split(",")
-    if e.strip()
-]
+ALLOWED_EMAILS = [e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()]
 
 # Defaults kept to models with confident, verified pricing (see
 # backend/ai/cost_ledger.py's PRICING table and its own note on why
@@ -88,9 +85,7 @@ DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "gpt-4o-mini")
 UTILITY_MODEL = os.environ.get("UTILITY_MODEL", "gpt-4o-mini")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "text-embedding-3-small")
 FALLBACK_MODELS = [
-    m.strip()
-    for m in os.environ.get("MODELS", "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo").split(",")
-    if m.strip()
+    m.strip() for m in os.environ.get("MODELS", "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo").split(",") if m.strip()
 ]
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -110,24 +105,39 @@ EMAIL_FROM = os.environ.get("EMAIL_FROM", "Personal AI <onboarding@resend.dev>")
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "")  # where tickets are routed
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000")
 IS_PRODUCTION = (
-    os.environ.get("FLASK_ENV", "").lower() == "production"
-    or os.environ.get("APP_ENV", "").lower() == "production"
+    os.environ.get("FLASK_ENV", "").lower() == "production" or os.environ.get("APP_ENV", "").lower() == "production"
 )
 # worker.py's default poll interval is 2s (WORKER_POLL_INTERVAL) and it
 # heartbeats every iteration — 60s is ~30 missed cycles, generous enough
 # that a normal GC pause or slow job doesn't false-positive as "down".
-WORKER_HEALTH_THRESHOLD_SECONDS = int(
-    os.environ.get("WORKER_HEALTH_THRESHOLD_SECONDS", "60")
+WORKER_HEALTH_THRESHOLD_SECONDS = int(os.environ.get("WORKER_HEALTH_THRESHOLD_SECONDS", "60"))
+
+# PR1: refuse production boot without explicit secrets (never silent random keys).
+from security.startup import require_production_secrets, resolve_flask_secret_key, resolve_limiter_storage_uri
+from security.authz import project_owned_by_user, resolve_owned_project_id
+from security.metrics_access import check_metrics_access
+from security.headers import apply_security_headers
+from security.session_ttl import (
+    enforce_session_ttl,
+    mark_session_login,
+    session_absolute_seconds,
 )
 
+require_production_secrets(os.environ, is_production=IS_PRODUCTION)
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
+app.secret_key = resolve_flask_secret_key(os.environ, is_production=IS_PRODUCTION)
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_MB * 1024 * 1024
 # Secure session-cookie defaults (Secure flag only in production/HTTPS).
+# Absolute cookie lifetime matches SESSION_ABSOLUTE_HOURS; idle is enforced
+# in enforce_session_ttl (PR4).
+_abs_secs = session_absolute_seconds(os.environ) or (12 * 3600)
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=IS_PRODUCTION,
+    PERMANENT_SESSION_LIFETIME=timedelta(seconds=_abs_secs),
+    SESSION_REFRESH_EACH_REQUEST=False,  # idle sliding is handled explicitly
 )
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -136,31 +146,25 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 # existing @login_required + session["user_id"] path is untouched. This
 # is for future API/programmatic clients that can't hold a browser
 # session cookie. JWT_SECRET_KEY defaults to the same secret as Flask
-# sessions (inherits the same "set it explicitly in production" caveat
-# already flagged for FLASK_SECRET_KEY — production-hardening.md §8 —
-# not re-solved here, just not made worse by a second silent fallback).
+# sessions when unset — production already required FLASK_SECRET_KEY above.
 app.config.update(
     JWT_SECRET_KEY=os.environ.get("JWT_SECRET_KEY", app.secret_key),
-    JWT_ACCESS_TOKEN_EXPIRES=timedelta(
-        minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MIN", "15"))
-    ),
-    JWT_REFRESH_TOKEN_EXPIRES=timedelta(
-        days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "30"))
-    ),
+    JWT_ACCESS_TOKEN_EXPIRES=timedelta(minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MIN", "15"))),
+    JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "30"))),
     JWT_ALGORITHM="HS256",
 )
 from flask_jwt_extended import JWTManager
 
 jwt_manager = JWTManager(app)
-from auth import create_jwt, decode_jwt, JWTError, create_get_current_user
+from auth import JWTError, create_get_current_user, create_jwt, decode_jwt
 
 # ------------------------------------------------------------------ logging
 from observability import (
+    HTTP_REQUEST_DURATION_SECONDS,
+    HTTP_REQUESTS_TOTAL,
+    UPLOAD_QUEUE_LENGTH,
     configure_logging,
     correlation_id_var,
-    HTTP_REQUESTS_TOTAL,
-    HTTP_REQUEST_DURATION_SECONDS,
-    UPLOAD_QUEUE_LENGTH,
     record_ai_call,
     render_metrics,
 )
@@ -221,9 +225,7 @@ class EmailService:
                 timeout=15,
             )
             if resp.status_code >= 400:
-                email_log.error(
-                    "Resend error %s: %s", resp.status_code, resp.text[:300]
-                )
+                email_log.error("Resend error %s: %s", resp.status_code, resp.text[:300])
                 return False
             return True
         except Exception as e:
@@ -242,19 +244,83 @@ email_service = EmailService(RESEND_API_KEY, EMAIL_FROM)
 
 # ------------------------------------------------------------------ rate limiting + CSRF
 from flask_limiter import Limiter
+from flask_limiter.errors import RateLimitExceeded
 from flask_limiter.util import get_remote_address
 
-# Opt-in per-route limits (no global throttle so normal chat use is unaffected).
-# Uses in-memory storage — switch to redis:// for multi-process production.
+# Opt-in per-route limits. Redis when REDIS_URL is reachable; memory:// otherwise
+# (shared limits across workers require Redis — see security/startup.py).
+_LIMITER_STORAGE = resolve_limiter_storage_uri(REDIS_URL, is_production=IS_PRODUCTION)
 limiter = Limiter(
     key_func=get_remote_address,
     app=app,
     default_limits=[],
-    storage_uri="memory://",
+    storage_uri=_LIMITER_STORAGE,
     strategy="fixed-window",
 )
 
+
+@app.errorhandler(RateLimitExceeded)
+def _rate_limit_exceeded(e):
+    uid = session.get("user_id")
+    log_security_event(
+        "rate_limit_exceeded",
+        path=request.path,
+        method=request.method,
+        user_id=uid or "",
+        remote=get_remote_address(),
+        description=getattr(e, "description", "") or str(e),
+    )
+    return (
+        jsonify(
+            {
+                "error": "rate_limit_exceeded",
+                "message": "Too many requests. Please try again later.",
+            }
+        ),
+        429,
+    )
+
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+# `npm run dev` (Vite) proxies /api/* to this process but the browser's own
+# Origin header on state-changing requests reflects Vite's origin, not this
+# one — request.host/APP_BASE_URL are always localhost:5000. Without this,
+# every POST/PUT/PATCH/DELETE from the SPA in local dev 403s.
+# Vite falls back to 5174, 5175, … when 5173 is already taken, so allow a
+# small localhost port range. Gated on non-production so prod (Flask serves
+# the built frontend, genuinely same-origin) never widens this check.
+# Note: do not gate only on DEV_AUTO_LOGIN — local Vite + Google/session
+# login is a common setup with DEV_AUTO_LOGIN unset.
+_DEV_VITE_PORTS = range(5173, 5183)
+DEV_FRONTEND_ORIGINS = (
+    {f"localhost:{p}" for p in _DEV_VITE_PORTS} | {f"127.0.0.1:{p}" for p in _DEV_VITE_PORTS}
+    if not IS_PRODUCTION
+    else set()
+)
+
+
+@app.before_request
+def _enforce_session_ttl():
+    """Idle + absolute session timeout (PR4)."""
+    if "user_id" not in session:
+        return
+    expired, reason = enforce_session_ttl(session, environ=os.environ)
+    if not expired:
+        return
+    session.clear()
+    log_security_event("session_expired", reason=reason, path=request.path)
+    if request.path.startswith("/api/"):
+        return (
+            jsonify(
+                {
+                    "error": "session_expired",
+                    "reason": reason,
+                    "message": "Your session has expired. Please sign in again.",
+                }
+            ),
+            401,
+        )
+    return redirect(url_for("login_page"))
 
 
 @app.before_request
@@ -267,7 +333,7 @@ def csrf_protect():
     if not src:
         return
     src_host = urlparse(src).netloc
-    allowed = {request.host, urlparse(APP_BASE_URL).netloc}
+    allowed = {request.host, urlparse(APP_BASE_URL).netloc} | DEV_FRONTEND_ORIGINS
     if src_host not in allowed:
         log_security_event("csrf_blocked", path=request.path, origin=src_host)
         return jsonify({"error": "csrf_origin_mismatch"}), 403
@@ -306,6 +372,7 @@ def _finish_request_observability(response):
             "duration_ms": round(duration * 1000, 1),
         },
     )
+    apply_security_headers(response, is_production=IS_PRODUCTION, environ=os.environ)
     return response
 
 
@@ -348,21 +415,12 @@ def supports_temperature(model):
 
 def get_models(force=False):
     with _model_lock:
-        if (
-            not force
-            and _model_cache["models"]
-            and time.time() - _model_cache["ts"] < 600
-        ):
+        if not force and _model_cache["models"] and time.time() - _model_cache["ts"] < 600:
             return _model_cache["models"]
         try:
             raw = client.models.list().data
             models = sorted(
-                (
-                    m.id
-                    for m in raw
-                    if m.id.startswith(_INCLUDE_PREFIX)
-                    and not any(x in m.id for x in _EXCLUDE)
-                ),
+                (m.id for m in raw if m.id.startswith(_INCLUDE_PREFIX) and not any(x in m.id for x in _EXCLUDE)),
                 key=lambda mid: next((-m.created for m in raw if m.id == mid), 0),
             )
             if models:
@@ -403,9 +461,7 @@ class User(Base):
     # other via this column's own default (~1000 MB) — see server.py's
     # upload_file() for why the increment side still doesn't share code
     # despite the check side now agreeing on the same limit.
-    storage_limit_bytes = Column(
-        BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES
-    )
+    storage_limit_bytes = Column(BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES)
     monthly_token_used = Column(Integer, default=0)
     monthly_token_limit = Column(Integer, default=QuotaService.DEFAULT_TOKEN_LIMIT)
     quota_reset_at = Column(DateTime, nullable=True)
@@ -509,6 +565,12 @@ class UserFile(Base):
     # identity used for duplicate detection and post-upload integrity checks.
     checksum_sha256 = Column(String(64), nullable=True)
 
+    # Scholarly provenance (migration 0018 / 0021). Discover stubs use
+    # source_url for the OpenAlex OA / landing link when path is empty.
+    metadata_source = Column(String(30), default="extracted")  # extracted|crossref|openalex|user
+    source_url = Column(String(500), default="")
+    doi_verified = Column(Boolean, default=False)
+
     chunks = relationship("Chunk", cascade="all, delete-orphan", back_populates="file")
 
 
@@ -528,9 +590,7 @@ class UploadSession(Base):
     size_expected = Column(Integer, default=0)
     checksum_sha256 = Column(String(64), nullable=True)  # client-claimed, pre-upload
     upload_id = Column(String(300), nullable=True)  # multipart only
-    status = Column(
-        String(20), default="pending"
-    )  # pending|uploaded|confirmed|expired|aborted
+    status = Column(String(20), default="pending")  # pending|uploaded|confirmed|expired|aborted
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -562,14 +622,10 @@ class UploadJob(Base):
     upload_batch_id = Column(Integer, ForeignKey("upload_batches.id"), nullable=True)
     file_id = Column(Integer, ForeignKey("files.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    job_type = Column(
-        String(30), nullable=False
-    )  # import|extract_metadata|paper_analysis
+    job_type = Column(String(40), nullable=False)  # import|extract_metadata|paper_analysis|phase1_analysis
     status = Column(String(20), default="pending")  # pending|running|done|failed
     attempts = Column(Integer, default=0)
-    run_after = Column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
-    )  # due time; backoff pushes this out
+    run_after = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # due time; backoff pushes this out
     locked_by = Column(Text, nullable=True)
     locked_at = Column(DateTime, nullable=True)
     last_error = Column(Text, nullable=True)
@@ -620,9 +676,7 @@ class ImportSession(Base):
 
     __tablename__ = "import_sessions"
     id = Column(Integer, primary_key=True)
-    upload_job_id = Column(
-        Integer, ForeignKey("upload_jobs.id"), nullable=False, unique=True
-    )
+    upload_job_id = Column(Integer, ForeignKey("upload_jobs.id"), nullable=False, unique=True)
     stage = Column(String(20), default="extract")  # extract|chunk|embed
     checkpoint = Column(Text, default="{}")  # JSON
     updated_at = Column(
@@ -789,6 +843,32 @@ class PaperAnalysis(Base):
     )
 
 
+class AnalysisPipelineResult(Base):
+    """Persisted Phase 1.1–1.7 outputs for one file (Phase 2 integration).
+
+    `phase_results` is a JSON object keyed by phase name
+    (document_understanding, classification, …). Lazy migration: rows are
+    created when a document is analyzed; older files remain without a row
+    until first access."""
+
+    __tablename__ = "analysis_pipeline_results"
+    id = Column(Integer, primary_key=True)
+    file_id = Column(Integer, ForeignKey("files.id"), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content_hash = Column(String(64), default="")
+    status = Column(String(20), default="pending")  # pending|running|done|failed|partial
+    error = Column(Text, default="")
+    phase_results = Column(Text, default="{}")  # JSON
+    pipeline_version = Column(String(50), default="")
+    total_processing_time_ms = Column(Integer, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class DerivedAnalysis(Base):
     """Cached multi-paper output — comparison ('compare') or gap analysis
     ('gaps'). Keyed by a hash of the sorted file-id set so the same selection
@@ -924,6 +1004,18 @@ def ensure_columns():
         # users.is_admin — migrations/0016, backend/prompts/routes.py's
         # admin-gated create/update routes.
         "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
+        # ── Scholarly provider integrations (migration 0018) ─────────────
+        "ALTER TABLE files ADD COLUMN doi_verified BOOLEAN DEFAULT 0",
+        "ALTER TABLE files ADD COLUMN crossref_last_synced TIMESTAMP",
+        "ALTER TABLE files ADD COLUMN crossref_version VARCHAR(20) DEFAULT ''",
+        "ALTER TABLE files ADD COLUMN title_source VARCHAR(30) DEFAULT 'extracted'",
+        "ALTER TABLE files ADD COLUMN authors_source VARCHAR(30) DEFAULT 'extracted'",
+        "ALTER TABLE files ADD COLUMN year_source VARCHAR(30) DEFAULT 'extracted'",
+        "ALTER TABLE files ADD COLUMN venue_source VARCHAR(30) DEFAULT 'extracted'",
+        "ALTER TABLE files ADD COLUMN abstract_source VARCHAR(30) DEFAULT 'extracted'",
+        "ALTER TABLE files ADD COLUMN metadata_source VARCHAR(30) DEFAULT 'extracted'",
+        # ── Discover import stubs (migration 0021) ───────────────────────
+        "ALTER TABLE files ADD COLUMN source_url VARCHAR(500) DEFAULT ''",
     ):
         try:
             with engine.begin() as conn:
@@ -1003,19 +1095,16 @@ def login_page():
         db = SessionLocal()
         try:
             dev_email = "dev@localhost"
-            user = db.execute(
-                select(User).where(User.email == dev_email)
-            ).scalar_one_or_none()
+            user = db.execute(select(User).where(User.email == dev_email)).scalar_one_or_none()
             if not user:
-                user = User(
-                    email=dev_email, name="Dev User", picture="", auth_provider="dev"
-                )
+                user = User(email=dev_email, name="Dev User", picture="", auth_provider="dev")
                 db.add(user)
                 db.commit()
             session["user_id"] = user.id
             session["user_email"] = user.email
             access, refresh = create_jwt(user.id)
             session["jwt"] = {"access": access, "refresh": refresh}
+            mark_session_login(session)
         finally:
             db.close()
         return redirect("/")
@@ -1029,12 +1118,14 @@ def login_page():
 
 
 @app.route("/auth/google")
+@limiter.limit("30 per hour")
 def auth_google():
     redirect_uri = url_for("auth_callback", _external=True)
     return google.authorize_redirect(redirect_uri)
 
 
 @app.route("/auth/callback")
+@limiter.limit("60 per hour")
 def auth_callback():
     token = google.authorize_access_token()
     info = token.get("userinfo") or {}
@@ -1049,6 +1140,7 @@ def auth_callback():
             403,
         )
     if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+        log_security_event("oauth_denied", email=email, reason="not_allowlisted")
         return (
             render_template(
                 "login.html",
@@ -1074,6 +1166,7 @@ def auth_callback():
         # session; nothing about the redirect/session flow above changed.
         access, refresh = create_jwt(user.id)
         session["jwt"] = {"access": access, "refresh": refresh}
+        mark_session_login(session)
     finally:
         db.close()
     return redirect("/")
@@ -1081,7 +1174,10 @@ def auth_callback():
 
 @app.route("/logout")
 def logout():
+    uid = session.get("user_id")
     session.clear()
+    if uid:
+        log_security_event("logout", user_id=uid)
     return redirect(url_for("login_page"))
 
 
@@ -1105,9 +1201,7 @@ def dev_login():
     db = SessionLocal()
     try:
         dev_email = "dev@localhost"
-        user = db.execute(
-            select(User).where(User.email == dev_email)
-        ).scalar_one_or_none()
+        user = db.execute(select(User).where(User.email == dev_email)).scalar_one_or_none()
         if not user:
             user = User(email=dev_email, name="Dev User", picture="")
             db.add(user)
@@ -1116,6 +1210,7 @@ def dev_login():
         session["user_email"] = user.email
         access, refresh = create_jwt(user.id)
         session["jwt"] = {"access": access, "refresh": refresh}
+        mark_session_login(session)
         return jsonify({"ok": True, "user_id": user.id})
     finally:
         db.close()
@@ -1145,6 +1240,9 @@ app.register_blueprint(
     )
 )
 
+from backend.storage import get_storage_backend
+from backend.upload.routes import create_documents_blueprint
+
 # POST /api/documents/upload — Bearer-JWT-authenticated upload entry point
 # alongside the existing session-based POST /api/files. Reuses UserFile/
 # UploadJob/OutboxEvent (no new Document model) and quota_service — see
@@ -1153,21 +1251,17 @@ app.register_blueprint(
 # further down (model_router/PromptExecution don't exist yet at this
 # point in the file) — see there.
 from backend.upload.validation import MAX_DOCUMENT_UPLOAD_MB
-from backend.upload.routes import create_documents_blueprint
-from backend.storage import get_storage_backend
 
 # Flask rejects an over-limit request body before any route code runs —
 # this route's own limit must not be shadowed by the app-wide one.
-app.config["MAX_CONTENT_LENGTH"] = (
-    max(MAX_FILE_MB, MAX_DOCUMENT_UPLOAD_MB) * 1024 * 1024
-)
+app.config["MAX_CONTENT_LENGTH"] = max(MAX_FILE_MB, MAX_DOCUMENT_UPLOAD_MB) * 1024 * 1024
 
 # POST /api/uploads/bulk, GET /api/uploads/batch/<id>/status — bulk upload,
 # writing to UploadBatch (schema-only until now, see its own docstring)
 # via the same UserFile/UploadJob/OutboxEvent primitives as the single-file
 # route above. A batch can total far more than one file's MAX_CONTENT_LENGTH,
 # so the app-wide cap has to grow to fit MAX_BATCH_SIZE files at once.
-from backend.upload.bulk import create_bulk_upload_blueprint, MAX_BATCH_SIZE
+from backend.upload.bulk import MAX_BATCH_SIZE, create_bulk_upload_blueprint
 
 app.config["MAX_CONTENT_LENGTH"] = max(
     app.config["MAX_CONTENT_LENGTH"], MAX_BATCH_SIZE * MAX_DOCUMENT_UPLOAD_MB * 1024 * 1024
@@ -1181,6 +1275,7 @@ app.register_blueprint(
         OutboxEvent=OutboxEvent,
         quota_service=quota_service,
         storage_backend=get_storage_backend(),
+        limiter=limiter,
     )
 )
 
@@ -1230,9 +1325,7 @@ def get_session_jwt():
     if stored:
         try:
             decode_jwt(stored["access"])
-            return jsonify(
-                {"access_token": stored["access"], "refresh_token": stored["refresh"]}
-            )
+            return jsonify({"access_token": stored["access"], "refresh_token": stored["refresh"]})
         except JWTError:
             pass  # expired/invalid — fall through and mint a fresh pair
     access, refresh = create_jwt(session["user_id"])
@@ -1257,9 +1350,7 @@ def refresh_jwt():
         return jsonify({"error": "invalid_refresh_token"}), 401
     if claims.get("type") != "refresh":
         return (
-            jsonify(
-                {"error": "invalid_refresh_token", "detail": "not a refresh token"}
-            ),
+            jsonify({"error": "invalid_refresh_token", "detail": "not a refresh token"}),
             401,
         )
     try:
@@ -1308,9 +1399,10 @@ def robots():
 # migration already ran — it only creates anything on a fresh SQLite dev DB
 # (verified: prompt_versions/pipeline_versions didn't exist there before this).
 # ══════════════════════════════════════════════════════════════════════════
-from backend.ai import PromptRegistry, PromptVersion, ModelRegistry, CostLedger, ModelError, TemplateError
+from backend.ai import CostLedger, ModelError, ModelRegistry, PromptRegistry, PromptVersion, TemplateError
+from backend.ai.model_registry import CostLedgerEntry as _CostLedgerEntry
+from backend.ai.model_registry import _Base as _ai_model_base
 from backend.ai.prompt_registry import _Base as _ai_prompt_base
-from backend.ai.model_registry import _Base as _ai_model_base, CostLedgerEntry as _CostLedgerEntry
 
 _ai_prompt_base.metadata.create_all(engine, checkfirst=True)
 _ai_model_base.metadata.create_all(engine, checkfirst=True)
@@ -1330,6 +1422,14 @@ def get_cost_ledger():
     return _cost_ledger
 
 
+from auth.decorators import create_admin_required
+from backend.ai.analytics import PromptAnalytics
+from backend.ai.domain_registry import DomainRegistry
+from backend.ai.memory_engine import MemoryEngine
+from backend.ai.model_router import ModelRouter
+from backend.ai.persona_engine import PersonaEngine
+from backend.ai.prompt_builder import CHAT_SYSTEM_FALLBACK, PromptBuilder
+
 # ══════════════════════════════════════════════════════════════════════════
 # Prompt Engine (docs/prompt-engine-architecture.md) — SystemPromptManager,
 # PersonaEngine, MemoryEngine, ModelRouter, PromptBuilder, built on top of
@@ -1339,15 +1439,8 @@ def get_cost_ledger():
 # create_all() call needed here.
 # ══════════════════════════════════════════════════════════════════════════
 from backend.ai.prompt_registry import Persona, PromptExecution
-from backend.ai.persona_engine import PersonaEngine
-from backend.ai.memory_engine import MemoryEngine
 from backend.ai.system_prompt import SystemPromptManager
-from backend.ai.model_router import ModelRouter
-from backend.ai.domain_registry import DomainRegistry
-from backend.ai.prompt_builder import PromptBuilder
-from backend.ai.analytics import PromptAnalytics
 from backend.prompts.routes import create_prompts_blueprint
-from auth.decorators import create_admin_required
 
 # ModelRouter is a genuine startup-time singleton — no DB session at all
 # (see model_router.py's own docstring), same category as CostLedger
@@ -1359,13 +1452,15 @@ from auth.decorators import create_admin_required
 # required to call get_model_for_task("rag") specifically — mapped to
 # UTILITY_MODEL to preserve exactly what RAG already used before this
 # task, unless a RAG_MODEL env var is set to override it.
-model_router = ModelRouter(defaults={
-    "chat": UTILITY_MODEL,
-    "paper_analysis": UTILITY_MODEL,
-    "rag": UTILITY_MODEL,
-    "embedding": EMBED_MODEL,
-    "_default": DEFAULT_MODEL,
-})
+model_router = ModelRouter(
+    defaults={
+        "chat": UTILITY_MODEL,
+        "paper_analysis": UTILITY_MODEL,
+        "rag": UTILITY_MODEL,
+        "embedding": EMBED_MODEL,
+        "_default": DEFAULT_MODEL,
+    }
+)
 
 # Also a genuine startup-time singleton — DomainRegistry is pure Python,
 # no DB session, same category as ModelRouter (see that class's own
@@ -1439,6 +1534,10 @@ app.register_blueprint(
         quota_service=quota_service,
         storage_backend=get_storage_backend(),
         model_router=model_router,
+        get_prompt_builder=get_prompt_builder,
+        domain_registry=domain_registry,
+        AnalysisPipelineResult=AnalysisPipelineResult,
+        limiter=limiter,
     )
 )
 
@@ -1491,14 +1590,16 @@ def prompt_usage_summary():
         by_model = get_prompt_analytics(db).get_usage_by_model(start, end)
     finally:
         db.close()
-    return jsonify({
-        "start_date": start.isoformat(),
-        "end_date": end.isoformat(),
-        "calls": sum(m["calls"] for m in by_model),
-        "total_tokens": sum(m["total_tokens"] for m in by_model),
-        "cost_usd": round(sum(m["cost_usd"] for m in by_model), 6),
-        "models_used": len(by_model),
-    })
+    return jsonify(
+        {
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "calls": sum(m["calls"] for m in by_model),
+            "total_tokens": sum(m["total_tokens"] for m in by_model),
+            "cost_usd": round(sum(m["cost_usd"] for m in by_model), 6),
+            "models_used": len(by_model),
+        }
+    )
 
 
 @app.route("/api/prompt-usage/by-prompt")
@@ -1548,10 +1649,23 @@ def prompt_usage_by_user():
 
 @app.route("/metrics")
 def metrics():
-    """Unauthenticated, same reasoning as /api/worker/health right below
-    — a Prometheus scrape target, not a user-facing route. Firewall it at
-    the network/reverse-proxy level in a real deploy rather than gating
-    it behind app auth, same as any standard Prometheus setup."""
+    """Prometheus scrape target. Gated by METRICS_TOKEN (Bearer) or
+    loopback-only when the token is unset — see security/metrics_access.py.
+    Set METRICS_ALLOW_UNAUTHENTICATED=1 only for local/dev open scrapes."""
+    allowed, reason = check_metrics_access(
+        authorization=request.headers.get("Authorization"),
+        remote_addr=request.remote_addr,
+        environ=os.environ,
+    )
+    if not allowed:
+        log_security_event(
+            "metrics_access_denied",
+            reason=reason,
+            remote=request.remote_addr or "",
+            path=request.path,
+        )
+        return jsonify({"error": "unauthorized", "message": "Metrics endpoint requires authentication"}), 401
+
     db = SessionLocal()
     try:
         for status in ("pending", "running", "failed", "done"):
@@ -1578,12 +1692,17 @@ def worker_health():
         db.close()
 
     if hb is None:
-        return jsonify({
-            "status": "unknown",
-            "message": "worker has not reported in since this deploy — "
-                       "either it has never run, or it started before this "
-                       "endpoint existed",
-        }), 503
+        return (
+            jsonify(
+                {
+                    "status": "unknown",
+                    "message": "worker has not reported in since this deploy — "
+                    "either it has never run, or it started before this "
+                    "endpoint existed",
+                }
+            ),
+            503,
+        )
 
     last_seen = hb.last_seen_at
     if last_seen.tzinfo is None:
@@ -1591,12 +1710,39 @@ def worker_health():
     age_seconds = (datetime.now(timezone.utc) - last_seen).total_seconds()
     healthy = age_seconds <= WORKER_HEALTH_THRESHOLD_SECONDS
 
-    return jsonify({
-        "status": "ok" if healthy else "down",
-        "last_seen_at": hb.last_seen_at.isoformat(),
-        "age_seconds": round(age_seconds, 1),
-        "threshold_seconds": WORKER_HEALTH_THRESHOLD_SECONDS,
-    }), (200 if healthy else 503)
+    return jsonify(
+        {
+            "status": "ok" if healthy else "down",
+            "last_seen_at": hb.last_seen_at.isoformat(),
+            "age_seconds": round(age_seconds, 1),
+            "threshold_seconds": WORKER_HEALTH_THRESHOLD_SECONDS,
+        }
+    ), (200 if healthy else 503)
+
+
+@app.route("/api/health/providers")
+def providers_health_endpoint():
+    """Ops check for scholarly providers — unauthenticated like worker health.
+
+    Returns per-provider status (healthy | circuit_open | disabled),
+    24h cache_hit_rate, and in-process bulkhead stats.
+    """
+    from backend.scholarly import providers_health
+    db = SessionLocal()
+    try:
+        payload = providers_health(db)
+        return jsonify(payload), 200
+    except Exception as exc:
+        app.logger.warning("providers_health failed: %s", exc)
+        return jsonify({
+            "crossref": "unknown",
+            "openalex": "unknown",
+            "semantic_scholar": "unknown",
+            "cache_hit_rate": 0.0,
+            "error": "health_unavailable",
+        }), 503
+    finally:
+        db.close()
 
 
 @app.route("/api/ai/prompts")
@@ -1606,12 +1752,20 @@ def list_ai_prompts():
     try:
         registry = get_prompt_registry(db)
         prompts = registry.list_prompts()
-        return jsonify({"prompts": [
-            {"name": p.name, "version": p.version, "template": p.template,
-             "is_active": p.is_active,
-             "created_at": p.created_at.isoformat() if p.created_at else None}
-            for p in prompts
-        ]})
+        return jsonify(
+            {
+                "prompts": [
+                    {
+                        "name": p.name,
+                        "version": p.version,
+                        "template": p.template,
+                        "is_active": p.is_active,
+                        "created_at": p.created_at.isoformat() if p.created_at else None,
+                    }
+                    for p in prompts
+                ]
+            }
+        )
     finally:
         db.close()
 
@@ -1634,8 +1788,11 @@ def test_ai_call():
     try:
         registry = get_model_registry(db)
         result = registry.call(
-            model, [{"role": "user", "content": message}],
-            user_id=session["user_id"], max_tokens=data.get("max_tokens", 100))
+            model,
+            [{"role": "user", "content": message}],
+            user_id=session["user_id"],
+            max_tokens=data.get("max_tokens", 100),
+        )
         return jsonify(result)
     except ModelError as exc:
         return jsonify({"error": "model_call_failed", "message": str(exc)}), 502
@@ -1817,24 +1974,17 @@ def rag_retrieve(user_id, conversation_id, project_id, query, top_k=6, file_id=N
                 .all()
             )
         else:
-            files = (
-                db.execute(select(UserFile).where(UserFile.user_id == user_id))
-                .scalars()
-                .all()
-            )
+            files = db.execute(select(UserFile).where(UserFile.user_id == user_id)).scalars().all()
             files = [
                 f
                 for f in files
-                if (f.conversation_id == conversation_id)
-                or (project_id and f.project_id == project_id)
+                if (f.conversation_id == conversation_id) or (project_id and f.project_id == project_id)
             ]
         if not files:
             return []
         fids = [f.id for f in files]
         fnames = {f.id: f.name for f in files}
-        chunks = (
-            db.execute(select(Chunk).where(Chunk.file_id.in_(fids))).scalars().all()
-        )
+        chunks = db.execute(select(Chunk).where(Chunk.file_id.in_(fids))).scalars().all()
         if not chunks:
             return []
         q_emb = embed_texts([query])[0]
@@ -2032,16 +2182,14 @@ def _extract_meta_from_text(text: str, user_id=None) -> dict:
     clean = {}
     for key in ("title", "authors", "year", "venue", "doi", "abstract", "keywords"):
         val = data.get(key)
-        clean[key] = (
-            str(val).strip()
-            if val and str(val).strip() not in ("null", "None", "")
-            else None
-        )
+        clean[key] = str(val).strip() if val and str(val).strip() not in ("null", "None", "") else None
     return clean
 
 
 def _apply_metadata(file_id: int, text: str, content_hash: str, job_id=None) -> None:
-    """Background task: extract metadata and write it to the UserFile row.
+    """DEPRECATED: prefer AnalysisPipelineService / phase1_analysis job.
+
+    Background task: extract metadata and write it to the UserFile row.
 
     Runs in a daemon thread so the upload HTTP response is already sent by
     the time this does its model call.  It is idempotent: if the content_hash
@@ -2051,6 +2199,9 @@ def _apply_metadata(file_id: int, text: str, content_hash: str, job_id=None) -> 
     to skip creating/finishing a second, duplicate tracking row — the
     worker owns that row's lifecycle instead. Left None (default) for the
     legacy thread-spawned callers, which still manage their own row here."""
+    from backend.analysis_pipeline.deprecation import warn_legacy
+
+    warn_legacy("server._apply_metadata")
     db = SessionLocal()
     owns_job = job_id is None
     try:
@@ -2108,9 +2259,7 @@ def _apply_metadata(file_id: int, text: str, content_hash: str, job_id=None) -> 
             pass
         if not owns_job:
             raise  # let the queue worker's own try/except apply retry/backoff
-        logging.getLogger(__name__).warning(
-            "metadata extraction failed for file %s: %s", file_id, exc
-        )
+        logging.getLogger(__name__).warning("metadata extraction failed for file %s: %s", file_id, exc)
     finally:
         db.close()
 
@@ -2180,10 +2329,10 @@ Paper text (first {max_chars} characters):
 _ANALYSIS_MAX_CHARS = 12_000  # covers most papers; keeps prompt cost bounded
 
 
-def _run_paper_analysis(
-    file_id: int, text: str, content_hash: str, job_id=None
-) -> None:
-    """Background worker: generate and persist the 14-field paper analysis.
+def _run_paper_analysis(file_id: int, text: str, content_hash: str, job_id=None) -> None:
+    """DEPRECATED: prefer worker phase1_analysis → paper_analysis chain.
+
+    Background worker: generate and persist the 14-field paper analysis.
 
     Idempotent on content_hash: if the stored hash matches and status=='done'
     we skip the model call. 'force' refreshes bypass this check (see route).
@@ -2192,17 +2341,16 @@ def _run_paper_analysis(
     to skip creating/finishing a second, duplicate tracking row. Left
     None (default) for the legacy thread-spawned callers.
     """
+    from backend.analysis_pipeline.deprecation import warn_legacy
+
+    warn_legacy("server._run_paper_analysis")
     db = SessionLocal()
     owns_job = job_id is None
     try:
-        pa = db.execute(
-            select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)
-        ).scalar_one_or_none()
+        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)).scalar_one_or_none()
 
         if pa is None:
-            pa = PaperAnalysis(
-                file_id=file_id, user_id=db.get(UserFile, file_id).user_id
-            )
+            pa = PaperAnalysis(file_id=file_id, user_id=db.get(UserFile, file_id).user_id)
             db.add(pa)
             db.commit()
 
@@ -2220,9 +2368,7 @@ def _run_paper_analysis(
             max_chars=_ANALYSIS_MAX_CHARS,
             text=text[:_ANALYSIS_MAX_CHARS],
         )
-        raw = responses_text(
-            prompt, json_mode=True, kind="analysis", user_id=pa.user_id
-        )
+        raw = responses_text(prompt, json_mode=True, kind="analysis", user_id=pa.user_id)
         data = json.loads(raw)
 
         # Normalise: ensure array fields are lists, terms dict is a dict
@@ -2243,9 +2389,7 @@ def _run_paper_analysis(
             data["important_terms"] = {}
 
         # Re-fetch in case a concurrent request modified the row
-        pa = db.execute(
-            select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)
-        ).scalar_one_or_none()
+        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)).scalar_one_or_none()
         if pa is None:
             return
 
@@ -2260,9 +2404,7 @@ def _run_paper_analysis(
 
     except Exception as exc:
         try:
-            pa2 = db.execute(
-                select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)
-            ).scalar_one_or_none()
+            pa2 = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)).scalar_one_or_none()
             if pa2:
                 pa2.status = "failed"
                 pa2.error = str(exc)[:500]
@@ -2273,16 +2415,12 @@ def _run_paper_analysis(
             pass
         if not owns_job:
             raise  # let the queue worker's own try/except apply retry/backoff
-        logging.getLogger(__name__).warning(
-            "paper analysis failed for file %s: %s", file_id, exc
-        )
+        logging.getLogger(__name__).warning("paper analysis failed for file %s: %s", file_id, exc)
     finally:
         db.close()
 
 
-def trigger_paper_analysis(
-    file_id: int, text: str, content_hash: str, sync: bool = False
-) -> None:
+def trigger_paper_analysis(file_id: int, text: str, content_hash: str, sync: bool = False) -> None:
     """Fire paper analysis in a background thread (or inline when sync=True)."""
     if sync:
         _run_paper_analysis(file_id, text, content_hash)
@@ -2336,21 +2474,22 @@ def _file_to_dict(x: UserFile) -> dict:
         "tags": json.loads(x.tags) if x.tags else [],
         "meta_status": x.meta_status or "pending",
         "created_at": x.created_at.isoformat() if x.created_at else None,
+        # ── scholarly enrichment provenance ──
+        "doi_verified": bool(getattr(x, "doi_verified", False)),
+        "metadata_source": getattr(x, "metadata_source", "extracted") or "extracted",
+        "source_url": getattr(x, "source_url", "") or "",
+        "crossref_last_synced": (
+            getattr(x, "crossref_last_synced", None).isoformat()
+            if getattr(x, "crossref_last_synced", None) else None
+        ),
     }
 
 
 def extract_memories(user_id, project_id, convo_messages):
     db = SessionLocal()
     try:
-        existing = [
-            m.fact
-            for m in db.execute(
-                select(Memory).where(Memory.user_id == user_id)
-            ).scalars()
-        ]
-        transcript = "\n".join(
-            f"{m['role']}: {str(m['content'])[:500]}" for m in convo_messages[-10:]
-        )
+        existing = [m.fact for m in db.execute(select(Memory).where(Memory.user_id == user_id)).scalars()]
+        transcript = "\n".join(f"{m['role']}: {str(m['content'])[:500]}" for m in convo_messages[-10:])
         text = responses_text(
             MEMORY_PROMPT.format(known=json.dumps(existing), transcript=transcript),
             json_mode=True,
@@ -2378,58 +2517,48 @@ def generate_title(first_user_msg, first_reply):
         return None
 
 
-def build_paper_chat_prompt(user, paper):
+def build_paper_chat_prompt(user, paper, now=None):
     """Focused system prompt for Paper Chat (M7).
 
-    The AI is restricted to the single uploaded paper — it must not fabricate,
-    must cite by page/section, and must say so when the answer is not present.
+    Canonical text lives in ``backend.ai_core.prompts.legacy_paper_chat``
+    (``LEGACY_PAPER_CHAT_PROMPT_VERSION``). Stage 1 pipeline path resolves the
+    same string via ``PromptRouter.route_legacy_paper_chat``.
     """
-    paper_title = paper.title or paper.name
-    header = (
-        "You are an expert research assistant helping a researcher understand "
-        "the paper titled: " + repr(paper_title) + "."
+    from backend.ai_core.prompts.legacy_paper_chat import render_legacy_paper_chat_prompt
+
+    return render_legacy_paper_chat_prompt(
+        user_name=user.name,
+        paper_title=paper.title or paper.name,
+        authors=paper.authors,
+        year=paper.year,
+        venue=paper.venue,
+        now=now,
     )
-    body = (
-        "Answer questions, explain concepts, and clarify content from THIS PAPER ONLY.\n\n"
-        "Rules:\n"
-        "1. Answer ONLY using content from the retrieved excerpts of this paper.\n"
-        "2. Never fabricate data, citations, numbers, or conclusions.\n"
-        "3. When citing, specify page and section where available: "
-        "e.g. 'According to p. 4, Section: Methodology...'.\n"
-        "4. If the answer is not in the excerpts, say: "
-        "'I cannot find that in this paper. Try rephrasing your question or "
-        "specifying a section.'\n"
-        "5. Do not use web search or external knowledge.\n"
-        "6. Use markdown for clarity."
-    )
-    meta = [
-        f"User: {user.name}",
-        f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-    ]
-    if paper.authors:
-        meta.append(f"Authors: {paper.authors}")
-    if paper.year:
-        meta.append(f"Year: {paper.year}")
-    if paper.venue:
-        meta.append(f"Venue: {paper.venue}")
-    return header + "\n\n" + body + "\n\n" + "\n".join(meta)
+
+
+def _paper_chat_pipeline_mode():
+    from backend.ai_core.paper_chat import paper_chat_pipeline_mode
+
+    return paper_chat_pipeline_mode()
 
 
 # Static opening sentence only — everything else build_system_prompt()
 # assembles below (user name, date, custom instructions, project,
-# memories) is computed per-request and was never a good fit for a
-# template row. backfill.py already seeds this exact text under the name
-# "chat_system"; PromptRegistry is tried first, with this literal string
-# as the fallback for a fresh DB backfill.py hasn't run against yet (or
-# a deleted/corrupted row) — a chat request must never fail just because
-# a prompt lookup did.
-_CHAT_SYSTEM_FALLBACK = (
-    "You are Personal AI, a helpful assistant specialised in academic "
-    "research and thesis writing, but able to help with anything. "
-    "Use markdown. Be precise with citations and honest about "
-    "uncertainty. When you used web search results or document excerpts, "
-    "cite the sources inline."
-)
+# memories) is computed per-request. Opening text lives in PromptRegistry
+# ("chat_system") with CHAT_SYSTEM_FALLBACK when unseeded.
+# Phase A: normal chat assembly is PromptBuilder.build_chat_instructions().
+# CHAT_USE_PROMPT_BUILDER (default true) can force the legacy assembler
+# for emergency rollback during soak; remove after stability is confirmed.
+_CHAT_SYSTEM_FALLBACK = CHAT_SYSTEM_FALLBACK
+
+
+def _chat_use_prompt_builder() -> bool:
+    return os.environ.get("CHAT_USE_PROMPT_BUILDER", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 def _get_chat_system_opening(db):
@@ -2439,10 +2568,106 @@ def _get_chat_system_opening(db):
     except (ValueError, TemplateError):
         return _CHAT_SYSTEM_FALLBACK
     except Exception:
-        logging.getLogger(__name__).warning(
-            "chat_system prompt fetch failed, using fallback", exc_info=True
-        )
+        logging.getLogger(__name__).warning("chat_system prompt fetch failed, using fallback", exc_info=True)
         return _CHAT_SYSTEM_FALLBACK
+
+
+def _build_system_prompt_legacy(user, project, memory_enabled=True, now=None):
+    """Legacy flat chat assembler (rollback when CHAT_USE_PROMPT_BUILDER=false).
+
+    PR2: never inject another user's project instructions even if the caller
+    passed a cross-owned Project row.
+    """
+    if project is not None and not project_owned_by_user(project, user.id):
+        project = None
+    global_mems, proj_mems = [], []
+    db = SessionLocal()
+    try:
+        if memory_enabled:
+            global_mems = [
+                m.fact
+                for m in db.execute(
+                    select(Memory).where(Memory.user_id == user.id, Memory.project_id.is_(None))
+                ).scalars()
+            ]
+            if project:
+                proj_mems = [
+                    m.fact
+                    for m in db.execute(
+                        select(Memory).where(Memory.user_id == user.id, Memory.project_id == project.id)
+                    ).scalars()
+                ]
+        opening = _get_chat_system_opening(db)
+    finally:
+        db.close()
+
+    when = now or datetime.now()
+    parts = [
+        opening,
+        f"The user's name is {user.name}.",
+        f"Current date/time: {when.strftime('%Y-%m-%d %H:%M')}.",
+    ]
+    if user.custom_instructions:
+        parts.append("The user's custom instructions (always follow):\n" + user.custom_instructions)
+    if project:
+        parts.append(f'Current project: "{project.name}".')
+        if project.instructions:
+            parts.append("Project instructions from the user:\n" + project.instructions)
+    if global_mems:
+        parts.append("Things you remember about the user:\n" + "\n".join(f"- {m}" for m in global_mems))
+    if proj_mems:
+        parts.append("Things you remember in this project:\n" + "\n".join(f"- {m}" for m in proj_mems))
+    return "\n\n".join(parts)
+
+
+def build_system_prompt(user, project, memory_enabled=True):
+    """Normal-chat system instructions. Default path: PromptBuilder chat parity."""
+    if not _chat_use_prompt_builder():
+        return _build_system_prompt_legacy(user, project, memory_enabled=memory_enabled)
+
+    db = SessionLocal()
+    try:
+        builder = get_prompt_builder(db)
+        assembled = builder.build_chat_instructions(
+            user_id=user.id,
+            user_name=user.name or "",
+            custom_instructions=user.custom_instructions or "",
+            project_id=project.id if project else None,
+            memory_enabled=memory_enabled,
+        )
+        return assembled.final
+    finally:
+        db.close()
+
+
+def preview_chat_prompt_builder_migration(user, project, memory_enabled=True):
+    """Compare legacy flat assembler vs PromptBuilder.build_chat_instructions()."""
+    now = datetime.now()
+    legacy = _build_system_prompt_legacy(user, project, memory_enabled=memory_enabled, now=now)
+
+    db = SessionLocal()
+    try:
+        builder = get_prompt_builder(db)
+        assembled = builder.build_chat_instructions(
+            user_id=user.id,
+            user_name=user.name or "",
+            custom_instructions=user.custom_instructions or "",
+            project_id=project.id if project else None,
+            memory_enabled=memory_enabled,
+            now=now,
+        )
+    finally:
+        db.close()
+
+    return {
+        "legacy_system_prompt": legacy,
+        "prompt_builder_final": assembled.final,
+        "prompt_builder_system": assembled.system,
+        "prompt_builder_task": assembled.task,
+        "prompt_builder_project_context": assembled.project_context,
+        "prompt_builder_memory": assembled.memory,
+        "parity_match": legacy == assembled.final,
+    }
 
 
 def _log_chat_cost(user_id, model, usage):
@@ -2464,115 +2689,19 @@ def _log_chat_cost(user_id, model, usage):
         db = SessionLocal()
         try:
             ledger.log(
-                db, user_id=user_id, model=model, prompt_tokens=prompt_tokens,
+                db,
+                user_id=user_id,
+                model=model,
+                prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=prompt_tokens + completion_tokens,
-                cost=cost, action="chat",
+                cost=cost,
+                action="chat",
             )
         finally:
             db.close()
     except Exception:
         logging.getLogger(__name__).warning("chat cost logging failed", exc_info=True)
-
-
-def build_system_prompt(user, project, memory_enabled=True):
-    global_mems, proj_mems = [], []
-    db = SessionLocal()
-    try:
-        if memory_enabled:
-            global_mems = [
-                m.fact
-                for m in db.execute(
-                    select(Memory).where(
-                        Memory.user_id == user.id, Memory.project_id.is_(None)
-                    )
-                ).scalars()
-            ]
-            if project:
-                proj_mems = [
-                    m.fact
-                    for m in db.execute(
-                        select(Memory).where(
-                            Memory.user_id == user.id, Memory.project_id == project.id
-                        )
-                    ).scalars()
-                ]
-        opening = _get_chat_system_opening(db)
-    finally:
-        db.close()
-
-    parts = [
-        opening,
-        f"The user's name is {user.name}.",
-        f"Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}.",
-    ]
-    if user.custom_instructions:
-        parts.append(
-            "The user's custom instructions (always follow):\n"
-            + user.custom_instructions
-        )
-    if project:
-        parts.append(f'Current project: "{project.name}".')
-        if project.instructions:
-            parts.append("Project instructions from the user:\n" + project.instructions)
-    if global_mems:
-        parts.append(
-            "Things you remember about the user:\n"
-            + "\n".join(f"- {m}" for m in global_mems)
-        )
-    if proj_mems:
-        parts.append(
-            "Things you remember in this project:\n"
-            + "\n".join(f"- {m}" for m in proj_mems)
-        )
-    return "\n\n".join(parts)
-
-
-def preview_chat_prompt_builder_migration(user, project, memory_enabled=True):
-    """Stub for testing the /api/chat -> Prompt Builder migration (see
-    docs/chat-migration-roadmap.md) — NOT called from /api/chat itself,
-    or from anywhere else; a manual comparison tool for whoever picks up
-    that migration later. Builds the same "what does the model see"
-    content two ways — today's build_system_prompt() (legacy) and
-    PromptBuilder.preview() (candidate) — so the two can be diffed by
-    hand before anything real is switched over, and returns the specific
-    fields the candidate doesn't cover yet (roadmap §2) rather than
-    silently omitting them.
-
-    task_name="chat_system" deliberately exercises the exact prompt name
-    /api/chat already uses today (via _get_chat_system_opening), not
-    SystemPromptManager's separate "system_prompt" name — the roadmap's
-    §3 naming collision is something to resolve before a real migration,
-    not something to paper over here."""
-    legacy = build_system_prompt(user, project, memory_enabled=memory_enabled)
-
-    db = SessionLocal()
-    try:
-        builder = get_prompt_builder(db)
-        assembled = builder.preview(
-            "", "chat_system",
-            project_id=project.id if project else None,
-            user_id=user.id if memory_enabled else None,
-        )
-    finally:
-        db.close()
-
-    return {
-        "legacy_system_prompt": legacy,
-        "prompt_builder_final": assembled.final,
-        "prompt_builder_system": assembled.system,
-        "prompt_builder_task": assembled.task,
-        "prompt_builder_project_context": assembled.project_context,
-        "prompt_builder_memory": assembled.memory,
-        "not_yet_covered_by_prompt_builder": {
-            "user_identity_and_date": (
-                f"The user's name is {user.name}. "
-                f"Current date/time: {datetime.now().strftime('%Y-%m-%d %H:%M')}."
-            ),
-            "user_custom_instructions": user.custom_instructions or "",
-            "project_name_framing": f'Current project: "{project.name}".' if project else "",
-        },
-    }
 
 
 # ------------------------------------------------------------------ API: profile / models
@@ -2622,14 +2751,18 @@ def api_models():
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp")  # vision-API formats
 MAX_UPLOAD_BYTES = MAX_FILE_MB * 1024 * 1024
 
+from backend.upload.validation import (  # noqa: E402
+    ALLOWED_EXTENSIONS,
+    ValidationError as UploadValidationError,
+    kind_for_extension,
+    validate_extension,
+    validate_upload_path,
+)
+
 # ---- storage architecture: presigned/multipart upload config -------------
-MULTIPART_THRESHOLD_BYTES = (
-    int(os.environ.get("MULTIPART_THRESHOLD_MB", "25")) * 1024 * 1024
-)
+MULTIPART_THRESHOLD_BYTES = int(os.environ.get("MULTIPART_THRESHOLD_MB", "25")) * 1024 * 1024
 UPLOAD_PART_BYTES = int(os.environ.get("UPLOAD_PART_SIZE_MB", "8")) * 1024 * 1024
-UPLOAD_SESSION_TTL_SECONDS = (
-    int(os.environ.get("UPLOAD_SESSION_TTL_MINUTES", "60")) * 60
-)
+UPLOAD_SESSION_TTL_SECONDS = int(os.environ.get("UPLOAD_SESSION_TTL_MINUTES", "60")) * 60
 
 
 def _find_duplicate_file(db, user_id, checksum):
@@ -2641,11 +2774,7 @@ def _find_duplicate_file(db, user_id, checksum):
     if not checksum:
         return None
     existing = (
-        db.execute(
-            select(UserFile).where(
-                UserFile.user_id == user_id, UserFile.checksum_sha256 == checksum
-            )
-        )
+        db.execute(select(UserFile).where(UserFile.user_id == user_id, UserFile.checksum_sha256 == checksum))
         .scalars()
         .first()
     )
@@ -2714,6 +2843,21 @@ def _enqueue_job(db, user_id, file_id, job_type, upload_batch_id=None):
     return job.id
 
 
+from backend.analysis_pipeline.routes import create_analysis_pipeline_blueprint
+
+app.register_blueprint(
+    create_analysis_pipeline_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        UploadJob=UploadJob,
+        OutboxEvent=OutboxEvent,
+        AnalysisPipelineResult=AnalysisPipelineResult,
+        enqueue_job=_enqueue_job,
+        storage_backend=get_storage_backend(),
+    )
+)
+
+
 _redis_client = None
 
 
@@ -2732,16 +2876,12 @@ def _get_redis():
     try:
         import redis as redis_lib
 
-        client = redis_lib.from_url(
-            REDIS_URL, socket_connect_timeout=2, socket_timeout=2, decode_responses=True
-        )
+        client = redis_lib.from_url(REDIS_URL, socket_connect_timeout=2, socket_timeout=2, decode_responses=True)
         client.ping()
         _redis_client = client
         return _redis_client
     except Exception:
-        logging.getLogger(__name__).warning(
-            "Redis unavailable — job-status cache disabled"
-        )
+        logging.getLogger(__name__).warning("Redis unavailable — job-status cache disabled")
         return None
 
 
@@ -2767,9 +2907,7 @@ def _set_job_status_cache(job_id, status, progress, updated_at, user_id):
         )
         r.expire(key, JOB_STATUS_CACHE_TTL_SECONDS)
     except Exception:
-        logging.getLogger(__name__).warning(
-            "job-status cache write failed", exc_info=True
-        )
+        logging.getLogger(__name__).warning("job-status cache write failed", exc_info=True)
 
 
 def _get_job_status_cache(job_id):
@@ -2780,9 +2918,7 @@ def _get_job_status_cache(job_id):
         data = r.hgetall(f"job:{job_id}:status")
         return data or None
     except Exception:
-        logging.getLogger(__name__).warning(
-            "job-status cache read failed", exc_info=True
-        )
+        logging.getLogger(__name__).warning("job-status cache read failed", exc_info=True)
         return None
 
 
@@ -2818,8 +2954,8 @@ def _get_active_model_version_id(logical_name):
             db.execute(
                 select(ModelVersion).where(
                     ModelVersion.logical_name == logical_name,
-                    ModelVersion.is_active == True,
-                )  # noqa: E712 (SQLAlchemy needs == True, not `is True`, for a Column comparison)
+                    ModelVersion.is_active == True,  # noqa: E712 (SQLAlchemy Column needs == True)
+                )
             )
             .scalars()
             .first()
@@ -2845,9 +2981,7 @@ def _log_ai_usage(user_id, kind, logical_model_name, prompt_tokens, completion_t
             mv = db.get(ModelVersion, model_version_id)
             prices = _PRICE_PER_1K_TOKENS.get(mv.provider_model_id) if mv else None
             if prices:
-                cost = (prompt_tokens / 1000) * prices["prompt"] + (
-                    completion_tokens / 1000
-                ) * prices["completion"]
+                cost = (prompt_tokens / 1000) * prices["prompt"] + (completion_tokens / 1000) * prices["completion"]
             db.add(
                 AIUsageLedger(
                     user_id=user_id,
@@ -2901,23 +3035,14 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
     try:
         lower = name.lower()
         text = extract_text(path, mime, name)
-        is_note = (
-            bool(text)
-            and text.startswith("[")
-            and text.endswith("]")
-            and len(text) < 400
-        )
+        is_note = bool(text) and text.startswith("[") and text.endswith("]") and len(text) < 400
         note = None
         n_chunks = 0
 
         if not text:
             # No readable text — e.g. a scanned/image PDF or a binary blob.
             uf.text_len = 0
-            note = (
-                "scanned_pdf"
-                if (lower.endswith(".pdf") or "pdf" in (mime or ""))
-                else "no_text"
-            )
+            note = "scanned_pdf" if (lower.endswith(".pdf") or "pdf" in (mime or "")) else "no_text"
         elif is_note:
             uf.text_len = 0
             note = text.strip("[]")
@@ -2926,11 +3051,7 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
             # Use the locator-aware chunker for PDFs and DOCX so every chunk
             # knows its page / section; fall back to plain chunking for
             # everything else (pptx, xlsx, txt …).
-            is_locatable = (
-                lower.endswith(".pdf")
-                or "pdf" in (mime or "")
-                or lower.endswith(".docx")
-            )
+            is_locatable = lower.endswith(".pdf") or "pdf" in (mime or "") or lower.endswith(".docx")
             if is_locatable:
                 doc_chunks = chunk_document(text)
                 pieces = [c["content"] for c in doc_chunks]
@@ -2993,6 +3114,7 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
 
 @app.route("/api/files", methods=["POST"])
 @login_required
+@limiter.limit("60 per hour")
 def upload_file():
     """Validate, store, and enqueue — nothing else. Extraction/chunking/
     embedding no longer happen here (compare to confirm_upload(), which
@@ -3009,39 +3131,55 @@ def upload_file():
     if not f or not f.filename:
         return jsonify({"error": "no_file"}), 400
     name = f.filename
-    lower = name.lower()
-    # Accept ANY file type. Images go to the vision path; everything else is
-    # treated as a document and run through the text extractor.
-    kind = "image" if lower.endswith(IMAGE_EXT) else "document"
+    try:
+        ext = validate_extension(name, allowed=ALLOWED_EXTENSIONS)
+    except UploadValidationError as e:
+        log_security_event("invalid_mime", code=e.code, filename=name, message=e.message)
+        return jsonify({"error": e.code, "detail": e.message}), 400
 
     conversation_id = request.form.get("conversation_id", type=int)
     project_id = request.form.get("project_id", type=int)
     batch_id = request.form.get("batch_id", type=int)  # not sent by any UI yet
-    ext = os.path.splitext(lower)[1]
     disk_name = uuid.uuid4().hex + ext
-    # Saved locally only long enough to size-check, hash, and upload —
+    # Saved locally only long enough to size-check, hash, sniff, and upload —
     # extraction no longer happens in this request. Removed in the
     # `finally` below either way.
     path = os.path.join(UPLOAD_DIR, disk_name)
     f.save(path)
     size = os.path.getsize(path)
-    if size > MAX_UPLOAD_BYTES:
+    try:
+        _, mime = validate_upload_path(
+            path,
+            name,
+            allowed=ALLOWED_EXTENSIONS,
+            size_bytes=size,
+            max_mb=MAX_FILE_MB,
+        )
+    except UploadValidationError as e:
+        event = "virus_detected" if e.code == "virus_detected" else "invalid_mime"
+        log_security_event(event, code=e.code, filename=name, message=e.message)
         try:
             os.remove(path)
         except OSError:
             pass
-        return (
-            jsonify(
-                {"error": "too_large", "detail": f"Max file size is {MAX_FILE_MB} MB"}
-            ),
-            400,
-        )
+        return jsonify({"error": e.code, "detail": e.message}), 400
+
+    kind = kind_for_extension(ext)
 
     checksum = storage.sha256_file(path)
     uid = session["user_id"]
 
     db = SessionLocal()
     try:
+        project_id, project_denied = resolve_owned_project_id(db, Project, project_id, uid)
+        if project_denied:
+            log_security_event(
+                "authz_denied",
+                resource="project",
+                action="upload",
+                user_id=uid,
+                project_id=request.form.get("project_id"),
+            )
         # Duplicate detection: this exact content already lives in the
         # user's library — skip the storage upload and the queue entirely
         # and hand back the existing file instead of paying for either.
@@ -3092,10 +3230,7 @@ def upload_file():
         # atomicity _adjust_storage_usage()'s docstring depends on (this
         # check rolling back the batch/file inserts together on failure).
         user_row = db.get(User, uid)
-        limit_bytes = (
-            (user_row.storage_limit_bytes if user_row else None)
-            or quota_service.DEFAULT_STORAGE_LIMIT_BYTES
-        )
+        limit_bytes = (user_row.storage_limit_bytes if user_row else None) or quota_service.DEFAULT_STORAGE_LIMIT_BYTES
         if already_used + size > limit_bytes:
             db.rollback()  # undoes the batch insert/increment above too
             try:
@@ -3117,7 +3252,7 @@ def upload_file():
             project_id=project_id,
             conversation_id=conversation_id,
             name=name[:300],
-            mime=f.mimetype,
+            mime=mime,
             kind=kind,
             path=disk_name,
             size=size,
@@ -3233,6 +3368,7 @@ def job_status(job_id):
 
 @app.route("/api/uploads/presign", methods=["POST"])
 @login_required
+@limiter.limit("60 per hour")
 def presign_upload():
     data = request.get_json(force=True, silent=True) or {}
     name = (data.get("filename") or "").strip()
@@ -3246,14 +3382,32 @@ def presign_upload():
         return jsonify({"error": "invalid_request"}), 400
     if size > MAX_UPLOAD_BYTES:
         return (
-            jsonify(
-                {"error": "too_large", "detail": f"Max file size is {MAX_FILE_MB} MB"}
-            ),
+            jsonify({"error": "too_large", "detail": f"Max file size is {MAX_FILE_MB} MB"}),
             400,
         )
+    try:
+        ext = validate_extension(name, allowed=ALLOWED_EXTENSIONS)
+        from backend.upload.magic_bytes import CANONICAL_MIME
+
+        mime = CANONICAL_MIME.get(ext, mime)
+    except UploadValidationError as e:
+        log_security_event("invalid_mime", code=e.code, filename=name, message=e.message)
+        return jsonify({"error": e.code, "detail": e.message}), 400
 
     db = SessionLocal()
     try:
+        project_id, project_denied = resolve_owned_project_id(
+            db, Project, project_id, session["user_id"]
+        )
+        if project_denied:
+            log_security_event(
+                "authz_denied",
+                resource="project",
+                action="presign",
+                user_id=session["user_id"],
+                project_id=data.get("project_id"),
+            )
+
         if checksum:
             dup = _find_duplicate_file(db, session["user_id"], checksum)
             if dup:
@@ -3302,12 +3456,8 @@ def presign_upload():
                 }
             )
 
-        put_url = provider.presigned_put_url(
-            key, mime, expires_in=UPLOAD_SESSION_TTL_SECONDS
-        )
-        return jsonify(
-            {"mode": "single", "session_id": us.id, "key": key, "put_url": put_url}
-        )
+        put_url = provider.presigned_put_url(key, mime, expires_in=UPLOAD_SESSION_TTL_SECONDS)
+        return jsonify({"mode": "single", "session_id": us.id, "key": key, "put_url": put_url})
     finally:
         db.close()
 
@@ -3330,10 +3480,7 @@ def complete_multipart_upload_route():
             provider.complete_multipart_upload(
                 us.key,
                 us.upload_id,
-                [
-                    storage.UploadPart(part_number=p["part_number"], etag=p["etag"])
-                    for p in parts
-                ],
+                [storage.UploadPart(part_number=p["part_number"], etag=p["etag"]) for p in parts],
             )
         except Exception:
             logging.exception("multipart complete failed for session %s", session_id)
@@ -3351,6 +3498,7 @@ def complete_multipart_upload_route():
 
 @app.route("/api/uploads/confirm", methods=["POST"])
 @login_required
+@limiter.limit("60 per hour")
 def confirm_upload():
     data = request.get_json(force=True, silent=True) or {}
     session_id = data.get("session_id")
@@ -3398,13 +3546,46 @@ def confirm_upload():
                 return jsonify(result)
 
         lower = us.name.lower()
-        kind = "image" if lower.endswith(IMAGE_EXT) else "document"
+        ext = os.path.splitext(lower)[1]
+        try:
+            validate_extension(us.name, allowed=ALLOWED_EXTENSIONS)
+        except UploadValidationError as e:
+            provider.delete(us.key)
+            us.status = "aborted"
+            db.commit()
+            log_security_event("invalid_mime", code=e.code, filename=us.name, message=e.message)
+            return jsonify({"error": e.code, "detail": e.message}), 400
+
+        # Sniff + optional ClamAV on a local copy before we commit the file row.
+        try:
+            with provider.local_copy(us.key, suffix=ext or ".bin") as local_path:
+                _, sniffed_mime = validate_upload_path(
+                    local_path,
+                    us.name,
+                    allowed=ALLOWED_EXTENSIONS,
+                    size_bytes=info.size,
+                    max_mb=MAX_FILE_MB,
+                )
+        except UploadValidationError as e:
+            provider.delete(us.key)
+            us.status = "aborted"
+            db.commit()
+            log_security_event("invalid_mime", code=e.code, filename=us.name, message=e.message)
+            return jsonify({"error": e.code, "detail": e.message}), 400
+        except Exception:
+            logging.exception("upload confirm content validation failed for session %s", session_id)
+            provider.delete(us.key)
+            us.status = "aborted"
+            db.commit()
+            return jsonify({"error": "validation_failed"}), 502
+
+        kind = kind_for_extension(ext)
         uf = UserFile(
             user_id=session["user_id"],
             project_id=us.project_id,
             conversation_id=us.conversation_id,
             name=us.name,
-            mime=us.mime,
+            mime=sniffed_mime,
             kind=kind,
             path=us.key,
             size=info.size,
@@ -3412,17 +3593,13 @@ def confirm_upload():
         )
         db.add(uf)
         us.status = "confirmed"
-        _adjust_storage_usage(
-            db, session["user_id"], delta_bytes=info.size, delta_files=1
-        )
+        _adjust_storage_usage(db, session["user_id"], delta_bytes=info.size, delta_files=1)
         db.commit()
 
         note = None
         if kind == "document":
-            with provider.local_copy(
-                us.key, suffix=os.path.splitext(lower)[1]
-            ) as local_path:
-                note = _process_document(db, uf, local_path, us.name, us.mime)
+            with provider.local_copy(us.key, suffix=ext) as local_path:
+                note = _process_document(db, uf, local_path, us.name, sniffed_mime)
 
         db3 = SessionLocal()
         try:
@@ -3447,9 +3624,7 @@ def local_upload_put(key):
     if not hasattr(provider, "verify_token"):
         return jsonify({"error": "not_supported"}), 404
     try:
-        payload = provider.verify_token(
-            request.args.get("token", ""), max_age=UPLOAD_SESSION_TTL_SECONDS
-        )
+        payload = provider.verify_token(request.args.get("token", ""), max_age=UPLOAD_SESSION_TTL_SECONDS)
     except ValueError:
         return jsonify({"error": "invalid_token"}), 403
     if payload.get("key") != key:
@@ -3495,9 +3670,7 @@ def local_upload_get(key):
 def sweep_temp_cmd():
     """Delete stray files left in UPLOAD_DIR by a request that crashed
     before its own cleanup ran."""
-    removed = storage.sweep_temp_dir(
-        UPLOAD_DIR, max_age_seconds=UPLOAD_SESSION_TTL_SECONDS
-    )
+    removed = storage.sweep_temp_dir(UPLOAD_DIR, max_age_seconds=UPLOAD_SESSION_TTL_SECONDS)
     click.echo(f"sweep-temp: removed {len(removed)} stale temp file(s)")
 
 
@@ -3518,9 +3691,7 @@ def gc_storage_cmd():
             .scalars()
             .all()
         )
-        report = storage.garbage_collect(
-            storage.storage_manager.provider, [s.key for s in stale]
-        )
+        report = storage.garbage_collect(storage.storage_manager.provider, [s.key for s in stale])
         for s in stale:
             s.status = "expired"
         db.commit()
@@ -3542,15 +3713,9 @@ def reconcile_storage_cmd(apply):
     """Compare what's actually in storage against what the DB references."""
     db = SessionLocal()
     try:
-        known_keys = {
-            row[0] for row in db.execute(select(UserFile.path)).all() if row[0]
-        }
-        report = storage.reconcile(
-            storage.storage_manager.provider, known_keys, dry_run=not apply
-        )
-        click.echo(
-            f"orphaned: {len(report.orphaned_keys)}  missing: {len(report.missing_keys)}"
-        )
+        known_keys = {row[0] for row in db.execute(select(UserFile.path)).all() if row[0]}
+        report = storage.reconcile(storage.storage_manager.provider, known_keys, dry_run=not apply)
+        click.echo(f"orphaned: {len(report.orphaned_keys)}  missing: {len(report.missing_keys)}")
         for k in report.orphaned_keys:
             click.echo(f"  orphan   {k}")
         for k in report.missing_keys:
@@ -3678,9 +3843,7 @@ def list_files():
             "title": lambda f: (f.title or f.name or "").lower(),
             "authors": lambda f: (f.authors or "").lower(),
             "year": lambda f: f.year or "",
-            "reading_status": lambda f: {"reading": 0, "unread": 1, "read": 2}.get(
-                f.reading_status or "unread", 1
-            ),
+            "reading_status": lambda f: {"reading": 0, "unread": 1, "read": 2}.get(f.reading_status or "unread", 1),
             "size": lambda f: f.size or 0,
         }
         key_fn = SORT_KEYS.get(sort, SORT_KEYS["recent"])
@@ -3722,9 +3885,7 @@ def library_tags():
         if project_id_raw is not None:
             try:
                 pid = int(project_id_raw)
-                q_stmt = q_stmt.where(
-                    UserFile.project_id == pid if pid else UserFile.project_id.is_(None)
-                )
+                q_stmt = q_stmt.where(UserFile.project_id == pid if pid else UserFile.project_id.is_(None))
             except (TypeError, ValueError):
                 pass
 
@@ -3772,9 +3933,7 @@ def library_stats():
         if project_id_raw is not None:
             try:
                 pid = int(project_id_raw)
-                q_stmt = q_stmt.where(
-                    UserFile.project_id == pid if pid else UserFile.project_id.is_(None)
-                )
+                q_stmt = q_stmt.where(UserFile.project_id == pid if pid else UserFile.project_id.is_(None))
             except (TypeError, ValueError):
                 pass
 
@@ -3800,13 +3959,7 @@ def library_stats():
         analyses_done = 0
         analyses_pending = 0
         if doc_ids:
-            pas = (
-                db.execute(
-                    select(PaperAnalysis).where(PaperAnalysis.file_id.in_(doc_ids))
-                )
-                .scalars()
-                .all()
-            )
+            pas = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id.in_(doc_ids))).scalars().all()
             analyses_done = sum(1 for p in pas if p.status == "done")
             analyses_pending = sum(1 for p in pas if p.status in ("pending", "running"))
 
@@ -3857,9 +4010,7 @@ def dashboard():
     db = SessionLocal()
     try:
         # ── Files ───────────────────────────────────────────────────────────
-        all_files = (
-            db.execute(select(UserFile).where(UserFile.user_id == uid)).scalars().all()
-        )
+        all_files = db.execute(select(UserFile).where(UserFile.user_id == uid)).scalars().all()
         docs = [f for f in all_files if f.kind == "document"]
         rs_cnt = {"unread": 0, "reading": 0, "read": 0}
         tag_cnt: dict[str, int] = {}
@@ -3893,32 +4044,31 @@ def dashboard():
             reverse=True,
         )
         recent_papers = [_paper_brief(f) for f in sorted_docs[:5]]
-        current_papers = [
-            _paper_brief(f)
-            for f in sorted_docs
-            if (f.reading_status or "unread") == "reading"
-        ][:5]
+        current_papers = [_paper_brief(f) for f in sorted_docs if (f.reading_status or "unread") == "reading"][:5]
 
         top_tags = sorted(
             [{"tag": t, "count": c} for t, c in tag_cnt.items()],
             key=lambda x: -x["count"],
         )[:5]
 
+        analysed = sum(1 for f in docs if (f.meta_status or "") == "done")
+        processing = sum(
+            1 for f in docs if (f.meta_status or "") in ("pending", "running")
+        )
+
         library = {
             "total_papers": len(docs),
             "unread": rs_cnt["unread"],
             "reading": rs_cnt["reading"],
             "read": rs_cnt["read"],
+            "analysed": analysed,
+            "processing": processing,
             "top_tags": top_tags,
         }
 
         # ── Conversations ────────────────────────────────────────────────────
         convos = (
-            db.execute(
-                select(Conversation)
-                .where(Conversation.user_id == uid)
-                .order_by(Conversation.updated_at.desc())
-            )
+            db.execute(select(Conversation).where(Conversation.user_id == uid).order_by(Conversation.updated_at.desc()))
             .scalars()
             .all()
         )
@@ -3935,23 +4085,14 @@ def dashboard():
 
         # ── Citations ────────────────────────────────────────────────────────
         cites = (
-            db.execute(
-                select(Citation)
-                .where(Citation.user_id == uid)
-                .order_by(Citation.created_at.desc())
-            )
+            db.execute(select(Citation).where(Citation.user_id == uid).order_by(Citation.created_at.desc()))
             .scalars()
             .all()
         )
-        recent_citations = [
-            {"id": c.id, "title": c.title, "authors": c.authors, "year": c.year}
-            for c in cites[:5]
-        ]
+        recent_citations = [{"id": c.id, "title": c.title, "authors": c.authors, "year": c.year} for c in cites[:5]]
 
         # ── Projects ─────────────────────────────────────────────────────────
-        projects = (
-            db.execute(select(Project).where(Project.user_id == uid)).scalars().all()
-        )
+        projects = db.execute(select(Project).where(Project.user_id == uid)).scalars().all()
         file_proj_cnt = {}
         for f in docs:
             if f.project_id:
@@ -4070,9 +4211,7 @@ def get_analysis(fid):
                 }
             )
 
-        pa = db.execute(
-            select(PaperAnalysis).where(PaperAnalysis.file_id == fid)
-        ).scalar_one_or_none()
+        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
 
         if pa is None:
             # No record yet — start analysis now and return pending
@@ -4122,9 +4261,7 @@ def refresh_analysis(fid):
             return jsonify({"error": "no_text_content"}), 400
 
         # Wipe the cached hash so the worker doesn't short-circuit
-        pa = db.execute(
-            select(PaperAnalysis).where(PaperAnalysis.file_id == fid)
-        ).scalar_one_or_none()
+        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
         if pa:
             pa.content_hash = ""
             pa.status = "pending"
@@ -4147,9 +4284,16 @@ def file_raw(fid):
         x = db.get(UserFile, fid)
         if not x or x.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
-        url = storage.presigned_url(
-            x.path, x.name, x.mime or "application/octet-stream"
-        )
+        # Metadata-only Discover stubs have no stored bytes — redirect to
+        # the external OA / DOI link instead of asking storage for a path.
+        if not (x.path or "").strip():
+            external = (getattr(x, "source_url", None) or "").strip()
+            if not external and (x.doi or "").strip():
+                external = f"https://doi.org/{(x.doi or '').strip()}"
+            if external:
+                return redirect(external)
+            return jsonify({"error": "no_file_bytes", "message": "Metadata-only entry — upload a PDF to open locally."}), 404
+        url = storage.presigned_url(x.path, x.name, x.mime or "application/octet-stream")
         return redirect(url)
     finally:
         db.close()
@@ -4163,13 +4307,276 @@ def delete_file(fid):
         x = db.get(UserFile, fid)
         if not x or x.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
-        storage.delete(x.path)
+        if (x.path or "").strip():
+            storage.delete(x.path)
         db.delete(x)
-        _adjust_storage_usage(
-            db, session["user_id"], delta_bytes=-(x.size or 0), delta_files=-1
-        )
+        _adjust_storage_usage(db, session["user_id"], delta_bytes=-(x.size or 0), delta_files=-1)
         db.commit()
         return jsonify({"ok": True})
+    finally:
+        db.close()
+
+
+# ── Scholarly provider endpoints ─────────────────────────────────────────────
+
+@app.route("/api/discover", methods=["GET"])
+@login_required
+def scholarly_discover():
+    """Search papers via OpenAlex.
+
+    GET /api/discover?q=<query>&page=1&per_page=15
+    Returns [{doi, title, authors, year, venue, abstract, citation_count,
+              open_access_url, concepts, source}]
+    Identical search queries are cached 30 min.
+    """
+    from backend.scholarly import provider_enabled
+    from backend.scholarly.openalex import search_works
+
+    if not provider_enabled("openalex"):
+        return jsonify({
+            "error": "discover_disabled",
+            "message": "OpenAlex Discover is temporarily disabled.",
+            "results": [],
+        }), 503
+
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return jsonify({"error": "q is required"}), 400
+    page = max(1, int(request.args.get("page", 1)))
+    per_page = min(20, max(1, int(request.args.get("per_page", 15))))
+    db = SessionLocal()
+    try:
+        works = search_works(query, page=page, per_page=per_page, db=db)
+        return jsonify({
+            "results": [
+                {
+                    "id": w.id,
+                    "doi": w.doi,
+                    "title": w.title,
+                    "authors": w.authors,
+                    "year": w.year,
+                    "venue": w.venue,
+                    "abstract": w.abstract,
+                    "citation_count": w.citation_count,
+                    "open_access_url": w.open_access_url,
+                    "concepts": w.concepts,
+                    "source": w.source,
+                }
+                for w in works
+            ],
+            "page": page,
+            "per_page": per_page,
+        })
+    except Exception as exc:
+        app.logger.warning("scholarly_discover failed: %s", exc)
+        return jsonify({
+            "error": "discover_unavailable",
+            "message": "Discover is temporarily unavailable.",
+            "results": [],
+        }), 503
+    finally:
+        db.close()
+
+
+@app.route("/api/discover/import", methods=["POST"])
+@login_required
+def scholarly_discover_import():
+    """Add an OpenAlex Discover result to the library as a metadata-only stub.
+
+    No PDF is fetched. Phase 1 / RAG stay unavailable until the user uploads
+    a PDF later. Dedupes by (user_id, doi) when a DOI is present.
+    """
+    from backend.scholarly import provider_enabled
+    from backend.scholarly.crossref import enrich_file_from_doi
+
+    if not provider_enabled("openalex"):
+        return jsonify({
+            "error": "discover_disabled",
+            "message": "OpenAlex Discover is temporarily disabled.",
+        }), 503
+
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()
+    doi = (body.get("doi") or "").strip().removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+    authors = (body.get("authors") or "").strip()
+    year_raw = body.get("year")
+    year = str(year_raw).strip()[:10] if year_raw not in (None, "") else ""
+    venue = (body.get("venue") or "").strip()
+    abstract = (body.get("abstract") or "").strip()
+    open_access_url = (body.get("open_access_url") or "").strip()
+    openalex_id = (body.get("openalex_id") or body.get("id") or "").strip()
+    project_id = body.get("project_id")
+
+    if not title and not doi:
+        return jsonify({"error": "title_or_doi_required"}), 400
+
+    uid = session["user_id"]
+    db = SessionLocal()
+    try:
+        if project_id is not None:
+            try:
+                project_id = int(project_id)
+            except (TypeError, ValueError):
+                project_id = None
+            if project_id is not None:
+                proj = db.get(Project, project_id)
+                if not proj or proj.user_id != uid:
+                    return jsonify({"error": "project_not_found"}), 404
+
+        if doi:
+            existing = db.execute(
+                select(UserFile).where(
+                    UserFile.user_id == uid,
+                    UserFile.doi == doi,
+                )
+            ).scalars().first()
+            if existing:
+                return jsonify({
+                    "already_exists": True,
+                    "file": _file_to_dict(existing),
+                })
+
+        display_name = (title or f"openalex:{openalex_id}" or "openalex-import")[:300]
+        tags = ["from-discover"]
+        if openalex_id:
+            tags.append(f"openalex:{openalex_id[:80]}")
+
+        uf = UserFile(
+            user_id=uid,
+            project_id=project_id,
+            conversation_id=None,
+            name=display_name,
+            mime="",
+            kind="document",
+            path="",
+            size=0,
+            title=(title or display_name)[:500],
+            authors=authors[:1000],
+            year=year,
+            venue=venue[:300],
+            doi=doi[:200],
+            abstract=abstract[:8000],
+            reading_status="unread",
+            tags=json.dumps(tags),
+            meta_status="done",
+            metadata_source="openalex",
+            source_url=open_access_url[:500],
+            doi_verified=False,
+        )
+        db.add(uf)
+        db.flush()
+
+        # Soft Crossref verify when DOI is known — never blocks import.
+        if doi:
+            try:
+                enrich_file_from_doi(db, uf.id)
+                db.refresh(uf)
+            except Exception as cx_exc:
+                app.logger.warning(
+                    "discover import crossref enrich skipped file_id=%s: %s", uf.id, cx_exc
+                )
+
+        db.commit()
+        return jsonify({
+            "already_exists": False,
+            "file": _file_to_dict(uf),
+        }), 201
+    except Exception as exc:
+        db.rollback()
+        app.logger.warning("scholarly_discover_import failed: %s", exc)
+        return jsonify({"error": "import_failed"}), 500
+    finally:
+        db.close()
+
+@app.route("/api/files/<int:fid>/related", methods=["GET"])
+@login_required
+def scholarly_related(fid):
+    """Return related / citing / recommended papers from Semantic Scholar.
+
+    GET /api/files/<fid>/related
+    Cache: 7 days per file.
+    Returns {related, citing, recommended, cached_at, provider_version} | 503.
+    """
+    from backend.scholarly.semantic_scholar import get_related_papers
+    db = SessionLocal()
+    try:
+        uf = db.get(UserFile, fid)
+        if not uf or uf.user_id != session["user_id"]:
+            return jsonify({"error": "not_found"}), 404
+        bundle = get_related_papers(
+            file_id=fid,
+            doi=uf.doi or None,
+            title=uf.title or uf.name or None,
+            db=db,
+        )
+        if bundle is None:
+            return jsonify({
+                "error": "related_unavailable",
+                "message": "Recommendations temporarily unavailable.",
+                "related": [], "citing": [], "recommended": [],
+            }), 503
+
+        def _s2_to_dict(p):
+            return {
+                "paper_id": p.paper_id,
+                "doi": p.doi,
+                "title": p.title,
+                "authors": p.authors,
+                "year": p.year,
+                "venue": p.venue,
+                "abstract": p.abstract,
+                "citation_count": p.citation_count,
+                "open_access_url": p.open_access_url,
+                "source": p.source,
+            }
+
+        return jsonify({
+            "related": [_s2_to_dict(p) for p in bundle.related],
+            "citing": [_s2_to_dict(p) for p in bundle.citing],
+            "recommended": [_s2_to_dict(p) for p in bundle.recommended],
+            "cached_at": bundle.cached_at,
+            "provider_version": bundle.provider_version,
+        })
+    except Exception as exc:
+        app.logger.warning("scholarly_related fid=%s failed: %s", fid, exc)
+        return jsonify({
+            "error": "related_unavailable",
+            "related": [], "citing": [], "recommended": [],
+        }), 503
+    finally:
+        db.close()
+
+
+@app.route("/api/files/<int:fid>/citation", methods=["GET"])
+@login_required
+def scholarly_citation(fid):
+    """Return a verified Crossref citation for a paper.
+
+    GET /api/files/<fid>/citation?style=apa  (apa|ieee|bibtex|mla)
+    Returns {citation, source, verified}
+    """
+    from backend.scholarly.crossref import format_citation
+    style = (request.args.get("style") or "apa").lower()
+    if style not in ("apa", "ieee", "bibtex", "mla"):
+        return jsonify({"error": "unsupported style"}), 400
+    db = SessionLocal()
+    try:
+        uf = db.get(UserFile, fid)
+        if not uf or uf.user_id != session["user_id"]:
+            return jsonify({"error": "not_found"}), 404
+        doi = (uf.doi or "").strip()
+        if not doi:
+            return jsonify({
+                "citation": "",
+                "source": "ai",
+                "verified": False,
+                "message": "No DOI — use AI-generated citation.",
+            })
+        result = format_citation(doi, style, db)
+        return jsonify(result)
+    except Exception as exc:
+        app.logger.warning("scholarly_citation fid=%s failed: %s", fid, exc)
+        return jsonify({"citation": "", "source": "ai", "verified": False}), 503
     finally:
         db.close()
 
@@ -4223,9 +4630,7 @@ def list_notes():
         if project_id_raw is not None:
             try:
                 pid = int(project_id_raw)
-                stmt = stmt.where(
-                    Note.project_id == pid if pid else Note.project_id.is_(None)
-                )
+                stmt = stmt.where(Note.project_id == pid if pid else Note.project_id.is_(None))
             except (TypeError, ValueError):
                 pass
 
@@ -4236,11 +4641,7 @@ def list_notes():
 
         # Full-text search (Python side for SQLite portability)
         if q:
-            notes = [
-                n
-                for n in notes
-                if q in (n.title or "").lower() or q in (n.content or "").lower()
-            ]
+            notes = [n for n in notes if q in (n.title or "").lower() or q in (n.content or "").lower()]
 
         total = len(notes)
         page = notes[offset : offset + limit]
@@ -4274,9 +4675,7 @@ def create_note():
     content = str(data.get("content") or "").strip()
     if not content:
         return (
-            jsonify(
-                {"error": "content_required", "detail": "Note content cannot be empty."}
-            ),
+            jsonify({"error": "content_required", "detail": "Note content cannot be empty."}),
             400,
         )
 
@@ -4288,9 +4687,15 @@ def create_note():
     try:
         # Validate project ownership
         if project_id:
-            p = db.get(Project, project_id)
-            if not p or p.user_id != uid:
-                project_id = None
+            project_id, denied = resolve_owned_project_id(db, Project, project_id, uid)
+            if denied:
+                log_security_event(
+                    "authz_denied",
+                    resource="project",
+                    action="create_note",
+                    user_id=uid,
+                    project_id=data.get("project_id"),
+                )
 
         # Validate file ownership
         if file_id:
@@ -4298,7 +4703,19 @@ def create_note():
             if not f or f.user_id != uid:
                 file_id = None
             elif not project_id and f.project_id:
-                project_id = f.project_id  # inherit from paper
+                inherited, inherited_denied = resolve_owned_project_id(
+                    db, Project, f.project_id, uid
+                )
+                if inherited_denied:
+                    log_security_event(
+                        "authz_denied",
+                        resource="project",
+                        action="create_note_inherit",
+                        user_id=uid,
+                        project_id=f.project_id,
+                        file_id=file_id,
+                    )
+                project_id = inherited
 
         n = Note(
             user_id=uid,
@@ -4423,11 +4840,7 @@ def apa_entry(c) -> str:
     venue_part = f"*{c.venue}*. " if c.venue else ""
     doi_part = f"https://doi.org/{c.doi}" if c.doi else (c.url or "")
 
-    return (
-        f"{author_str}. {year_part}{title_part}{venue_part}{doi_part}".strip().rstrip(
-            "."
-        )
-    )
+    return f"{author_str}. {year_part}{title_part}{venue_part}{doi_part}".strip().rstrip(".")
 
 
 def ieee_entry(c) -> str:
@@ -4517,9 +4930,7 @@ def list_citations():
         if project_id_raw is not None:
             try:
                 pid = int(project_id_raw)
-                stmt = stmt.where(
-                    Citation.project_id == pid if pid else Citation.project_id.is_(None)
-                )
+                stmt = stmt.where(Citation.project_id == pid if pid else Citation.project_id.is_(None))
             except (TypeError, ValueError):
                 pass
         cits = db.execute(stmt.order_by(Citation.created_at.desc())).scalars().all()
@@ -4527,9 +4938,7 @@ def list_citations():
             cits = [
                 c
                 for c in cits
-                if q in (c.title or "").lower()
-                or q in (c.authors or "").lower()
-                or q in (c.venue or "").lower()
+                if q in (c.title or "").lower() or q in (c.authors or "").lower() or q in (c.venue or "").lower()
             ]
         return jsonify([_citation_to_dict(c) for c in cits])
     finally:
@@ -4546,9 +4955,15 @@ def create_citation():
         # Validate project ownership
         project_id = d.get("project_id")
         if project_id:
-            p = db.get(Project, project_id)
-            if not p or p.user_id != uid:
-                project_id = None
+            project_id, denied = resolve_owned_project_id(db, Project, project_id, uid)
+            if denied:
+                log_security_event(
+                    "authz_denied",
+                    resource="project",
+                    action="create_citation",
+                    user_id=uid,
+                    project_id=d.get("project_id"),
+                )
         c = Citation(
             user_id=uid,
             project_id=project_id,
@@ -4652,8 +5067,7 @@ def citation_from_paper(fid):
                 jsonify(
                     {
                         "error": "no_metadata",
-                        "detail": "This paper has no extracted title yet. "
-                        "Wait for metadata extraction to complete.",
+                        "detail": "This paper has no extracted title yet. " "Wait for metadata extraction to complete.",
                     }
                 ),
                 400,
@@ -4670,7 +5084,17 @@ def citation_from_paper(fid):
             return jsonify({**_citation_to_dict(existing), "existing": True})
 
         body = request.get_json(silent=True) or {}
-        project_id = body.get("project_id") or uf.project_id
+        raw_project_id = body.get("project_id") if "project_id" in body else uf.project_id
+        project_id, project_denied = resolve_owned_project_id(db, Project, raw_project_id, uid)
+        if project_denied:
+            log_security_event(
+                "authz_denied",
+                resource="project",
+                action="citation_from_paper",
+                user_id=uid,
+                project_id=raw_project_id,
+                file_id=fid,
+            )
 
         c = Citation(
             user_id=uid,
@@ -4709,9 +5133,7 @@ def export_citations():
         if project_id_raw is not None:
             try:
                 pid = int(project_id_raw)
-                stmt = stmt.where(
-                    Citation.project_id == pid if pid else Citation.project_id.is_(None)
-                )
+                stmt = stmt.where(Citation.project_id == pid if pid else Citation.project_id.is_(None))
             except (TypeError, ValueError):
                 pass
         cits = db.execute(stmt.order_by(Citation.created_at)).scalars().all()
@@ -4743,11 +5165,7 @@ def list_projects():
     db = SessionLocal()
     try:
         projs = (
-            db.execute(
-                select(Project)
-                .where(Project.user_id == session["user_id"])
-                .order_by(Project.created_at)
-            )
+            db.execute(select(Project).where(Project.user_id == session["user_id"]).order_by(Project.created_at))
             .scalars()
             .all()
         )
@@ -4832,22 +5250,12 @@ def get_project(pid):
         )
 
         chat_count = (
-            db.execute(
-                select(Conversation).where(
-                    Conversation.user_id == uid, Conversation.project_id == pid
-                )
-            )
+            db.execute(select(Conversation).where(Conversation.user_id == uid, Conversation.project_id == pid))
             .scalars()
             .all()
         )
 
-        memory_count = (
-            db.execute(
-                select(Memory).where(Memory.user_id == uid, Memory.project_id == pid)
-            )
-            .scalars()
-            .all()
-        )
+        memory_count = db.execute(select(Memory).where(Memory.user_id == uid, Memory.project_id == pid)).scalars().all()
 
         # Reading status breakdown for papers in this project
         rs_counts = {"unread": 0, "reading": 0, "read": 0}
@@ -4917,9 +5325,7 @@ def delete_project(pid):
         p = db.get(Project, pid)
         if not p or p.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
-        for c in db.execute(
-            select(Conversation).where(Conversation.project_id == pid)
-        ).scalars():
+        for c in db.execute(select(Conversation).where(Conversation.project_id == pid)).scalars():
             c.project_id = None
         for m in db.execute(select(Memory).where(Memory.project_id == pid)).scalars():
             db.delete(m)
@@ -4981,9 +5387,7 @@ def conversation_settings_json(c):
     return {
         "temperature": c.temperature,
         "reasoning_effort": c.reasoning_effort,
-        "memory_enabled": (
-            bool(c.memory_enabled) if c.memory_enabled is not None else True
-        ),
+        "memory_enabled": (bool(c.memory_enabled) if c.memory_enabled is not None else True),
     }
 
 
@@ -4999,9 +5403,17 @@ def create_conversation():
     db = SessionLocal()
     try:
         if project_id:
-            p = db.get(Project, project_id)
-            if not p or p.user_id != session["user_id"]:
-                project_id = None
+            project_id, denied = resolve_owned_project_id(
+                db, Project, project_id, session["user_id"]
+            )
+            if denied:
+                log_security_event(
+                    "authz_denied",
+                    resource="project",
+                    action="create_conversation",
+                    user_id=session["user_id"],
+                    project_id=data.get("project_id"),
+                )
 
         # Validate file ownership; inherit project from the paper if not given
         paper_title = None
@@ -5012,7 +5424,19 @@ def create_conversation():
             else:
                 paper_title = uf.title or uf.name or None
                 if not project_id and uf.project_id:
-                    project_id = uf.project_id
+                    inherited, inherited_denied = resolve_owned_project_id(
+                        db, Project, uf.project_id, session["user_id"]
+                    )
+                    if inherited_denied:
+                        log_security_event(
+                            "authz_denied",
+                            resource="project",
+                            action="create_conversation_inherit",
+                            user_id=session["user_id"],
+                            project_id=uf.project_id,
+                            file_id=file_id,
+                        )
+                    project_id = inherited
 
         c = Conversation(
             user_id=session["user_id"],
@@ -5064,9 +5488,7 @@ def get_conversation(cid):
                         "role": m.role,
                         "content": m.content,
                         "sources": json.loads(m.sources) if m.sources else [],
-                        "attachments": (
-                            json.loads(m.attachments) if m.attachments else []
-                        ),
+                        "attachments": (json.loads(m.attachments) if m.attachments else []),
                     }
                     for m in c.messages
                 ],
@@ -5116,11 +5538,7 @@ def _purge_conversation(db, convo):
     """Delete a conversation, its messages (ORM cascade), and its
     conversation-only files/embeddings. Files also attached to a project are
     kept (just detached from the chat)."""
-    for uf in (
-        db.execute(select(UserFile).where(UserFile.conversation_id == convo.id))
-        .scalars()
-        .all()
-    ):
+    for uf in db.execute(select(UserFile).where(UserFile.conversation_id == convo.id)).scalars().all():
         if uf.project_id:
             uf.conversation_id = None
         else:
@@ -5161,9 +5579,7 @@ def bulk_delete_conversations():
         for c in convos:
             _purge_conversation(db, c)
         db.commit()
-        log_security_event(
-            "chats_deleted", user=uid, count=len(convos), all=bool(data.get("all"))
-        )
+        log_security_event("chats_deleted", user=uid, count=len(convos), all=bool(data.get("all")))
         return jsonify({"ok": True, "deleted": len(convos)})
     finally:
         db.close()
@@ -5205,15 +5621,7 @@ def _collect_export(db, uid, conversation_id=None):
                 "messages": msgs,
             }
         )
-    cites = (
-        db.execute(
-            select(Citation)
-            .where(Citation.user_id == uid)
-            .order_by(Citation.created_at)
-        )
-        .scalars()
-        .all()
-    )
+    cites = db.execute(select(Citation).where(Citation.user_id == uid).order_by(Citation.created_at)).scalars().all()
     cite_list = [
         {
             "authors": ct.authors,
@@ -5265,11 +5673,7 @@ def _export_markdown(data, cites, user, plain=False):
             who = _role_label(m["role"])
             att = ""
             if m["attachments"]:
-                att = (
-                    " (attached: "
-                    + ", ".join(a.get("name", "") for a in m["attachments"])
-                    + ")"
-                )
+                att = " (attached: " + ", ".join(a.get("name", "") for a in m["attachments"]) + ")"
             lines += [f"{b}{who}{att}:{b}", "", m["content"], ""]
     if cites:
         lines += ["", f"{'' if plain else '## '}Citations", ""]
@@ -5415,9 +5819,7 @@ def export_data():
         body = _export_markdown(data, cites, uinfo, plain=True)
         return _download(_text_to_pdf(title, body), base + ".pdf", "application/pdf")
     return (
-        jsonify(
-            {"error": "bad_format", "detail": "format must be json|md|txt|docx|pdf"}
-        ),
+        jsonify({"error": "bad_format", "detail": "format must be json|md|txt|docx|pdf"}),
         400,
     )
 
@@ -5443,16 +5845,10 @@ def delete_account():
         if not user:
             return jsonify({"error": "not_found"}), 404
         # Files (chunks + on-disk blobs)
-        for uf in (
-            db.execute(select(UserFile).where(UserFile.user_id == uid)).scalars().all()
-        ):
+        for uf in db.execute(select(UserFile).where(UserFile.user_id == uid)).scalars().all():
             _remove_file_row(db, uf)
         # Conversations (messages cascade), memories, citations, projects
-        for conv in (
-            db.execute(select(Conversation).where(Conversation.user_id == uid))
-            .scalars()
-            .all()
-        ):
+        for conv in db.execute(select(Conversation).where(Conversation.user_id == uid)).scalars().all():
             db.delete(conv)
         db.execute(delete(Memory).where(Memory.user_id == uid))
         db.execute(delete(Citation).where(Citation.user_id == uid))
@@ -5514,9 +5910,7 @@ def submit_support():
         )
     if len(message) < 5:
         return (
-            jsonify(
-                {"error": "empty_message", "detail": "Please describe your issue."}
-            ),
+            jsonify({"error": "empty_message", "detail": "Please describe your issue."}),
             400,
         )
     message = message[:5000]
@@ -5559,11 +5953,7 @@ def list_memories():
     db = SessionLocal()
     try:
         mems = (
-            db.execute(
-                select(Memory)
-                .where(Memory.user_id == session["user_id"])
-                .order_by(Memory.created_at.desc())
-            )
+            db.execute(select(Memory).where(Memory.user_id == session["user_id"]).order_by(Memory.created_at.desc()))
             .scalars()
             .all()
         )
@@ -5662,6 +6052,7 @@ def run_tool(name, args, user_id, project_id):
 
 @app.route("/api/chat", methods=["POST"])
 @login_required
+@limiter.limit("60 per minute")
 def chat():
     data = request.get_json(silent=True) or {}
     cid = data.get("conversation_id")
@@ -5679,6 +6070,16 @@ def chat():
             return jsonify({"error": "conversation_not_found"}), 404
         model = data.get("model") if data.get("model") in get_models() else convo.model
         project = db.get(Project, convo.project_id) if convo.project_id else None
+        if project is not None and not project_owned_by_user(project, user_id):
+            log_security_event(
+                "authz_denied",
+                resource="project",
+                action="chat",
+                user_id=user_id,
+                project_id=convo.project_id,
+                conversation_id=convo.id,
+            )
+            project = None
 
         atts = []
         for fid in attachment_ids[:8]:
@@ -5712,14 +6113,7 @@ def chat():
                     role="user",
                     content=user_message or "(see attached files)",
                     attachments=(
-                        json.dumps(
-                            [
-                                {k: a[k] for k in ("id", "name", "mime", "kind")}
-                                for a in atts
-                            ]
-                        )
-                        if atts
-                        else None
+                        json.dumps([{k: a[k] for k in ("id", "name", "mime", "kind")} for a in atts]) if atts else None
                     ),
                 )
             )
@@ -5735,19 +6129,41 @@ def chat():
                 names = ", ".join(a["name"] for a in m_atts)
                 content = f"[attached files: {names}]\n{content}"
             history.append({"role": m.role, "content": content})
-        memory_enabled = (
-            bool(convo.memory_enabled) if convo.memory_enabled is not None else True
-        )
+        memory_enabled = bool(convo.memory_enabled) if convo.memory_enabled is not None else True
         temperature = convo.temperature
         reasoning_effort = convo.reasoning_effort
         paper_file_id = convo.file_id  # M7: paper chat scope (may be None)
+        paper_plan = None
+        paper_pipeline_mode = "false"
 
         # M7: if this is a paper chat, use a focused system prompt and
         # hard-scope retrieval to the single paper.
+        # Stage 1: optional ai_core pipeline (PAPER_CHAT_PIPELINE_ENABLED).
+        # Soak-safe: any plan failure falls back to legacy so shadow/true
+        # never take Paper Chat down.
         if paper_file_id:
             paper = db.get(UserFile, paper_file_id)
             if paper and paper.user_id == user_id:
-                system_prompt = build_paper_chat_prompt(user, paper)
+                try:
+                    from backend.ai_core.paper_chat import resolve_paper_chat_system_prompt
+
+                    system_prompt, paper_plan, paper_pipeline_mode = resolve_paper_chat_system_prompt(
+                        user_name=user.name,
+                        paper_title=paper.title or paper.name,
+                        authors=paper.authors,
+                        year=paper.year,
+                        venue=paper.venue,
+                        file_id=paper_file_id,
+                        project_id=convo.project_id,
+                        question=(user_message or "")[:500] or None,
+                    )
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "paper_chat_stage1_plan_failed; falling back to legacy"
+                    )
+                    system_prompt = build_paper_chat_prompt(user, paper)
+                    paper_plan = None
+                    paper_pipeline_mode = "false"
             else:
                 paper_file_id = None  # safety: invalid file, fall back
                 system_prompt = build_system_prompt(user, project, memory_enabled)
@@ -5760,10 +6176,20 @@ def chat():
     finally:
         db.close()
 
+    # Stage 1 executor — only used when pipeline mode is ``true`` for paper chat.
+    paper_executor = None
+    if paper_plan is not None and paper_pipeline_mode == "true":
+        from backend.ai_core.orchestration import AIExecutor, OpenAIResponsesStreamClient
+
+        paper_executor = AIExecutor(
+            stream_client=OpenAIResponsesStreamClient(client),
+            default_model=model,
+        )
     def generate():
         input_items = list(history)
         sources = []
         full_text = ""
+        stage1_started = time.perf_counter() if paper_executor is not None else None
         try:
             last_query = user_message or (history[-1]["content"] if history else "")
 
@@ -5777,9 +6203,7 @@ def chat():
             )
 
             # M7: paper chat hard-scopes RAG to the single paper file
-            excerpts = rag_retrieve(
-                user_id, convo_id, project_id, last_query[:500], file_id=paper_file_id
-            )
+            excerpts = rag_retrieve(user_id, convo_id, project_id, last_query[:500], file_id=paper_file_id)
             if excerpts:
                 yield sse("status", {"text": "Reading your documents…"})
                 input_items.append(
@@ -5805,30 +6229,24 @@ def chat():
             for a in doc_atts:
                 with storage.local_copy(a["path"]) as local_path:
                     txt = extract_text(local_path, a["mime"], a["name"])
-                    has_text = bool(txt) and not (
-                        txt.startswith("[") and txt.endswith("]") and len(txt) < 400
-                    )
+                    has_text = bool(txt) and not (txt.startswith("[") and txt.endswith("]") and len(txt) < 400)
                     if has_text:
                         body = (
                             txt
                             if len(txt) <= INLINE_DOC_CHARS
                             else (
-                                txt[:INLINE_DOC_CHARS]
-                                + f"\n\n[…truncated {len(txt) - INLINE_DOC_CHARS} more "
+                                txt[:INLINE_DOC_CHARS] + f"\n\n[…truncated {len(txt) - INLINE_DOC_CHARS} more "
                                 "characters; see the excerpts above for the rest.]"
                             )
                         )
                         input_items.append(
                             {
                                 "role": "developer",
-                                "content": f"Full text of attached file "
-                                f"'{a['name']}':\n{body}",
+                                "content": f"Full text of attached file " f"'{a['name']}':\n{body}",
                             }
                         )
                         continue
-                    is_pdf = a["name"].lower().endswith(".pdf") or "pdf" in (
-                        a["mime"] or ""
-                    )
+                    is_pdf = a["name"].lower().endswith(".pdf") or "pdf" in (a["mime"] or "")
                     pages = []
                     if is_pdf:
                         try:
@@ -5887,8 +6305,7 @@ def chat():
                 input_items.append(
                     {
                         "role": "developer",
-                        "content": "Web search results (cite these):\n"
-                        + json.dumps(results, ensure_ascii=False),
+                        "content": "Web search results (cite these):\n" + json.dumps(results, ensure_ascii=False),
                     }
                 )
 
@@ -5914,32 +6331,54 @@ def chat():
                     kwargs["temperature"] = temperature
                 if reasoning_effort and supports_reasoning_effort(model):
                     kwargs["reasoning"] = {"effort": reasoning_effort}
-                stream = client.responses.create(**kwargs)
 
                 final = None
-                for event in stream:
-                    et = getattr(event, "type", "")
-                    if et == "response.output_text.delta":
-                        full_text += event.delta
-                        yield sse("delta", {"text": event.delta})
-                    elif et == "response.completed":
-                        final = event.response
-                    elif et == "response.failed":
-                        raise RuntimeError(
-                            getattr(
-                                getattr(event.response, "error", None),
-                                "message",
-                                "response failed",
+                # Stage 1 (flag true): model invocation via AIExecutor — no
+                # direct responses.create on this path.
+                if paper_executor is not None and paper_plan is not None:
+                    stream_kwargs = {}
+                    if temperature is not None and supports_temperature(model):
+                        stream_kwargs["temperature"] = temperature
+                    reasoning = None
+                    if reasoning_effort and supports_reasoning_effort(model):
+                        reasoning = {"effort": reasoning_effort}
+                    for event in paper_executor.stream_round(
+                        paper_plan,
+                        input_items=input_items,
+                        tools=tools,
+                        model=model,
+                        reasoning=reasoning,
+                        **stream_kwargs,
+                    ):
+                        et = event.type
+                        if et == "response.output_text.delta":
+                            full_text += event.delta
+                            yield sse("delta", {"text": event.delta})
+                        elif et == "response.completed":
+                            final = event.response
+                        elif et == "response.failed":
+                            raise RuntimeError(event.error_message or "response failed")
+                else:
+                    stream = client.responses.create(**kwargs)
+                    for event in stream:
+                        et = getattr(event, "type", "")
+                        if et == "response.output_text.delta":
+                            full_text += event.delta
+                            yield sse("delta", {"text": event.delta})
+                        elif et == "response.completed":
+                            final = event.response
+                        elif et == "response.failed":
+                            raise RuntimeError(
+                                getattr(
+                                    getattr(event.response, "error", None),
+                                    "message",
+                                    "response failed",
+                                )
                             )
-                        )
 
                 _log_chat_cost(user_id, model, getattr(final, "usage", None))
 
-                calls = [
-                    it
-                    for it in (final.output if final else [])
-                    if getattr(it, "type", "") == "function_call"
-                ]
+                calls = [it for it in (final.output if final else []) if getattr(it, "type", "") == "function_call"]
                 if calls:
                     for c in calls:
                         input_items.append(
@@ -5971,6 +6410,33 @@ def chat():
                         )
                     continue
                 break
+
+            if paper_executor is not None and paper_plan is not None:
+                from backend.ai_core.paper_chat import log_stage1_execution
+                from backend.ai_core.schemas.execution import TokenUsage
+
+                usage_obj = getattr(final, "usage", None) if final else None
+                usage_dict = None
+                if usage_obj is not None:
+                    usage_dict = {
+                        "input_tokens": getattr(usage_obj, "input_tokens", None),
+                        "output_tokens": getattr(usage_obj, "output_tokens", None),
+                        "total_tokens": getattr(usage_obj, "total_tokens", None),
+                        "prompt_tokens": getattr(usage_obj, "prompt_tokens", None),
+                        "completion_tokens": getattr(usage_obj, "completion_tokens", None),
+                    }
+                latency_ms = (
+                    int((time.perf_counter() - stage1_started) * 1000) if stage1_started is not None else 0
+                )
+                exec_result = paper_executor.observe_answer(
+                    paper_plan,
+                    full_text,
+                    model=model,
+                    usage=TokenUsage.from_openai(usage_dict),
+                    latency_ms=latency_ms,
+                    rag_excerpt_count=len(excerpts) if excerpts else 0,
+                )
+                log_stage1_execution(exec_result)
 
             new_title = None
             dbi = SessionLocal()
@@ -6010,20 +6476,13 @@ def chat():
         except Exception as e:
             msg = str(e)
             if "invalid_api_key" in msg or "Incorrect API key" in msg:
-                msg = (
-                    "Your OpenAI API key seems invalid — check OPENAI_API_KEY in .env."
-                )
+                msg = "Your OpenAI API key seems invalid — check OPENAI_API_KEY in .env."
             elif "insufficient_quota" in msg:
                 msg = "Your OpenAI account is out of credit."
             elif "does not exist" in msg or "model_not_found" in msg:
-                msg = (
-                    f"Model '{model}' isn't available — pick another from the dropdown."
-                )
+                msg = f"Model '{model}' isn't available — pick another from the dropdown."
             elif "image" in msg.lower() and "support" in msg.lower():
-                msg = (
-                    f"Model '{model}' doesn't support images — "
-                    "switch to a vision model like gpt-4o or gpt-5."
-                )
+                msg = f"Model '{model}' doesn't support images — " "switch to a vision model like gpt-4o or gpt-5."
             yield sse("error", {"text": msg})
 
     return Response(
@@ -6132,11 +6591,7 @@ def semantic_search():
             file_map = {f.id: f for f in files}
 
             if file_ids:
-                chunks = (
-                    db.execute(select(Chunk).where(Chunk.file_id.in_(file_ids)))
-                    .scalars()
-                    .all()
-                )
+                chunks = db.execute(select(Chunk).where(Chunk.file_id.in_(file_ids))).scalars().all()
                 for ch in chunks:
                     if query_emb and ch.embedding:
                         try:
@@ -6323,9 +6778,7 @@ def _derived_to_dict(da: DerivedAnalysis) -> dict:
     }
 
 
-def _run_comparison(
-    derived_id: int, analyses_payload: str, file_ids: list[int]
-) -> None:
+def _run_comparison(derived_id: int, analyses_payload: str, file_ids: list[int]) -> None:
     """Background worker: call the model and store the comparison result."""
     db = SessionLocal()
     try:
@@ -6363,9 +6816,7 @@ def _run_comparison(
         db.commit()
 
     except Exception as exc:
-        logging.getLogger(__name__).warning(
-            "comparison failed for derived_id=%s: %s", derived_id, exc
-        )
+        logging.getLogger(__name__).warning("comparison failed for derived_id=%s: %s", derived_id, exc)
         try:
             da2 = db.get(DerivedAnalysis, derived_id)
             if da2:
@@ -6407,16 +6858,12 @@ def compare_papers():
 
     if len(file_ids) < 2:
         return (
-            jsonify(
-                {"error": "too_few", "detail": "Select at least 2 papers to compare."}
-            ),
+            jsonify({"error": "too_few", "detail": "Select at least 2 papers to compare."}),
             400,
         )
     if len(file_ids) > 10:
         return (
-            jsonify(
-                {"error": "too_many", "detail": "Maximum 10 papers per comparison."}
-            ),
+            jsonify({"error": "too_many", "detail": "Maximum 10 papers per comparison."}),
             400,
         )
 
@@ -6432,9 +6879,7 @@ def compare_papers():
             if not uf or uf.user_id != uid:
                 skipped.append({"id": fid, "reason": "not_found"})
                 continue
-            pa = db.execute(
-                select(PaperAnalysis).where(PaperAnalysis.file_id == fid)
-            ).scalar_one_or_none()
+            pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
             if not pa or pa.status != "done":
                 skipped.append(
                     {
@@ -6457,8 +6902,7 @@ def compare_papers():
                 jsonify(
                     {
                         "error": "too_few_ready",
-                        "detail": "At least 2 papers need a completed analysis. "
-                        "Try again after analysis finishes.",
+                        "detail": "At least 2 papers need a completed analysis. " "Try again after analysis finishes.",
                         "skipped": skipped,
                     }
                 ),
@@ -6482,9 +6926,7 @@ def compare_papers():
             return jsonify(result)
 
         # Build analyses payload for the prompt
-        blobs_text = json.dumps(
-            [paper_blobs[fid] for fid in valid_ids], ensure_ascii=False, indent=1
-        )
+        blobs_text = json.dumps([paper_blobs[fid] for fid in valid_ids], ensure_ascii=False, indent=1)
 
         # Create or reset the DerivedAnalysis row
         if existing:
@@ -6584,9 +7026,7 @@ Papers (as structured analyses):
 _GAP_MAX_ANALYSES_CHARS = 20_000
 
 
-def _run_gap_finder(
-    derived_id: int, analyses_payload: str, file_ids: list[int]
-) -> None:
+def _run_gap_finder(derived_id: int, analyses_payload: str, file_ids: list[int]) -> None:
     """Background worker: call the model and store gap analysis result."""
     db = SessionLocal()
     try:
@@ -6630,9 +7070,7 @@ def _run_gap_finder(
         db.commit()
 
     except Exception as exc:
-        logging.getLogger(__name__).warning(
-            "gap finder failed for derived_id=%s: %s", derived_id, exc
-        )
+        logging.getLogger(__name__).warning("gap finder failed for derived_id=%s: %s", derived_id, exc)
         try:
             da2 = db.get(DerivedAnalysis, derived_id)
             if da2:
@@ -6671,9 +7109,7 @@ def find_gaps():
         return jsonify({"error": "too_few", "detail": "Select at least 2 papers."}), 400
     if len(file_ids) > 10:
         return (
-            jsonify(
-                {"error": "too_many", "detail": "Maximum 10 papers per gap analysis."}
-            ),
+            jsonify({"error": "too_many", "detail": "Maximum 10 papers per gap analysis."}),
             400,
         )
 
@@ -6688,9 +7124,7 @@ def find_gaps():
             if not uf or uf.user_id != uid:
                 skipped.append({"id": fid, "reason": "not_found"})
                 continue
-            pa = db.execute(
-                select(PaperAnalysis).where(PaperAnalysis.file_id == fid)
-            ).scalar_one_or_none()
+            pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
             if not pa or pa.status != "done":
                 skipped.append(
                     {
@@ -6735,9 +7169,7 @@ def find_gaps():
             result["skipped"] = skipped
             return jsonify(result)
 
-        blobs_text = json.dumps(
-            [paper_blobs[fid] for fid in valid_ids], ensure_ascii=False, indent=1
-        )
+        blobs_text = json.dumps([paper_blobs[fid] for fid in valid_ids], ensure_ascii=False, indent=1)
 
         if existing:
             existing.data = ""
@@ -6830,10 +7262,7 @@ WRITING_ACTIONS = {
         "Stay strictly within what the original text implies — do not invent "
         "facts, citations, or experiments."
     ),
-    "shorten": (
-        "Shorten the following text, removing redundancy and filler while "
-        "preserving the key information."
-    ),
+    "shorten": ("Shorten the following text, removing redundancy and filler while " "preserving the key information."),
     "generate_abstract": (
         "Write a concise academic abstract (150-250 words) for the text below. "
         "Structure: background, objective, method, results, conclusion. "
@@ -6886,18 +7315,12 @@ def writing_assistant():
     warning = ""
     if len(text) > MAX_CHARS:
         text = text[:MAX_CHARS]
-        warning = (
-            "Input was truncated to 8 000 characters. "
-            "For longer texts, split into sections."
-        )
+        warning = "Input was truncated to 8 000 characters. " "For longer texts, split into sections."
 
     instruction = WRITING_ACTIONS[action]
     prompt = (
-        instruction
-        + "\n\nIMPORTANT: If you are uncertain or lack context to make a requested "
-        "change accurately, say so explicitly rather than inventing content.\n\n"
-        + "Text:\n"
-        + text
+        instruction + "\n\nIMPORTANT: If you are uncertain or lack context to make a requested "
+        "change accurately, say so explicitly rather than inventing content.\n\n" + "Text:\n" + text
     )
 
     result = responses_text(prompt)
@@ -6922,8 +7345,9 @@ def _export_as_markdown(content_str: str, title: str = "") -> bytes:
 def _export_as_docx(content_str: str, title: str = "") -> bytes:
     """Create a minimal DOCX from plain text.  Requires python-docx."""
     try:
-        import docx as _docx
         from io import BytesIO
+
+        import docx as _docx
 
         doc = _docx.Document()
         if title:
@@ -6987,9 +7411,7 @@ def export_notes():
         mime = "text/markdown"
         fname = "notes.md"
 
-    return send_file(
-        io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname
-    )
+    return send_file(io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname)
 
 
 @app.route("/api/export/analysis/<int:file_id>", methods=["GET"])
@@ -7009,9 +7431,7 @@ def export_analysis(file_id):
         if not uf or uf.user_id != uid:
             return jsonify({"error": "not_found"}), 404
 
-        pa = db.execute(
-            select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)
-        ).scalar_one_or_none()
+        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)).scalar_one_or_none()
 
         if not pa or pa.status != "done":
             return (
@@ -7076,9 +7496,7 @@ def export_analysis(file_id):
         mime = "text/markdown"
         fname = f"analysis-{file_id}.md"
 
-    return send_file(
-        io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname
-    )
+    return send_file(io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname)
 
 
 @app.route("/api/export/chat/<int:cid>", methods=["GET"])
@@ -7123,23 +7541,17 @@ def export_chat(cid):
         mime = "text/markdown"
         fname = f"chat-{cid}.md"
 
-    return send_file(
-        io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname
-    )
+    return send_file(io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname)
 
 
 # ------------------------------------------------------------------ SPA (React build) serving
-FRONTEND_DIST = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "frontend", "dist"
-)
+FRONTEND_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
 
 
 @app.route("/assets/<path:filename>")
 def spa_assets(filename):
     # Vite content-hashes asset filenames, so they can be cached forever.
-    return send_from_directory(
-        os.path.join(FRONTEND_DIST, "assets"), filename, max_age=31536000
-    )
+    return send_from_directory(os.path.join(FRONTEND_DIST, "assets"), filename, max_age=31536000)
 
 
 @app.route("/", defaults={"path": ""})
@@ -7161,5 +7573,7 @@ def spa(path):
 
 
 if __name__ == "__main__":
-    print("Personal AI running -> http://localhost:5000")
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+    # Railway/Render/Fly set PORT; local default stays 5000.
+    port = int(os.environ.get("PORT", "5000"))
+    print(f"Personal AI running -> http://0.0.0.0:{port}")
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

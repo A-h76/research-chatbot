@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
-import { filesApi, type LibraryListParams } from "./api";
+import { filesApi, type AnalyzeDocumentBody, type LibraryListParams } from "./api";
 import type { UserFile } from "@/types/api";
 
 // ── Library list (paginated + filtered) ──────────────────────────────────────
@@ -113,8 +113,9 @@ export function useRefreshAnalysis() {
 export function useAnalyzeDocument() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => filesApi.analyzeDocument(id),
-    onSuccess: (_data, id) => {
+    mutationFn: ({ id, ...body }: { id: number } & AnalyzeDocumentBody) =>
+      filesApi.analyzeDocument(id, body),
+    onSuccess: (_data, { id }) => {
       qc.invalidateQueries({ queryKey: queryKeys.fileAnalysis(id) });
     },
   });

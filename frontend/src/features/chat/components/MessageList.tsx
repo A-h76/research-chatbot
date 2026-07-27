@@ -1,8 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, memo } from "react";
 import { motion } from "framer-motion";
 import { UserMessage, AssistantMessage } from "./MessageBubble";
 import { StatusLine } from "./StatusLine";
 import type { Message, Source } from "@/types/api";
+import { mapExplainableChat } from "@/features/papers/mappers/chat";
+import type { WorkspaceReference } from "@/features/papers/mappers/chat";
 
 export interface LiveStream {
   text: string;
@@ -12,14 +14,55 @@ export interface LiveStream {
   error: string | null;
 }
 
+const MemoUserMessage = memo(UserMessage);
+const MemoAssistantMessage = memo(AssistantMessage);
+
+type ExplainableSlice = {
+  answer: string;
+  reasoning?: string;
+  confidence?: number;
+  warnings?: string[];
+  references?: WorkspaceReference[];
+};
+
+function HistoricalRow({
+  message,
+  explainable,
+  onRegenerate,
+}: {
+  message: Message;
+  explainable: ExplainableSlice | null | undefined;
+  onRegenerate?: () => void;
+}) {
+  if (message.role === "user") {
+    return <MemoUserMessage message={message} />;
+  }
+  return (
+    <MemoAssistantMessage
+      content={explainable?.answer ?? message.content}
+      sources={message.sources}
+      reasoning={explainable?.reasoning}
+      confidence={explainable?.confidence}
+      warnings={explainable?.warnings}
+      references={explainable?.references}
+      onRegenerate={onRegenerate}
+    />
+  );
+}
+
+const MemoHistoricalRow = memo(HistoricalRow);
+
 export function MessageList({
   messages,
   live,
   onRegenerate,
+  fileId,
 }: {
   messages: Message[];
   live: LiveStream | null;
   onRegenerate: () => void;
+  /** When set, assistant turns are normalized via mapExplainableChat. */
+  fileId?: number;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -34,13 +77,32 @@ export function MessageList({
     }
   }, [live?.text, live?.status, live?.isStreaming]);
 
-  // The last assistant message can be regenerated (only when idle).
   const lastAssistantIdx = (() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === "assistant") return i;
     }
     return -1;
   })();
+
+  const explainableById = useMemo(() => {
+    if (fileId == null) return null;
+    const map = new Map<number, ExplainableSlice>();
+    for (const m of messages) {
+      if (m.role === "assistant") {
+        const view = mapExplainableChat(m, { fileId });
+        if (view) {
+          map.set(m.id, {
+            answer: view.answer,
+            reasoning: view.reasoning,
+            confidence: view.confidence,
+            warnings: view.warnings.length ? view.warnings : undefined,
+            references: view.references.length ? view.references : undefined,
+          });
+        }
+      }
+    }
+    return map;
+  }, [messages, fileId]);
 
   return (
     <div ref={scrollRef} className="scrollbar-thin h-full overflow-y-auto" role="log" aria-live="polite">
@@ -55,15 +117,11 @@ export function MessageList({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
           >
-            {m.role === "user" ? (
-              <UserMessage message={m} />
-            ) : (
-              <AssistantMessage
-                content={m.content}
-                sources={m.sources}
-                onRegenerate={!live && i === lastAssistantIdx ? onRegenerate : undefined}
-              />
-            )}
+            <MemoHistoricalRow
+              message={m}
+              explainable={explainableById?.get(m.id)}
+              onRegenerate={!live && i === lastAssistantIdx ? onRegenerate : undefined}
+            />
           </motion.div>
         ))}
 
@@ -76,7 +134,11 @@ export function MessageList({
               </div>
             ) : (
               (live.text || live.isStreaming) && (
-                <AssistantMessage content={live.text} streaming={live.isStreaming} sources={live.sources} />
+                <AssistantMessage
+                  content={live.text}
+                  streaming={live.isStreaming}
+                  sources={live.sources}
+                />
               )
             )}
           </div>

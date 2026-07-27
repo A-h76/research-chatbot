@@ -8,22 +8,22 @@ them — the design proves itself here.
 Run: pytest quotas/test_service.py -v
 """
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import (
-    create_engine,
-    Column,
-    Integer,
     BigInteger,
+    Column,
     DateTime,
     ForeignKey,
+    Integer,
+    create_engine,
     select,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from quotas.service import QuotaService, QuotaExceededError
 from quotas.models import create_usage_log_model
+from quotas.service import QuotaExceededError, QuotaService
 
 
 @pytest.fixture
@@ -37,9 +37,7 @@ def env():
     class User(Base):
         __tablename__ = "users"
         id = Column(Integer, primary_key=True)
-        storage_limit_bytes = Column(
-            BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES
-        )
+        storage_limit_bytes = Column(BigInteger, default=QuotaService.DEFAULT_STORAGE_LIMIT_BYTES)
         monthly_token_used = Column(Integer, default=0)
         monthly_token_limit = Column(Integer, default=QuotaService.DEFAULT_TOKEN_LIMIT)
         quota_reset_at = Column(DateTime, nullable=True)
@@ -78,9 +76,7 @@ def _set_storage_used(env, bytes_used):
 
 # ------------------------------------------------------------ quota exceeded
 def test_check_storage_quota_passes_under_limit(env):
-    env["service"].check_storage_quota(
-        1, 500_000_000
-    )  # no StorageUsage row yet = 0 used
+    env["service"].check_storage_quota(1, 500_000_000)  # no StorageUsage row yet = 0 used
 
 
 def test_check_storage_quota_raises_when_exceeded(env):
@@ -123,11 +119,7 @@ def test_check_quota_raises_value_error_for_unknown_user(env):
 def test_increment_storage_creates_usage_log(env):
     env["service"].increment_storage(1, 12_345)
     db = env["SessionLocal"]()
-    logs = (
-        db.execute(select(env["UsageLog"]).where(env["UsageLog"].user_id == 1))
-        .scalars()
-        .all()
-    )
+    logs = db.execute(select(env["UsageLog"]).where(env["UsageLog"].user_id == 1)).scalars().all()
     db.close()
     assert len(logs) == 1
     assert logs[0].action == "upload"
@@ -145,9 +137,7 @@ def test_increment_storage_updates_live_storage_usage_counter(env):
 
 
 def test_increment_storage_accepts_explicit_delta_files(env):
-    env["service"].increment_storage(
-        1, 500, delta_files=0
-    )  # e.g. re-upload, no new file
+    env["service"].increment_storage(1, 500, delta_files=0)  # e.g. re-upload, no new file
     db = env["SessionLocal"]()
     usage = db.get(env["StorageUsage"], 1)
     db.close()
@@ -161,17 +151,13 @@ def test_increment_tokens_updates_running_total_and_creates_log(env):
 
     db = env["SessionLocal"]()
     user = db.get(env["User"], 1)
-    logs = (
-        db.execute(select(env["UsageLog"]).where(env["UsageLog"].user_id == 1))
-        .scalars()
-        .all()
-    )
+    logs = db.execute(select(env["UsageLog"]).where(env["UsageLog"].user_id == 1)).scalars().all()
     db.close()
 
     assert user.monthly_token_used == 2_000
     assert len(logs) == 2
-    assert all(l.action == "ai_query" for l in logs)
-    assert [l.amount for l in logs] == [1_500, 500]
+    assert all(log.action == "ai_query" for log in logs)
+    assert [log.amount for log in logs] == [1_500, 500]
 
 
 # ------------------------------------------------------------ monthly reset
@@ -192,9 +178,7 @@ def test_monthly_reset_rolls_over_when_reset_at_has_passed(env):
     db = env["SessionLocal"]()
     user = db.get(env["User"], 1)
     user.monthly_token_used = 90_000
-    user.quota_reset_at = datetime(
-        2026, 1, 15, tzinfo=timezone.utc
-    )  # already in the past
+    user.quota_reset_at = datetime(2026, 1, 15, tzinfo=timezone.utc)  # already in the past
     db.commit()
     db.close()
 
@@ -227,9 +211,7 @@ def test_monthly_reset_does_not_roll_over_before_due(env):
     db = env["SessionLocal"]()
     user = db.get(env["User"], 1)
     user.monthly_token_used = 500
-    user.quota_reset_at = datetime(
-        2026, 3, 1, tzinfo=timezone.utc
-    )  # still in the future
+    user.quota_reset_at = datetime(2026, 3, 1, tzinfo=timezone.utc)  # still in the future
     db.commit()
     db.close()
 

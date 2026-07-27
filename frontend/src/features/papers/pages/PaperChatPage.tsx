@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  FileText, ChevronLeft, BookOpen, ExternalLink,
+  ChevronLeft, BookOpen, ExternalLink,
   MessageSquare, Loader2, AlertCircle,
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -11,12 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { MessageList, type LiveStream } from "@/features/chat/components/MessageList";
 import { Composer } from "@/features/chat/components/Composer";
+import { PaperChatEvidenceRail } from "../components/PaperChatEvidenceRail";
 import { useConversation, useCreateConversation } from "@/features/chat/hooks/useConversation";
 import { useChatStream } from "@/features/chat/hooks/useChatStream";
 import { useFile } from "@/features/files/useFiles";
 import { useMe } from "@/features/profile/useMe";
 import { useModels } from "@/features/models/useModels";
 import { useUI } from "@/context/UIContext";
+import { usePipeline, PipelineStatusPanel, isPipelineProcessing } from "@/features/pipeline";
 import { chatOutbox } from "@/features/chat/lib/outbox";
 import { appendUserMessage, removeLastAssistant } from "@/features/chat/lib/optimistic";
 import { cn } from "@/lib/utils";
@@ -27,70 +29,83 @@ import type { Attachment } from "@/types/api";
 // ── Paper header strip ────────────────────────────────────────────────────
 function PaperHeader({ fileId }: { fileId: number }) {
   const { data: file } = useFile(fileId);
+  const { derived } = usePipeline(fileId, { fileContentHash: null });
   const navigate = useNavigate();
 
   if (!file) return null;
 
   const title = file.title || file.name;
+  const showPipeline =
+    isPipelineProcessing(derived, file.meta_status) || derived.isError;
 
   return (
-    <div className="flex items-center gap-3 border-b border-border bg-card/60 px-4 py-2.5 backdrop-blur-sm">
-      <button
-        onClick={() => navigate(`/papers/${fileId}`)}
-        className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ChevronLeft className="size-4" />
-        Overview
-      </button>
-
-      <Separator orientation="vertical" className="h-4" />
-
-      <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent-soft">
-          <FileText className="size-4 text-primary" />
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium" title={title}>{title}</p>
-          {(file.authors || file.year) && (
-            <p className="truncate text-xs text-muted-foreground">
-              {[file.authors?.split(";")[0]?.trim(), file.year].filter(Boolean).join(" · ")}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2">
-        {file.venue && (
-          <Badge variant="outline" className="hidden text-xs sm:inline-flex">
-            {file.venue.length > 20 ? file.venue.slice(0, 20) + "…" : file.venue}
-          </Badge>
-        )}
-        {file.doi && (
-          <a
-            href={`https://doi.org/${file.doi}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-muted-foreground transition-colors hover:text-primary"
-            title="Open DOI"
-          >
-            <ExternalLink className="size-3.5" />
-          </a>
-        )}
-        <Badge
-          className={cn(
-            "text-xs",
-            file.reading_status === "read"
-              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-              : file.reading_status === "reading"
-              ? "bg-amber-50 text-amber-700 border-amber-200"
-              : "bg-muted text-muted-foreground",
-          )}
-          variant="outline"
+    <div className="border-b border-border bg-card/60 backdrop-blur-sm">
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        <button
+          type="button"
+          onClick={() => navigate(`/papers/${fileId}`)}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          <BookOpen className="size-3" />
-          {file.reading_status ?? "unread"}
-        </Badge>
+          <ChevronLeft className="size-4" />
+          Overview
+        </button>
+
+        <Separator orientation="vertical" className="h-4" />
+
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium" title={title}>{title}</p>
+            {(file.authors || file.year) && (
+              <p className="truncate text-xs text-muted-foreground">
+                {[file.authors?.split(";")[0]?.trim(), file.year].filter(Boolean).join(" · ")}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {file.venue && (
+            <Badge variant="outline" className="hidden text-xs sm:inline-flex">
+              {file.venue.length > 20 ? file.venue.slice(0, 20) + "…" : file.venue}
+            </Badge>
+          )}
+          {file.doi && (
+            <a
+              href={`https://doi.org/${file.doi}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground transition-colors hover:text-primary"
+              title="Open DOI"
+            >
+              <ExternalLink className="size-3.5" />
+            </a>
+          )}
+          <Badge
+            className={cn(
+              "text-xs",
+              file.reading_status === "read"
+                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                : file.reading_status === "reading"
+                ? "bg-amber-50 text-amber-700 border-amber-200"
+                : "bg-muted text-muted-foreground",
+            )}
+            variant="outline"
+          >
+            <BookOpen className="size-3" />
+            {file.reading_status ?? "unread"}
+          </Badge>
+        </div>
       </div>
+      {showPipeline && (
+        <div className="px-4 pb-3">
+          <PipelineStatusPanel
+            derived={derived}
+            metaStatus={file.meta_status}
+            updatedAt={file.created_at}
+            compact
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -103,42 +118,40 @@ function PaperChatEmpty({ fileId }: { fileId: number }) {
   const STARTERS = [
     "What is the main contribution of this paper?",
     "Explain the methodology in simple terms.",
-    "What datasets were used and why?",
     "What are the key limitations?",
     "Summarise the results section.",
-    "What future work do the authors suggest?",
   ];
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 px-6 text-center">
+    <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
         className="space-y-2"
       >
-        <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-accent-soft">
-          <MessageSquare className="size-6 text-primary" />
+        <div className="mx-auto flex size-10 items-center justify-center rounded-xl bg-accent-soft">
+          <MessageSquare className="size-5 text-primary" />
         </div>
-        <h2 className="text-lg font-semibold">Ask anything about this paper</h2>
-        <p className="max-w-sm text-sm text-muted-foreground">
-          I'll answer using only content from <span className="font-medium">{title}</span>.
-          I'll cite page numbers and sections where available.
+        <h2 className="text-[17px] font-semibold tracking-tight">Ask about this paper</h2>
+        <p className="mx-auto max-w-md text-[13px] text-muted-foreground">
+          Answers use only <span className="font-medium text-foreground/80">{title}</span>
+          — with section and page citations when available.
         </p>
       </motion.div>
 
-      <div className="grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
         {STARTERS.map((s, i) => (
           <motion.div
             key={s}
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05, duration: 0.2 }}
+            transition={{ delay: i * 0.04, duration: 0.2 }}
           >
-            {/* starter cards are just rendered — the parent forwards them to onSend */}
             <button
+              type="button"
               data-starter={s}
-              className="w-full rounded-xl border border-border bg-card p-3 text-left text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-accent-soft/60 hover:text-foreground"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-left text-[13px] text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted/40 hover:text-foreground"
             >
               {s}
             </button>
@@ -171,6 +184,7 @@ export function PaperChatPage() {
 
   // Once we have a file and no conversation yet, create one automatically
   const [creating, setCreating] = useState(false);
+  const [createAttempt, setCreateAttempt] = useState(0);
   useEffect(() => {
     if (activeConvId || !fileIdNum || !me || creating) return;
     setCreating(true);
@@ -187,7 +201,7 @@ export function PaperChatPage() {
       toast.error("Could not start chat");
     }).finally(() => setCreating(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileIdNum, me, activeConvId]);
+  }, [fileIdNum, me, activeConvId, createAttempt]);
 
   // Settings (locked to paper-safe defaults — no web search)
   const [settings, setSettings] = useState<ChatSettings>({
@@ -288,12 +302,18 @@ export function PaperChatPage() {
       ) : (
         <div className="flex min-h-0 flex-1 flex-col" onClick={handleStarterClick}>
           {hasMessages || stream.isStreaming ? (
-            <div className="min-h-0 flex-1">
-              <MessageList
-                messages={messages}
-                live={live}
-                onRegenerate={handleRegenerate}
-              />
+            <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_17rem]">
+              <div className="min-h-0 min-w-0">
+                <MessageList
+                  messages={messages}
+                  live={live}
+                  onRegenerate={handleRegenerate}
+                  fileId={fileIdNum}
+                />
+              </div>
+              <aside className="hidden min-h-0 min-w-0 overflow-hidden border-l border-border p-3 lg:block">
+                <PaperChatEvidenceRail fileId={fileIdNum} />
+              </aside>
             </div>
           ) : (
             <div className="min-h-0 flex-1">
@@ -313,15 +333,26 @@ export function PaperChatPage() {
                   onStop={stream.stop}
                   conversationId={activeConvId}
                   projectId={conv?.project_id ?? currentProjectId}
+                  paperScoped
                 />
                 <p className="mt-2 text-center text-[11px] text-muted-foreground">
-                  Answers are grounded in this paper only · web search is disabled
+                  Answers are grounded in this paper only · web search is off
                 </p>
               </>
             ) : (
               <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-3">
                 <AlertCircle className="size-4" />
-                Could not start chat. <Button size="sm" variant="outline" onClick={() => setCreating(false)}>Retry</Button>
+                Could not start chat.{" "}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setCreating(false);
+                    setCreateAttempt((n) => n + 1);
+                  }}
+                >
+                  Retry
+                </Button>
               </div>
             )}
           </div>

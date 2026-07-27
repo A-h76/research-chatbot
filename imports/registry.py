@@ -4,14 +4,14 @@ extract_text(path, mime, name) still returns a plain string ('' = no
 readable text, '[...]' = a bracketed note, or the extracted text), so
 every existing call site in server.py works without modification."""
 
-from .importers.pdf import PdfImporter
 from .importers.docx import DocxImporter
-from .importers.pptx import PptxImporter
-from .importers.xlsx import XlsxImporter
 from .importers.epub import EpubImporter
-from .importers.zip import ZipImporter
-from .importers.text import TextImporter
 from .importers.legacy_office import LegacyOfficeImporter
+from .importers.pdf import PdfImporter
+from .importers.pptx import PptxImporter
+from .importers.text import TextImporter
+from .importers.xlsx import XlsxImporter
+from .importers.zip import ZipImporter
 from .sniff import sniff_text
 
 # Order matters — mirrors the original if/elif chain's priority exactly

@@ -4,14 +4,15 @@ to model_versions all actually need to work, not just import cleanly.
 
 Run: pytest backend/ai/test_models.py -v
 """
+
 import json
 
 import pytest
-from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy import Column, Integer, String, create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from backend.ai.models import create_prompt_version_model, create_pipeline_version_model
+from backend.ai.models import create_pipeline_version_model, create_prompt_version_model
 
 
 @pytest.fixture
@@ -34,15 +35,16 @@ def env():
     SessionLocal = sessionmaker(bind=engine)
 
     return {
-        "SessionLocal": SessionLocal, "ModelVersion": ModelVersion,
-        "PromptVersion": PromptVersion, "PipelineVersion": PipelineVersion,
+        "SessionLocal": SessionLocal,
+        "ModelVersion": ModelVersion,
+        "PromptVersion": PromptVersion,
+        "PipelineVersion": PipelineVersion,
     }
 
 
 def test_prompt_version_round_trip(env):
     db = env["SessionLocal"]()
-    db.add(env["PromptVersion"](name="paper_analysis", version=1,
-                                template="Analyze: {text}", is_active=True))
+    db.add(env["PromptVersion"](name="paper_analysis", version=1, template="Analyze: {text}", is_active=True))
     db.commit()
 
     row = db.query(env["PromptVersion"]).filter_by(name="paper_analysis").one()
@@ -72,12 +74,20 @@ def test_prompt_version_authoring_metadata_defaults(env):
 
 def test_prompt_version_authoring_metadata_round_trip(env):
     db = env["SessionLocal"]()
-    db.add(env["PromptVersion"](
-        name="y", version=1, template="b", is_active=True,
-        description="a test prompt", status="active", category="analysis",
-        examples=json.dumps([{"input": "x", "output": "y"}]),
-        expected_output_type="json", author_user_id=7,
-    ))
+    db.add(
+        env["PromptVersion"](
+            name="y",
+            version=1,
+            template="b",
+            is_active=True,
+            description="a test prompt",
+            status="active",
+            category="analysis",
+            examples=json.dumps([{"input": "x", "output": "y"}]),
+            expected_output_type="json",
+            author_user_id=7,
+        )
+    )
     db.commit()
 
     row = db.query(env["PromptVersion"]).filter_by(name="y").one()
@@ -105,7 +115,7 @@ def test_prompt_version_same_name_different_version_allowed(env):
     db = env["SessionLocal"]()
     db.add(env["PromptVersion"](name="x", version=1, template="a"))
     db.add(env["PromptVersion"](name="x", version=2, template="b"))
-    db.commit()   # no raise
+    db.commit()  # no raise
 
     versions = db.query(env["PromptVersion"]).filter_by(name="x").all()
     assert len(versions) == 2
@@ -119,7 +129,8 @@ def test_pipeline_version_round_trip_with_model_version_fk(env):
     db.flush()
 
     pv = env["PipelineVersion"](
-        version=1, importer_registry_version="v3",
+        version=1,
+        importer_registry_version="v3",
         chunking_params=json.dumps({"max_tokens": 500}),
         embed_model_version_id=mv.id,
         prompt_versions=json.dumps({"paper_analysis": 1}),
@@ -138,8 +149,10 @@ def test_pipeline_version_round_trip_with_model_version_fk(env):
 def test_pipeline_version_requires_embed_model_version(env):
     db = env["SessionLocal"]()
     pv = env["PipelineVersion"](
-        version=1, importer_registry_version="v3",
-        chunking_params="{}", embed_model_version_id=None,
+        version=1,
+        importer_registry_version="v3",
+        chunking_params="{}",
+        embed_model_version_id=None,
         prompt_versions="{}",
     )
     db.add(pv)

@@ -14,9 +14,7 @@ from typing import BinaryIO, Optional
 
 class StorageBackend(abc.ABC):
     @abc.abstractmethod
-    def upload(
-        self, file_obj: BinaryIO, key: str, content_type: Optional[str] = None
-    ) -> str:
+    def upload(self, file_obj: BinaryIO, key: str, content_type: Optional[str] = None) -> str:
         """Returns a public URL or the key, backend-dependent."""
         ...
 
