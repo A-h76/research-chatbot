@@ -90,6 +90,12 @@ export interface UserFile {
   tags: string[];
   meta_status: "pending" | "running" | "done" | "failed";
   created_at: string | null;
+  /** Scholarly provenance — extracted | crossref | openalex | user */
+  metadata_source?: string;
+  /** OpenAlex OA / landing URL for metadata-only Discover stubs */
+  source_url?: string;
+  doi_verified?: boolean;
+  crossref_last_synced?: string | null;
 }
 
 export interface PaperAnalysis {

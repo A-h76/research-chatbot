@@ -124,7 +124,7 @@ def search_works(
             endpoint="works/search",
             params=_params(
                 search=query,
-                per_page=min(per_page, 25),
+                per_page=min(per_page, 20),
                 page=page,
                 select=(
                     "id,doi,title,authorships,publication_year,"

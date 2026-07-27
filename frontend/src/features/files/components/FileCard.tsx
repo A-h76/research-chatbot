@@ -79,6 +79,14 @@ export function FileCard({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        {isPaper && (file.size === 0 || file.metadata_source === "openalex") && (
+          <span
+            className="hidden rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline"
+            title="Imported from Discover — upload a PDF to run analysis"
+          >
+            Metadata only
+          </span>
+        )}
         {isPaper && <AiStateBadge state={aiState} metaStatus={file.meta_status} />}
         {isPaper && (
           <span

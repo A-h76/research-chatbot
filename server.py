@@ -565,6 +565,12 @@ class UserFile(Base):
     # identity used for duplicate detection and post-upload integrity checks.
     checksum_sha256 = Column(String(64), nullable=True)
 
+    # Scholarly provenance (migration 0018 / 0021). Discover stubs use
+    # source_url for the OpenAlex OA / landing link when path is empty.
+    metadata_source = Column(String(30), default="extracted")  # extracted|crossref|openalex|user
+    source_url = Column(String(500), default="")
+    doi_verified = Column(Boolean, default=False)
+
     chunks = relationship("Chunk", cascade="all, delete-orphan", back_populates="file")
 
 
@@ -1008,6 +1014,8 @@ def ensure_columns():
         "ALTER TABLE files ADD COLUMN venue_source VARCHAR(30) DEFAULT 'extracted'",
         "ALTER TABLE files ADD COLUMN abstract_source VARCHAR(30) DEFAULT 'extracted'",
         "ALTER TABLE files ADD COLUMN metadata_source VARCHAR(30) DEFAULT 'extracted'",
+        # ── Discover import stubs (migration 0021) ───────────────────────
+        "ALTER TABLE files ADD COLUMN source_url VARCHAR(500) DEFAULT ''",
     ):
         try:
             with engine.begin() as conn:
@@ -2469,6 +2477,7 @@ def _file_to_dict(x: UserFile) -> dict:
         # ── scholarly enrichment provenance ──
         "doi_verified": bool(getattr(x, "doi_verified", False)),
         "metadata_source": getattr(x, "metadata_source", "extracted") or "extracted",
+        "source_url": getattr(x, "source_url", "") or "",
         "crossref_last_synced": (
             getattr(x, "crossref_last_synced", None).isoformat()
             if getattr(x, "crossref_last_synced", None) else None
@@ -4275,6 +4284,15 @@ def file_raw(fid):
         x = db.get(UserFile, fid)
         if not x or x.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
+        # Metadata-only Discover stubs have no stored bytes — redirect to
+        # the external OA / DOI link instead of asking storage for a path.
+        if not (x.path or "").strip():
+            external = (getattr(x, "source_url", None) or "").strip()
+            if not external and (x.doi or "").strip():
+                external = f"https://doi.org/{(x.doi or '').strip()}"
+            if external:
+                return redirect(external)
+            return jsonify({"error": "no_file_bytes", "message": "Metadata-only entry — upload a PDF to open locally."}), 404
         url = storage.presigned_url(x.path, x.name, x.mime or "application/octet-stream")
         return redirect(url)
     finally:
@@ -4289,7 +4307,8 @@ def delete_file(fid):
         x = db.get(UserFile, fid)
         if not x or x.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
-        storage.delete(x.path)
+        if (x.path or "").strip():
+            storage.delete(x.path)
         db.delete(x)
         _adjust_storage_usage(db, session["user_id"], delta_bytes=-(x.size or 0), delta_files=-1)
         db.commit()
@@ -4309,14 +4328,22 @@ def scholarly_discover():
     Returns [{doi, title, authors, year, venue, abstract, citation_count,
               open_access_url, concepts, source}]
     Identical search queries are cached 30 min.
-    Rate limit: 30 calls/min per user (shared with search).
     """
+    from backend.scholarly import provider_enabled
     from backend.scholarly.openalex import search_works
+
+    if not provider_enabled("openalex"):
+        return jsonify({
+            "error": "discover_disabled",
+            "message": "OpenAlex Discover is temporarily disabled.",
+            "results": [],
+        }), 503
+
     query = (request.args.get("q") or "").strip()
     if not query:
         return jsonify({"error": "q is required"}), 400
     page = max(1, int(request.args.get("page", 1)))
-    per_page = min(25, max(1, int(request.args.get("per_page", 15))))
+    per_page = min(20, max(1, int(request.args.get("per_page", 15))))
     db = SessionLocal()
     try:
         works = search_works(query, page=page, per_page=per_page, db=db)
@@ -4342,10 +4369,124 @@ def scholarly_discover():
         })
     except Exception as exc:
         app.logger.warning("scholarly_discover failed: %s", exc)
-        return jsonify({"error": "discover_unavailable", "results": []}), 503
+        return jsonify({
+            "error": "discover_unavailable",
+            "message": "Discover is temporarily unavailable.",
+            "results": [],
+        }), 503
     finally:
         db.close()
 
+
+@app.route("/api/discover/import", methods=["POST"])
+@login_required
+def scholarly_discover_import():
+    """Add an OpenAlex Discover result to the library as a metadata-only stub.
+
+    No PDF is fetched. Phase 1 / RAG stay unavailable until the user uploads
+    a PDF later. Dedupes by (user_id, doi) when a DOI is present.
+    """
+    from backend.scholarly import provider_enabled
+    from backend.scholarly.crossref import enrich_file_from_doi
+
+    if not provider_enabled("openalex"):
+        return jsonify({
+            "error": "discover_disabled",
+            "message": "OpenAlex Discover is temporarily disabled.",
+        }), 503
+
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()
+    doi = (body.get("doi") or "").strip().removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+    authors = (body.get("authors") or "").strip()
+    year_raw = body.get("year")
+    year = str(year_raw).strip()[:10] if year_raw not in (None, "") else ""
+    venue = (body.get("venue") or "").strip()
+    abstract = (body.get("abstract") or "").strip()
+    open_access_url = (body.get("open_access_url") or "").strip()
+    openalex_id = (body.get("openalex_id") or body.get("id") or "").strip()
+    project_id = body.get("project_id")
+
+    if not title and not doi:
+        return jsonify({"error": "title_or_doi_required"}), 400
+
+    uid = session["user_id"]
+    db = SessionLocal()
+    try:
+        if project_id is not None:
+            try:
+                project_id = int(project_id)
+            except (TypeError, ValueError):
+                project_id = None
+            if project_id is not None:
+                proj = db.get(Project, project_id)
+                if not proj or proj.user_id != uid:
+                    return jsonify({"error": "project_not_found"}), 404
+
+        if doi:
+            existing = db.execute(
+                select(UserFile).where(
+                    UserFile.user_id == uid,
+                    UserFile.doi == doi,
+                )
+            ).scalars().first()
+            if existing:
+                return jsonify({
+                    "already_exists": True,
+                    "file": _file_to_dict(existing),
+                })
+
+        display_name = (title or f"openalex:{openalex_id}" or "openalex-import")[:300]
+        tags = ["from-discover"]
+        if openalex_id:
+            tags.append(f"openalex:{openalex_id[:80]}")
+
+        uf = UserFile(
+            user_id=uid,
+            project_id=project_id,
+            conversation_id=None,
+            name=display_name,
+            mime="",
+            kind="document",
+            path="",
+            size=0,
+            title=(title or display_name)[:500],
+            authors=authors[:1000],
+            year=year,
+            venue=venue[:300],
+            doi=doi[:200],
+            abstract=abstract[:8000],
+            reading_status="unread",
+            tags=json.dumps(tags),
+            meta_status="done",
+            metadata_source="openalex",
+            source_url=open_access_url[:500],
+            doi_verified=False,
+        )
+        db.add(uf)
+        db.flush()
+
+        # Soft Crossref verify when DOI is known — never blocks import.
+        if doi:
+            try:
+                enrich_file_from_doi(db, uf.id)
+                db.refresh(uf)
+            except Exception as cx_exc:
+                app.logger.warning(
+                    "discover import crossref enrich skipped file_id=%s: %s", uf.id, cx_exc
+                )
+
+        db.commit()
+        return jsonify({
+            "already_exists": False,
+            "file": _file_to_dict(uf),
+        }), 201
+    except Exception as exc:
+        db.rollback()
+        app.logger.warning("scholarly_discover_import failed: %s", exc)
+        return jsonify({"error": "import_failed"}), 500
+    finally:
+        db.close()
 
 @app.route("/api/files/<int:fid>/related", methods=["GET"])
 @login_required

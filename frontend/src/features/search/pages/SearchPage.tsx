@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Search, FileText, StickyNote, Quote, MessageSquare,
   Loader2, BookOpen, ChevronRight, X, Filter, Sparkles,
-  Globe, ExternalLink,
+  Globe, ExternalLink, Plus, Check,
 } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Badge }         from "@/components/ui/badge";
@@ -14,7 +14,7 @@ import { EmptyState }    from "@/components/common/EmptyState";
 import { useSearch, useAskAi } from "../useSearch";
 import { useUI }         from "@/context/UIContext";
 import { cn }            from "@/lib/utils";
-import type { SearchResult } from "@/types/api";
+import type { SearchResult, UserFile } from "@/types/api";
 
 // ── Discover (OpenAlex) types ─────────────────────────────────────────────────
 interface OpenAlexWork {
@@ -31,18 +31,77 @@ interface OpenAlexWork {
   source: string;
 }
 
+interface DiscoverImportResult {
+  already_exists: boolean;
+  file: UserFile;
+}
+
 async function discoverWorks(query: string, page: number): Promise<{ results: OpenAlexWork[]; page: number }> {
   const params = new URLSearchParams({ q: query, page: String(page), per_page: "15" });
   const res = await fetch(`/api/discover?${params}`, { credentials: "include" });
-  if (!res.ok) throw new Error("discover_unavailable");
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message || body.error || "discover_unavailable");
+  }
   return res.json();
 }
 
-function DiscoverCard({ work }: { work: OpenAlexWork }) {
+async function importDiscoverWork(
+  work: OpenAlexWork,
+  projectId: number | null,
+): Promise<DiscoverImportResult> {
+  const res = await fetch("/api/discover/import", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      doi: work.doi,
+      title: work.title,
+      authors: work.authors,
+      year: work.year,
+      venue: work.venue,
+      abstract: work.abstract,
+      open_access_url: work.open_access_url,
+      openalex_id: work.id,
+      project_id: projectId,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message || body.error || "import_failed");
+  }
+  return res.json();
+}
+
+function DiscoverCard({
+  work,
+  projectId,
+}: {
+  work: OpenAlexWork;
+  projectId: number | null;
+}) {
+  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
+  const [importState, setImportState] = useState<"idle" | "adding" | "added" | "exists" | "error">("idle");
+  const [importedId, setImportedId] = useState<number | null>(null);
+  const [importError, setImportError] = useState("");
   const href = work.doi
     ? `https://doi.org/${work.doi}`
     : work.open_access_url || null;
+
+  async function handleAdd() {
+    if (importState === "adding" || importState === "added" || importState === "exists") return;
+    setImportState("adding");
+    setImportError("");
+    try {
+      const result = await importDiscoverWork(work, projectId);
+      setImportedId(result.file.id);
+      setImportState(result.already_exists ? "exists" : "added");
+    } catch (err) {
+      setImportState("error");
+      setImportError(err instanceof Error ? err.message : "Could not add to library");
+    }
+  }
 
   return (
     <motion.div
@@ -108,15 +167,58 @@ function DiscoverCard({ work }: { work: OpenAlexWork }) {
           )}
         </>
       )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {importState === "added" || importState === "exists" ? (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => importedId && navigate(`/papers/${importedId}`)}
+              disabled={!importedId}
+            >
+              <Check className="size-3.5" />
+              {importState === "exists" ? "Already in library" : "Added"}
+            </Button>
+            {importedId && (
+              <button
+                onClick={() => navigate(`/papers/${importedId}`)}
+                className="text-xs text-primary hover:underline"
+              >
+                Open paper
+              </button>
+            )}
+          </>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={handleAdd}
+            disabled={importState === "adding"}
+          >
+            {importState === "adding" ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Plus className="size-3.5" />
+            )}
+            {importState === "adding" ? "Adding…" : "Add to Library"}
+          </Button>
+        )}
+        {importState === "error" && (
+          <p className="text-xs text-destructive">{importError || "Import failed"}</p>
+        )}
+      </div>
     </motion.div>
   );
 }
 
-function DiscoverPanel({ query }: { query: string }) {
+function DiscoverPanel({ query, projectId }: { query: string; projectId: number | null }) {
   const [page, setPage] = useState(1);
   const trimmed = query.trim();
 
-  const { data, isLoading, isError, isFetching } = useQuery({
+  const { data, isLoading, isError, error, isFetching } = useQuery({
     queryKey: ["discover", trimmed, page],
     queryFn: () => discoverWorks(trimmed, page),
     enabled: trimmed.length >= 2,
@@ -145,7 +247,11 @@ function DiscoverPanel({ query }: { query: string }) {
   if (isError) {
     return (
       <div className="py-12 text-center">
-        <p className="text-sm text-muted-foreground">Discover is temporarily unavailable. Try again later.</p>
+        <p className="text-sm text-muted-foreground">
+          {error instanceof Error && error.message
+            ? error.message
+            : "Discover is temporarily unavailable. Try again later."}
+        </p>
       </div>
     );
   }
@@ -167,7 +273,7 @@ function DiscoverPanel({ query }: { query: string }) {
         {isFetching && <Loader2 className="ml-1 inline size-3 animate-spin" />}
       </p>
       {works.map((w) => (
-        <DiscoverCard key={w.id || w.doi || w.title} work={w} />
+        <DiscoverCard key={w.id || w.doi || w.title} work={w} projectId={projectId} />
       ))}
       <div className="flex justify-center gap-2 pt-2">
         <Button
@@ -477,7 +583,7 @@ export function SearchPage() {
 
         {mode === "discover" ? (
           /* ── Discover (OpenAlex) ───────────────────────────────────────── */
-          <DiscoverPanel query={q} />
+          <DiscoverPanel query={q} projectId={currentProjectId} />
         ) : (
           /* ── Library (RAG + full-text search) ────────────────────────── */
           <>
