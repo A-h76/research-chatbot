@@ -187,6 +187,17 @@ def _handle_phase1_analysis(db, job):
         db.commit()
         if result.status.value == "failed":
             raise RuntimeError("; ".join(result.errors) or "phase1_analysis failed")
+
+        # Crossref enrichment: async, soft-fail, never blocks Phase 1 completion.
+        try:
+            from backend.scholarly.crossref import enrich_file_from_doi
+            enrich_file_from_doi(db, job.file_id)
+        except Exception as _cx_exc:
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                "crossref enrichment skipped file_id=%s: %s", job.file_id, _cx_exc
+            )
+
         _enqueue_job(db, uf.user_id, job.file_id, "paper_analysis", job.upload_batch_id)
         db.commit()
     except Exception as exc:

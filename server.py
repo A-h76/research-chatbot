@@ -998,6 +998,16 @@ def ensure_columns():
         # users.is_admin — migrations/0016, backend/prompts/routes.py's
         # admin-gated create/update routes.
         "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
+        # ── Scholarly provider integrations (migration 0018) ─────────────
+        "ALTER TABLE files ADD COLUMN doi_verified BOOLEAN DEFAULT 0",
+        "ALTER TABLE files ADD COLUMN crossref_last_synced TIMESTAMP",
+        "ALTER TABLE files ADD COLUMN crossref_version VARCHAR(20) DEFAULT ''",
+        "ALTER TABLE files ADD COLUMN title_source VARCHAR(30) DEFAULT 'extracted'",
+        "ALTER TABLE files ADD COLUMN authors_source VARCHAR(30) DEFAULT 'extracted'",
+        "ALTER TABLE files ADD COLUMN year_source VARCHAR(30) DEFAULT 'extracted'",
+        "ALTER TABLE files ADD COLUMN venue_source VARCHAR(30) DEFAULT 'extracted'",
+        "ALTER TABLE files ADD COLUMN abstract_source VARCHAR(30) DEFAULT 'extracted'",
+        "ALTER TABLE files ADD COLUMN metadata_source VARCHAR(30) DEFAULT 'extracted'",
     ):
         try:
             with engine.begin() as conn:
@@ -2431,6 +2441,13 @@ def _file_to_dict(x: UserFile) -> dict:
         "tags": json.loads(x.tags) if x.tags else [],
         "meta_status": x.meta_status or "pending",
         "created_at": x.created_at.isoformat() if x.created_at else None,
+        # ── scholarly enrichment provenance ──
+        "doi_verified": bool(getattr(x, "doi_verified", False)),
+        "metadata_source": getattr(x, "metadata_source", "extracted") or "extracted",
+        "crossref_last_synced": (
+            getattr(x, "crossref_last_synced", None).isoformat()
+            if getattr(x, "crossref_last_synced", None) else None
+        ),
     }
 
 
@@ -4252,6 +4269,148 @@ def delete_file(fid):
         _adjust_storage_usage(db, session["user_id"], delta_bytes=-(x.size or 0), delta_files=-1)
         db.commit()
         return jsonify({"ok": True})
+    finally:
+        db.close()
+
+
+# ── Scholarly provider endpoints ─────────────────────────────────────────────
+
+@app.route("/api/discover", methods=["GET"])
+@login_required
+def scholarly_discover():
+    """Search papers via OpenAlex.
+
+    GET /api/discover?q=<query>&page=1&per_page=15
+    Returns [{doi, title, authors, year, venue, abstract, citation_count,
+              open_access_url, concepts, source}]
+    Identical search queries are cached 30 min.
+    Rate limit: 30 calls/min per user (shared with search).
+    """
+    from backend.scholarly.openalex import search_works
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return jsonify({"error": "q is required"}), 400
+    page = max(1, int(request.args.get("page", 1)))
+    per_page = min(25, max(1, int(request.args.get("per_page", 15))))
+    db = SessionLocal()
+    try:
+        works = search_works(query, page=page, per_page=per_page, db=db)
+        return jsonify({
+            "results": [
+                {
+                    "id": w.id,
+                    "doi": w.doi,
+                    "title": w.title,
+                    "authors": w.authors,
+                    "year": w.year,
+                    "venue": w.venue,
+                    "abstract": w.abstract,
+                    "citation_count": w.citation_count,
+                    "open_access_url": w.open_access_url,
+                    "concepts": w.concepts,
+                    "source": w.source,
+                }
+                for w in works
+            ],
+            "page": page,
+            "per_page": per_page,
+        })
+    except Exception as exc:
+        app.logger.warning("scholarly_discover failed: %s", exc)
+        return jsonify({"error": "discover_unavailable", "results": []}), 503
+    finally:
+        db.close()
+
+
+@app.route("/api/files/<int:fid>/related", methods=["GET"])
+@login_required
+def scholarly_related(fid):
+    """Return related / citing / recommended papers from Semantic Scholar.
+
+    GET /api/files/<fid>/related
+    Cache: 7 days per file.
+    Returns {related, citing, recommended, cached_at, provider_version} | 503.
+    """
+    from backend.scholarly.semantic_scholar import get_related_papers
+    db = SessionLocal()
+    try:
+        uf = db.get(UserFile, fid)
+        if not uf or uf.user_id != session["user_id"]:
+            return jsonify({"error": "not_found"}), 404
+        bundle = get_related_papers(
+            file_id=fid,
+            doi=uf.doi or None,
+            title=uf.title or uf.name or None,
+            db=db,
+        )
+        if bundle is None:
+            return jsonify({
+                "error": "related_unavailable",
+                "message": "Recommendations temporarily unavailable.",
+                "related": [], "citing": [], "recommended": [],
+            }), 503
+
+        def _s2_to_dict(p):
+            return {
+                "paper_id": p.paper_id,
+                "doi": p.doi,
+                "title": p.title,
+                "authors": p.authors,
+                "year": p.year,
+                "venue": p.venue,
+                "abstract": p.abstract,
+                "citation_count": p.citation_count,
+                "open_access_url": p.open_access_url,
+                "source": p.source,
+            }
+
+        return jsonify({
+            "related": [_s2_to_dict(p) for p in bundle.related],
+            "citing": [_s2_to_dict(p) for p in bundle.citing],
+            "recommended": [_s2_to_dict(p) for p in bundle.recommended],
+            "cached_at": bundle.cached_at,
+            "provider_version": bundle.provider_version,
+        })
+    except Exception as exc:
+        app.logger.warning("scholarly_related fid=%s failed: %s", fid, exc)
+        return jsonify({
+            "error": "related_unavailable",
+            "related": [], "citing": [], "recommended": [],
+        }), 503
+    finally:
+        db.close()
+
+
+@app.route("/api/files/<int:fid>/citation", methods=["GET"])
+@login_required
+def scholarly_citation(fid):
+    """Return a verified Crossref citation for a paper.
+
+    GET /api/files/<fid>/citation?style=apa  (apa|ieee|bibtex|mla)
+    Returns {citation, source, verified}
+    """
+    from backend.scholarly.crossref import format_citation
+    style = (request.args.get("style") or "apa").lower()
+    if style not in ("apa", "ieee", "bibtex", "mla"):
+        return jsonify({"error": "unsupported style"}), 400
+    db = SessionLocal()
+    try:
+        uf = db.get(UserFile, fid)
+        if not uf or uf.user_id != session["user_id"]:
+            return jsonify({"error": "not_found"}), 404
+        doi = (uf.doi or "").strip()
+        if not doi:
+            return jsonify({
+                "citation": "",
+                "source": "ai",
+                "verified": False,
+                "message": "No DOI — use AI-generated citation.",
+            })
+        result = format_citation(doi, style, db)
+        return jsonify(result)
+    except Exception as exc:
+        app.logger.warning("scholarly_citation fid=%s failed: %s", fid, exc)
+        return jsonify({"citation": "", "source": "ai", "verified": False}), 503
     finally:
         db.close()
 

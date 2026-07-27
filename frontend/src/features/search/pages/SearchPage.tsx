@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
 import {
   Search, FileText, StickyNote, Quote, MessageSquare,
   Loader2, BookOpen, ChevronRight, X, Filter, Sparkles,
+  Globe, ExternalLink,
 } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Badge }         from "@/components/ui/badge";
@@ -13,6 +15,181 @@ import { useSearch, useAskAi } from "../useSearch";
 import { useUI }         from "@/context/UIContext";
 import { cn }            from "@/lib/utils";
 import type { SearchResult } from "@/types/api";
+
+// ── Discover (OpenAlex) types ─────────────────────────────────────────────────
+interface OpenAlexWork {
+  id: string;
+  doi: string;
+  title: string;
+  authors: string;
+  year: number | null;
+  venue: string;
+  abstract: string;
+  citation_count: number;
+  open_access_url: string;
+  concepts: string[];
+  source: string;
+}
+
+async function discoverWorks(query: string, page: number): Promise<{ results: OpenAlexWork[]; page: number }> {
+  const params = new URLSearchParams({ q: query, page: String(page), per_page: "15" });
+  const res = await fetch(`/api/discover?${params}`, { credentials: "include" });
+  if (!res.ok) throw new Error("discover_unavailable");
+  return res.json();
+}
+
+function DiscoverCard({ work }: { work: OpenAlexWork }) {
+  const [expanded, setExpanded] = useState(false);
+  const href = work.doi
+    ? `https://doi.org/${work.doi}`
+    : work.open_access_url || null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.15 }}
+      className="rounded-2xl border border-border bg-card p-4 shadow-sm hover:border-primary/30 transition-colors"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium leading-snug text-foreground">{work.title || "Untitled"}</p>
+          {work.authors && (
+            <p className="mt-1 text-xs text-muted-foreground truncate">{work.authors}</p>
+          )}
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            {work.year && <span className="text-xs text-muted-foreground">{work.year}</span>}
+            {work.venue && (
+              <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                · {work.venue}
+              </span>
+            )}
+            {work.citation_count > 0 && (
+              <Badge variant="secondary" className="text-xs gap-1 py-0">
+                <Quote className="size-3" />
+                {work.citation_count.toLocaleString()}
+              </Badge>
+            )}
+          </div>
+          {work.concepts.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {work.concepts.slice(0, 4).map((c) => (
+                <span key={c} className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                  {c}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        {href && (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            title="Open paper"
+          >
+            <ExternalLink className="size-3.5" />
+          </a>
+        )}
+      </div>
+      {work.abstract && (
+        <>
+          <p className={cn("mt-2 text-xs text-muted-foreground leading-relaxed", !expanded && "line-clamp-2")}>
+            {work.abstract}
+          </p>
+          {work.abstract.length > 120 && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-1 text-xs text-primary hover:underline"
+            >
+              {expanded ? "Show less" : "Show more"}
+            </button>
+          )}
+        </>
+      )}
+    </motion.div>
+  );
+}
+
+function DiscoverPanel({ query }: { query: string }) {
+  const [page, setPage] = useState(1);
+  const trimmed = query.trim();
+
+  const { data, isLoading, isError, isFetching } = useQuery({
+    queryKey: ["discover", trimmed, page],
+    queryFn: () => discoverWorks(trimmed, page),
+    enabled: trimmed.length >= 2,
+    staleTime: 30 * 60 * 1000, // 30 min
+    retry: 1,
+  });
+
+  if (trimmed.length < 2) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+        <Globe className="size-8 text-muted-foreground/40" />
+        <p className="text-sm text-muted-foreground">Type at least 2 characters to discover papers.</p>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
+        <span className="text-sm">Searching OpenAlex…</span>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="py-12 text-center">
+        <p className="text-sm text-muted-foreground">Discover is temporarily unavailable. Try again later.</p>
+      </div>
+    );
+  }
+
+  const works = data?.results ?? [];
+
+  if (works.length === 0) {
+    return (
+      <div className="py-12 text-center">
+        <p className="text-sm text-muted-foreground">No papers found for "{trimmed}".</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Via OpenAlex · page {page}
+        {isFetching && <Loader2 className="ml-1 inline size-3 animate-spin" />}
+      </p>
+      {works.map((w) => (
+        <DiscoverCard key={w.id || w.doi || w.title} work={w} />
+      ))}
+      <div className="flex justify-center gap-2 pt-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          disabled={page === 1 || isFetching}
+        >
+          Previous
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setPage((p) => p + 1)}
+          disabled={works.length < 15 || isFetching}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 // ── Ask AI (RAG) panel ───────────────────────────────────────────────────────
 function AskAiPanel({ query, projectId }: { query: string; projectId: number | null }) {
@@ -151,11 +328,14 @@ function ResultCard({ result }: { result: SearchResult }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 const ALL_KINDS: Kind[] = ["paper", "note", "citation", "chat"];
 
+type SearchMode = "library" | "discover";
+
 export function SearchPage() {
   const { currentProjectId }  = useUI();
   const [searchParams, setSearchParams] = useSearchParams();
   const inputRef               = useRef<HTMLInputElement>(null);
 
+  const [mode,     setMode]     = useState<SearchMode>("library");
   const [q,        setQ]        = useState(searchParams.get("q") ?? "");
   const [kinds,    setKinds]    = useState<Kind[]>(ALL_KINDS);
   const [submitted, setSubmitted] = useState(false);
@@ -206,6 +386,25 @@ export function SearchPage() {
     >
       <div className="space-y-6">
 
+        {/* Mode tabs */}
+        <div className="flex gap-1 rounded-xl border border-border bg-muted/30 p-1 w-fit">
+          {(["library", "discover"] as SearchMode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-all",
+                mode === m
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {m === "library" ? <Search className="size-3.5" /> : <Globe className="size-3.5" />}
+              {m === "library" ? "My Library" : "Discover"}
+            </button>
+          ))}
+        </div>
+
         {/* Search bar */}
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -233,8 +432,8 @@ export function SearchPage() {
           </Button>
         </div>
 
-        {/* Kind filter chips */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Kind filter chips — library mode only */}
+        {mode === "library" && <div className="flex flex-wrap items-center gap-2">
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <Filter className="size-3" /> Filter:
           </span>
@@ -274,57 +473,65 @@ export function SearchPage() {
               <BookOpen className="size-3" /> Project scope
             </Badge>
           )}
-        </div>
+        </div>}
 
-        {/* Ask AI (RAG) — independent of the search-results flow above */}
-        <AskAiPanel query={q} projectId={currentProjectId} />
-
-        {/* Results */}
-        {isLoading ? (
-          <div className="flex items-center gap-3 py-8 text-muted-foreground">
-            <Loader2 className="size-5 animate-spin" />
-            <span className="text-sm">Searching…</span>
-          </div>
-        ) : submitted && results.length === 0 ? (
-          <EmptyState
-            icon={<Search className="size-8" />}
-            title="No results found"
-            description={`Nothing matched "${search.data?.q ?? q}". Try different keywords or change your filters.`}
-          />
-        ) : submitted ? (
-          <div className="space-y-6">
-            <p className="text-xs text-muted-foreground">
-              {total} result{total !== 1 ? "s" : ""} for <span className="font-medium">"{search.data?.q}"</span>
-            </p>
-
-            {/* Render by kind group (only non-empty groups shown) */}
-            {ALL_KINDS.filter((k) => kinds.includes(k) && grouped[k].length > 0).map((k) => (
-              <section key={k} className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className={KIND_CONFIG[k].color}>{KIND_CONFIG[k].icon}</span>
-                  <h2 className="text-sm font-semibold">{KIND_CONFIG[k].label}</h2>
-                  <span className="text-xs text-muted-foreground">({grouped[k].length})</span>
-                </div>
-                <div className="space-y-2">
-                  <AnimatePresence>
-                    {grouped[k].map((r, i) => (
-                      <ResultCard key={`${r.kind}-${r.ref_id}-${i}`} result={r} />
-                    ))}
-                  </AnimatePresence>
-                </div>
-              </section>
-            ))}
-          </div>
+        {mode === "discover" ? (
+          /* ── Discover (OpenAlex) ───────────────────────────────────────── */
+          <DiscoverPanel query={q} />
         ) : (
-          <div className="py-12 text-center">
-            <Search className="mx-auto mb-4 size-12 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">
-              Type a query and press Enter or click Search.
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground/70">
-              Searches across papers (semantic), notes, citations, and chats.
-            </p>
-          </div>
+          /* ── Library (RAG + full-text search) ────────────────────────── */
+          <>
+            {/* Ask AI (RAG) — independent of the search-results flow above */}
+            <AskAiPanel query={q} projectId={currentProjectId} />
+
+            {/* Results */}
+            {isLoading ? (
+              <div className="flex items-center gap-3 py-8 text-muted-foreground">
+                <Loader2 className="size-5 animate-spin" />
+                <span className="text-sm">Searching…</span>
+              </div>
+            ) : submitted && results.length === 0 ? (
+              <EmptyState
+                icon={<Search className="size-8" />}
+                title="No results found"
+                description={`Nothing matched "${search.data?.q ?? q}". Try different keywords or change your filters.`}
+              />
+            ) : submitted ? (
+              <div className="space-y-6">
+                <p className="text-xs text-muted-foreground">
+                  {total} result{total !== 1 ? "s" : ""} for <span className="font-medium">"{search.data?.q}"</span>
+                </p>
+
+                {/* Render by kind group (only non-empty groups shown) */}
+                {ALL_KINDS.filter((k) => kinds.includes(k) && grouped[k].length > 0).map((k) => (
+                  <section key={k} className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className={KIND_CONFIG[k].color}>{KIND_CONFIG[k].icon}</span>
+                      <h2 className="text-sm font-semibold">{KIND_CONFIG[k].label}</h2>
+                      <span className="text-xs text-muted-foreground">({grouped[k].length})</span>
+                    </div>
+                    <div className="space-y-2">
+                      <AnimatePresence>
+                        {grouped[k].map((r, i) => (
+                          <ResultCard key={`${r.kind}-${r.ref_id}-${i}`} result={r} />
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  </section>
+                ))}
+              </div>
+            ) : (
+              <div className="py-12 text-center">
+                <Search className="mx-auto mb-4 size-12 text-muted-foreground/30" />
+                <p className="text-sm text-muted-foreground">
+                  Type a query and press Enter or click Search.
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground/70">
+                  Searches across papers (semantic), notes, citations, and chats.
+                </p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </PageContainer>

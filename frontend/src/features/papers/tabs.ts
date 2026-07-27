@@ -8,6 +8,7 @@ export const PAPER_TABS = [
   "evidence",
   "graph",
   "narrative",
+  "related",
   "chat",
 ] as const;
 
@@ -21,6 +22,7 @@ export const PAPER_TAB_LABELS: Record<PaperTabId, string> = {
   evidence: "Evidence",
   graph: "Knowledge Graph",
   narrative: "Narrative",
+  related: "Related Papers",
   chat: "Chat",
 };
 
@@ -33,6 +35,7 @@ export const PAPER_TABS_WITH_CONTENT: ReadonlySet<PaperTabId> = new Set([
   "evidence",
   "graph",
   "narrative",
+  "related",
   "chat", // opens existing PaperChatPage — not redesigned
 ]);
 

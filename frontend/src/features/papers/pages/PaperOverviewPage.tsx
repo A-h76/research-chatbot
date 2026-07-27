@@ -28,6 +28,7 @@ import { PaperClassificationTab } from "../components/PaperClassificationTab";
 import { PaperEntitiesTab } from "../components/PaperEntitiesTab";
 import { PaperEvidenceTab } from "../components/PaperEvidenceTab";
 import { PaperKnowledgeGraphTab } from "../components/PaperKnowledgeGraphTab";
+import { PaperRelatedTab } from "../components/PaperRelatedTab";
 
 const ANALYZE_ERROR_MESSAGES: Record<string, string> = {
   not_ready: "This paper is still being processed. Try again in a moment.",
@@ -401,6 +402,10 @@ export function PaperOverviewPage() {
 
           <PaperTabPanel tab="graph" active={activeTab}>
             <PaperKnowledgeGraphTab fileId={id} metaStatus={file.meta_status} focusRef={focusRef} />
+          </PaperTabPanel>
+
+          <PaperTabPanel tab="related" active={activeTab}>
+            <PaperRelatedTab fileId={id} />
           </PaperTabPanel>
 
           <PaperTabPanel tab="chat" active={activeTab}>
