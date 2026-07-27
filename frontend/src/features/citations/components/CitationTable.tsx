@@ -1,4 +1,5 @@
-import { Copy, Trash2, ExternalLink, Pencil } from "lucide-react";
+import { Copy, Trash2, ExternalLink, Pencil, CheckCircle2, CircleDashed, Loader2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Table,
   TableBody,
@@ -10,6 +11,7 @@ import {
 import { useClipboard } from "@/hooks/useClipboard";
 import { toast } from "@/components/common/Toast";
 import type { Citation, CitationFormat, Project } from "@/types/api";
+import { citationsApi } from "../api";
 
 function CopyFormatButton({
   label,
@@ -31,6 +33,63 @@ function CopyFormatButton({
     >
       <Copy className="size-3" /> {label}
     </button>
+  );
+}
+
+function FormattedCitationCell({
+  citation,
+  format,
+}: {
+  citation: Citation;
+  format: CitationFormat;
+}) {
+  const local = citation[format] || citation.bibtex || "";
+  const { data, isLoading } = useQuery({
+    queryKey: ["citation-format", citation.id, format],
+    queryFn: () => citationsApi.format(citation.id, format),
+    enabled: Boolean(citation.doi),
+    staleTime: 7 * 24 * 60 * 60 * 1000,
+    retry: 1,
+  });
+
+  const text = data?.citation || local;
+  const verified = Boolean(data?.verified);
+  const showBadge = Boolean(citation.doi) || Boolean(local);
+
+  return (
+    <div className="space-y-1.5">
+      {showBadge && (
+        <span
+          className={
+            verified
+              ? "inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-400"
+              : "inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+          }
+          title={
+            verified
+              ? "Formatted from Crossref metadata"
+              : citation.doi
+                ? "Locally formatted — Crossref not verified yet"
+                : "No DOI — locally formatted"
+          }
+        >
+          {isLoading ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : verified ? (
+            <CheckCircle2 className="size-3" />
+          ) : (
+            <CircleDashed className="size-3" />
+          )}
+          {isLoading ? "Checking…" : verified ? "Verified · Crossref" : "~ AI formatted"}
+        </span>
+      )}
+      <pre className="line-clamp-3 whitespace-pre-wrap font-mono text-[11px] leading-snug text-muted-foreground">
+        {text || "—"}
+      </pre>
+      {text && (
+        <CopyFormatButton label={format.toUpperCase()} text={text} />
+      )}
+    </div>
   );
 }
 
@@ -64,7 +123,6 @@ export function CitationTable({
         <TableBody>
           {citations.map((c) => {
             const project = projects.find((p) => p.id === c.project_id);
-            const formatted = c[format] || c.bibtex;
             return (
               <TableRow key={c.id} className="group">
                 <TableCell className="max-w-[14rem] py-2.5 align-top">
@@ -108,16 +166,10 @@ export function CitationTable({
                   {c.venue || "—"}
                 </TableCell>
                 <TableCell className="max-w-[16rem] py-2.5 align-top">
-                  <pre className="line-clamp-3 whitespace-pre-wrap font-mono text-[11px] leading-snug text-muted-foreground">
-                    {formatted}
-                  </pre>
+                  <FormattedCitationCell citation={c} format={format} />
                 </TableCell>
                 <TableCell className="py-2.5 align-top">
                   <div className="flex flex-wrap items-center justify-end gap-1">
-                    <CopyFormatButton
-                      label={format.toUpperCase()}
-                      text={formatted}
-                    />
                     <button
                       type="button"
                       onClick={() => onEdit(c)}

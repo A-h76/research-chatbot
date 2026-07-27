@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import io
 import json
+import secrets
 from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, redirect, request, session
 
-from .bibtex import parse_bibtex, to_bibtex
-from .ris import parse_ris, to_ris
+from .adapters import get_adapter
 from .service import records_from_user_files
 from . import zotero as zotero_mod
+from . import mendeley as mendeley_mod
+from .bibtex import to_bibtex
+from .ris import to_ris
 
 
 def create_library_bridge_blueprint(
@@ -28,8 +31,18 @@ def create_library_bridge_blueprint(
     limiter=None,
     file_to_dict=None,
     collection_service=None,
+    sync_service=None,
+    storage=None,
+    enqueue_phase1=None,
+    enqueue_import=None,
+    upload_dir=None,
+    max_file_mb=50,
+    allowed_extensions=None,
+    LibrarySyncRun=None,
 ):
     bp = Blueprint("library_bridge", __name__)
+    # Prefer full import (extract + chunk + phase1); fall back to phase1-only.
+    _enqueue_after_attach = enqueue_import or enqueue_phase1
 
     def _rate(spec):
         def deco(fn):
@@ -77,6 +90,40 @@ def create_library_bridge_blueprint(
         fmt = (fmt or data.get("format") or "bibtex").lower()
         return fmt, text
 
+    def _import_options_from_body(body: dict, *, default_project_prefix: str = "Import"):
+        create_project = (
+            str(body.get("create_project") or "").lower() in {"1", "true", "yes"}
+            or body.get("create_project") is True
+        )
+        project_name = (body.get("project_name") or body.get("create_project_name") or "").strip() or None
+        if create_project and not project_name:
+            project_name = f"{default_project_prefix} {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+        if not create_project:
+            project_name = None
+        try:
+            pid = int(body.get("project_id")) if body.get("project_id") not in (None, "", "null") else None
+        except (TypeError, ValueError):
+            pid = None
+        create_collection = (
+            str(body.get("create_collection") or "").lower() in {"1", "true", "yes"}
+            or body.get("create_collection") is True
+        )
+        collection_name = (body.get("collection_name") or "").strip() or None
+        if create_collection and not collection_name:
+            collection_name = f"{default_project_prefix} {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+        if not create_collection:
+            collection_name = None
+        try:
+            cid = int(body.get("collection_id")) if body.get("collection_id") not in (None, "", "null") else None
+        except (TypeError, ValueError):
+            cid = None
+        return {
+            "project_id": None if project_name else pid,
+            "create_project_name": project_name,
+            "collection_id": cid,
+            "create_collection_name": collection_name,
+        }
+
     # ── Status / Connect cards ──────────────────────────────────────────
     @bp.route("/api/library/connections", methods=["GET"])
     @login_required
@@ -97,11 +144,17 @@ def create_library_bridge_blueprint(
             z = connected.get("zotero")
             m = connected.get("mendeley")
             z_meta = {}
+            m_meta = {}
             if z and z.meta_json:
                 try:
                     z_meta = json.loads(z.meta_json)
                 except Exception:
                     z_meta = {}
+            if m and m.meta_json:
+                try:
+                    m_meta = json.loads(m.meta_json)
+                except Exception:
+                    m_meta = {}
             return jsonify(
                 {
                     "zotero": {
@@ -109,14 +162,20 @@ def create_library_bridge_blueprint(
                         "connected": bool(z),
                         "username": z_meta.get("username") or "",
                         "external_user_id": (z.external_user_id if z else "") or "",
+                        "last_synced_at": z.last_synced_at.isoformat() if z and z.last_synced_at else None,
+                        "incremental_sync": True,
                     },
                     "mendeley": {
-                        "available": False,
+                        "available": mendeley_mod.mendeley_configured(),
                         "connected": bool(m),
-                        "coming_soon": True,
-                        "username": "",
+                        "coming_soon": False,
+                        "username": m_meta.get("display_name") or m_meta.get("username") or "",
+                        "external_user_id": (m.external_user_id if m else "") or "",
+                        "last_synced_at": m.last_synced_at.isoformat() if m and m.last_synced_at else None,
+                        "incremental_sync": True,
                     },
                     "formats": ["bibtex", "ris"],
+                    "adapters": ["bibtex", "ris", "zotero", "mendeley", "openalex"],
                 }
             )
         finally:
@@ -130,20 +189,18 @@ def create_library_bridge_blueprint(
         fmt, text = _parse_upload_text()
         if not text.strip():
             return jsonify({"error": "empty_content"}), 400
-        if fmt in {"bib", "bibtex", "biblatex"}:
-            records = parse_bibtex(text)
-            source_tag = "from-bibtex"
-        elif fmt == "ris":
-            records = parse_ris(text)
-            source_tag = "from-ris"
-        else:
+        try:
+            adapter = get_adapter(fmt)
+        except KeyError:
             return jsonify({"error": "unsupported_format", "detail": "Use bibtex or ris."}), 400
+
+        records = adapter.fetch_records(text=text)
+        source_tag = f"from-{adapter.name}"
 
         if not records:
             return jsonify({"error": "no_records", "detail": "No bibliographic entries found."}), 400
 
         body = request.form.to_dict() if request.form else (request.get_json(silent=True) or {})
-        # form + JSON hybrid: JSON body may accompany multipart
         if request.files and request.is_json is False:
             raw_json = request.form.get("json")
             if raw_json:
@@ -151,44 +208,20 @@ def create_library_bridge_blueprint(
                     body = {**body, **json.loads(raw_json)}
                 except Exception:
                     pass
-        create_project = str(body.get("create_project") or "").lower() in {"1", "true", "yes"}
-        project_name = (body.get("project_name") or body.get("create_project_name") or "").strip() or None
-        if create_project and not project_name:
-            project_name = f"Import {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
-        if not create_project:
-            project_name = None
 
-        try:
-            pid = int(body.get("project_id")) if body.get("project_id") not in (None, "", "null") else None
-        except (TypeError, ValueError):
-            pid = None
-
-        create_collection = str(body.get("create_collection") or "").lower() in {"1", "true", "yes"}
-        collection_name = (body.get("collection_name") or "").strip() or None
-        if create_collection and not collection_name:
-            collection_name = f"Import {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
-        if not create_collection:
-            collection_name = None
-        try:
-            cid = int(body.get("collection_id")) if body.get("collection_id") not in (None, "", "null") else None
-        except (TypeError, ValueError):
-            cid = None
-
+        opts = _import_options_from_body(body)
         result = import_service.import_records(
             _uid(),
             records,
-            project_id=None if project_name else pid,
-            create_project_name=project_name,
-            collection_id=cid,
-            create_collection_name=collection_name,
             source_tag=source_tag,
+            **opts,
         )
         if result.get("error"):
             status = 404 if result["error"] == "project_not_found" else 400
             if result["error"] == "import_failed":
                 status = 500
             return jsonify(result), status
-        return jsonify({**result, "format": fmt, "parsed": len(records)}), 201
+        return jsonify({**result, "format": adapter.name, "parsed": len(records)}), 201
 
     # ── Export library files as BibTeX / RIS ────────────────────────────
     @bp.route("/api/library/export", methods=["GET"])
@@ -328,8 +361,11 @@ def create_library_bridge_blueprint(
             if not row:
                 return jsonify({"error": "not_connected"}), 400
             try:
-                items = zotero_mod.list_collections(
-                    row.access_token, row.access_secret, row.external_user_id
+                adapter = get_adapter("zotero")
+                items = adapter.list_folders(
+                    access_token=row.access_token,
+                    access_secret=row.access_secret,
+                    external_user_id=row.external_user_id,
                 )
             except Exception as exc:
                 return jsonify({"error": "zotero_api_error", "detail": str(exc)[:200]}), 502
@@ -350,18 +386,21 @@ def create_library_bridge_blueprint(
             if not row:
                 return jsonify({"error": "not_connected"}), 400
             try:
+                adapter = get_adapter("zotero")
                 if collection_key not in {"all", "", "root"}:
-                    z_cols = zotero_mod.list_collections(
-                        row.access_token, row.access_secret, row.external_user_id
+                    z_cols = adapter.list_folders(
+                        access_token=row.access_token,
+                        access_secret=row.access_secret,
+                        external_user_id=row.external_user_id,
                     )
                     for c in z_cols:
                         if c.get("key") == collection_key:
                             coll_name = c.get("name") or ""
                             break
-                records = zotero_mod.fetch_items(
-                    row.access_token,
-                    row.access_secret,
-                    row.external_user_id,
+                records = adapter.fetch_records(
+                    access_token=row.access_token,
+                    access_secret=row.access_secret,
+                    external_user_id=row.external_user_id,
                     collection_key=collection_key,
                     collection_name=coll_name,
                     limit=int(data.get("limit") or 200),
@@ -374,41 +413,535 @@ def create_library_bridge_blueprint(
         if not records:
             return jsonify({"error": "no_records", "detail": "No items in that collection."}), 400
 
-        project_name = data.get("project_name")
-        create_project = data.get("create_project")
-        if create_project in (True, "1", "true", "yes") and not project_name:
-            project_name = f"Zotero {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
-        if create_project not in (True, "1", "true", "yes"):
-            project_name = project_name if data.get("project_name") else None
-
-        try:
-            pid = int(data["project_id"]) if data.get("project_id") not in (None, "") else None
-        except (TypeError, ValueError):
-            pid = None
-
+        opts = _import_options_from_body(data, default_project_prefix="Zotero")
         result = import_service.import_records(
             _uid(),
             records,
-            project_id=pid if not project_name else None,
-            create_project_name=project_name,
             source_tag="from-zotero",
+            **opts,
         )
         if result.get("error"):
             status = 404 if result["error"] == "project_not_found" else 500
             return jsonify(result), status
         return jsonify({**result, "parsed": len(records), "source": "zotero"}), 201
 
+    # ── Mendeley OAuth2 + import (Phase 1a one-shot) ────────────────────
     @bp.route("/api/library/mendeley/connect", methods=["GET", "POST"])
     @login_required
+    @_rate("20 per hour")
     def mendeley_connect():
-        return jsonify(
-            {
-                "error": "coming_soon",
-                "detail": "Mendeley one-click import is next. Export RIS/BibTeX from Mendeley today.",
-                "coming_soon": True,
-                "fallback": ["bibtex", "ris"],
-            }
-        ), 503
+        if not mendeley_mod.mendeley_configured():
+            return jsonify(
+                {
+                    "error": "mendeley_not_configured",
+                    "detail": "Set MENDELEY_CLIENT_ID and MENDELEY_CLIENT_SECRET.",
+                    "coming_soon": False,
+                    "fallback": ["bibtex", "ris"],
+                }
+            ), 503
+        callback = f"{app_base_url.rstrip('/')}/api/library/mendeley/callback"
+        state = secrets.token_urlsafe(24)
+        session["mendeley_oauth"] = {"state": state}
+        try:
+            started = mendeley_mod.begin_oauth(callback, state)
+        except Exception as exc:
+            return jsonify({"error": "oauth_start_failed", "detail": str(exc)[:200]}), 502
+        if request.method == "GET" and request.args.get("redirect") == "1":
+            return redirect(started["authorize_url"])
+        return jsonify({"authorize_url": started["authorize_url"]})
+
+    @bp.route("/api/library/mendeley/callback", methods=["GET"])
+    @login_required
+    def mendeley_callback():
+        if not mendeley_mod.mendeley_configured():
+            return redirect("/library?mendeley=not_configured")
+        pending = session.pop("mendeley_oauth", None) or {}
+        code = (request.args.get("code") or "").strip()
+        state = (request.args.get("state") or "").strip()
+        if not code or not pending.get("state") or state != pending.get("state"):
+            return redirect("/library?mendeley=denied")
+        callback = f"{app_base_url.rstrip('/')}/api/library/mendeley/callback"
+        try:
+            tokens = mendeley_mod.finish_oauth(code=code, callback_uri=callback)
+            profile = mendeley_mod.fetch_profile(tokens["access_token"])
+        except Exception:
+            return redirect("/library?mendeley=error")
+
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "mendeley")
+            meta = json.dumps({"display_name": profile.get("display_name") or ""})
+            if not row:
+                row = LibraryConnection(
+                    user_id=_uid(),
+                    provider="mendeley",
+                    external_user_id=profile.get("id") or "",
+                    access_token=tokens.get("access_token") or "",
+                    access_secret="",
+                    refresh_token=tokens.get("refresh_token") or "",
+                    meta_json=meta,
+                    status="active",
+                )
+                db.add(row)
+            else:
+                row.external_user_id = profile.get("id") or row.external_user_id
+                row.access_token = tokens.get("access_token") or ""
+                row.refresh_token = tokens.get("refresh_token") or row.refresh_token
+                row.meta_json = meta
+                row.status = "active"
+                row.updated_at = datetime.now(timezone.utc)
+            db.commit()
+        finally:
+            db.close()
+        return redirect("/library?mendeley=connected")
+
+    @bp.route("/api/library/mendeley/disconnect", methods=["POST"])
+    @login_required
+    def mendeley_disconnect():
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "mendeley")
+            if row:
+                row.status = "revoked"
+                row.access_token = ""
+                row.refresh_token = ""
+                row.updated_at = datetime.now(timezone.utc)
+                db.commit()
+            return jsonify({"ok": True})
+        finally:
+            db.close()
+
+    def _mendeley_access_token(db, row) -> str:
+        token = (row.access_token or "").strip()
+        if token:
+            return token
+        refresh = (row.refresh_token or "").strip()
+        if not refresh:
+            return ""
+        refreshed = mendeley_mod.refresh_access_token(refresh)
+        row.access_token = refreshed.get("access_token") or ""
+        if refreshed.get("refresh_token"):
+            row.refresh_token = refreshed["refresh_token"]
+        row.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return row.access_token or ""
+
+    @bp.route("/api/library/mendeley/folders", methods=["GET"])
+    @login_required
+    def mendeley_folders():
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "mendeley")
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            try:
+                token = _mendeley_access_token(db, row)
+                if not token:
+                    return jsonify({"error": "not_connected"}), 400
+                adapter = get_adapter("mendeley")
+                items = adapter.list_folders(access_token=token)
+            except Exception as exc:
+                if row.refresh_token:
+                    try:
+                        refreshed = mendeley_mod.refresh_access_token(row.refresh_token)
+                        row.access_token = refreshed.get("access_token") or ""
+                        if refreshed.get("refresh_token"):
+                            row.refresh_token = refreshed["refresh_token"]
+                        row.updated_at = datetime.now(timezone.utc)
+                        db.commit()
+                        adapter = get_adapter("mendeley")
+                        items = adapter.list_folders(access_token=row.access_token)
+                        return jsonify({"items": items})
+                    except Exception as exc2:
+                        return jsonify({"error": "mendeley_api_error", "detail": str(exc2)[:200]}), 502
+                return jsonify({"error": "mendeley_api_error", "detail": str(exc)[:200]}), 502
+            return jsonify({"items": items})
+        finally:
+            db.close()
+
+    @bp.route("/api/library/mendeley/import", methods=["POST"])
+    @login_required
+    @_rate("5 per hour")
+    def mendeley_import():
+        data = request.get_json(silent=True) or {}
+        folder_id = (data.get("folder_id") or data.get("collection_key") or "all").strip()
+        folder_name = ""
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "mendeley")
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            try:
+                token = _mendeley_access_token(db, row)
+                if not token:
+                    return jsonify({"error": "not_connected"}), 400
+                adapter = get_adapter("mendeley")
+                if folder_id not in {"all", "", "root"}:
+                    folders = adapter.list_folders(access_token=token)
+                    for f in folders:
+                        if f.get("key") == folder_id:
+                            folder_name = f.get("name") or ""
+                            break
+                records = adapter.fetch_records(
+                    access_token=token,
+                    folder_id=folder_id,
+                    folder_name=folder_name,
+                    limit=int(data.get("limit") or 200),
+                )
+            except Exception as exc:
+                return jsonify({"error": "mendeley_api_error", "detail": str(exc)[:200]}), 502
+        finally:
+            db.close()
+
+        if not records:
+            return jsonify({"error": "no_records", "detail": "No documents in that folder."}), 400
+
+        opts = _import_options_from_body(data, default_project_prefix="Mendeley")
+        result = import_service.import_records(
+            _uid(),
+            records,
+            source_tag="from-mendeley",
+            **opts,
+        )
+        if result.get("error"):
+            status = 404 if result["error"] == "project_not_found" else 500
+            return jsonify(result), status
+        return jsonify({**result, "parsed": len(records), "source": "mendeley"}), 201
+
+    def _run_provider_sync(provider: str):
+        """Shared Phase 1b incremental sync for Zotero / Mendeley."""
+        if sync_service is None:
+            return jsonify({"error": "sync_not_configured"}), 503
+        data = request.get_json(silent=True) or {}
+        limit = int(data.get("limit") or 200)
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), provider)
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            cursor_before = row.sync_cursor or ""
+            connection_id = row.id
+            token_kwargs = {}
+            if provider == "zotero":
+                token_kwargs = {
+                    "access_token": row.access_token,
+                    "access_secret": row.access_secret,
+                    "external_user_id": row.external_user_id,
+                }
+            else:
+                token = row.access_token or ""
+                if not token and row.refresh_token:
+                    try:
+                        refreshed = mendeley_mod.refresh_access_token(row.refresh_token)
+                        row.access_token = refreshed.get("access_token") or ""
+                        if refreshed.get("refresh_token"):
+                            row.refresh_token = refreshed["refresh_token"]
+                        db.commit()
+                        token = row.access_token
+                    except Exception as exc:
+                        return jsonify({"error": "mendeley_api_error", "detail": str(exc)[:200]}), 502
+                token_kwargs = {"access_token": token}
+        finally:
+            db.close()
+
+        run_id = sync_service.start_run(_uid(), connection_id, provider, cursor_before)
+        try:
+            adapter = get_adapter(provider)
+            payload = adapter.synchronize(sync_cursor=cursor_before, limit=limit, **token_kwargs)
+            records = payload.get("records") or []
+            cursor_after = payload.get("sync_cursor") or cursor_before
+            applied = sync_service.apply_sync_records(
+                _uid(),
+                records,
+                source_tag=f"from-{provider}",
+            )
+            if applied.get("error"):
+                sync_service.finish_run(
+                    run_id,
+                    status="error",
+                    error_text=applied.get("error", "sync_failed"),
+                    cursor_after=cursor_before,
+                )
+                return jsonify(applied), 500
+
+            db = SessionLocal()
+            try:
+                row = _get_connection(db, _uid(), provider)
+                if row:
+                    row.sync_cursor = cursor_after
+                    row.last_synced_at = datetime.now(timezone.utc)
+                    row.updated_at = datetime.now(timezone.utc)
+                    db.commit()
+            finally:
+                db.close()
+
+            sync_service.finish_run(
+                run_id,
+                status="ok",
+                created=applied.get("created", 0),
+                updated=applied.get("updated", 0),
+                skipped=applied.get("skipped", 0),
+                conflicts=applied.get("conflicts", 0),
+                cursor_after=cursor_after,
+                detail={"fetched": payload.get("fetched", len(records))},
+            )
+            return jsonify(
+                {
+                    **applied,
+                    "provider": provider,
+                    "fetched": payload.get("fetched", len(records)),
+                    "sync_run_id": run_id,
+                    "last_synced_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+        except Exception as exc:
+            sync_service.finish_run(
+                run_id,
+                status="error",
+                error_text=str(exc)[:500],
+                cursor_after=cursor_before,
+            )
+            return jsonify({"error": f"{provider}_sync_failed", "detail": str(exc)[:200]}), 502
+
+    @bp.route("/api/library/zotero/sync", methods=["POST"])
+    @login_required
+    @_rate("10 per hour")
+    def zotero_sync():
+        return _run_provider_sync("zotero")
+
+    @bp.route("/api/library/mendeley/sync", methods=["POST"])
+    @login_required
+    @_rate("10 per hour")
+    def mendeley_sync():
+        return _run_provider_sync("mendeley")
+
+    @bp.route("/api/library/sync/runs", methods=["GET"])
+    @login_required
+    def list_sync_runs():
+        if sync_service is None:
+            return jsonify({"items": []})
+        provider = (request.args.get("provider") or "").strip() or None
+        try:
+            limit = max(1, min(50, int(request.args.get("limit", 20))))
+        except (TypeError, ValueError):
+            limit = 20
+        return jsonify({"items": sync_service.list_runs(_uid(), provider=provider, limit=limit)})
+
+    @bp.route("/api/library/health", methods=["GET"])
+    @login_required
+    def library_health():
+        from .health import build_library_health
+
+        project_id_raw = request.args.get("project_id")
+        project_id = None
+        if project_id_raw not in (None, ""):
+            try:
+                project_id = int(project_id_raw)
+            except (TypeError, ValueError):
+                project_id = None
+        db = SessionLocal()
+        try:
+            return jsonify(
+                build_library_health(
+                    db,
+                    UserFile,
+                    select_fn,
+                    _uid(),
+                    project_id=project_id,
+                    LibrarySyncRun=LibrarySyncRun,
+                    LibraryConnection=LibraryConnection,
+                )
+            )
+        finally:
+            db.close()
+
+    @bp.route("/api/library/duplicates", methods=["GET"])
+    @login_required
+    def library_duplicates():
+        from .health import find_duplicate_groups
+
+        project_id_raw = request.args.get("project_id")
+        project_id = None
+        if project_id_raw not in (None, ""):
+            try:
+                project_id = int(project_id_raw)
+            except (TypeError, ValueError):
+                project_id = None
+        try:
+            limit = max(1, min(100, int(request.args.get("limit", 50))))
+        except (TypeError, ValueError):
+            limit = 50
+        db = SessionLocal()
+        try:
+            groups = find_duplicate_groups(
+                db,
+                UserFile,
+                select_fn,
+                _uid(),
+                project_id=project_id,
+                limit_groups=limit,
+            )
+            return jsonify({"items": groups, "count": len(groups)})
+        finally:
+            db.close()
+
+    @bp.route("/api/library/duplicates/merge", methods=["POST"])
+    @login_required
+    @_rate("30 per hour")
+    def library_duplicates_merge():
+        from .health import merge_duplicate_files
+
+        body = request.get_json(silent=True) or {}
+        try:
+            keep_id = int(body.get("keep_id"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "keep_id_required"}), 400
+        raw_ids = body.get("merge_ids") or body.get("file_ids") or []
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return jsonify({"error": "merge_ids_required"}), 400
+        try:
+            merge_ids = [int(x) for x in raw_ids]
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid_merge_ids"}), 400
+        delete_merged = str(body.get("delete_merged", "true")).lower() not in {
+            "0",
+            "false",
+            "no",
+        }
+        db = SessionLocal()
+        try:
+            result = merge_duplicate_files(
+                db,
+                UserFile,
+                _uid(),
+                keep_id=keep_id,
+                merge_ids=merge_ids,
+                delete_merged=delete_merged,
+            )
+            if result.get("error"):
+                return jsonify(result), 404
+            keep = db.get(UserFile, keep_id)
+            if file_to_dict and keep:
+                result["file"] = file_to_dict(keep)
+            return jsonify(result)
+        except Exception as exc:
+            db.rollback()
+            return jsonify({"error": "merge_failed", "detail": str(exc)[:200]}), 500
+        finally:
+            db.close()
+
+    @bp.route("/api/library/files/<int:fid>/attach", methods=["POST"])
+    @login_required
+    @_rate("30 per hour")
+    def attach_pdf_to_stub(fid: int):
+        """Attach a PDF to a metadata-only library stub → Research Asset.
+
+        Leaves bibliographic fields intact; stores bytes; enqueues ``import``
+        (extract + chunk + phase1), not bare phase1_analysis.
+        """
+        import os
+        import uuid
+
+        if storage is None or not upload_dir:
+            return jsonify({"error": "storage_not_configured"}), 503
+
+        f = request.files.get("file")
+        if not f or not f.filename:
+            return jsonify({"error": "no_file"}), 400
+
+        from backend.upload.validation import (
+            ValidationError as UploadValidationError,
+            kind_for_extension,
+            validate_extension,
+            validate_upload_path,
+        )
+
+        name = f.filename
+        try:
+            ext = validate_extension(name, allowed=allowed_extensions or {".pdf", ".PDF"})
+        except UploadValidationError as e:
+            return jsonify({"error": e.code, "detail": e.message}), 400
+        if ext.lower() != ".pdf":
+            return jsonify({"error": "pdf_required", "detail": "Attach a PDF to analyse this paper."}), 400
+
+        db = SessionLocal()
+        try:
+            uf = db.get(UserFile, fid)
+            if not uf or uf.user_id != _uid():
+                return jsonify({"error": "not_found"}), 404
+            if (uf.path or "").strip() and int(uf.size or 0) > 0:
+                return jsonify(
+                    {
+                        "error": "already_has_pdf",
+                        "detail": "This library entry already has a PDF attached.",
+                        "file": file_to_dict(uf) if file_to_dict else {"id": uf.id},
+                    }
+                ), 409
+
+            disk_name = uuid.uuid4().hex + ext
+            path = os.path.join(upload_dir, disk_name)
+            f.save(path)
+            size = os.path.getsize(path)
+            try:
+                _, mime = validate_upload_path(
+                    path,
+                    name,
+                    allowed=allowed_extensions or {".pdf"},
+                    size_bytes=size,
+                    max_mb=max_file_mb or 50,
+                )
+            except UploadValidationError as e:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+                return jsonify({"error": e.code, "detail": e.message}), 400
+
+            checksum = storage.sha256_file(path)
+            try:
+                storage.upload(disk_name, path)
+            except Exception:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+                return jsonify({"error": "storage_unavailable"}), 502
+            finally:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+
+            uf.path = disk_name
+            uf.size = size
+            uf.mime = mime or "application/pdf"
+            uf.kind = kind_for_extension(ext) or "document"
+            uf.checksum_sha256 = checksum
+            uf.meta_status = "pending"
+            if not (uf.name or "").strip() or uf.name == uf.title:
+                uf.name = name[:300]
+            db.flush()
+            queued = False
+            if _enqueue_after_attach:
+                try:
+                    _enqueue_after_attach(db, _uid(), uf.id)
+                    queued = True
+                except Exception:
+                    queued = False
+            db.commit()
+            db.refresh(uf)
+            return jsonify(
+                {
+                    "ok": True,
+                    "file": file_to_dict(uf) if file_to_dict else {"id": uf.id},
+                    "queued": queued,
+                }
+            ), 201
+        except Exception as exc:
+            db.rollback()
+            return jsonify({"error": "attach_failed", "detail": str(exc)[:200]}), 500
+        finally:
+            db.close()
 
     @bp.route("/api/library/facets", methods=["GET"])
     @login_required
@@ -429,7 +962,7 @@ def create_library_bridge_blueprint(
         finally:
             db.close()
 
-    # ── Collections (Phase 1.6) ─────────────────────────────────────────
+    # ── Collections ─────────────────────────────────────────────────────
     @bp.route("/api/library/collections", methods=["GET"])
     @login_required
     def list_library_collections():

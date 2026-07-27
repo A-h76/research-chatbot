@@ -12,6 +12,13 @@ export interface CitationInput {
   project_id?: number | null;
 }
 
+export interface FormattedCitation {
+  citation: string;
+  source: "crossref" | "ai" | string;
+  verified: boolean;
+  message?: string;
+}
+
 export const citationsApi = {
   list: (params: { project_id?: number | null; q?: string } = {}) => {
     const p = new URLSearchParams();
@@ -32,6 +39,9 @@ export const citationsApi = {
                  `/api/citations/from-paper/${fileId}`,
                  { project_id: projectId ?? null },
                ),
+  /** Crossref-verified formatting when DOI is present; else local AI-style. */
+  format: (id: number, style: CitationFormat = "apa") =>
+            api.get<FormattedCitation>(`/api/citations/${id}/format?style=${style}`),
   exportUrl: (format: CitationFormat = "bibtex", projectId?: number | null) => {
     const p = new URLSearchParams({ format });
     if (projectId != null) p.set("project_id", String(projectId));

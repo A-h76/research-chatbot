@@ -13,6 +13,8 @@ import { LibraryUploadZone } from "../components/LibraryUploadZone";
 import { LibraryUploadQueue } from "../components/LibraryUploadQueue";
 import { ConnectLibraryPanel } from "../components/ConnectLibraryPanel";
 import { CollectionsPanel } from "../components/CollectionsPanel";
+import { LibraryHealthStrip } from "../components/LibraryHealthStrip";
+import { LibraryDuplicatesPanel } from "../components/LibraryDuplicatesPanel";
 import { useLibraryUpload } from "../hooks/useLibraryUpload";
 import { useDeleteFile, useFiles, useLibraryStats, useLibraryTags } from "../useFiles";
 import { useLibraryFacets } from "../useLibraryFacets";
@@ -231,6 +233,8 @@ export function FilesPage() {
             if (pid) setCurrentProjectId(pid);
           }}
         />
+        <LibraryHealthStrip projectId={currentProjectId} />
+        <LibraryDuplicatesPanel projectId={currentProjectId} />
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
           <CollectionsPanel
             activeId={collectionId}

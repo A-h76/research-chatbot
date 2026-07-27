@@ -18,6 +18,7 @@ export type LibraryFilterState = Pick<
 
 const SOURCE_OPTIONS: { value: NonNullable<LibraryListParams["import_source"]>; label: string }[] = [
   { value: "zotero", label: "From Zotero" },
+  { value: "mendeley", label: "From Mendeley" },
   { value: "bibtex", label: "BibTeX import" },
   { value: "ris", label: "RIS import" },
   { value: "discover", label: "OpenAlex / Discover" },

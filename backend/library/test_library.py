@@ -107,6 +107,8 @@ def test_import_service_dedup_and_project():
         metadata_source = Column(String(30), default="extracted")
         source_url = Column(String(500), default="")
         doi_verified = Column(Integer, default=0)
+        external_provider = Column(String(30), default="")
+        external_item_id = Column(String(120), default="")
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     class Project(Base):

@@ -3,10 +3,14 @@
 **Document type:** Engineering architecture audit (source of truth for development)  
 **Audience:** Staff / senior engineers taking ownership of this codebase  
 **Audit date:** 2026-07-26  
-**Last updated:** 2026-07-26 (Phase 1 UI + Design System D1–D9 shipped in SPA; backend Phase 1.1–1.7 + Phase 2 unchanged)  
+**Last updated:** 2026-07-27 (Library Bridge Phase 1a–1c + Research OS readiness; Dhund v2 Phase 2.0 validation kit frozen; Writing Studio 2.1 blocked)  
 **Method:** Codebase inspection — features described as Implemented must exist in code; planned-only design docs are called out explicitly  
 
-**Branding note (inconsistency):** The product is referred to as **Personal AI** (README, login copy, many UI strings), **Soro** (`frontend/index.html`, sidebar, Design System v2), **Research Workspace** (`templates/login.html`), and **ResearchOS** (CI workflow name, `brain.md`, systemd units). These are the same application, not forks. SPA chrome now brands primarily as **Soro**; login/legal templates may still say Personal AI.
+**Branding note (inconsistency):** Product marketed as **Dhund** (Research OS). Code/docs still mix **Personal AI** (README, login), **Soro** (`frontend/index.html`, Design System v2), **Research Workspace** (`templates/login.html`), and **ResearchOS** (CI, `brain.md`, systemd). Same application, not forks. Prefer **Dhund** in new user-facing copy.
+
+**Naming collision (read carefully):**  
+- **Analysis pipeline “Phase 1 / Phase 2”** = engines 1.1–1.7 + `AnalysisPipelineService` (unchanged).  
+- **Product roadmap “Phase 0 / 1 / 2.x”** = Platform → Research OS (Library) → Writing — see `docs/phase-2-writing-roadmap.md`.
 
 ---
 
@@ -14,15 +18,23 @@
 
 ## Current maturity
 
-**Early beta (research pipeline live on upload; Paper Workspace + Design System v2 chrome in SPA).**
+**Closed-beta Research OS — Library Bridge complete; Writing Studio not started.**
 
-The core product loop works: authenticated users can chat (streaming), upload documents, run async import → embed → **Phase 1 structured analysis** → LLM paper overview, inspect Phase 1 outputs in the Paper Workspace (Structure / Classification / Entities / Evidence / Graph), manage projects/notes/citations/memory, search locally, and use multi-paper compare/gaps tooling. Observability (Prometheus + JSON logs), quotas, dual auth (session + JWT), and a Prompt Engine exist for parts of the AI surface.
+The core loop works: authenticate, chat (streaming), upload/import papers, run async **import → embed → analysis-pipeline Phase 1.1–1.7 → LLM overview**, inspect Paper Workspace tabs, manage projects/notes/citations/memory, Discover/OpenAlex, multi-paper Compare/Gaps, and closed-beta ops (invites, support, admin metrics).
 
-**Phase 1 (1.1–1.7)** research engines are implemented, tested, and integrated via `AnalysisPipelineService` (Phase 2). Uploads enqueue `phase1_analysis`; results persist in `analysis_pipeline_results`; PromptBuilder/worker paper analysis consume Phase 1 JSON when present. The SPA consumes `/pipeline` + `/phases/*` via `features/pipeline` + paper tab mappers.
+**Product Phase 1 (Library as Research OS hub) is Implemented (2026-07-27):**
 
-**Design System v2 (D0 → D9)** is implemented in the live React app: tokens, slim sidebar (Home · Library · Projects · Writing; Ask Soro under More), Home launchpad, `PipelineStatus`, densified Library + CollectionToolbar, demoted global Chat, T4 Writing/Compare/Citations, ⌘K command palette v1, ErrorBoundary + session-expired modal + a11y skip link. Specs: `docs/DESIGN-SYSTEM-v2.md`, `docs/Interaction-Guidelines.md`.
+| Slice | What shipped |
+|-------|----------------|
+| **1a** | `ImportAdapter` + BibTeX/RIS/Zotero/Mendeley/OpenAlex one-shot import |
+| **1b** | Incremental sync (`library_sync_runs`, cursors), conflict-safe metadata merge, PDF attach → enqueue `import` |
+| **1c** | Derived **Research Ready** ladder, `GET /api/library/health`, duplicates list/merge, Library Health + Dupes UI |
 
-It is **not** production-hardened for a public multi-tenant SaaS launch: incomplete chat quota coverage in places, dual parallel stacks (chat vs Prompt Engine; two storage facades; two upload APIs), branding split on login templates. Chat still uses mixed prompt paths (normal chat PromptBuilder; paper chat legacy). Several production-hardening PRs (headers, MIME, metrics auth, chat rate limit) are marked done in §17 — verify deploy config before treating as live.
+**Product Phase 2.0 (Research Validation)** is **In progress — tooling frozen**. Protocol, session logs, participant tracker, ops readiness checklist exist. **Do not start Writing Studio (2.1)** until ≥5 researcher sessions and hard fails are triaged. Canonical docs: `docs/phase-2.0-*.md`, `docs/phase-2-writing-roadmap.md`.
+
+**Design System v2 (D0 → D9)** remains in the SPA. Existing `/writing` is a **transitional** paragraph-transform tool — rewrite target for Phase 2.1+, not the foundation.
+
+It is **not** public multi-tenant SaaS-hardened: dual stacks (chat vs Prompt Engine; two storage facades; two upload APIs), branding split, chat quota gaps. Verify deploy hardening (§17) on the live host before treating as production-complete.
 
 ## Current version
 
@@ -33,9 +45,9 @@ It is **not** production-hardened for a public multi-tenant SaaS launch: incompl
 | Backend docstring | `server.py` header: “Personal AI — … (Phase 1)” |
 | Phase-1 pipeline packages | Each declares `PIPELINE_VERSION = "1.0.0"` / `SCHEMA_VERSION = "1.0.0"` internally |
 | Integration layer | `backend/analysis_pipeline` → `PIPELINE_VERSION = "2.0.0"` |
-| Schema migrations | `migrations/0001` … **`0017`** (`analysis_pipeline_results`) |
+| Schema migrations | `migrations/0001` … **`0030`** (`library_sync` — connections cursors + `library_sync_runs` + external ids on files) |
 
-Treat this as an **unversioned product** with additive Postgres migrations through **0017**, Phase 1 libraries at **1.0.0**, and Phase 2 integration at **2.0.0**.
+Treat this as an **unversioned product** with additive Postgres migrations through **0030**, analysis-pipeline libraries at **1.0.0**, and analysis integration at **2.0.0**.
 
 ## Overall architecture
 
@@ -73,20 +85,20 @@ OpenAI / optional providers
 
 ## Current product positioning
 
-Private / personal **research & thesis writing assistant**: ChatGPT-style chat grounded in user uploads (RAG), projects with instructions, selective long-term memory, citation manager, structured document analysis (Phase 1) plus LLM paper overview, multi-paper compare/gap tools, and writing helpers. Positioned as a personal or small-team research workspace — not a billed multi-tenant SaaS (no payments integration).
+**Dhund** — Research Operating System: Discover → Collect → Organize → Analyze → Synthesize → **Write** (write is Phase 2.x, gated). Library is the hub; evidence-backed manuscripts are the long-term differentiator — not generic AI text generation. Personal/small-team research workspace; no payments integration.
 
 ## What the application currently does
 
-1. Authenticate via Google OAuth, magic link, or local DEV auto-login; SPA shows **Session expired** modal on 401 (no silent dump)  
-2. Stream chat replies (OpenAI Responses API) with optional web search + save_citation tools; global Ask Soro demoted under sidebar More / ⌘K  
-3. Upload documents/images from **Library** (toolbar + zone) or chat; queue **import → chunk/embed → Phase 1.1–1.7 → LLM paper analysis**  
-4. Persist Phase 1 outputs (`analysis_pipeline_results`); expose `/api/documents/<id>/analyze|pipeline|phases/*`  
-5. **Paper Workspace** tabs: Overview · Structure · Classification · Entities · Evidence · Graph · Narrative · Chat — pipeline AI-state chrome  
-6. RAG over user chunks (in-Python cosine similarity) in chat and via JWT `/api/rag`  
-7. Manage projects, files/library, notes, citations (table + BibTeX export), memories  
-8. Dashboard (research launchpad), corpus search, writing transforms, compare/gaps, settings, support tickets, legal pages  
-9. ⌘K command palette (find papers/projects/chats + core commands)  
-10. Admin-gated prompt authoring + usage analytics APIs (session `is_admin`)  
+1. Authenticate via Google OAuth, magic link, or local DEV auto-login; SPA shows **Session expired** modal on 401  
+2. Stream chat replies (OpenAI Responses API) with optional web search + save_citation tools  
+3. **Library:** upload PDFs, BibTeX/RIS import, Zotero/Mendeley connect + incremental sync, Discover/OpenAlex stubs, collections, search/facets  
+4. Attach PDF to metadata stubs → enqueue full `import` (chunk + analysis pipeline); derived **Research Ready** on file JSON + Library Health / duplicates UI  
+5. Persist analysis-pipeline outputs; Paper Workspace tabs (Structure → Graph, Narrative, Chat)  
+6. RAG over chunks; projects, notes, citations (styles + BibTeX), memories, Compare/Gaps  
+7. Closed beta: invites, `BetaBanner` / welcome modal (Library → Ready → Compare path), support tickets, admin ops metrics  
+8. Transitional Writing page (`POST /api/writing`) — not project-scoped Writing Studio  
+9. ⌘K palette, dashboard launchpad, settings, legal pages  
+10. Admin-gated prompt authoring + usage analytics APIs (`is_admin`)  
 
 ---
 
@@ -128,16 +140,29 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 
 ### Knowledge Library / Files
 
-**Status:** Implemented
+**Status:** Implemented (+ Library Bridge Research OS)
 
 | Area | Detail |
 |------|--------|
-| Backend | `POST/GET/PATCH/DELETE /api/files*`, library tags/stats; JWT `POST /api/documents/upload`; bulk `POST /api/uploads/bulk` |
-| Frontend | `features/files/` — dense Library (D5), `CollectionToolbar`, `LibraryUploadZone` / queue, dual upload paths in `api.ts` |
-| Endpoints | See §6 |
-| Database | `files`, `chunks`, `upload_jobs`, `upload_batches`, `storage_usage`, `upload_sessions` |
-| Dependencies | `storage/` + `backend/storage/`, `imports/`, worker |
-| Known issues | Two upload APIs with different allowlists/size limits historically; `FilePreviewDialog.tsx` still dead |
+| Backend | `POST/GET/PATCH/DELETE /api/files*`, library tags/stats/facets/search; JWT upload/bulk; **`backend/library/`** Bridge (adapters, sync, readiness, health, collections) |
+| Frontend | `features/files/` — dense Library, Connect panel, Health strip, Duplicates panel, FileCard readiness + Attach PDF, collections, Discover entry points |
+| Endpoints | See §6 + Library Bridge routes below |
+| Database | `files` (+ scholarly + `external_*`), `chunks`, jobs/batches, `library_connections`, `library_sync_runs`, `library_collections*` (migrations **0027–0030**, plus Discover **0021**) |
+| Dependencies | `storage/` + `backend/storage/`, `imports/`, worker, Zotero/Mendeley OAuth env |
+| Known issues | Two upload APIs; stub imports set `meta_status=done` without PDF — readiness must treat no-PDF as Metadata only (handled in `readiness.py`); `FilePreviewDialog.tsx` still dead |
+
+### Library Bridge / Research OS (product Phase 1a–1c)
+
+**Status:** Implemented (2026-07-27)
+
+| Slice | Backend | Frontend |
+|-------|---------|----------|
+| **1a Import** | `ImportAdapter`; BibTeX/RIS/Zotero/Mendeley/OpenAlex; `/api/library/import`, Zotero/Mendeley connect+import | `ConnectLibraryPanel`, `LibraryImportDialog` |
+| **1b Sync + PDF** | `LibrarySyncService`; provider `synchronize()`; `/api/library/*/sync`, `/sync/runs`; `/api/library/files/<id>/attach` enqueues **`import`** | Sync now / last sync; FileCard PDF attach |
+| **1c Readiness** | `readiness.py`, `health.py`; `/api/library/health`, `/duplicates`, `/duplicates/merge`; `_file_to_dict` adds `research_readiness` / `has_pdf` | `LibraryHealthStrip`, `LibraryDuplicatesPanel`, readiness badges |
+| Tests | `backend/library/test_*.py` (adapters, sync, collections, readiness) | — |
+
+**Product rules:** Collections ≠ auto-Projects; Library Record (metadata) vs Research Asset (PDF+analysis); never overwrite path/PDF on sync merge.
 
 ---
 
@@ -263,7 +288,28 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 
 ### Writing assistant
 
-**Status:** Implemented — `POST /api/writing`, `features/writing/`; D7 T4 Draft/Export chrome; page still uses raw `fetch` in places vs shared `writingApi.transform`
+**Status:** Partial — **transitional tool only** (not Writing Studio)
+
+| Area | Detail |
+|------|--------|
+| Live today | `POST /api/writing`, `features/writing/` paragraph transforms; D7 T4 chrome |
+| Not built | Project documents, autosave, version history, claim/evidence objects, guided generation, research reviewer |
+| Roadmap | Frozen: `docs/phase-2-writing-roadmap.md` — **2.0 validate → 2.1 shell → 2.2 evidence → 2.3 citations → 2.4 guided AI → 2.5 reviewer** |
+| Gate | **2.1 blocked** until Phase 2.0 sessions (≥5) + hard fails fixed/waived |
+| Principle | Every AI writing action must answer “What evidence is this based on?” |
+
+### Closed beta / validation ops
+
+**Status:** Implemented (ops) + Phase 2.0 validation **In progress**
+
+| Area | Detail |
+|------|--------|
+| Invites / gates | `security/ops/invites.py`, `CLOSED_BETA` / `BETA_INVITE_ONLY`, `/api/admin/ops/invites` |
+| UI | `BetaBanner`, `BetaWelcomeModal` (Library → Research Ready → Compare copy) |
+| Feedback | `POST /api/support` + Support page (`beta` / `bug`) |
+| Metrics | `/api/admin/ops/beta-metrics`, security-events, health; `/api/worker/health`; `/api/library/health` |
+| Validation kit | `docs/phase-2.0-research-validation.md`, session log template, participant tracker, `phase-2.0-ops-readiness.md` (scope frozen — no new dashboards) |
+| Missing (deferred) | Product analytics SDK, Sentry, runtime feature-flag service — **not required** to start researcher sessions |
 
 ---
 
@@ -347,8 +393,13 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 |--------|---------|------------------|--------------|----------------------|
 | **Authentication** | Identity | Google OAuth, magic link, DEV login, session, JWT mint/refresh | Authlib, JWT-Extended, Resend | **Implemented** |
 | **Projects** | Workspace scoping | CRUD, instructions, filter chats/files | `projects` table | **Implemented** |
-| **Knowledge Library** | Document store | Upload, list, tags, stats, ownership | storage, worker, files | **Implemented** |
-| **Paper Analysis** | Per-paper LLM summary + Phase 1 structured pipeline | Worker phase1→paper_analysis, HTTP analysis, AnalysisPipelineService; SPA Paper Workspace tabs | OpenAI, prompts, Phase 1 engines | **Implemented** |
+| **Knowledge Library** | Document store + Research OS hub | Upload, Bridge import/sync, readiness, health, dupes, collections | storage, worker, `backend/library/` | **Implemented** |
+| **Library Bridge** | External library ingest | Adapters, OAuth connectors, sync runs, attach PDF | Zotero/Mendeley APIs, Crossref | **Implemented** |
+| **Discover** | OpenAlex search → stubs | `/api/discover*`, DOI dedup | scholarly providers | **Implemented** |
+| **Paper Analysis** | Per-paper LLM summary + analysis-pipeline Phase 1 | Worker phase1→paper_analysis, HTTP analysis, AnalysisPipelineService; SPA Paper Workspace | OpenAI, prompts, engines | **Implemented** |
+| **Writing Studio** | Project-scoped evidence-backed drafts | Shell → evidence → citations → guided AI → reviewer | Library Ready papers, citations | **Not Implemented** (2.1+; gated by 2.0) |
+| **Writing (legacy page)** | Paragraph transforms | `POST /api/writing` | — | **Partial** (rewrite target) |
+| **Closed beta ops** | Invite + support + admin metrics | Invites, tickets, beta-metrics | `security/ops/` | **Implemented** |
 | **Prompt Engine** | Versioned prompts / personas / assembly | Registry, builder, seed, analytics, admin API; `phase1_context` | Jinja2 sandbox, DB | **Partial** (Paper Chat Stage 1 flagged OFF by default) |
 | **RAG** | Retrieval + optional answer | Chunk embeddings, cosine, `/api/rag` | OpenAI embed | **Implemented** (simple) |
 | **Memory** | Durable user facts | Chat write + Memory page + MemoryEngine | `memories` | **Implemented** |
@@ -624,11 +675,22 @@ Rate limits: Flask-Limiter **memory://** (not multi-process safe). Only routes l
 | POST | `/api/uploads/multipart/complete` | Session | Multipart |
 | POST | `/api/uploads/confirm` | Session | Confirm (may sync-process) |
 | PUT/GET | `/api/uploads/local-put\|get/<key>` | Signed token | Local storage |
-| GET | `/api/library/tags`, `/stats` | Session | Library |
+| GET | `/api/library/tags`, `/stats`, `/facets` | Session | Library aggregates |
+| GET | `/api/library/health` | Session | Readiness counts + sync freshness (Phase 1c) |
+| GET | `/api/library/duplicates` | Session | Duplicate groups |
+| POST | `/api/library/duplicates/merge` | Session | Merge stubs into keep |
+| POST | `/api/library/import` | Session | BibTeX/RIS import |
+| GET | `/api/library/export` | Session | BibTeX/RIS export |
+| GET | `/api/library/connections` | Session | Connector status |
+| POST/GET | `/api/library/zotero/*`, `/mendeley/*` | Session | OAuth, import, sync |
+| GET | `/api/library/sync/runs` | Session | Recent sync runs |
+| POST | `/api/library/files/<id>/attach` | Session | PDF → Research Asset (enqueues `import`) |
+| CRUD | `/api/library/collections*` | Session | Library collections |
+| GET/POST | `/api/discover*` | Session | OpenAlex Discover + import stubs |
 | GET | `/api/dashboard` | Session | Dashboard |
 | POST | `/api/documents/upload` | JWT | JWT upload |
 | POST | `/api/documents/<id>/analysis` | JWT | Sync LLM analysis (injects Phase 1 context if cached) |
-| POST | `/api/documents/<id>/analyze` | JWT | Trigger Phase 1 pipeline (async job; `?sync=1` inline) |
+| POST | `/api/documents/<id>/analyze` | JWT | Trigger analysis pipeline (async job; `?sync=1` inline) |
 | GET | `/api/documents/<id>/pipeline` | JWT | Full Phase 1 `phase_results` JSON |
 | GET | `/api/documents/<id>/phases/<phase>` | JWT | One Phase 1 stage result |
 | POST | `/api/uploads/bulk` | JWT | Bulk |
@@ -975,11 +1037,11 @@ CI sets unused `SECRET_KEY` (app expects `FLASK_SECRET_KEY`).
 | **Scalability** | 4 | Single-node friendly; no vector index; in-memory limiter; SQLite not worker-capable |
 | **Maintainability** | 5 | `server.py` monolith; three Bases; Phase 1 packages modular; branding inconsistency |
 | **Code Quality** | 7 | Strong pytest on Phase 1 + analysis_pipeline + upload; flake8 CI; some legacy deprecation left in place |
-| **UX** | 8 | Research OS chrome (D1–D9); Paper Workspace surfaces Phase 1; upload on Library; ⌘K; session/error UX |
-| **Deployment** | 5 | systemd units + Procfile; migration 0017 required for Phase 2 persist; no Docker/k8s |
-| **Observability** | 6 | Prometheus + JSON logs; no Sentry/alerts/product analytics |
-| **Testing** | 7 | Large pytest surface including Phase 1.1–1.7 + Phase 2 service tests; frontend Vitest not in CI |
-| **Overall readiness** | **6.5 / 10** | Suitable for **trusted private deploy** with allowlist + HTTPS + secrets hygiene + migration 0017; SPA research UX much stronger; **not** ready for open public multi-tenant production |
+| **UX** | 8 | Research OS chrome; Library Bridge Health/Ready/dupes; Paper Workspace; ⌘K |
+| **Deployment** | 5 | systemd / Procfile / Dockerfile; migrations through **0030** required on prod; confirm dhund.com freshness |
+| **Observability** | 6 | Prometheus + JSON logs; admin beta-metrics; no Sentry/product analytics SDK |
+| **Testing** | 7 | Large pytest incl. analysis pipeline + `backend/library/` (Bridge/sync/readiness); frontend Vitest not in CI |
+| **Overall readiness** | **7 / 10** | Ready for **Phase 2.0 closed-beta researcher validation** (allowlist + HTTPS + secrets + migrations ≤0030); Library Research OS live; Writing Studio **not** started; not open public multi-tenant |
 
 ---
 
@@ -1130,54 +1192,71 @@ Checklist (items not done or incomplete):
 
 # 20. Roadmap
 
-Based **only** on current implementation state (not aspirational design docs):
+Based on current implementation + frozen product docs (`docs/phase-2-writing-roadmap.md`).
 
-## Completed
+## Product roadmap (Dhund v2)
+
+| Phase | Name | Status |
+|-------|------|--------|
+| 0 | Platform & Closed Beta | ✅ Complete |
+| **1** | **Research Operating System** (Library Bridge 1a–1c) | ✅ Complete (2026-07-27) |
+| **SaaS-PK** | Plans, quotas, manual JazzCash/EasyPaisa, deploy | ⬜ Parallel with 2.1 · [`docs/public-saas-readiness-pk.md`](docs/public-saas-readiness-pk.md) |
+| **2.0** | Validation **kit** | ✅ Complete · **sessions after 2.2** |
+| **2.1** | Writing Studio Shell | ⬜ Next (no AI) |
+| **2.2** | Evidence Layer ⭐ | After 2.1 — then invite 5–10 researchers |
+| Soft launch | Founding cohort | After session fixes |
+| 2.3–2.5 | Citations · Guided gen · Reviewer | Grow with feedback |
+| — | Broader public launch | Later |
+
+**Balanced rule:** Don’t market loudly before 2.2; don’t wait for 2.5 before first outsiders. Canonical: [`docs/phase-2-writing-roadmap.md`](docs/phase-2-writing-roadmap.md).
+
+## Completed (engineering)
+
 - Session + Google OAuth + magic link + JWT bridge  
 - Streaming chat with tools (web search, save citation)  
 - Projects, memories, notes, citations, dashboard, settings  
 - Upload → Postgres worker → extract/chunk/embed  
-- **Phase 1.1–1.7** research engines (DU, classification, analysis context, medical, evidence grading, prompt assembly, knowledge graph) — code + tests  
-- **Phase 2 integration** — `AnalysisPipelineService`, `analysis_pipeline_results` (0017), worker `phase1_analysis`, APIs `/analyze|/pipeline|/phases/*`, PromptBuilder `phase1_context`  
-- **Phase 1 Paper Workspace UI** — Structure / Classification / Entities / Evidence / Graph + pipeline AI-state chrome  
-- **Design System v2 D1–D9** — tokens, shell/Home, PipelineStatus, Paper Overview, Library, Chat demotion, Writing/Compare/Citations, ⌘K, ErrorBoundary + session modal + a11y  
-- RAG (cosine) + JWT search/RAG endpoints  
-- Prompt Engine (registry, builder, personas, analytics APIs) for RAG + paper analysis  
-- Quotas (storage; partial tokens)  
-- Prometheus metrics + JSON logging  
-- Multi-paper compare/gaps, writing assistant, export  
-- CI: flake8 + pytest  
+- **Analysis pipeline Phase 1.1–1.7** + **integration** (`AnalysisPipelineService`, worker `phase1_analysis`, Paper Workspace UI)  
+- **Design System v2 D1–D9**  
+- **Library Bridge 1a–1c** — adapters, sync, attach→`import`, Research Ready, health, duplicates  
+- Discover/OpenAlex, library collections/search, closed-beta invites + support + admin ops APIs  
+- RAG (cosine) + Prompt Engine (partial adoption)  
+- Multi-paper compare/gaps, transitional writing transforms, export  
+- CI: flake8 + pytest · migrations through **0030**  
+- Phase 2.0 **validation kit + ops readiness checklist** (docs only; no Writing Studio)
 
 ## In Progress / inconsistent
+
+- **SaaS-PK + Phase 2.1/2.2** (billing + Writing shell + Evidence) before first researcher invites  
 - Dual auth/upload/storage stacks  
-- Branding rename (Soro SPA vs Personal AI login/legal)  
+- Branding rename (Dhund vs Soro vs Personal AI)  
 - Prompt Engine adoption (**paper chat** still legacy)  
 - Legacy confirm-upload / `extract_metadata` deprecation drain  
 - Admin role (API yes, UI no)  
 - Legal/support production copy  
 
-## Next (highest leverage before public launch)
-1. Verify production hardening PRs (§17) on every deploy (secrets, allowlist, headers, MIME, metrics, chat limits)  
-2. Finish legacy path removal (confirm-upload threads → queue-only)  
-3. Paper-scoped chat → PromptBuilder (+ optional Phase 1 inject)  
-4. Add chat/message indexes; decide pgvector timeline  
-5. Run frontend tests in CI; fix legal placeholders + brand templates  
-6. Apply migration **0017** on all deployed Postgres environments  
-7. Delete or wire remaining dead FE (`ProjectList`, `FilePreviewDialog`)  
+## Next (highest leverage — ordered)
+
+1. **SaaS-PK ∥ Phase 2.1** — plans/quotas/JazzCash manual checkout + Writing Studio shell (no AI)  
+2. **Phase 2.2 Evidence Layer** — completes “Import → Analyse → Compare → Write with evidence”  
+3. **Invite 5–10 researchers** (Phase 2.0 protocol) on that full story → fix critical issues  
+4. **Founding soft launch** → then 2.3–2.5 with feedback  
+5. Deploy/smoke + hardening on dhund.com throughout  
+6. JazzCash merchant API only when manual confirms become a burden  
+
+See [`docs/phase-2-writing-roadmap.md`](docs/phase-2-writing-roadmap.md).  
 
 ## Future
-- ImportSession checkpointing  
-- Feature flags service (or drop table)  
-- Populate or remove `search_index`  
-- Product analytics + Sentry  
-- Admin UI  
-- Resizable rails persistence  
-- Graph DB persistence / query engine (Phase 1.7 non-goals)  
-- Competitive track M13+ (compare→outline, claim blocks, writing studio) per `docs/soro-vs-jenni-roadmap.md`  
+
+- Phase 2.3–2.5 after soft launch (citations polish → guided AI → reviewer)  
+- Competitive detail still in `docs/soro-vs-jenni-roadmap.md` (ViewModel reuse)  
+- JazzCash/EasyPaisa merchant API when manual confirms scale  
+- ImportSession checkpointing; feature flags service  
+- Product analytics + Sentry; Admin UI; pgvector / hybrid search  
+- Graph DB persistence (analysis Phase 1.7 non-goals) · Team/University collab  
 
 ## Long-term
-- Vector index / hybrid search  
-- Deeper medical product UX on top of Phase 1.4–1.7  
+
 - Payments / multi-tenant packaging (if business requires)  
 - Possible Celery revisit only if Postgres worker proven insufficient (ADR currently says no)  
 
@@ -1189,37 +1268,31 @@ Based **only** on current implementation state (not aspirational design docs):
 |------|------|
 | App entry | `server.py` |
 | Worker | `worker.py` (`import` → `phase1_analysis` → `paper_analysis`) |
-| Migrations | `migrations/0001`–`0017`, `run_migrations.py` |
+| Migrations | `migrations/0001`–`0030`, `run_migrations.py` |
 | Auth | `auth/` |
+| **Library Bridge** | `backend/library/` (adapters, sync, readiness, health, routes, collections) |
 | Upload JWT | `backend/upload/` |
 | Search/RAG JWT | `backend/search/` |
 | Prompt Engine | `backend/ai/`, `backend/prompts/` |
-| **Phase 2 integration** | `backend/analysis_pipeline/` |
-| Phase 1.1 | `backend/document_understanding/` |
-| Phase 1.2 | `backend/classification/` (prefer `pass2`) |
-| Phase 1.3 | `backend/analysis_context/` |
-| Phase 1.4 | `backend/medical_understanding/` |
-| Phase 1.5 | `backend/evidence_grading/` |
-| Phase 1.6 | `backend/prompt_assembly/` |
-| Phase 1.7 | `backend/knowledge_graph/` |
-| Processing precursor | `backend/processing/` (adapter for older pass1) |
+| Analysis pipeline integration | `backend/analysis_pipeline/` |
+| Phase 1.1–1.7 engines | `backend/document_understanding/` … `knowledge_graph/` |
+| Closed beta ops | `security/ops/` |
 | Storage | `storage/`, `backend/storage/` |
 | Imports | `imports/` |
-| Quotas | `quotas/` |
-| Observability | `observability/` |
-| Frontend | `frontend/src/` (`features/pipeline`, `features/papers`, Design System shell) |
-| Design System | `docs/DESIGN-SYSTEM-v2.md`, `docs/Interaction-Guidelines.md`, `docs/prototypes/d0.5/` |
+| Frontend Library | `frontend/src/features/files/` |
+| Frontend Writing (legacy) | `frontend/src/features/writing/` |
+| Design System | `docs/DESIGN-SYSTEM-v2.md`, `docs/Interaction-Guidelines.md` |
+| **Dhund v2 Phase 2** | `docs/phase-2-writing-roadmap.md`, `docs/phase-2.0-*.md` |
+| Competitive writing detail | `docs/soro-vs-jenni-roadmap.md` |
 | CI | `.github/workflows/ci.yml` |
-| Deploy | `deploy/systemd/`, `Procfile` |
+| Deploy | `deploy/systemd/`, `Procfile`, `Dockerfile` |
 | Internal map (may drift) | `brain.md` |
-| Design docs (partially superseded) | `docs/` |
-| Architecture note (Phase 2) | `backend/analysis_pipeline/ARCHITECTURE.md` |
-| UI audit (D9 closure in §20) | `UI-State.md` |
 
 ## Appendix B — Explicit “Unable to verify”
 
 - Exact runtime coverage % of pytest  
 - Whether production deploy currently uses R2 vs local  
+- Whether **dhund.com** is live on the latest Library Bridge build  
 - Operational backup/restore procedures outside the repo  
 - Every individual endpoint’s complete OpenAPI-style request/response schema  
 - Dependency CVE status at audit time (no scanner in CI)  
@@ -1227,4 +1300,4 @@ Based **only** on current implementation state (not aspirational design docs):
 
 ---
 
-*End of PROJECT_STATUS.md — audited 2026-07-26; refreshed after Phase 1.1–1.7 + Phase 2; updated same day for Phase 1 Paper Workspace UI + Design System D1–D9.*
+*End of PROJECT_STATUS.md — audited 2026-07-26; refreshed 2026-07-27 for Library Bridge 1a–1c, Dhund Phase 2.0 validation (Writing Studio blocked), migrations through 0030.*

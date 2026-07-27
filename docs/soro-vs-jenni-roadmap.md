@@ -1,7 +1,8 @@
 # Soro vs Jenni — Competitive Roadmap
 
-**Status:** Planning  
+**Status:** Planning (competitive detail)  
 **Date:** 2026-07-26  
+**Canonical Phase 2 sequence:** [`phase-2-writing-roadmap.md`](./phase-2-writing-roadmap.md) **(frozen)** — validation gate → shell → evidence → citations → guided AI → reviewer.  
 **Companions:** [`UI-Architecture.md`](../UI-Architecture.md) · [`PRODUCT-SPEC.md`](../PRODUCT-SPEC.md)  
 **Audience:** Product + engineering
 

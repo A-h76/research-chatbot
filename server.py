@@ -636,6 +636,9 @@ class UserFile(Base):
     metadata_source = Column(String(30), default="extracted")  # extracted|crossref|openalex|user
     source_url = Column(String(500), default="")
     doi_verified = Column(Boolean, default=False)
+    # Phase 1b — stable identity for Connect library sync
+    external_provider = Column(String(30), default="")  # zotero|mendeley|…
+    external_item_id = Column(String(120), default="")
 
     chunks = relationship("Chunk", cascade="all, delete-orphan", back_populates="file")
 
@@ -1026,6 +1029,7 @@ from security.ops import (
 from backend.library.models import (
     create_library_collection_models,
     create_library_connection_model,
+    create_library_sync_run_model,
 )
 
 SystemSetting = create_system_settings_model(Base)
@@ -1034,6 +1038,7 @@ InviteToken = create_invite_token_model(Base)
 EmailVerificationToken, PasswordResetToken = create_email_token_models(Base)
 LibraryConnection = create_library_connection_model(Base)
 LibraryCollection, LibraryCollectionPaper = create_library_collection_models(Base)
+LibrarySyncRun = create_library_sync_run_model(Base)
 
 
 # checkfirst=True is SQLAlchemy's own default (verified: MetaData.create_all's
@@ -1146,6 +1151,11 @@ def ensure_columns():
         "ALTER TABLE files ADD COLUMN metadata_source VARCHAR(30) DEFAULT 'extracted'",
         # ── Discover import stubs (migration 0021) ───────────────────────
         "ALTER TABLE files ADD COLUMN source_url VARCHAR(500) DEFAULT ''",
+        # ── Library sync Phase 1b (migration 0030) ───────────────────────
+        "ALTER TABLE files ADD COLUMN external_provider VARCHAR(30) DEFAULT ''",
+        "ALTER TABLE files ADD COLUMN external_item_id VARCHAR(120) DEFAULT ''",
+        "ALTER TABLE library_connections ADD COLUMN last_synced_at TIMESTAMP",
+        "ALTER TABLE library_connections ADD COLUMN sync_cursor TEXT DEFAULT ''",
     ):
         try:
             with engine.begin() as conn:
@@ -1760,10 +1770,11 @@ app.register_blueprint(
     )
 )
 
-# Library Bridge — BibTeX/RIS + Connect Library + Collections (Phase 1.6)
+# Library Bridge — BibTeX/RIS + Connect Library + Collections + Sync (Phase 1b)
 from backend.library.collections import CollectionService
 from backend.library.routes import create_library_bridge_blueprint
 from backend.library.service import LibraryImportService
+from backend.library.sync import LibrarySyncService
 from backend.scholarly.crossref import enrich_file_from_doi as _enrich_file_from_doi
 
 _collection_service = CollectionService(
@@ -1781,9 +1792,19 @@ _library_import = LibraryImportService(
     enrich_file_from_doi=_enrich_file_from_doi,
     collection_service=_collection_service,
 )
+_library_sync = LibrarySyncService(
+    SessionLocal,
+    UserFile,
+    LibraryConnection,
+    LibrarySyncRun,
+    select,
+    _library_import,
+    enrich_file_from_doi=_enrich_file_from_doi,
+)
 app.register_blueprint(
     create_library_bridge_blueprint(
         import_service=_library_import,
+        sync_service=_library_sync,
         SessionLocal=SessionLocal,
         UserFile=UserFile,
         LibraryConnection=LibraryConnection,
@@ -1794,6 +1815,15 @@ app.register_blueprint(
         enrich_file_from_doi=_enrich_file_from_doi,
         limiter=limiter,
         collection_service=_collection_service,
+        storage=storage,
+        enqueue_import=lambda db, uid, fid: _enqueue_job(db, uid, fid, "import"),
+        enqueue_phase1=lambda db, uid, fid: _enqueue_job(db, uid, fid, "phase1_analysis"),
+        # Deferred: _file_to_dict is defined later in this module.
+        file_to_dict=lambda x: _file_to_dict(x),
+        upload_dir=UPLOAD_DIR,
+        max_file_mb=MAX_FILE_MB,
+        allowed_extensions=None,  # attach route defaults to PDF
+        LibrarySyncRun=LibrarySyncRun,
     )
 )
 
@@ -2834,14 +2864,17 @@ def _file_to_dict(x: UserFile) -> dict:
 
     Centralising this means every route (upload, list, patch, …) returns
     exactly the same shape and there is one place to add fields."""
-    return {
+    from backend.library.readiness import readiness_payload
+
+    n_chunks = len(x.chunks)
+    payload = {
         "id": x.id,
         "name": x.name,
         "kind": x.kind,
         "size": x.size,
         "project_id": x.project_id,
         "conversation_id": x.conversation_id,
-        "chunks": len(x.chunks),
+        "chunks": n_chunks,
         # ── research metadata ──
         "title": x.title or "",
         "authors": x.authors or "",
@@ -2857,11 +2890,15 @@ def _file_to_dict(x: UserFile) -> dict:
         "doi_verified": bool(getattr(x, "doi_verified", False)),
         "metadata_source": getattr(x, "metadata_source", "extracted") or "extracted",
         "source_url": getattr(x, "source_url", "") or "",
+        "external_provider": getattr(x, "external_provider", "") or "",
+        "external_item_id": getattr(x, "external_item_id", "") or "",
         "crossref_last_synced": (
             getattr(x, "crossref_last_synced", None).isoformat()
             if getattr(x, "crossref_last_synced", None) else None
         ),
     }
+    payload.update(readiness_payload(x, chunk_count=n_chunks))
+    return payload
 
 
 def extract_memories(user_id, project_id, convo_messages):
@@ -5418,6 +5455,56 @@ def get_citation(cid):
         if not c or c.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
         return jsonify(_citation_to_dict(c))
+    finally:
+        db.close()
+
+
+@app.route("/api/citations/<int:cid>/format", methods=["GET"])
+@login_required
+def scholarly_format_citation(cid):
+    """Crossref-verified formatted citation for a citation manager row.
+
+    GET /api/citations/<cid>/format?style=apa  (apa|ieee|bibtex|mla)
+    Returns {citation, source, verified}. Falls back to local AI-style
+    formatting when DOI is missing or Crossref is unavailable.
+    """
+    from backend.scholarly.crossref import format_citation as crossref_format
+
+    style = (request.args.get("style") or "apa").lower()
+    if style not in ("apa", "ieee", "bibtex", "mla"):
+        return jsonify({"error": "unsupported style"}), 400
+
+    db = SessionLocal()
+    try:
+        c = db.get(Citation, cid)
+        if not c or c.user_id != session["user_id"]:
+            return jsonify({"error": "not_found"}), 404
+
+        local = format_citation(c, style if style != "mla" else "apa")
+        doi = (c.doi or "").strip()
+        if not doi:
+            return jsonify({
+                "citation": local,
+                "source": "ai",
+                "verified": False,
+                "message": "No DOI — showing locally formatted citation.",
+            })
+
+        try:
+            result = crossref_format(doi, style, db)
+        except Exception as exc:
+            app.logger.warning("citation format Crossref failed cid=%s: %s", cid, exc)
+            result = None
+
+        if result and result.get("verified") and result.get("citation"):
+            return jsonify(result)
+
+        return jsonify({
+            "citation": local or (result or {}).get("citation") or "",
+            "source": "ai",
+            "verified": False,
+            "message": "Crossref unavailable — showing locally formatted citation.",
+        })
     finally:
         db.close()
 

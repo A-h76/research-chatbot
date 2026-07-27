@@ -152,6 +152,7 @@ def _apply_import_source(UserFile, source: str):
         "bibtex": "from-bibtex",
         "ris": "from-ris",
         "discover": "from-discover",
+        "mendeley": "from-mendeley",
     }
     clauses = []
     if source in meta_map:
@@ -161,7 +162,7 @@ def _apply_import_source(UserFile, source: str):
     if source == "import":
         clauses.append(
             or_(
-                UserFile.metadata_source.in_(("bibtex", "ris", "zotero", "openalex")),
+                UserFile.metadata_source.in_(("bibtex", "ris", "zotero", "mendeley", "openalex")),
                 UserFile.tags.contains("from-"),
             )
         )

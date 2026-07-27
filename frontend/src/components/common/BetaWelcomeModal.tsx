@@ -15,9 +15,9 @@ import type { Me } from "@/types/api";
 const SEEN_KEY = "dhund-beta-welcome-seen";
 
 const STEPS = [
-  "Create a project for your research topic",
-  "Upload 2+ papers and wait for analysis to finish",
-  "Run a research question — findings land in Memory",
+  "Open Library — import from Zotero, Mendeley, BibTeX/RIS, or upload PDFs",
+  "Attach PDFs to metadata-only rows until papers become Research Ready",
+  "Compare a few ready papers — then tell us if you’d want to write the review here",
 ];
 
 export function BetaWelcomeModal({ me }: { me: Me }) {
@@ -50,8 +50,9 @@ export function BetaWelcomeModal({ me }: { me: Me }) {
           </div>
           <DialogTitle>Welcome to the Dhund closed beta</DialogTitle>
           <DialogDescription>
-            This is an early research workspace — we&apos;re learning what helps you most.
-            Here&apos;s the workflow we&apos;re validating:
+            This is an early research workspace. For this beta we&apos;re validating the
+            literature-review path — Library → Research Ready → Compare — before building
+            a full Writing Studio.
           </DialogDescription>
         </DialogHeader>
         <ol className="list-decimal space-y-2 pl-5 text-sm text-muted-foreground">

@@ -240,6 +240,17 @@ export interface UserFile {
   source_url?: string;
   doi_verified?: boolean;
   crossref_last_synced?: string | null;
+  external_provider?: string;
+  external_item_id?: string;
+  /** Derived Library Record → Research Asset ladder (Phase 1c). */
+  research_readiness?:
+    | "metadata_only"
+    | "pdf_attached"
+    | "analysed"
+    | "indexed"
+    | "research_ready";
+  research_readiness_label?: string;
+  has_pdf?: boolean;
 }
 
 export interface PaperAnalysis {

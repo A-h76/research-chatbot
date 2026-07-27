@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FileText,
@@ -6,10 +7,14 @@ import {
   CheckCircle2,
   BookOpen,
   BookMarked,
+  Upload,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { AiStateBadge, type AiStateResolved } from "@/features/pipeline";
+import { toast } from "@/components/common/Toast";
 import type { Project, UserFile } from "@/types/api";
+import { libraryBridgeApi } from "../libraryBridgeApi";
 
 const STATUS_ICONS = {
   unread: BookOpen,
@@ -32,13 +37,32 @@ export function FileCard({
   aiState?: AiStateResolved;
 }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const rs = (file.reading_status ?? "unread") as "unread" | "reading" | "read";
   const StatusIcon = STATUS_ICONS[rs];
   const isPaper = file.kind === "document";
+  const readiness = file.research_readiness;
+  const metadataOnly =
+    isPaper &&
+    (readiness === "metadata_only" ||
+      file.has_pdf === false ||
+      (!readiness && (file.size === 0 || !file.size)));
   const displayTitle = file.title || file.name;
   const meta = [file.authors?.split(";")[0]?.trim(), file.year]
     .filter(Boolean)
     .join(" · ");
+
+  const attachPdf = async (pdf: File) => {
+    try {
+      await libraryBridgeApi.attachPdf(file.id, pdf);
+      toast.success("PDF attached — analysis queued");
+      void qc.invalidateQueries({ queryKey: ["files"] });
+      void qc.invalidateQueries({ queryKey: ["library"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not attach PDF");
+    }
+  };
 
   return (
     <div
@@ -79,13 +103,39 @@ export function FileCard({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        {isPaper && (file.size === 0 || file.metadata_source === "openalex") && (
+        {isPaper && readiness && readiness !== "research_ready" && (
           <span
             className="hidden rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline"
-            title="Imported from Discover — upload a PDF to run analysis"
+            title={file.research_readiness_label || readiness}
           >
-            Metadata only
+            {file.research_readiness_label || readiness.replace(/_/g, " ")}
           </span>
+        )}
+        {metadataOnly && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              className="hidden"
+              onChange={(e) => {
+                const pdf = e.target.files?.[0];
+                if (pdf) void attachPdf(pdf);
+                e.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                fileInputRef.current?.click();
+              }}
+              className="hidden items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground sm:inline-flex"
+              title="Attach PDF to analyse"
+            >
+              <Upload className="size-3" /> PDF
+            </button>
+          </>
         )}
         {isPaper && <AiStateBadge state={aiState} metaStatus={file.meta_status} />}
         {isPaper && (

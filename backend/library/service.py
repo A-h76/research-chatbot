@@ -234,6 +234,8 @@ class LibraryImportService:
                     metadata_source=rec.source if rec.source in {"bibtex", "ris", "zotero", "mendeley", "openalex"} else "user",
                     source_url=(rec.url or rec.pdf_url or "")[:500],
                     doi_verified=False,
+                    external_provider=(rec.source or "")[:30],
+                    external_item_id=(rec.external_id or "")[:120],
                 )
                 db.add(uf)
                 db.flush()

@@ -92,14 +92,91 @@ def finish_oauth(
     }
 
 
-def _api_get(path: str, access_token: str, access_secret: str, params: dict | None = None) -> Any:
+def _api_get(
+    path: str,
+    access_token: str,
+    access_secret: str,
+    params: dict | None = None,
+    *,
+    return_headers: bool = False,
+) -> Any:
     sess = _oauth1_session(token=access_token, token_secret=access_secret)
     url = f"{ZOTERO_API}{path}"
     r = sess.get(url, params=params or {}, timeout=30)
     r.raise_for_status()
     if not r.content:
-        return []
-    return r.json()
+        data: Any = [] if not return_headers else ([], {})
+        return data
+    body = r.json()
+    if return_headers:
+        return body, dict(r.headers)
+    return body
+
+
+def fetch_items_since(
+    access_token: str,
+    access_secret: str,
+    zotero_user_id: str,
+    *,
+    since_version: int = 0,
+    limit: int = 200,
+) -> tuple[list[LibraryRecord], int]:
+    """Incremental fetch using Zotero ``since`` library version.
+
+    Returns (records, new_library_version). When ``since_version`` is 0,
+    behaves like a capped first sync of top-level items.
+    """
+    since_version = max(0, int(since_version or 0))
+    limit = max(1, min(int(limit or 200), 500))
+    path = f"/users/{zotero_user_id}/items/top"
+    params: dict[str, Any] = {
+        "limit": min(limit, 100),
+        "format": "json",
+        "since": since_version,
+    }
+    data, headers = _api_get(
+        path, access_token, access_secret, params=params, return_headers=True
+    )
+    new_version = since_version
+    try:
+        new_version = int(headers.get("Last-Modified-Version") or headers.get("last-modified-version") or since_version)
+    except (TypeError, ValueError):
+        new_version = since_version
+
+    records: list[LibraryRecord] = []
+    for item in data or []:
+        rec = _item_to_record(item)
+        if rec:
+            records.append(rec)
+        if len(records) >= limit:
+            break
+
+    # If first page filled and we still need more, page with start
+    start = len(data or [])
+    while len(records) < limit and start > 0 and len(data or []) >= params["limit"]:
+        page_params = dict(params)
+        page_params["start"] = start
+        data2, headers2 = _api_get(
+            path, access_token, access_secret, params=page_params, return_headers=True
+        )
+        try:
+            v2 = int(headers2.get("Last-Modified-Version") or new_version)
+            new_version = max(new_version, v2)
+        except (TypeError, ValueError):
+            pass
+        if not data2:
+            break
+        for item in data2:
+            rec = _item_to_record(item)
+            if rec:
+                records.append(rec)
+            if len(records) >= limit:
+                break
+        start += len(data2)
+        if len(data2) < params["limit"]:
+            break
+
+    return records[:limit], max(new_version, since_version)
 
 
 def list_collections(access_token: str, access_secret: str, zotero_user_id: str) -> list[dict]:

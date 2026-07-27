@@ -1,4 +1,4 @@
-"""ORM helpers for Connect Library tokens + Library collections."""
+"""ORM helpers for Connect Library tokens + Library collections + sync runs."""
 
 from __future__ import annotations
 
@@ -30,6 +30,8 @@ def create_library_connection_model(Base):
         refresh_token = Column(Text, default="")  # OAuth2 (Mendeley)
         meta_json = Column(Text, default="{}")  # username, library type, etc.
         status = Column(String(20), default="active")  # active|revoked
+        last_synced_at = Column(DateTime, nullable=True)
+        sync_cursor = Column(Text, default="")  # provider opaque cursor / version JSON
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
         updated_at = Column(
             DateTime,
@@ -38,6 +40,29 @@ def create_library_connection_model(Base):
         )
 
     return LibraryConnection
+
+
+def create_library_sync_run_model(Base):
+    class LibrarySyncRun(Base):
+        __tablename__ = "library_sync_runs"
+
+        id = Column(Integer, primary_key=True)
+        user_id = Column(Integer, nullable=False, index=True)
+        connection_id = Column(Integer, nullable=True, index=True)
+        provider = Column(String(30), nullable=False)
+        status = Column(String(20), default="running")  # running|ok|error
+        started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+        finished_at = Column(DateTime, nullable=True)
+        created_count = Column(Integer, default=0)
+        updated_count = Column(Integer, default=0)
+        skipped_count = Column(Integer, default=0)
+        conflict_count = Column(Integer, default=0)
+        cursor_before = Column(Text, default="")
+        cursor_after = Column(Text, default="")
+        error_text = Column(Text, default="")
+        detail_json = Column(Text, default="{}")
+
+    return LibrarySyncRun
 
 
 def create_library_collection_models(Base):

@@ -97,7 +97,7 @@ export interface LibraryListParams {
   year_from?: string;
   year_to?: string;
   venue?: string;
-  import_source?: "zotero" | "bibtex" | "ris" | "discover" | "upload" | "import";
+  import_source?: "zotero" | "mendeley" | "bibtex" | "ris" | "discover" | "upload" | "import";
   collection_id?: number | null;
   recent_days?: number;
   sort?: "recent" | "title" | "authors" | "year" | "reading_status" | "size";
