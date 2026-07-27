@@ -111,11 +111,19 @@ def _handle_import(db, job):
     with server.storage.storage_manager.provider.local_copy(uf.path, suffix=ext) as local_path:
 
         def enqueue_followups(file_id, text, content_hash):
-            # Phase 2: Phase 1 pipeline is the primary structured analysis path.
+            # Extract DOI → Crossref enrich BEFORE Phase 1 so AI analysis
+            # benefits from verified title/authors/abstract. Soft-fail.
+            try:
+                from backend.scholarly.crossref import enrich_from_extracted_text
+                enrich_from_extracted_text(db, file_id, text or "")
+            except Exception as _cx_exc:
+                import logging as _log
+                _log.getLogger(__name__).warning(
+                    "crossref pre-phase1 skipped file_id=%s: %s", file_id, _cx_exc
+                )
+            # Phase 1 pipeline is the primary structured analysis path.
             # paper_analysis (LLM overview) runs after phase1 so PromptBuilder
-            # can consume persisted Phase 1 outputs. extract_metadata remains
-            # available for legacy queued jobs but is no longer enqueued here —
-            # Phase 1.1 bibliographic fields fill UserFile when present.
+            # can consume persisted Phase 1 outputs.
             _enqueue_job(db, uf.user_id, file_id, "phase1_analysis", job.upload_batch_id)
 
         _process_document(
@@ -188,16 +196,8 @@ def _handle_phase1_analysis(db, job):
         if result.status.value == "failed":
             raise RuntimeError("; ".join(result.errors) or "phase1_analysis failed")
 
-        # Crossref enrichment: async, soft-fail, never blocks Phase 1 completion.
-        try:
-            from backend.scholarly.crossref import enrich_file_from_doi
-            enrich_file_from_doi(db, job.file_id)
-        except Exception as _cx_exc:
-            import logging as _log
-            _log.getLogger(__name__).warning(
-                "crossref enrichment skipped file_id=%s: %s", job.file_id, _cx_exc
-            )
-
+        # Crossref already ran in import→enqueue_followups (before Phase 1).
+        # Phase 1.1 may still fill empty bibliographic fields via only_empty=True.
         _enqueue_job(db, uf.user_id, job.file_id, "paper_analysis", job.upload_batch_id)
         db.commit()
     except Exception as exc:

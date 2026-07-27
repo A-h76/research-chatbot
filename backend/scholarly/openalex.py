@@ -6,12 +6,7 @@ Public API:
   search_works(query, page, per_page, db) → list[OpenAlexWork]
   get_work_by_doi(doi, db)               → OpenAlexWork | None
 
-OpenAlexWork is a plain dataclass — no ORM, no Flask imports.
-Provenance: source='openalex' on every result.
-
-Rate/cache:
-  Search results cached 30 min (query-hash keyed).
-  DOI lookups cached 7 days.
+No API key required for normal use. Optional OPENALEX_BASE_URL override.
 """
 
 from __future__ import annotations
@@ -22,20 +17,18 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-from backend.scholarly import ProviderCache, provider_get
+from backend.scholarly import ProviderCache, get_or_fetch, provider_get
 
 logger = logging.getLogger(__name__)
 
-_OPENALEX_BASE = "https://api.openalex.org"
-_OPENALEX_API_KEY = os.environ.get("OPENALEX_API_KEY", "")
+_OPENALEX_BASE = os.environ.get("OPENALEX_BASE_URL", "https://api.openalex.org").rstrip("/")
 _OPENALEX_TIMEOUT = int(os.environ.get("OPENALEX_TIMEOUT", "5"))
 _OPENALEX_EMAIL = os.environ.get("CROSSREF_MAILTO", "admin@soro.app")
+_OPENALEX_VERSION = "v1"
 
 
 def _params(**extra: Any) -> dict[str, Any]:
     p: dict[str, Any] = {"mailto": _OPENALEX_EMAIL}
-    if _OPENALEX_API_KEY:
-        p["api_key"] = _OPENALEX_API_KEY
     p.update(extra)
     return p
 
@@ -68,7 +61,6 @@ def _parse_work(item: dict[str, Any]) -> OpenAlexWork:
             authors_list.append(name)
     authors = "; ".join(authors_list)
 
-    # Abstract from inverted index (OpenAlex format)
     abstract_inv = item.get("abstract_inverted_index")
     abstract = ""
     if abstract_inv and isinstance(abstract_inv, dict):
@@ -115,63 +107,91 @@ def search_works(
     per_page: int = 15,
     db: Any,
 ) -> list[OpenAlexWork]:
-    """Search OpenAlex by keyword.  Returns up to per_page results."""
+    """Search OpenAlex by keyword. Cached 30 min; stale-while-revalidate."""
     query = query.strip()
     if not query:
         return []
 
-    cache_key = hashlib.sha256(f"search:{query}:{page}:{per_page}".encode()).hexdigest()[:48]
+    cache_key = hashlib.sha256(
+        f"search:{query.lower()}:{page}:{per_page}".encode()
+    ).hexdigest()[:48]
     cache = ProviderCache(db, "openalex")
-    cached = cache.get(cache_key)
-    if cached:
-        return [OpenAlexWork(**w) for w in cached.get("works", [])]
 
-    raw = provider_get(
-        f"{_OPENALEX_BASE}/works",
-        params=_params(
-            search=query,
-            per_page=min(per_page, 25),
-            page=page,
-            select=(
-                "id,doi,title,authorships,publication_year,"
-                "primary_location,abstract_inverted_index,"
-                "cited_by_count,best_oa_location,concepts"
+    def _fetch() -> dict[str, Any] | None:
+        raw = provider_get(
+            f"{_OPENALEX_BASE}/works",
+            provider="openalex",
+            endpoint="works/search",
+            params=_params(
+                search=query,
+                per_page=min(per_page, 25),
+                page=page,
+                select=(
+                    "id,doi,title,authorships,publication_year,"
+                    "primary_location,abstract_inverted_index,"
+                    "cited_by_count,best_oa_location,concepts"
+                ),
             ),
-        ),
-        timeout=_OPENALEX_TIMEOUT,
-    )
-    if not raw:
-        return []
+            timeout=_OPENALEX_TIMEOUT,
+            db=db,
+        )
+        if not raw:
+            return None
+        results = [_parse_work(item) for item in (raw.get("results") or [])]
+        return {"works": [w.__dict__ for w in results]}
 
-    results = [_parse_work(item) for item in (raw.get("results") or [])]
-    cache.set(cache_key, {"works": [w.__dict__ for w in results]}, ttl_hours=1)
-    return results
+    cached = get_or_fetch(
+        cache,
+        cache_key,
+        _fetch,
+        ttl_hours=1,  # 30–60 min band; 1h is fine for Discover
+        provider_version=_OPENALEX_VERSION,
+        endpoint="works/search",
+        allow_stale=True,
+        background_refresh=True,
+    )
+    if not cached:
+        return []
+    return [OpenAlexWork(**w) for w in cached.get("works", [])]
 
 
 def get_work_by_doi(doi: str, *, db: Any) -> OpenAlexWork | None:
     """Fetch a single work by DOI."""
-    doi = doi.strip().lstrip("https://doi.org/")
+    doi = doi.strip().removeprefix("https://doi.org/")
     if not doi:
         return None
     cache_key = f"doi:{doi}"
     cache = ProviderCache(db, "openalex")
-    cached = cache.get(cache_key)
-    if cached and cached.get("id"):
-        return OpenAlexWork(**cached)
 
-    raw = provider_get(
-        f"{_OPENALEX_BASE}/works/https://doi.org/{doi}",
-        params=_params(
-            select=(
-                "id,doi,title,authorships,publication_year,"
-                "primary_location,abstract_inverted_index,"
-                "cited_by_count,best_oa_location,concepts"
-            )
-        ),
-        timeout=_OPENALEX_TIMEOUT,
+    def _fetch() -> dict[str, Any] | None:
+        raw = provider_get(
+            f"{_OPENALEX_BASE}/works/https://doi.org/{doi}",
+            provider="openalex",
+            endpoint="works/doi",
+            params=_params(
+                select=(
+                    "id,doi,title,authorships,publication_year,"
+                    "primary_location,abstract_inverted_index,"
+                    "cited_by_count,best_oa_location,concepts"
+                )
+            ),
+            timeout=_OPENALEX_TIMEOUT,
+            db=db,
+        )
+        if not raw or not raw.get("id"):
+            return None
+        return _parse_work(raw).__dict__
+
+    cached = get_or_fetch(
+        cache,
+        cache_key,
+        _fetch,
+        ttl_hours=168,
+        provider_version=_OPENALEX_VERSION,
+        endpoint="works/doi",
+        allow_stale=True,
+        background_refresh=True,
     )
-    if not raw or not raw.get("id"):
+    if not cached or not cached.get("id"):
         return None
-    work = _parse_work(raw)
-    cache.set(cache_key, work.__dict__, ttl_hours=168)
-    return work
+    return OpenAlexWork(**cached)

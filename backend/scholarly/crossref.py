@@ -5,18 +5,19 @@ Responsibilities (single):
 
 Merge strategy (from product spec):
   - If existing field is empty → use Crossref value.
-  - If DOI matches and titles are nearly identical (Levenshtein-normalised) → prefer Crossref.
+  - If DOI matches and titles are nearly identical → prefer Crossref.
   - Otherwise → keep original, log conflict.
   - Always record *_source columns so downstream can tell provenance.
 
 Public API:
-  enrich_file_from_doi(db, file_id) → bool   (True = enriched, False = skipped/failed)
-  fetch_crossref_metadata(doi) → dict | None  (raw normalised fields)
-  format_citation(doi, style, db) → dict      {citation, source, verified}
+  enrich_from_extracted_text(db, file_id, text) → bool
+  enrich_file_from_doi(db, file_id) → bool
+  fetch_crossref_metadata(doi, db=None) → dict | None
+  format_citation(doi, style, db) → dict
 
 Called from:
-  worker._handle_phase1_analysis  (async, never blocks upload)
-  citations API endpoint          (with cache)
+  worker._handle_import (after text extract, BEFORE Phase 1)
+  citations API endpoint (with cache)
 """
 
 from __future__ import annotations
@@ -28,15 +29,16 @@ from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from typing import Any
 
-from backend.scholarly import ProviderCache, provider_get
+from backend.scholarly import ProviderCache, get_or_fetch, provider_get
 
 logger = logging.getLogger(__name__)
 
 _CROSSREF_BASE = "https://api.crossref.org/v1"
 _CROSSREF_MAILTO = os.environ.get("CROSSREF_MAILTO", "admin@soro.app")
-_CROSSREF_PLUS_TOKEN = os.environ.get("CROSSREF_PLUS_TOKEN", "")  # optional paid tier
+_CROSSREF_PLUS_TOKEN = os.environ.get("CROSSREF_PLUS_TOKEN", "")
 _CROSSREF_TIMEOUT = int(os.environ.get("CROSSREF_TIMEOUT", "5"))
 _CROSSREF_VERSION = "v1"
+_DOI_RE = re.compile(r'10\.\d{4,9}/[^\s"\'<>)\]]+')
 
 
 def _crossref_headers() -> dict[str, str]:
@@ -87,21 +89,30 @@ def _safe_str(val: Any, maxlen: int = 500) -> str:
     return str(val)[:maxlen]
 
 
-def fetch_crossref_metadata(doi: str) -> dict[str, Any] | None:
-    """Fetch and normalise Crossref metadata for a DOI.
+def extract_doi_from_text(text: str) -> str:
+    """Pull the first DOI from extracted PDF text (first ~12k chars)."""
+    if not text:
+        return ""
+    match = _DOI_RE.search(text[:12000])
+    if not match:
+        return ""
+    return match.group(0).rstrip(".,;)]}")
 
-    Returns a dict with keys: title, authors, year, venue, publisher,
-    abstract, doi, source='crossref', or None on failure.
-    """
-    doi = doi.strip().lstrip("https://doi.org/").lstrip("http://doi.org/")
+
+def fetch_crossref_metadata(doi: str, db: Any | None = None) -> dict[str, Any] | None:
+    """Fetch and normalise Crossref metadata for a DOI."""
+    doi = doi.strip().removeprefix("https://doi.org/").removeprefix("http://doi.org/")
     if not doi:
         return None
     url = f"{_CROSSREF_BASE}/works/{doi}"
     raw = provider_get(
         url,
+        provider="crossref",
+        endpoint="works/doi",
         params=_crossref_params(),
         headers=_crossref_headers(),
         timeout=_CROSSREF_TIMEOUT,
+        db=db,
     )
     if not raw or raw.get("status") != "ok":
         return None
@@ -119,7 +130,6 @@ def fetch_crossref_metadata(doi: str) -> dict[str, Any] | None:
     venue = _safe_str(container[0] if container else "", 300)
     publisher = _safe_str(msg.get("publisher", ""), 300)
     abstract_raw = msg.get("abstract") or ""
-    # Strip JATS XML tags if present
     abstract = re.sub(r"<[^>]+>", "", _safe_str(abstract_raw, 3000)).strip()
 
     return {
@@ -135,34 +145,70 @@ def fetch_crossref_metadata(doi: str) -> dict[str, Any] | None:
     }
 
 
+def _cached_crossref(db: Any, doi: str) -> dict[str, Any] | None:
+    cache = ProviderCache(db, "crossref")
+    return get_or_fetch(
+        cache,
+        doi,
+        lambda: fetch_crossref_metadata(doi, db=db),
+        ttl_hours=168,
+        provider_version=_CROSSREF_VERSION,
+        endpoint="works/doi",
+        allow_stale=True,
+        background_refresh=True,
+    )
+
+
+def enrich_from_extracted_text(db: Any, file_id: int, text: str) -> bool:
+    """Extract DOI from text (if missing), then Crossref-enrich before Phase 1.
+
+    Soft-fail: never raises. Returns True if enrichment applied.
+    """
+    try:
+        from sqlalchemy import text as sa_text
+
+        row = db.execute(
+            sa_text("SELECT doi FROM files WHERE id=:fid LIMIT 1"),
+            {"fid": file_id},
+        ).mappings().fetchone()
+        if row is None:
+            return False
+
+        doi = (row["doi"] or "").strip()
+        if not doi:
+            doi = extract_doi_from_text(text)
+            if doi:
+                db.execute(
+                    sa_text("UPDATE files SET doi=:d WHERE id=:fid AND (doi IS NULL OR doi='')"),
+                    {"d": doi[:200], "fid": file_id},
+                )
+                db.commit()
+
+        if not doi:
+            return False
+        return enrich_file_from_doi(db, file_id)
+    except Exception as exc:
+        logger.warning("enrich_from_extracted_text failed file_id=%s: %s", file_id, exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return False
+
+
 def enrich_file_from_doi(db: Any, file_id: int) -> bool:
     """Enrich a UserFile row from Crossref using its DOI.
 
-    Called asynchronously from the worker after Phase 1.
-    Applies the merge strategy: prefer Crossref when field is empty or
-    when DOI confirmed and title is nearly identical.
-    Never blocks user-visible operations.
-    Returns True if any field was updated.
+    Applies merge strategy. Soft-fail. Returns True if any field was updated
+    or DOI was verified.
     """
     try:
         from sqlalchemy import text as sa_text
 
         row = db.execute(
             sa_text(
-                "SELECT id, doi, title, authors, year, venue, abstract, "
-                "doi_verified FROM files WHERE id=:fid LIMIT 1"
-            ),
-            {"fid": file_id},
-        ).fetchone()
-        if row is None:
-            return False
-
-        doi = (row[2 - 2] if False else None)  # re-read positionally below
-        # Positional access is fragile; use fetchone as dict via mappings
-        row = db.execute(
-            sa_text(
-                "SELECT id, doi, title, authors, year, venue, abstract, "
-                "doi_verified FROM files WHERE id=:fid LIMIT 1"
+                "SELECT id, doi, title, authors, year, venue, abstract "
+                "FROM files WHERE id=:fid LIMIT 1"
             ),
             {"fid": file_id},
         ).mappings().fetchone()
@@ -173,12 +219,7 @@ def enrich_file_from_doi(db: Any, file_id: int) -> bool:
         if not doi:
             return False
 
-        cache = ProviderCache(db, "crossref")
-        data = cache.get(doi)
-        if data is None:
-            data = fetch_crossref_metadata(doi)
-            if data:
-                cache.set(doi, data, ttl_hours=168)  # 7 days
+        data = _cached_crossref(db, doi)
         if not data:
             return False
 
@@ -207,7 +248,7 @@ def enrich_file_from_doi(db: Any, file_id: int) -> bool:
                     file_id, field, sim, existing[:60], crossref_val[:60],
                 )
                 return False
-            return False  # for other fields: only fill empty
+            return False
 
         if _should_use(existing_title, cx_title, "title"):
             updates["title"] = cx_title[:500]
@@ -225,22 +266,14 @@ def enrich_file_from_doi(db: Any, file_id: int) -> bool:
             updates["abstract"] = cx_abstract[:3000]
             sources["abstract_source"] = "crossref"
 
-        all_updates = {**updates, **sources,
-                       "doi_verified": True,
-                       "crossref_last_synced": datetime.now(timezone.utc),
-                       "crossref_version": _CROSSREF_VERSION,
-                       "metadata_source": "crossref"}
-
-        if not all_updates:
-            db.execute(
-                sa_text(
-                    "UPDATE files SET doi_verified=TRUE, crossref_last_synced=NOW(), "
-                    "crossref_version=:v WHERE id=:fid"
-                ),
-                {"v": _CROSSREF_VERSION, "fid": file_id},
-            )
-            db.commit()
-            return True
+        all_updates = {
+            **updates,
+            **sources,
+            "doi_verified": True,
+            "crossref_last_synced": datetime.now(timezone.utc),
+            "crossref_version": _CROSSREF_VERSION,
+            "metadata_source": "crossref",
+        }
 
         set_clauses = ", ".join(f"{k}=:{k}" for k in all_updates)
         db.execute(
@@ -248,9 +281,7 @@ def enrich_file_from_doi(db: Any, file_id: int) -> bool:
             {**all_updates, "fid": file_id},
         )
         db.commit()
-        logger.info(
-            "crossref enriched file_id=%s fields=%s", file_id, list(updates.keys())
-        )
+        logger.info("crossref enriched file_id=%s fields=%s", file_id, list(updates.keys()))
         return True
     except Exception as exc:
         logger.warning("crossref enrich_file_from_doi failed file_id=%s: %s", file_id, exc)
@@ -330,32 +361,36 @@ _FORMATTERS = {
 
 
 def format_citation(doi: str, style: str, db: Any) -> dict[str, Any]:
-    """Return {citation, source, verified}.
-
-    Tries Crossref first (cache then live); falls back to ai-formatted label.
-    """
+    """Return {citation, source, verified}."""
     style = style.lower().strip()
-    doi = doi.strip().lstrip("https://doi.org/")
+    doi = doi.strip().removeprefix("https://doi.org/")
     formatter = _FORMATTERS.get(style)
     if not formatter or not doi:
         return {"citation": "", "source": "ai", "verified": False}
 
     cache = ProviderCache(db, "crossref")
     cache_key = f"citation:{doi}:{style}"
-    cached = cache.get(cache_key)
-    if cached:
-        return cached
 
-    data = cache.get(doi)
-    if data is None:
-        data = fetch_crossref_metadata(doi)
-        if data:
-            cache.set(doi, data, ttl_hours=168)
+    def _build() -> dict[str, Any] | None:
+        data = _cached_crossref(db, doi)
+        if not data:
+            return None
+        return {
+            "citation": formatter(data),
+            "source": "crossref",
+            "verified": True,
+        }
 
-    if not data:
+    result = get_or_fetch(
+        cache,
+        cache_key,
+        _build,
+        ttl_hours=168,
+        provider_version=_CROSSREF_VERSION,
+        endpoint=f"citation/{style}",
+        allow_stale=True,
+        background_refresh=True,
+    )
+    if not result:
         return {"citation": "", "source": "ai", "verified": False}
-
-    citation_text = formatter(data)
-    result = {"citation": citation_text, "source": "crossref", "verified": True}
-    cache.set(cache_key, result, ttl_hours=168)
     return result
