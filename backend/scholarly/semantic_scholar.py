@@ -173,6 +173,10 @@ def get_related_papers(
     db: Any,
 ) -> RelatedPapersBundle | None:
     """Fetch related, citing, and recommended papers (7-day cache + SWR)."""
+    from backend.scholarly import provider_enabled
+    if not provider_enabled("semantic_scholar"):
+        logger.debug("ENABLE_SEMANTIC_SCHOLAR=false; skipping related papers")
+        return None
     if not _S2_API_KEY:
         logger.debug("SEMANTIC_SCHOLAR_API_KEY not set; skipping related papers")
         return None

@@ -164,6 +164,9 @@ def enrich_from_extracted_text(db: Any, file_id: int, text: str) -> bool:
 
     Soft-fail: never raises. Returns True if enrichment applied.
     """
+    from backend.scholarly import provider_enabled
+    if not provider_enabled("crossref"):
+        return False
     try:
         from sqlalchemy import text as sa_text
 

@@ -1712,6 +1712,31 @@ def worker_health():
     ), (200 if healthy else 503)
 
 
+@app.route("/api/health/providers")
+def providers_health_endpoint():
+    """Ops check for scholarly providers — unauthenticated like worker health.
+
+    Returns per-provider status (healthy | circuit_open | disabled),
+    24h cache_hit_rate, and in-process bulkhead stats.
+    """
+    from backend.scholarly import providers_health
+    db = SessionLocal()
+    try:
+        payload = providers_health(db)
+        return jsonify(payload), 200
+    except Exception as exc:
+        app.logger.warning("providers_health failed: %s", exc)
+        return jsonify({
+            "crossref": "unknown",
+            "openalex": "unknown",
+            "semantic_scholar": "unknown",
+            "cache_hit_rate": 0.0,
+            "error": "health_unavailable",
+        }), 503
+    finally:
+        db.close()
+
+
 @app.route("/api/ai/prompts")
 @login_required
 def list_ai_prompts():

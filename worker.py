@@ -529,7 +529,11 @@ def run_job(job_id):
 def _heartbeat():
     """Upserts the single worker_heartbeats row (id=1) — see
     GET /api/worker/health in server.py, the only consumer. Best-effort:
-    a failed heartbeat write shouldn't take down the poll loop itself."""
+    a failed heartbeat write shouldn't take down the poll loop itself.
+
+    Also runs scholarly provider cache/metrics cleanup at most once per day
+    (DB-locked so multiple workers don't all run it).
+    """
     db = SessionLocal()
     try:
         hb = db.get(WorkerHeartbeat, 1)
@@ -539,6 +543,11 @@ def _heartbeat():
         else:
             hb.last_seen_at = now
         db.commit()
+        try:
+            from backend.scholarly import try_daily_cleanup
+            try_daily_cleanup(db)
+        except Exception:
+            log.debug("provider daily cleanup skipped", exc_info=True)
     except Exception:
         log.exception("heartbeat write failed")
         db.rollback()
