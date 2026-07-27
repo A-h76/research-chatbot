@@ -1,9 +1,9 @@
-# ✦ Personal AI (Soro)
+# ✦ Dhund
 
-Private ChatGPT-style assistant for research & thesis writing.
+Private research workspace for papers, projects, and thesis writing.
 Your OpenAI API key stays on the backend — never exposed to the browser.
 
-**Product north star:** A researcher should be able to complete an entire research loop inside a project without needing to leave Soro.
+**Product north star:** A researcher should be able to complete an entire research loop inside a project without needing to leave Dhund.
 
 Premium SPA frontend built with **React + TypeScript + Tailwind + shadcn/ui +
 Framer Motion** (in `frontend/`), served by the Flask backend.
@@ -78,9 +78,9 @@ Paste your key into `OPENAI_API_KEY=` in `.env`.
 > Leave `DATABASE_URL` empty to test with a local SQLite file first — everything works, you can switch to Neon later.
 
 ### 3. Google login — free (~5 min)
-1. Go to https://console.cloud.google.com → create a project (e.g. "Personal AI")
+1. Go to https://console.cloud.google.com → create a project (e.g. "Dhund")
 2. **APIs & Services → OAuth consent screen**
-   - User type: **External** → fill app name "Personal AI", your email → save
+   - User type: **External** → fill app name "Dhund", your email → save
 3. **APIs & Services → Credentials → Create credentials → OAuth client ID**
    - Application type: **Web application**
    - Authorized redirect URIs — add BOTH:
@@ -153,5 +153,5 @@ Works on Render/Railway/Fly as a standard Flask app:
 
 ## Notes
 
-- UI is *inspired by* ChatGPT but branded "Personal AI" — don't present it as official ChatGPT if made public.
+- UI is *inspired by* ChatGPT but branded "Dhund" — don't present it as official ChatGPT if made public.
 - "Training": the model itself can't be retrained via API; the memory system provides the practical equivalent (persistent, personalized context).

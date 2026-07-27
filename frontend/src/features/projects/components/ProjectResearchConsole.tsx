@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/common/Toast";
 import { useFiles } from "@/features/files/useFiles";
+import { ApiError } from "@/lib/apiClient";
 import { cn, formatDate } from "@/lib/utils";
 import type { ProjectResearchPreset, ResearchClaim } from "@/types/api";
 import {
@@ -17,6 +18,26 @@ import {
   useProjectResearchHistory,
   useRunProjectResearch,
 } from "../useProjects";
+
+const RESEARCH_ERROR_MESSAGES: Record<string, string> = {
+  too_few_ready: "At least 2 analysed papers are needed in this project.",
+  too_many: "You can research at most 10 papers at once.",
+  invalid_preset: "That research option isn’t available. Try another.",
+  preset_or_query_required: "Pick a preset or type a question.",
+  not_found: "This project couldn’t be found.",
+  research_failed: "Research couldn’t finish. Please try again.",
+};
+
+function researchErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    return (
+      RESEARCH_ERROR_MESSAGES[err.message] ||
+      (err.message.includes(" ") ? err.message : "Research failed. Please try again.")
+    );
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return "Research failed. Please try again.";
+}
 
 const PRESETS: { preset: ProjectResearchPreset; label: string }[] = [
   { preset: "evidence", label: "Summarise the evidence" },
@@ -103,8 +124,7 @@ export function ProjectResearchConsole({ projectId }: { projectId: number }) {
         toast.success("Research complete");
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Research failed";
-      toast.error(msg);
+      toast.error(researchErrorMessage(err));
     }
   }
 
@@ -214,7 +234,23 @@ export function ProjectResearchConsole({ projectId }: { projectId: number }) {
       )}
 
       {result?.status === "failed" && (
-        <p className="text-sm text-destructive">Research failed. Try again.</p>
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 space-y-2">
+          <p className="text-sm text-destructive">
+            Research couldn’t finish. Your papers are unchanged — try again or pick another question.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isRunning}
+            onClick={() => {
+              if (result.query) void submit(null, result.query);
+              else if (result.preset)
+                void submit(result.preset as ProjectResearchPreset);
+            }}
+          >
+            Retry
+          </Button>
+        </div>
       )}
 
       {(history?.items.length ?? 0) > 0 && (

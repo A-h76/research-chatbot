@@ -313,7 +313,7 @@ function OverviewTab({
         </div>
         {recent_insights.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            AI insights from compare &amp; gaps will appear here.
+            AI insights from project research will appear here.
           </p>
         ) : (
           <div className="space-y-2">
@@ -333,7 +333,7 @@ export function ProjectDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const id = projectId ? Number(projectId) : null;
 
-  const { data: hub, isLoading } = useProjectHub(id);
+  const { data: hub, isLoading, isError, refetch } = useProjectHub(id);
   const { setCurrentProjectId } = useUI();
   const [editOpen, setEditOpen] = useState(false);
 
@@ -389,6 +389,28 @@ export function ProjectDetailPage() {
             {Array.from({ length: 3 }).map((_, i) => (
               <Skeleton key={i} className="h-16 rounded-xl" />
             ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center space-y-3 px-6">
+          <FolderKanban className="mx-auto size-10 text-muted-foreground" />
+          <p className="text-sm font-medium">Couldn’t load this project</p>
+          <p className="text-xs text-muted-foreground">
+            Check your connection and try again.
+          </p>
+          <div className="flex justify-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/projects")}>
+              Back to projects
+            </Button>
           </div>
         </div>
       </div>

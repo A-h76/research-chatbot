@@ -444,7 +444,11 @@ class ProjectResearchService:
             try:
                 da2 = db.get(self.DerivedAnalysis, derived_id)
                 if da2:
-                    da2.data = json.dumps({"error": str(exc), **request_meta})
+                    # Persist a stable code only — never raw exception text to clients/DB UI.
+                    da2.data = json.dumps(
+                        {"error": "research_failed", **request_meta},
+                        ensure_ascii=False,
+                    )
                     da2.model = ""
                     db.commit()
             except Exception:
@@ -552,6 +556,13 @@ class ProjectResearchService:
                 db.commit()
                 da_id = existing.id
             elif existing and not existing.data:
+                da_id = existing.id
+            elif existing:
+                # Prior failed attempt for this selection — reuse the row.
+                existing.data = ""
+                existing.model = ""
+                existing.file_ids = json.dumps(valid_ids)
+                db.commit()
                 da_id = existing.id
             else:
                 da = self.DerivedAnalysis(

@@ -19,7 +19,7 @@ export function MemoryPage() {
   return (
     <PageContainer
       title="Memory"
-      description="What Soro remembers about you. Memories appear as you chat."
+      description="What Dhund remembers about you. Memories appear as you chat."
     >
       {memories.length === 0 ? (
         <EmptyState

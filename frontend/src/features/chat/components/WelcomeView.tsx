@@ -79,7 +79,7 @@ export function WelcomeView({ me }: { me: Me }) {
             className="mb-6 w-full max-w-xl text-center"
           >
             <h1 className="text-[20px] font-semibold tracking-tight">
-              {project ? `Ask in ${project.name}` : "Ask Soro"}
+              {project ? `Ask in ${project.name}` : "Ask Dhund"}
             </h1>
             <p className="mt-1.5 text-[13px] text-muted-foreground">
               {project

@@ -47,7 +47,7 @@ def test_legacy_prompt_golden_snapshot():
     assert "Date: 2026-07-26 15:30" in text
     assert "Authors: Smith et al." in text
     assert "THIS PAPER ONLY" in text
-    assert "Soro Identity Doctrine" not in text
+    assert "Dhund Identity Doctrine" not in text
 
 
 def test_plan_system_text_equals_render_and_version_constant():
@@ -65,7 +65,7 @@ def test_plan_system_text_equals_render_and_version_constant():
     assert plan.prompt_version == LEGACY_PAPER_CHAT_PROMPT_VERSION
     assert plan.template_key == "legacy_paper_chat"
     assert plan.metadata["identity_injected"] is False
-    assert "Soro Identity Doctrine" not in plan.system_text
+    assert "Dhund Identity Doctrine" not in plan.system_text
     assert plan.skill_text == ""
 
 
@@ -208,7 +208,7 @@ def test_stream_round_sse_shape_and_observe_only():
         "response.completed",
     ]
     assert stream.calls[0]["instructions"] == plan.system_text
-    assert "Soro Identity Doctrine" not in stream.calls[0]["instructions"]
+    assert "Dhund Identity Doctrine" not in stream.calls[0]["instructions"]
 
     answer = "".join(e.delta for e in events if e.type == "response.output_text.delta")
     result = executor.observe_answer(plan, answer, model="fake", rag_excerpt_count=2)

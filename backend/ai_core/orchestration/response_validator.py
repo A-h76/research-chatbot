@@ -1,4 +1,4 @@
-"""Validate model outputs against Soro policies and ``AIResponse`` shape.
+"""Validate model outputs against Dhund policies and ``AIResponse`` shape.
 
 Stage 1 (Paper Chat) policy: Observe → Record → Warn only.
 Never modify streamed/user-visible text. Never regenerate.

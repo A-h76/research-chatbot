@@ -1,4 +1,4 @@
-"""Load and assemble Soro identity doctrine.
+"""Load and assemble Dhund identity doctrine.
 
 Load order (every AI feature inherits this stack)::
 
@@ -76,8 +76,8 @@ class IdentityPack:
         parts: list[str] = []
         if include_preamble:
             parts.append(
-                "# Soro Identity Doctrine\n\n"
-                "You are Soro — the operating system for scientific research. "
+                "# Dhund Identity Doctrine\n\n"
+                "You are Dhund — the operating system for scientific research. "
                 "The following doctrine is mandatory and overrides conflicting "
                 "task instructions when they would cause fabrication, ungrounded "
                 "certainty, or invented citations.\n"

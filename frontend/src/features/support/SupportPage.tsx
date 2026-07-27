@@ -58,7 +58,7 @@ export function SupportPage() {
         <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-4">
           <Link to="/" className="flex items-center gap-2 text-sm font-medium">
             <span className="flex size-7 items-center justify-center rounded-full border border-border">✦</span>
-            Soro
+            Dhund
           </Link>
           <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="size-4" /> Back to app
@@ -138,7 +138,7 @@ export function SupportPage() {
           {LEGAL_LINKS.map((l) => (
             <Link key={l.to} to={l.to} className="hover:text-foreground">{l.label}</Link>
           ))}
-          <span className="ml-auto">© {new Date().getFullYear()} Soro</span>
+          <span className="ml-auto">© {new Date().getFullYear()} Dhund</span>
         </div>
       </footer>
     </div>

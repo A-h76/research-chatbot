@@ -48,7 +48,7 @@ export function ProjectsPage() {
         <EmptyState
           icon={<FolderKanban className="size-8" />}
           title="Start your first research project"
-          description="Soro is organised around projects, not individual PDFs. Create one to keep papers, questions, and insights together."
+          description="Dhund is organised around projects, not individual PDFs. Create one to keep papers, questions, and insights together."
           action={
             <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
               <Plus className="size-4" /> Create first project

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-"Personal AI" (aka ResearchOS) — a private ChatGPT-style research/writing assistant. Flask backend (OpenAI Responses API, streaming) + a React/TypeScript SPA frontend. Google OAuth / magic-link / dev-login auth, Postgres (or SQLite for local dev), file upload + RAG pipeline with a Postgres-queue worker, and a "Prompt Engine" layer (domain routing, personas, model routing, memory, cost ledger).
+"Personal AI" (aka **Dhund**, formerly ResearchOS / Soro) — a private ChatGPT-style research/writing assistant. Flask backend (OpenAI Responses API, streaming) + a React/TypeScript SPA frontend. Google OAuth / magic-link / dev-login auth, Postgres (or SQLite for local dev), file upload + RAG pipeline with a Postgres-queue worker, and a "Prompt Engine" layer (domain routing, personas, model routing, memory, cost ledger).
 
 ## Commands
 

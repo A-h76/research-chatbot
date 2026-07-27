@@ -159,7 +159,7 @@ export function SidebarContents({
         <div className="flex size-6 items-center justify-center rounded-md bg-primary text-[11px] font-semibold text-primary-foreground">
           S
         </div>
-        <span className="text-[15px] font-semibold tracking-tight">Soro</span>
+        <span className="text-[15px] font-semibold tracking-tight">Dhund</span>
         <div className="relative ml-auto">
           <button
             type="button"
@@ -207,7 +207,7 @@ export function SidebarContents({
                 className="flex w-full px-3 py-1.5 text-left text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground"
                 onClick={() => go("chat", "/chat")}
               >
-                Ask Soro…
+                Ask Dhund…
               </button>
             </div>
           )}
@@ -296,7 +296,7 @@ export function SidebarContents({
             <NavItem
               muted
               icon={<MessageSquare className="size-4" />}
-              label="Ask Soro"
+              label="Ask Dhund"
               active={isGlobalChat && !isPaperChat}
               onClick={() => go("chat", "/chat")}
             />

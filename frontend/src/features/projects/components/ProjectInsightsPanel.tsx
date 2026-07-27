@@ -112,8 +112,18 @@ function MemoryCard({
 
 /** Insights (DerivedAnalysis) + Research Memory — distinct models, one tab. */
 export function ProjectInsightsPanel({ projectId }: { projectId: number }) {
-  const { data: insights, isLoading: insightsLoading } = useProjectInsights(projectId);
-  const { data: memoryData, isLoading: memoryLoading } = useProjectMemory(projectId);
+  const {
+    data: insights,
+    isLoading: insightsLoading,
+    isError: insightsError,
+    refetch: refetchInsights,
+  } = useProjectInsights(projectId);
+  const {
+    data: memoryData,
+    isLoading: memoryLoading,
+    isError: memoryError,
+    refetch: refetchMemory,
+  } = useProjectMemory(projectId);
   const patchMemory = usePatchProjectMemory(projectId);
   const deleteMemory = useDeleteProjectMemory(projectId);
 
@@ -125,6 +135,25 @@ export function ProjectInsightsPanel({ projectId }: { projectId: number }) {
       <div className="space-y-2">
         <Skeleton className="h-16 w-full rounded-xl" />
         <Skeleton className="h-16 w-full rounded-xl" />
+      </div>
+    );
+  }
+
+  if (insightsError || memoryError) {
+    return (
+      <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center space-y-3">
+        <p className="text-sm font-medium">Couldn’t load insights &amp; memory</p>
+        <p className="text-xs text-muted-foreground">Check your connection and try again.</p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            void refetchInsights();
+            void refetchMemory();
+          }}
+        >
+          Retry
+        </Button>
       </div>
     );
   }

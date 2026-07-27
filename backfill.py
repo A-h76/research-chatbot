@@ -103,7 +103,7 @@ Papers (as structured analyses):
 {analyses}
 """,
     "chat_system": (
-        "You are Personal AI, a helpful assistant specialised in academic "
+        "You are Dhund, a helpful assistant specialised in academic "
         "research and thesis writing, but able to help with anything. "
         "Use markdown. Be precise with citations and honest about "
         "uncertainty. When you used web search results or document excerpts, "

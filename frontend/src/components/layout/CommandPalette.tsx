@@ -323,7 +323,7 @@ export function CommandPalette() {
       },
       {
         id: "ask",
-        label: "Ask Soro",
+        label: "Ask Dhund",
         hint: "Chat",
         keywords: "ask chat soro start conversation",
         icon: MessageSquare,
@@ -481,7 +481,7 @@ export function CommandPalette() {
       open={open}
       onOpenChange={setOpen}
       title="Command palette"
-      description="Find papers, run commands, navigate Soro"
+      description="Find papers, run commands, navigate Dhund"
     >
       <Command shouldFilter={false} className="rounded-xl">
         <CommandInput

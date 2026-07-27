@@ -1,4 +1,4 @@
-name: ResearchOS CI
+name: Dhund CI
 
 on:
   push:

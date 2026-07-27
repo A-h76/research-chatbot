@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 _SESSION = requests.Session()
 _SESSION.headers.update({
     "User-Agent": (
-        f"Soro/1.0 (Research OS; mailto:{os.environ.get('CROSSREF_MAILTO', 'admin@soro.app')})"
+        f"Dhund/1.0 (Research OS; mailto:{os.environ.get('CROSSREF_MAILTO', 'admin@dhund.com')})"
     ),
     "Accept": "application/json",
 })

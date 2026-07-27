@@ -1,5 +1,5 @@
 """
-Personal AI — ChatGPT-style chatbot backend (Phase 1)
+Personal AI / Dhund — ChatGPT-style chatbot backend (Phase 1)
 Flask + Google OAuth + Postgres/SQLite + OpenAI Responses API (streaming)
 + Projects + selective memory + auto titles + web search
 + File uploads (PDF/Word/image/text) + vision + RAG + citation manager.
@@ -101,7 +101,7 @@ JOB_STATUS_CACHE_TTL_SECONDS = 3600
 # Transactional email (provider-agnostic; Resend today). Falls back to console
 # logging in development when no API key is configured.
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-EMAIL_FROM = os.environ.get("EMAIL_FROM", "Personal AI <onboarding@resend.dev>")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "Dhund <onboarding@resend.dev>")
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "")  # where tickets are routed
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000")
 IS_PRODUCTION = (
@@ -5986,7 +5986,7 @@ def export_data():
         db.close()
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
-    base = f"personal-ai-export-{stamp}"
+    base = f"dhund-export-{stamp}"
     title = f"Chat export — {uinfo['name']}"
 
     if fmt == "json":
@@ -6078,7 +6078,7 @@ def _valid_email(e):
 
 def _support_ack_html(ticket_id, subject, message):
     return (
-        f"<p>Thanks for reaching out to Personal AI. We've logged your "
+        f"<p>Thanks for reaching out to Dhund. We've logged your "
         f"message and will get back to you soon.</p>"
         f"<p><b>Ticket:</b> #{ticket_id}<br><b>Subject:</b> "
         f"{subject or '(none)'}</p><hr>"
@@ -7810,5 +7810,5 @@ def spa(path):
 if __name__ == "__main__":
     # Railway/Render/Fly set PORT; local default stays 5000.
     port = int(os.environ.get("PORT", "5000"))
-    print(f"Personal AI running -> http://0.0.0.0:{port}")
+    print(f"Dhund running -> http://0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

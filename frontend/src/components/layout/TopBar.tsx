@@ -53,7 +53,7 @@ const STATIC_TITLES: { prefix: string; label: string }[] = [
   { prefix: "/research",          label: "Compare & Gaps" },
   { prefix: "/analysis",          label: "Compare & Gaps" },
   { prefix: "/settings",          label: "Settings" },
-  { prefix: "/chat",              label: "Ask Soro" },
+  { prefix: "/chat",              label: "Ask Dhund" },
   { prefix: "/search",            label: "Search" },
   { prefix: "/writing",           label: "Writing" },
 ];
@@ -70,7 +70,7 @@ export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void 
     : path === "/home"
       ? "Launchpad"
       : path.startsWith("/c/")
-      ? "Ask Soro"
+      ? "Ask Dhund"
       : STATIC_TITLES.find((t) => path.startsWith(t.prefix))?.label;
   const isPaperPage    = path.startsWith("/papers/") && !path.includes("/chat");
   const isPaperChat    = path.startsWith("/papers/") && path.includes("/chat");
