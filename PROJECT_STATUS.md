@@ -3,7 +3,7 @@
 **Document type:** Engineering architecture audit (source of truth for development)  
 **Audience:** Staff / senior engineers taking ownership of this codebase  
 **Audit date:** 2026-07-26  
-**Last updated:** 2026-07-26 (Phase 1 UI + Design System D1–D9 shipped in SPA; backend Phase 1.1–1.7 + Phase 2 unchanged)  
+**Last updated:** 2026-07-27 (Scholarly providers Steps 1–2 + AI Core Stage 1 Paper Chat + Docker/Railway deploy; migrations through **0021**)  
 **Method:** Codebase inspection — features described as Implemented must exist in code; planned-only design docs are called out explicitly  
 
 **Branding note (inconsistency):** The product is referred to as **Personal AI** (README, login copy, many UI strings), **Soro** (`frontend/index.html`, sidebar, Design System v2), **Research Workspace** (`templates/login.html`), and **ResearchOS** (CI workflow name, `brain.md`, systemd units). These are the same application, not forks. SPA chrome now brands primarily as **Soro**; login/legal templates may still say Personal AI.
@@ -14,15 +14,19 @@
 
 ## Current maturity
 
-**Early beta (research pipeline live on upload; Paper Workspace + Design System v2 chrome in SPA).**
+**Early beta (research pipeline live on upload; Paper Workspace + Design System v2 chrome; scholarly Discover + Crossref enrichment).**
 
-The core product loop works: authenticated users can chat (streaming), upload documents, run async import → embed → **Phase 1 structured analysis** → LLM paper overview, inspect Phase 1 outputs in the Paper Workspace (Structure / Classification / Entities / Evidence / Graph), manage projects/notes/citations/memory, search locally, and use multi-paper compare/gaps tooling. Observability (Prometheus + JSON logs), quotas, dual auth (session + JWT), and a Prompt Engine exist for parts of the AI surface.
+The core product loop works: authenticated users can chat (streaming), upload documents, run async import → **Crossref metadata enrich (when DOI found)** → embed → **Phase 1 structured analysis** → LLM paper overview, inspect Phase 1 outputs in the Paper Workspace (Structure / Classification / Entities / Evidence / Graph / Related), manage projects/notes/citations/memory, search locally **or Discover papers via OpenAlex** (Add to Library as metadata stubs), and use multi-paper compare/gaps tooling. Observability (Prometheus + JSON logs), quotas, dual auth (session + JWT), and a Prompt Engine exist for parts of the AI surface.
 
 **Phase 1 (1.1–1.7)** research engines are implemented, tested, and integrated via `AnalysisPipelineService` (Phase 2). Uploads enqueue `phase1_analysis`; results persist in `analysis_pipeline_results`; PromptBuilder/worker paper analysis consume Phase 1 JSON when present. The SPA consumes `/pipeline` + `/phases/*` via `features/pipeline` + paper tab mappers.
 
+**Scholarly providers (Steps 1–2):** `backend/scholarly/` — Crossref (upload enrichment + citation format), OpenAlex (Discover search + library import), Semantic Scholar (Related Papers tab). Shared `provider_cache` / metrics / DB circuit breaker / bulkheads. Migrations **0018–0021**.
+
+**AI Core Stage 1 Paper Chat** is implemented behind `PAPER_CHAT_PIPELINE_ENABLED` (default OFF; soak via `shadow` → `true`). Spec: `docs/ai-core-stage1-paper-chat.md`.
+
 **Design System v2 (D0 → D9)** is implemented in the live React app: tokens, slim sidebar (Home · Library · Projects · Writing; Ask Soro under More), Home launchpad, `PipelineStatus`, densified Library + CollectionToolbar, demoted global Chat, T4 Writing/Compare/Citations, ⌘K command palette v1, ErrorBoundary + session-expired modal + a11y skip link. Specs: `docs/DESIGN-SYSTEM-v2.md`, `docs/Interaction-Guidelines.md`.
 
-It is **not** production-hardened for a public multi-tenant SaaS launch: incomplete chat quota coverage in places, dual parallel stacks (chat vs Prompt Engine; two storage facades; two upload APIs), branding split on login templates. Chat still uses mixed prompt paths (normal chat PromptBuilder; paper chat legacy). Several production-hardening PRs (headers, MIME, metrics auth, chat rate limit) are marked done in §17 — verify deploy config before treating as live.
+It is **not** production-hardened for a public multi-tenant SaaS launch: incomplete chat quota coverage in places, dual parallel stacks (chat vs Prompt Engine; two storage facades; two upload APIs), branding split on login templates. Chat still uses mixed prompt paths (normal chat PromptBuilder; paper chat Stage 1 flagged). Docker multi-stage + Gunicorn entrypoint support Railway-style deploys; systemd units remain for self-host. Several production-hardening PRs (headers, MIME, metrics auth, chat rate limit) are marked done in §17 — verify deploy config before treating as live.
 
 ## Current version
 
@@ -33,9 +37,10 @@ It is **not** production-hardened for a public multi-tenant SaaS launch: incompl
 | Backend docstring | `server.py` header: “Personal AI — … (Phase 1)” |
 | Phase-1 pipeline packages | Each declares `PIPELINE_VERSION = "1.0.0"` / `SCHEMA_VERSION = "1.0.0"` internally |
 | Integration layer | `backend/analysis_pipeline` → `PIPELINE_VERSION = "2.0.0"` |
-| Schema migrations | `migrations/0001` … **`0017`** (`analysis_pipeline_results`) |
+| AI Core | `backend/ai_core` → package `__version__` Stage 1 Paper Chat |
+| Schema migrations | `migrations/0001` … **`0021`** (`files.source_url` for Discover stubs) |
 
-Treat this as an **unversioned product** with additive Postgres migrations through **0017**, Phase 1 libraries at **1.0.0**, and Phase 2 integration at **2.0.0**.
+Treat this as an **unversioned product** with additive Postgres migrations through **0021**, Phase 1 libraries at **1.0.0**, and Phase 2 integration at **2.0.0**.
 
 ## Overall architecture
 
@@ -46,13 +51,15 @@ Browser (React SPA)
     ↓ session cookie  /  Bearer JWT (selected routes)
 Flask (server.py + blueprints)
     ↓
-Services (quotas, storage, AI registries, search, AnalysisPipelineService)
+Services (quotas, storage, AI registries, search, AnalysisPipelineService,
+          scholarly providers: Crossref / OpenAlex / Semantic Scholar)
     ↓
 Postgres (or SQLite for local/dev) + Object storage (R2/local/S3)
+    + provider_cache / provider_metrics / provider_circuit
     ↓
 worker.py (UploadJob queue via SKIP LOCKED)
-    ↓  import → phase1_analysis (1.1–1.7) → paper_analysis (LLM + Phase 1 context)
-OpenAI / optional providers
+    ↓  import → Crossref enrich (DOI) → phase1_analysis (1.1–1.7) → paper_analysis
+OpenAI / optional LLM providers + OpenAlex / Crossref / Semantic Scholar
 ```
 
 ## Technology stack
@@ -67,8 +74,10 @@ OpenAI / optional providers
 | Storage | Cloudflare R2 / local filesystem / AWS S3 |
 | AI | OpenAI Responses API (chat), Chat Completions / multi-provider (`ModelRegistry`), `text-embedding-3-small` |
 | Research pipeline | Phase 1.1–1.7 deterministic engines + Phase 2 `AnalysisPipelineService` orchestration |
+| Scholarly data | Crossref, OpenAlex, Semantic Scholar via `backend/scholarly/` (cache + circuit + bulkheads) |
 | Email | Resend (optional; console log fallback) |
 | Auth | Google OAuth, magic link, `DEV_AUTO_LOGIN` |
+| Deploy | Docker multi-stage (`Dockerfile` + `entrypoint.sh`), Procfile/Gunicorn, systemd units |
 | CI | GitHub Actions: flake8 + pytest (Postgres + Redis services) |
 
 ## Current product positioning
@@ -79,14 +88,16 @@ Private / personal **research & thesis writing assistant**: ChatGPT-style chat g
 
 1. Authenticate via Google OAuth, magic link, or local DEV auto-login; SPA shows **Session expired** modal on 401 (no silent dump)  
 2. Stream chat replies (OpenAI Responses API) with optional web search + save_citation tools; global Ask Soro demoted under sidebar More / ⌘K  
-3. Upload documents/images from **Library** (toolbar + zone) or chat; queue **import → chunk/embed → Phase 1.1–1.7 → LLM paper analysis**  
+3. Upload documents/images from **Library** (toolbar + zone) or chat; queue **import → Crossref DOI enrich → chunk/embed → Phase 1.1–1.7 → LLM paper analysis**  
 4. Persist Phase 1 outputs (`analysis_pipeline_results`); expose `/api/documents/<id>/analyze|pipeline|phases/*`  
-5. **Paper Workspace** tabs: Overview · Structure · Classification · Entities · Evidence · Graph · Narrative · Chat — pipeline AI-state chrome  
-6. RAG over user chunks (in-Python cosine similarity) in chat and via JWT `/api/rag`  
-7. Manage projects, files/library, notes, citations (table + BibTeX export), memories  
-8. Dashboard (research launchpad), corpus search, writing transforms, compare/gaps, settings, support tickets, legal pages  
-9. ⌘K command palette (find papers/projects/chats + core commands)  
-10. Admin-gated prompt authoring + usage analytics APIs (session `is_admin`)  
+5. **Paper Workspace** tabs: Overview · Structure · Classification · Entities · Evidence · Graph · Narrative · **Related** · Chat — pipeline AI-state chrome  
+6. **Discover** (Search page): OpenAlex keyword search; **Add to Library** as metadata-only stubs (no PDF fetch until user uploads)  
+7. RAG over user chunks (in-Python cosine similarity) in chat and via JWT `/api/rag`  
+8. Manage projects, files/library, notes, citations (table + BibTeX export; Crossref-verified format API), memories  
+9. Dashboard (research launchpad), corpus search, writing transforms, compare/gaps, settings, support tickets, legal pages  
+10. ⌘K command palette (find papers/projects/chats + core commands)  
+11. Admin-gated prompt authoring + usage analytics APIs (session `is_admin`)  
+12. Ops: `GET /api/worker/health`, `GET /api/health/providers`  
 
 ---
 
@@ -136,7 +147,8 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | Frontend | `features/files/` — dense Library (D5), `CollectionToolbar`, `LibraryUploadZone` / queue, dual upload paths in `api.ts` |
 | Endpoints | See §6 |
 | Database | `files`, `chunks`, `upload_jobs`, `upload_batches`, `storage_usage`, `upload_sessions` |
-| Dependencies | `storage/` + `backend/storage/`, `imports/`, worker |
+| Dependencies | `storage/` + `backend/storage/`, `imports/`, worker, `backend/scholarly/` (Crossref enrich) |
+| Discover stubs | Metadata-only library rows (`source_url`, empty path); **Metadata only** badge in UI; Phase 1/RAG after user uploads PDF |
 | Known issues | Two upload APIs with different allowlists/size limits historically; `FilePreviewDialog.tsx` still dead |
 
 ---
@@ -151,9 +163,9 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | Backend live — LLM | Worker `paper_analysis` (consumes Phase 1 via `phase1_context`); sync `POST /api/documents/<id>/analysis` (PromptBuilder + Phase 1 when cached); `GET/POST /api/files/<id>/analysis*` |
 | Phase 1 packages (black boxes) | `document_understanding` (1.1), `classification/pass2` (1.2), `analysis_context` (1.3), `medical_understanding` (1.4), `evidence_grading` (1.5), `prompt_assembly` (1.6), `knowledge_graph` (1.7) |
 | APIs | `POST /api/documents/<id>/analyze`, `GET …/pipeline`, `GET …/phases/<phase>`; plus existing analysis/compare/gaps |
-| Frontend | `features/pipeline/` (hooks, AI-state, `PipelineStatusPanel`); Paper Workspace tabs + mappers for DU / classification / entities / evidence / graph; Narrative = LLM overview; Chat = paper-scoped |
+| Frontend | `features/pipeline/` (hooks, AI-state, `PipelineStatusPanel`); Paper Workspace tabs + mappers for DU / classification / entities / evidence / graph; Narrative = LLM overview; **Related** = Semantic Scholar; Chat = paper-scoped |
 | Database | `paper_analyses`, `derived_analyses`, **`analysis_pipeline_results`** (migration 0017) |
-| Known issues | Confirm-upload / thread legacy paths still exist (deprecated warnings); chat does not consume Phase 1 structured JSON; lazy migration for old files; some tabs still deepen UX polish |
+| Known issues | Confirm-upload / thread legacy paths still exist (deprecated warnings); chat does not consume Phase 1 structured JSON; lazy migration for old files; Related needs API key for live results |
 
 ---
 
@@ -204,13 +216,13 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 
 ### RAG / Document search
 
-**Status:** Implemented (simple)
+**Status:** Implemented (simple) + Discover (OpenAlex)
 
 | Area | Detail |
 |------|--------|
-| Backend | `rag_retrieve` in `server.py`; JWT `GET /api/documents/search`, `POST /api/rag` (`backend/search/routes.py`) |
-| Frontend | Search page + Ask AI; chat auto-retrieval |
-| Database | `chunks.embedding` (JSON float arrays as text) |
+| Backend | `rag_retrieve` in `server.py`; JWT `GET /api/documents/search`, `POST /api/rag` (`backend/search/routes.py`); `GET /api/discover`, `POST /api/discover/import` |
+| Frontend | Search page: **My Library** + **Discover** tabs; Ask AI; chat auto-retrieval; Discover **Add to Library** |
+| Database | `chunks.embedding` (JSON float arrays as text); Discover stubs on `files` (`source_url`, provenance cols) |
 | Known issues | No pgvector/ANN; O(n) cosine in Python; `search_index` table never written; dual retrieval semantics (chat has keyword fallback; JWT path does not) |
 
 ---
@@ -239,7 +251,25 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | Backend | CRUD, from-paper, BibTeX export; chat tool `save_citation` |
 | Frontend | CitationsPage + dense `CitationTable` (D7 T4); CitationFormDialog; Library/Writing toolbar entry |
 | Database | `citations` |
-| Known issues | Seeded `citation_generation` prompt **not** called from any live path |
+| Known issues | Seeded `citation_generation` prompt **not** called from any live path; Crossref APA via `/api/files/<id>/citation` is separate from this manager |
+
+---
+
+### Scholarly providers (Crossref / OpenAlex / Semantic Scholar)
+
+**Status:** Implemented (core) / Partial (UI polish)
+
+| Area | Detail |
+|------|--------|
+| Package | `backend/scholarly/` — shared `provider_get`, Crossref, OpenAlex, Semantic Scholar |
+| Upload enrichment | After text extract: DOI → Crossref merge (provenance) → then Phase 1 AI (`worker.py`) |
+| Discover | `GET /api/discover` (OpenAlex); `POST /api/discover/import` metadata stub + optional Crossref |
+| Related | `GET /api/files/<id>/related` (Semantic Scholar; needs `SEMANTIC_SCHOLAR_API_KEY`) |
+| Citation format | `GET /api/files/<id>/citation?style=` (Crossref CSL → APA/MLA/Chicago) |
+| Ops | `GET /api/health/providers`; metrics; DB circuit breaker; bulkheads; SWR cache; daily cleanup |
+| Env | `CROSSREF_MAILTO`, `CROSSREF_PLUS_TOKEN`, `OPENALEX_BASE_URL`, `SEMANTIC_SCHOLAR_API_KEY`, `ENABLE_*` |
+| Soft-fail | Provider errors never fail upload/import jobs |
+| Known gaps | PubMed deferred; Related empty-state polish; verified citation badge in Citations UI; OA PDF fetch deferred |
 
 ---
 
@@ -356,7 +386,8 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | **Export** | Data portability | JSON/Markdown exports | session auth | **Implemented** |
 | **Dashboard** | Home stats | Aggregate recent activity | `/api/dashboard` | **Implemented** |
 | **Uploads** | Ingest pipeline | Validation, storage, jobs | worker, imports | **Implemented** (dual APIs) |
-| **Search** | Corpus + RAG UI | `/api/search`, `/api/rag` | chunks, notes, etc. | **Implemented** |
+| **Search** | Corpus + RAG UI + Discover | `/api/search`, `/api/rag`, `/api/discover*` | chunks, notes, OpenAlex | **Implemented** |
+| **Scholarly** | External paper metadata | Crossref enrich, OpenAlex Discover, S2 Related | `backend/scholarly/`, provider_* tables | **Implemented** (core) |
 | **Analytics** | Cost/usage | Admin prompt-usage APIs | ledgers | **Partial** (no product analytics) |
 | **Notifications** | User alerts | — | — | **Not Implemented** |
 | **Settings** | Preferences | Theme, models, data controls, privacy | profile/export APIs | **Implemented** |
@@ -374,7 +405,7 @@ Legend: **Implemented** | **Partial** | **Planned** (design docs / libraries not
 | **Imports** | Text extraction | pdf/docx/pptx/xlsx/epub/zip/text | PyMuPDF, etc. | **Implemented** (live) |
 | **Quotas** | Abuse/cost bounds | Storage + monthly tokens | `usage_logs`, user cols | **Partial** |
 | **Observability** | Logs + metrics | JSON logs, Prometheus | prometheus_client | **Implemented** |
-| **Worker** | Async jobs | Poll, claim, retry, heartbeat | Postgres | **Implemented** |
+| **Worker** | Async jobs | Poll, claim, retry, heartbeat; Crossref enrich on import | Postgres + scholarly | **Implemented** |
 
 ---
 
@@ -447,13 +478,16 @@ Client upload (/api/files | /api/documents/upload | /api/uploads/bulk)
   → UserFile + UploadJob(import) + OutboxEvent
   → worker claims import
   → imports.extract_text → chunk_* → embed_texts → Chunk rows
+  → Crossref enrich (DOI from text; soft-fail; provenance on UserFile)
   → enqueue phase1_analysis
   → AnalysisPipelineService (1.1→1.7) → analysis_pipeline_results
-  → apply bibliographic metadata to UserFile (from Phase 1.1 when present)
+  → apply bibliographic metadata to UserFile (merge; don’t blindly overwrite Crossref)
   → enqueue paper_analysis
   → PromptBuilder (+ phase1_context) → PaperAnalysis.data
   → Ready for RAG / paper UI / GET …/pipeline
 ```
+
+Discover import (`POST /api/discover/import`) creates a metadata-only `UserFile` (no blob); Phase 1/RAG wait until the user uploads a PDF later.
 
 Legacy note: `extract_metadata` handler remains for in-flight jobs (deprecated). Confirm-upload may still use thread paths (`_apply_metadata` / `_run_paper_analysis`) — marked deprecated.
 
@@ -501,9 +535,11 @@ Google / Magic link / DEV
 - **Indexes:** **Missing** on `user_id`  
 
 ### `files` (`UserFile`)
-- **Purpose:** Uploaded documents + library metadata  
+- **Purpose:** Uploaded documents + library metadata (+ Discover stubs)  
 - **Indexes:** `ix_files_user`, `ix_files_user_checksum`  
 - **Relationships:** → chunks  
+- **Scholarly cols (0018–0021):** `doi`, `doi_verified`, `metadata_source`, provenance fields, `source_url` (OpenAlex/landing URL for stubs)  
+- **Stubs:** empty `path` / no blob until user uploads PDF; delete/raw handlers guard empty paths  
 
 ### `chunks`
 - **Purpose:** RAG segments + embeddings  
@@ -535,6 +571,12 @@ Google / Magic link / DEV
 
 ### `worker_heartbeats`
 - **Purpose:** Liveness for `/api/worker/health`  
+- **Also:** Daily scholarly `provider_cache` cleanup on heartbeat path  
+
+### Scholarly ops tables (migrations 0018–0020)
+- **`provider_cache`:** Shared HTTP response cache (SWR + fetch locks / `locked_by`)  
+- **`provider_metrics`:** Counter/histogram-style rows for provider calls  
+- **`provider_circuit`:** DB-backed circuit breaker state per provider  
 
 ### `citations` / `notes` / `support_requests`
 - **Purpose:** Product features  
@@ -867,14 +909,14 @@ Client
 | **Queues** | Postgres `upload_jobs` |
 | **Workers** | `python worker.py` — requires Postgres |
 | **Handlers** | `import`, **`phase1_analysis`**, `paper_analysis`; `extract_metadata` (legacy/in-flight only) |
-| **Primary chain** | `import` → `phase1_analysis` → `paper_analysis` |
+| **Primary chain** | `import` → **Crossref enrich (DOI)** → `phase1_analysis` → `paper_analysis` |
 | **Retry** | Backoff `attempts * 60s`; max `WORKER_MAX_ATTEMPTS` (5); then `failed` |
-| **Partial failure** | Phase failures inside AnalysisPipelineService → `partial`/`failed` status + errors list; completed phases still persisted when possible |
+| **Partial failure** | Phase failures inside AnalysisPipelineService → `partial`/`failed` status + errors list; completed phases still persisted when possible; Crossref soft-fails |
 | **Checkpointing** | `import_sessions` table **unused** — full job restart |
 | **Scheduling** | Poll loop `WORKER_POLL_INTERVAL` (2s); batch `WORKER_BATCH_SIZE` (10) |
 | **Automation / n8n** | **Not Implemented** |
 | **Redis** | Optional status cache only |
-| **Heartbeat** | `worker_heartbeats` + `/api/worker/health` |
+| **Heartbeat** | `worker_heartbeats` + `/api/worker/health`; scholarly daily cleanup |
 | **Outbox** | Written with jobs; not independently consumed |
 
 ADR-0001: **Keep Postgres worker; do not migrate to Celery** (decision recorded; design docs mentioning Celery are superseded for queue choice).
@@ -891,7 +933,7 @@ ADR-0001: **Keep Postgres worker; do not migrate to Celery** (decision recorded;
 | **API latency** | Sync analysis & some confirm paths can be long; chat streams |
 | **OpenAI latency** | Dominant cost for chat/analysis/embed |
 | **Frontend** | SPA + TanStack Query; streaming SSE |
-| **Caching** | Derived analysis cache; Redis job status optional; no RAG cache |
+| **Caching** | Derived analysis cache; Redis job status optional; **`provider_cache` SWR** for scholarly APIs; no RAG cache |
 | **Streaming** | Chat SSE Implemented |
 | **Worker utilization** | Sequential jobs per process; horizontal scale via more workers |
 
@@ -904,11 +946,12 @@ Documented intentional bottleneck: in-Python cosine over all user chunks (`docs/
 | Area | Status | Detail |
 |------|--------|--------|
 | **Logging** | Implemented | JSON + `X-Request-ID` / correlation (`observability/`) |
-| **Metrics** | Implemented | Prometheus `/metrics`; worker port `WORKER_METRICS_PORT` |
+| **Metrics** | Implemented | Prometheus `/metrics`; worker port `WORKER_METRICS_PORT`; scholarly provider counters |
 | **Analytics** | Partial | Admin prompt/cost APIs only; no product analytics SDK |
 | **Error tracking** | Missing | No Sentry (or equivalent) |
 | **Alerts** | Missing in repo | Docs mention Prometheus ops; no alertmanager config |
 | **Admin dashboard** | Partial | APIs only; no ops UI |
+| **Provider health** | Implemented | `GET /api/health/providers` (circuit/bulkhead/cache status) |
 
 ---
 
@@ -934,6 +977,12 @@ Documented intentional bottleneck: in-Python cosine over all user chunks (`docs/
 | `REDIS_URL` | Job status cache | Optional | empty | Optional |
 | `RESEND_API_KEY` / `EMAIL_FROM` / `SUPPORT_EMAIL` | Email | Optional | log fallback | |
 | `APP_BASE_URL` | Absolute URLs / CSRF host | Soft | localhost:5000 | Must match prod host |
+| `CROSSREF_MAILTO` | Crossref polite pool identity | Recommended | empty | Public email OK |
+| `CROSSREF_PLUS_TOKEN` | Crossref Plus (optional) | Optional | empty | Secret |
+| `OPENALEX_BASE_URL` | OpenAlex API base | Optional | public API | No key required |
+| `SEMANTIC_SCHOLAR_API_KEY` | Related papers | Optional | empty | Secret; Related empty without it |
+| `ENABLE_CROSSREF` / `ENABLE_OPENALEX` / `ENABLE_SEMANTIC_SCHOLAR` | Feature flags | Optional | on | Ops kill-switch |
+| `PAPER_CHAT_PIPELINE_ENABLED` | AI Core Stage 1 Paper Chat | Optional | off | `false` / `shadow` / `true` |
 
 ## Used in code but not in `.env.example`
 
@@ -976,10 +1025,10 @@ CI sets unused `SECRET_KEY` (app expects `FLASK_SECRET_KEY`).
 | **Maintainability** | 5 | `server.py` monolith; three Bases; Phase 1 packages modular; branding inconsistency |
 | **Code Quality** | 7 | Strong pytest on Phase 1 + analysis_pipeline + upload; flake8 CI; some legacy deprecation left in place |
 | **UX** | 8 | Research OS chrome (D1–D9); Paper Workspace surfaces Phase 1; upload on Library; ⌘K; session/error UX |
-| **Deployment** | 5 | systemd units + Procfile; migration 0017 required for Phase 2 persist; no Docker/k8s |
-| **Observability** | 6 | Prometheus + JSON logs; no Sentry/alerts/product analytics |
-| **Testing** | 7 | Large pytest surface including Phase 1.1–1.7 + Phase 2 service tests; frontend Vitest not in CI |
-| **Overall readiness** | **6.5 / 10** | Suitable for **trusted private deploy** with allowlist + HTTPS + secrets hygiene + migration 0017; SPA research UX much stronger; **not** ready for open public multi-tenant production |
+| **Deployment** | 7 | Docker multi-stage + `entrypoint.sh` (Railway-ready); systemd + Procfile; migrations through **0021** |
+| **Observability** | 7 | Prometheus + JSON logs; `/api/health/providers`; scholarly metrics; no Sentry/alerts/product analytics |
+| **Testing** | 7 | Large pytest surface including Phase 1.1–1.7 + Phase 2 + scholarly; frontend Vitest not in CI |
+| **Overall readiness** | **7 / 10** | Suitable for **trusted private deploy** with allowlist + HTTPS + secrets + migrations **0017–0021**; scholarly Discover/enrich live; **not** ready for open public multi-tenant production |
 
 ---
 
@@ -1147,23 +1196,29 @@ Based **only** on current implementation state (not aspirational design docs):
 - Prometheus metrics + JSON logging  
 - Multi-paper compare/gaps, writing assistant, export  
 - CI: flake8 + pytest  
+- **Scholarly Step 1** — Crossref upload enrichment (merge + provenance), `provider_cache`, soft-fail before Phase 1  
+- **Scholarly Step 2** — OpenAlex Discover + Add to Library (metadata stubs); Related via Semantic Scholar; citation format API; ops hardening (circuit/bulkhead/health)  
+- **AI Core Stage 1 Paper Chat** — behind `PAPER_CHAT_PIPELINE_ENABLED`  
+- **Docker / Railway** — multi-stage `Dockerfile`, Gunicorn `entrypoint.sh`  
 
 ## In Progress / inconsistent
 - Dual auth/upload/storage stacks  
 - Branding rename (Soro SPA vs Personal AI login/legal)  
-- Prompt Engine adoption (**paper chat** still legacy)  
+- Prompt Engine adoption (**paper chat** Stage 1 flagged OFF by default)  
 - Legacy confirm-upload / `extract_metadata` deprecation drain  
 - Admin role (API yes, UI no)  
 - Legal/support production copy  
+- Scholarly UI polish (Related empty states, verified citation badge)  
 
 ## Next (highest leverage before public launch)
 1. Verify production hardening PRs (§17) on every deploy (secrets, allowlist, headers, MIME, metrics, chat limits)  
 2. Finish legacy path removal (confirm-upload threads → queue-only)  
-3. Paper-scoped chat → PromptBuilder (+ optional Phase 1 inject)  
+3. Paper-scoped chat soak: `PAPER_CHAT_PIPELINE_ENABLED=shadow` → `true`  
 4. Add chat/message indexes; decide pgvector timeline  
 5. Run frontend tests in CI; fix legal placeholders + brand templates  
-6. Apply migration **0017** on all deployed Postgres environments  
+6. Apply migrations **0017–0021** on all deployed Postgres environments  
 7. Delete or wire remaining dead FE (`ProjectList`, `FilePreviewDialog`)  
+8. Scholarly Step 3/4 polish (Related UX, Crossref citation badge); PubMed deferred  
 
 ## Future
 - ImportSession checkpointing  
@@ -1174,6 +1229,7 @@ Based **only** on current implementation state (not aspirational design docs):
 - Resizable rails persistence  
 - Graph DB persistence / query engine (Phase 1.7 non-goals)  
 - Competitive track M13+ (compare→outline, claim blocks, writing studio) per `docs/soro-vs-jenni-roadmap.md`  
+- Open-access PDF fetch for Discover (explicitly deferred)  
 
 ## Long-term
 - Vector index / hybrid search  
@@ -1188,12 +1244,14 @@ Based **only** on current implementation state (not aspirational design docs):
 | Area | Path |
 |------|------|
 | App entry | `server.py` |
-| Worker | `worker.py` (`import` → `phase1_analysis` → `paper_analysis`) |
-| Migrations | `migrations/0001`–`0017`, `run_migrations.py` |
+| Worker | `worker.py` (`import` → Crossref → `phase1_analysis` → `paper_analysis`) |
+| Migrations | `migrations/0001`–`0021`, `run_migrations.py` |
 | Auth | `auth/` |
 | Upload JWT | `backend/upload/` |
 | Search/RAG JWT | `backend/search/` |
+| **Scholarly providers** | `backend/scholarly/` (Crossref, OpenAlex, Semantic Scholar) |
 | Prompt Engine | `backend/ai/`, `backend/prompts/` |
+| AI Core Stage 1 | `backend/ai_core/` (Paper Chat; feature-flagged) |
 | **Phase 2 integration** | `backend/analysis_pipeline/` |
 | Phase 1.1 | `backend/document_understanding/` |
 | Phase 1.2 | `backend/classification/` (prefer `pass2`) |
@@ -1210,7 +1268,7 @@ Based **only** on current implementation state (not aspirational design docs):
 | Frontend | `frontend/src/` (`features/pipeline`, `features/papers`, Design System shell) |
 | Design System | `docs/DESIGN-SYSTEM-v2.md`, `docs/Interaction-Guidelines.md`, `docs/prototypes/d0.5/` |
 | CI | `.github/workflows/ci.yml` |
-| Deploy | `deploy/systemd/`, `Procfile` |
+| Deploy | `Dockerfile`, `entrypoint.sh`, `deploy/systemd/`, `Procfile` |
 | Internal map (may drift) | `brain.md` |
 | Design docs (partially superseded) | `docs/` |
 | Architecture note (Phase 2) | `backend/analysis_pipeline/ARCHITECTURE.md` |
@@ -1227,4 +1285,4 @@ Based **only** on current implementation state (not aspirational design docs):
 
 ---
 
-*End of PROJECT_STATUS.md — audited 2026-07-26; refreshed after Phase 1.1–1.7 + Phase 2; updated same day for Phase 1 Paper Workspace UI + Design System D1–D9.*
+*End of PROJECT_STATUS.md — audited 2026-07-26; refreshed for Phase 1+2, Design System D1–D9, scholarly Steps 1–2 (Crossref/OpenAlex/S2), AI Core Stage 1 Paper Chat, and Docker/Railway deploy (2026-07-27).*
