@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
+from typing import Mapping
+
 from backend.ai_core.versions import IDENTITY_VERSION
 
 _IDENTITY_DIR = Path(__file__).resolve().parent

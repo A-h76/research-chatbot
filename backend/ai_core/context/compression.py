@@ -1,6 +1,6 @@
 """Compress a ranked bundle into a token-budget-friendly form.
 
-Today: light caps / empty-field pruning.  
+Today: light caps / empty-field pruning.
 Tomorrow: token budgeting, dedupe, overlapping evidence removal, section
 merging, citation collapsing, graph pruning — keep that growth here, not
 in ``ResearchContextBuilder``.

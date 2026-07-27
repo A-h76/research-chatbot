@@ -267,7 +267,22 @@ def test_call_streaming(registry):
 
 
 # ------------------------------------------------------------ real API smoke tests
-_openai_configured = bool(os.environ.get("OPENAI_API_KEY"))
+def _has_real_openai_key() -> bool:
+    """True only when OPENAI_API_KEY looks like a real key.
+
+    CI sets OPENAI_API_KEY=sk-fake-key-for-ci to keep the app bootable without
+    calling external APIs — treat placeholders as unset so these smoke tests skip.
+    """
+    key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+    if not key:
+        return False
+    lowered = key.lower()
+    if any(token in lowered for token in ("fake", "placeholder", "your-api-key", "example")):
+        return False
+    return True
+
+
+_openai_configured = _has_real_openai_key()
 
 
 @pytest.mark.skipif(not _openai_configured, reason="OPENAI_API_KEY not configured")
