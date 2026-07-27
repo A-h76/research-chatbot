@@ -138,6 +138,11 @@ require_production_secrets(os.environ, is_production=IS_PRODUCTION)
 
 app = Flask(__name__)
 app.secret_key = resolve_flask_secret_key(os.environ, is_production=IS_PRODUCTION)
+# Railway/Render terminate TLS at the edge and forward X-Forwarded-Proto/Host.
+# Without ProxyFix, url_for(_external=True) and OAuth redirects become http://…
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_MB * 1024 * 1024
 # Secure session-cookie defaults (Secure flag only in production/HTTPS).
 # Absolute cookie lifetime matches SESSION_ABSOLUTE_HOURS; idle is enforced
@@ -1256,9 +1261,9 @@ def login_page():
         return redirect("/")
 
     # ── DEV_AUTO_LOGIN bypass ─────────────────────────────────────────────────
-    # When DEV_AUTO_LOGIN is set (development only), automatically create and
-    # sign in a local dev account so you can work without Google OAuth.
-    if DEV_AUTO_LOGIN:
+    # Development only. If this is set on Railway without a healthy schema,
+    # the old path 500'd the whole /login page — catch and fall through.
+    if DEV_AUTO_LOGIN and not IS_PRODUCTION:
         db = SessionLocal()
         try:
             dev_email = "dev@localhost"
@@ -1273,9 +1278,18 @@ def login_page():
             session["jwt"] = {"access": access, "refresh": refresh}
             mark_session_login(session)
             _record_user_login(user.id)
+            return redirect("/")
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "DEV_AUTO_LOGIN failed — showing login page. "
+                "On Railway: delete DEV_AUTO_LOGIN and set FLASK_ENV=production."
+            )
+            try:
+                db.rollback()
+            except Exception:
+                pass
         finally:
             db.close()
-        return redirect("/")
     # ─────────────────────────────────────────────────────────────────────────
 
     return render_template(
