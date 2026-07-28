@@ -18,6 +18,7 @@ from backend.evidence.query import normalize_evidence_query
 from backend.evidence.ranking import apply_ranking_stage
 from backend.evidence.reasoning import apply_reasoning_stage
 from backend.evidence.retrieval import retrieve_evidence_objects
+from backend.evidence.writing_intelligence import apply_writing_intelligence_stage
 from backend.evidence.reviews import next_object_status_after_review, validate_review_payload
 from backend.evidence.services.extract_service import PIPELINE_VERSION, run_evidence_extraction
 from backend.evidence.services.logging import log_evidence_metric
@@ -686,5 +687,61 @@ def create_evidence_blueprint(
     def evidence_reason():
         """Reasoning stage: structured chain from prior RI stages (no generation)."""
         return _run_reasoning()
+
+    def _run_writing_intelligence():
+        """Writing Intelligence: full RI pipeline, generation last (grounded_v0)."""
+        uid = _uid()
+        data = request.get_json(silent=True) or {}
+        raw = data.get("query") if isinstance(data.get("query"), dict) else data
+        db = SessionLocal()
+        try:
+            query = normalize_evidence_query(raw, user_id=uid)
+            require_owned_project(db, Project, user_id=uid, project_id=query["scope"]["project_id"])
+            doc_id = query["scope"].get("document_id")
+            if doc_id is not None:
+                doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=int(doc_id))
+                if int(doc.project_id) != int(query["scope"]["project_id"]):
+                    raise EvidenceDomainError(ErrorCode.NOT_FOUND, "document_not_in_project")
+            retrieved = retrieve_evidence_objects(
+                db,
+                query=query,
+                EvidenceObject=EvidenceObject,
+                WritingSentenceBinding=WritingSentenceBinding,
+                select=select,
+            )
+            ranked = apply_ranking_stage(retrieved, ranking_strategy=query["ranking_strategy"])
+            relations = _binding_relation_map(
+                db,
+                user_id=uid,
+                project_id=int(query["scope"]["project_id"]),
+                document_id=int(doc_id) if doc_id is not None else None,
+            )
+            consensus = apply_consensus_stage(ranked, binding_relations=relations)
+            conflicted = apply_conflict_stage(consensus, binding_relations=relations)
+            reasoned = apply_reasoning_stage(conflicted)
+            result = apply_writing_intelligence_stage(reasoned)
+            log_evidence_metric(
+                "writing_intelligence",
+                user_id=uid,
+                project_id=query["scope"]["project_id"],
+                intent=query["intent"],
+                status=(result.get("writing") or {}).get("status"),
+                blocked_reason=(result.get("writing") or {}).get("blocked_reason"),
+                citations=len((result.get("writing") or {}).get("citations") or []),
+            )
+            return jsonify(result)
+        except ValueError as exc:
+            return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.post("/api/evidence/writing")
+    @login_required
+    @limiter.limit("60 per hour")
+    def evidence_writing():
+        """Writing Intelligence: grounded generation after RI pipeline (Sprint 6)."""
+        return _run_writing_intelligence()
 
     return bp

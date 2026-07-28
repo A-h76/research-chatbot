@@ -44,13 +44,11 @@ RI pipeline: [`phase-2.3-research-intelligence-pipeline.md`](phase-2.3-research-
 | 3 — Consensus Analysis | **Done** (`/api/evidence/consensus`) |
 | 4 — Conflict Analysis | **Done** (`/api/evidence/conflict`) |
 | 5 — Reasoning Pipeline | **Done** (`/api/evidence/reason`) |
-| 6 — Writing Intelligence integration | **Next** (generation last) |
-| 4 — Conflict Analysis | Not Started |
-| 5 — Reasoning Pipeline | Not Started |
-| 6 — Writing Intelligence integration | Not Started |
+| 6 — Writing Intelligence integration | **Done** (`/api/evidence/writing`, `grounded_v0`) |
 
 Contract: [`phase-2.3-evidence-query-contract.md`](phase-2.3-evidence-query-contract.md)  
 **One pipeline, not modules.** RI never owns knowledge. Evidence Platform (`v0.2.0-rc1`) stays frozen.
+Phase 2.3 core pipeline sprints **0–6 complete**. Next product surfaces: Reviewer / Compare / Assistant (ADD-0005 months 8+).
 
 ### RI prohibitions
 

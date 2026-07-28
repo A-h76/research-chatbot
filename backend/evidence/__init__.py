@@ -13,6 +13,7 @@ from .consensus import aggregate_consensus, apply_consensus_stage
 from .query import normalize_evidence_query
 from .ranking import apply_ranking_stage, rank_evidence_objects
 from .reasoning import apply_reasoning_stage, build_reasoning
+from .writing_intelligence import apply_writing_intelligence_stage, build_writing_intelligence
 
 __all__ = [
     "confidence_band_from_grades",
@@ -29,6 +30,8 @@ __all__ = [
     "apply_conflict_stage",
     "build_reasoning",
     "apply_reasoning_stage",
+    "build_writing_intelligence",
+    "apply_writing_intelligence_stage",
 ]
 
 PIPELINE_VERSION = "2.2.0"

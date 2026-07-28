@@ -109,6 +109,35 @@ export const evidenceApi = {
       ranking_strategy?: string;
     }>("/api/evidence/reason", query),
 
+  writing: (query: Record<string, unknown>) =>
+    api.post<{
+      query: Record<string, unknown>;
+      objects: EvidenceObjectDTO[];
+      total: number;
+      truncated: boolean;
+      stage: string;
+      writing_version?: string;
+      writing?: {
+        status: "ok" | "blocked";
+        blocked_reason: string | null;
+        mode: string;
+        paragraph: string | null;
+        citations: Array<{
+          evidence_id: number;
+          file_id?: number;
+          page?: number | null;
+          claim: string;
+          quote: string;
+        }>;
+        warnings: string[];
+        disclaimer: string;
+        supporting_count?: number;
+      };
+      reasoning?: Record<string, unknown>;
+      conflict?: Record<string, unknown>;
+      consensus?: Record<string, unknown>;
+    }>("/api/evidence/writing", query),
+
   list: (projectId: number, opts?: { file_id?: number; status?: string }) => {
     const p = new URLSearchParams();
     if (opts?.file_id) p.set("file_id", String(opts.file_id));
