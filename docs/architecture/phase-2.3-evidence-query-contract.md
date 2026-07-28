@@ -133,8 +133,8 @@ Retrieval returns Evidence Layer objects only (no parallel DTO corpus):
 }
 ```
 
-Ranking may reorder `objects` in a later stage without changing object identity.
-Consensus/Conflict/Reasoning consume the same object ids.
+Ranking reorders `objects` via `POST /api/evidence/rank` without changing object identity
+(`phase-2.3-evidence-ranking.md`). Consensus/Conflict/Reasoning consume the same object ids.
 
 ---
 

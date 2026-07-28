@@ -31,6 +31,19 @@ def parse_json_object(raw: str | None) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _iso_ts(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        try:
+            return value.isoformat()
+        except (TypeError, ValueError):
+            return None
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
 def serialize_evidence_object(row: Any, *, relation: str | None = None, file_title: str | None = None) -> dict[str, Any]:
     """Project an ORM/row-like object into the public EvidenceObject DTO."""
     dto: dict[str, Any] = {
@@ -57,6 +70,9 @@ def serialize_evidence_object(row: Any, *, relation: str | None = None, file_tit
         "supersedes_id": getattr(row, "supersedes_id", None),
         "provenance": parse_json_object(getattr(row, "provenance_json", None)),
         "source_kg_node_id": getattr(row, "source_kg_node_id", "") or "",
+        # Additive — Ranking (Sprint 2) uses for recency; optional for consumers
+        "created_at": _iso_ts(getattr(row, "created_at", None)),
+        "updated_at": _iso_ts(getattr(row, "updated_at", None)),
     }
     if relation:
         dto["relation"] = relation if relation in RELATIONS else "related"

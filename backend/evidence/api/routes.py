@@ -13,6 +13,7 @@ from backend.evidence.bindings import validate_binding_payload
 from backend.evidence.inspector import assemble_explain_response
 from backend.evidence.objects import serialize_evidence_object
 from backend.evidence.query import normalize_evidence_query
+from backend.evidence.ranking import apply_ranking_stage
 from backend.evidence.retrieval import retrieve_evidence_objects
 from backend.evidence.reviews import next_object_status_after_review, validate_review_payload
 from backend.evidence.services.extract_service import PIPELINE_VERSION, run_evidence_extraction
@@ -459,5 +460,51 @@ def create_evidence_blueprint(
     def evidence_retrieve():
         """Alias of /search — same EvidenceQuery contract (Sprint 1)."""
         return _run_retrieval()
+
+    def _run_ranking():
+        """Ranking stage: EvidenceQuery → Retrieval → reorder EvidenceObjects."""
+        uid = _uid()
+        data = request.get_json(silent=True) or {}
+        raw = data.get("query") if isinstance(data.get("query"), dict) else data
+        db = SessionLocal()
+        try:
+            query = normalize_evidence_query(raw, user_id=uid)
+            require_owned_project(db, Project, user_id=uid, project_id=query["scope"]["project_id"])
+            doc_id = query["scope"].get("document_id")
+            if doc_id is not None:
+                doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=int(doc_id))
+                if int(doc.project_id) != int(query["scope"]["project_id"]):
+                    raise EvidenceDomainError(ErrorCode.NOT_FOUND, "document_not_in_project")
+            retrieved = retrieve_evidence_objects(
+                db,
+                query=query,
+                EvidenceObject=EvidenceObject,
+                WritingSentenceBinding=WritingSentenceBinding,
+                select=select,
+            )
+            result = apply_ranking_stage(retrieved, ranking_strategy=query["ranking_strategy"])
+            log_evidence_metric(
+                "ranking",
+                user_id=uid,
+                project_id=query["scope"]["project_id"],
+                intent=query["intent"],
+                strategy=query["ranking_strategy"],
+                total=result.get("total"),
+                returned=len(result.get("objects") or []),
+            )
+            return jsonify(result)
+        except ValueError as exc:
+            return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.post("/api/evidence/rank")
+    @login_required
+    @limiter.limit("120 per hour")
+    def evidence_rank():
+        """Ranking stage: EvidenceQuery → Retrieval → ranked EvidenceObject[]."""
+        return _run_ranking()
 
     return bp

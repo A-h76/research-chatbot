@@ -9,6 +9,7 @@ from .scoring import confidence_band_from_grades
 from .provenance import compute_content_hash, build_provenance
 from .api.errors import EvidenceDomainError, ErrorCode
 from .query import normalize_evidence_query
+from .ranking import apply_ranking_stage, rank_evidence_objects
 
 __all__ = [
     "confidence_band_from_grades",
@@ -17,6 +18,8 @@ __all__ = [
     "EvidenceDomainError",
     "ErrorCode",
     "normalize_evidence_query",
+    "rank_evidence_objects",
+    "apply_ranking_stage",
 ]
 
 PIPELINE_VERSION = "2.2.0"

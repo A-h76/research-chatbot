@@ -40,8 +40,8 @@ RI pipeline: [`phase-2.3-research-intelligence-pipeline.md`](phase-2.3-research-
 |--------|--------|
 | 0 — Evidence Query contract freeze | **Done** (ADR-0007) |
 | 1 — Evidence Retrieval | **Done** (`/api/evidence/search`, `/retrieve`) |
-| 2 — Evidence Ranking | **Next** |
-| 3 — Consensus Analysis | Not Started |
+| 2 — Evidence Ranking | **Done** (`/api/evidence/rank`, `default_v0`) |
+| 3 — Consensus Analysis | **Next** |
 | 4 — Conflict Analysis | Not Started |
 | 5 — Reasoning Pipeline | Not Started |
 | 6 — Writing Intelligence integration | Not Started |

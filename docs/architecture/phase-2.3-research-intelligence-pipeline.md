@@ -12,7 +12,7 @@ Audience: Staff / principal engineers implementing Phase 2.3
 |--------|------|--------|
 | 0 | Evidence Query contract | **Frozen** — `phase-2.3-evidence-query-contract.md` |
 | 1 | Evidence Retrieval | **Done** — `phase-2.3-evidence-retrieval.md` |
-| 2 | Evidence Ranking | Next |
+| 2 | Evidence Ranking | **Done** — `phase-2.3-evidence-ranking.md` |
 | 3–6 | Consensus → … → Writing Intelligence | Planned |
 
 ---
@@ -127,7 +127,7 @@ Normalizer: `backend/evidence/query.py`.
 
 1. ~~Evidence Query contract freeze (Sprint 0)~~ **Done**  
 2. ~~Evidence Retrieval~~ **Done** (`phase-2.3-evidence-retrieval.md`)  
-3. Evidence Ranking  
+3. ~~Evidence Ranking~~ **Done** (`phase-2.3-evidence-ranking.md`)  
 4. Consensus Analysis  
 5. Conflict Analysis  
 6. Reasoning Pipeline  

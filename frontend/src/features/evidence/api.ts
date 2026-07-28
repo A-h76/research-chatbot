@@ -29,6 +29,17 @@ export const evidenceApi = {
       stage: string;
     }>("/api/evidence/retrieve", query),
 
+  rank: (query: Record<string, unknown>) =>
+    api.post<{
+      query: Record<string, unknown>;
+      objects: EvidenceObjectDTO[];
+      total: number;
+      truncated: boolean;
+      stage: string;
+      ranking_version?: string;
+      ranking_strategy?: string;
+    }>("/api/evidence/rank", query),
+
   list: (projectId: number, opts?: { file_id?: number; status?: string }) => {
     const p = new URLSearchParams();
     if (opts?.file_id) p.set("file_id", String(opts.file_id));
