@@ -8,6 +8,7 @@ See docs/architecture/week2-evidence-layer-architecture.md and ADR-0003.
 from .scoring import confidence_band_from_grades
 from .provenance import compute_content_hash, build_provenance
 from .api.errors import EvidenceDomainError, ErrorCode
+from .query import normalize_evidence_query
 
 __all__ = [
     "confidence_band_from_grades",
@@ -15,6 +16,7 @@ __all__ = [
     "build_provenance",
     "EvidenceDomainError",
     "ErrorCode",
+    "normalize_evidence_query",
 ]
 
 PIPELINE_VERSION = "2.2.0"

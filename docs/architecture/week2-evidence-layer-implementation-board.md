@@ -38,15 +38,16 @@ RI pipeline: [`phase-2.3-research-intelligence-pipeline.md`](phase-2.3-research-
 
 | Sprint | Status |
 |--------|--------|
-| 0 — Evidence Query contract freeze | Not Started |
-| 1 — Evidence Retrieval | Not Started |
+| 0 — Evidence Query contract freeze | **Done** (ADR-0007) |
+| 1 — Evidence Retrieval | **Next** |
 | 2 — Evidence Ranking | Not Started |
 | 3 — Consensus Analysis | Not Started |
 | 4 — Conflict Analysis | Not Started |
 | 5 — Reasoning Pipeline | Not Started |
 | 6 — Writing Intelligence integration | Not Started |
 
-**One pipeline, not modules.** RI never owns knowledge.
+Contract: [`phase-2.3-evidence-query-contract.md`](phase-2.3-evidence-query-contract.md)  
+**One pipeline, not modules.** RI never owns knowledge. Evidence Platform (`v0.2.0-rc1`) stays frozen.
 
 ### RI prohibitions
 

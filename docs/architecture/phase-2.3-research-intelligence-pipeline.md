@@ -1,12 +1,18 @@
 # Phase 2.3 — Research Intelligence Pipeline (design freeze for kickoff)
 
-Status: Accepted architecture for Phase 2.3 — **implement only after `v0.2.0-rc1`**  
-Depends on: Evidence Layer platform contracts (ADR-0005), ADD-0005, ADR-0004, ADR-0006  
-Audience: Staff / principal engineers opening Phase 2.3
+Status: **Active** — Phase 2.3 open after `v0.2.0-rc1`; Sprint 0 Evidence Query **frozen** (ADR-0007)  
+Depends on: Evidence Layer platform contracts (ADR-0005), ADD-0005, ADR-0004, ADR-0006, ADR-0007  
+Audience: Staff / principal engineers implementing Phase 2.3
 
 ---
 
-## 1) Three architectural eras (clean boundaries)
+## 0) Sprint status
+
+| Sprint | Item | Status |
+|--------|------|--------|
+| 0 | Evidence Query contract | **Frozen** — `phase-2.3-evidence-query-contract.md` |
+| 1 | Evidence Retrieval | Next |
+| 2–6 | Ranking → … → Writing Intelligence | Planned |
 
 ```text
 Phase 1 — Research Analysis
@@ -92,56 +98,29 @@ Therefore:
 
 ---
 
-## 4) Evidence Query — freeze before Retrieval
+## 4) Evidence Query — frozen (Sprint 0 complete)
 
-Every future capability asks for evidence **the same way**. Writing, Reviewer, Compare, and Research Assistant submit an **Evidence Query** rather than custom retrieval logic.
+Canonical contract: [`phase-2.3-evidence-query-contract.md`](phase-2.3-evidence-query-contract.md) (ADR-0007).
 
-This is the “SQL” of the Evidence Layer.
+Minimal platform fields:
 
-### Required query shape (v0 contract — freeze in Sprint 0 of 2.3)
-
-```json
-{
-  "intent": "support_sentence | answer_question | review_coverage | compare_topic | …",
-  "scope": {
-    "user_id": 1,
-    "project_id": 2,
-    "file_ids": null,
-    "document_id": null
-  },
-  "filters": {
-    "status": ["accepted", "candidate"],
-    "confidence_bands": ["high", "moderate", "low"],
-    "study_types": [],
-    "require_page_anchor": true
-  },
-  "ranking_strategy": "default_v0",
-  "result_limit": 20,
-  "query_text": "optional natural-language or sentence text",
-  "anchors": {
-    "block_id": null,
-    "selected_text": null
-  }
-}
+```text
+intent | scope | filters | ranking_strategy | result_limit
 ```
 
-| Field | Purpose |
-|-------|---------|
-| `intent` | Why evidence is needed (routes presentation, not alternate stores) |
-| `scope` | Tenant + project (+ optional files/document) |
-| `filters` | Status, bands, study type, grounding requirements |
-| `ranking_strategy` | Named, versioned ranker (Ranking stage owns interpretation) |
-| `result_limit` | Cap |
-| `query_text` / `anchors` | What to match; anchors preferred for Writing |
+Optional: `query_text`, `anchors`.  
+**Not** in contract: prompt, model, temperature, embeddings, vector_index.
 
-**Sprint 0 (Phase 2.3 kickoff):** publish final Evidence Query OpenAPI/fixture contract, then implement Retrieval against it.  
-Do **not** start Retrieval code before that contract is checked into fixtures.
+Fixture: `tests/fixtures/evidence/evidence_query_v0.json`.  
+Normalizer: `backend/evidence/query.py`.
+
+**Sprint 1:** Retrieval implements this contract — does not redefine it.
 
 ---
 
-## 5) Implementation order (after RC)
+## 5) Implementation order
 
-1. Evidence Query contract freeze (Sprint 0)  
+1. ~~Evidence Query contract freeze (Sprint 0)~~ **Done**  
 2. Evidence Retrieval  
 3. Evidence Ranking  
 4. Consensus Analysis  
@@ -153,15 +132,6 @@ Package guidance: grow under `backend/evidence/` or `backend/intelligence/` as *
 
 ---
 
-## 6) Explicit non-work before `v0.2.0-rc1`
+## 6) Platform freeze reminder
 
-No additional architectural ADDs/ADRs are required for RC.
-
-Remaining work for RC:
-
-1. Finish [`week2-rc-checklist.md`](week2-rc-checklist.md) (Postgres `0033` + ops smoke)  
-2. Tag `v0.2.0-rc1`  
-3. Close Phase 2.2  
-4. Open Phase 2.3 at Evidence Query → Retrieval  
-
-That sequencing keeps the platform stable while intelligence grows on a defined foundation.
+Evidence Platform (`v0.2.0-rc1`) remains frozen (ADR-0005). Phase 2.3 computes over EvidenceObjects; it does not reopen Phase 2.2 architecture.
