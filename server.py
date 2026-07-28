@@ -977,6 +977,51 @@ class Note(Base):
     )
 
 
+class WritingDocument(Base):
+    __tablename__ = "documents"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    title = Column(String(300), default="")
+    content = Column(Text, default="")
+    editor_kind = Column(String(20), default="markdown")  # markdown|richtext
+    status = Column(String(20), default="draft")  # draft|active|archived|deleted
+    current_version = Column(Integer, default=1)  # optimistic locking
+    last_saved_hash = Column(String(64), default="")
+    last_autosave_key = Column(String(120), default="")
+    last_opened_at = Column(DateTime, nullable=True)
+    word_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class WritingDocumentVersion(Base):
+    __tablename__ = "document_versions"
+    id = Column(Integer, primary_key=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    version_no = Column(Integer, nullable=False)
+    title = Column(String(300), default="")
+    content = Column(Text, default="")
+    content_hash = Column(String(64), default="")
+    source = Column(String(20), default="save")  # create|save|autosave|restore
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class WritingDocumentActivity(Base):
+    __tablename__ = "document_activity"
+    id = Column(Integer, primary_key=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    action = Column(String(30), nullable=False)  # create|update|autosave|restore|archive
+    meta_json = Column(Text, default="{}")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class ProjectQuestion(Base):
     """Research question scoped to a project (Sprint A).
 
@@ -1819,6 +1864,21 @@ from backend.library.collections import CollectionService
 from backend.library.routes import create_library_bridge_blueprint
 from backend.library.service import LibraryImportService
 from backend.library.sync import LibrarySyncService
+from backend.writing.api.errors import WritingDomainError
+from backend.writing.events import make_writing_event, publish_writing_event
+from backend.writing.services import (
+    build_version_conflict_payload,
+    is_idempotent_replay,
+    normalize_editor_kind,
+    normalize_idempotency_key,
+    normalize_status_filter,
+    next_version_number,
+    require_owned_document,
+    require_owned_project,
+)
+from backend.writing.validation import ensure_transition_allowed
+from backend.writing.validation.schemas import normalize_document_mutation
+from backend.writing.services.logging import log_writing_metric
 from backend.scholarly.crossref import enrich_file_from_doi as _enrich_file_from_doi
 
 _collection_service = CollectionService(
@@ -5302,6 +5362,467 @@ def delete_note(nid):
         db.delete(n)
         db.commit()
         return jsonify({"ok": True})
+    finally:
+        db.close()
+
+
+def _doc_hash(content: str) -> str:
+    return _hashlib.sha256((content or "").encode("utf-8")).hexdigest()
+
+
+def _word_count(content: str) -> int:
+    return len([w for w in (content or "").split() if w.strip()])
+
+
+def _writing_doc_to_dict(d: WritingDocument) -> dict:
+    return {
+        "id": d.id,
+        "title": d.title or "",
+        "content": d.content or "",
+        "project_id": d.project_id,
+        "editor_kind": d.editor_kind or "markdown",
+        "status": d.status or "draft",
+        "current_version": int(d.current_version or 1),
+        "last_opened_at": d.last_opened_at.isoformat() if d.last_opened_at else None,
+        "word_count": int(d.word_count or 0),
+        "created_at": d.created_at.isoformat() if d.created_at else None,
+        "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+    }
+
+
+def _writing_doc_version_to_dict(v: WritingDocumentVersion) -> dict:
+    return {
+        "id": v.id,
+        "document_id": v.document_id,
+        "version_no": int(v.version_no or 0),
+        "title": v.title or "",
+        "source": v.source or "save",
+        "created_at": v.created_at.isoformat() if v.created_at else None,
+    }
+
+
+def _log_document_activity(
+    db,
+    *,
+    uid: int,
+    document_id: int,
+    action: str,
+    meta: dict | None = None,
+) -> None:
+    db.add(
+        WritingDocumentActivity(
+            user_id=uid,
+            document_id=document_id,
+            action=action,
+            meta_json=json.dumps(meta or {}),
+        )
+    )
+
+
+def _append_document_version(
+    db,
+    *,
+    uid: int,
+    doc: WritingDocument,
+    source: str,
+) -> WritingDocumentVersion:
+    content = doc.content or ""
+    version = WritingDocumentVersion(
+        document_id=doc.id,
+        user_id=uid,
+        version_no=int(doc.current_version or 1),
+        title=(doc.title or "")[:300],
+        content=content,
+        content_hash=_doc_hash(content),
+        source=source,
+    )
+    db.add(version)
+    return version
+
+
+def _apply_writing_status_transition(doc: WritingDocument, target_status: str) -> None:
+    current = (doc.status or "draft").strip().lower()
+    target = (target_status or "").strip().lower()
+    if not target or target == current:
+        return
+    ensure_transition_allowed(current, target)
+    doc.status = target
+
+
+def _emit_writing_observability(event_name: str, *, uid: int, doc: WritingDocument, metadata: dict | None = None) -> None:
+    payload = metadata or {}
+    publish_writing_event(
+        make_writing_event(
+            event_name,
+            user_id=uid,
+            document_id=doc.id,
+            metadata=payload,
+        )
+    )
+    log_writing_metric(
+        event_name,
+        user_id=uid,
+        document_id=doc.id,
+        status=doc.status,
+        current_version=int(doc.current_version or 1),
+    )
+
+
+@app.route("/api/writing/documents", methods=["GET"])
+@login_required
+def list_writing_documents():
+    uid = session["user_id"]
+    args = request.args
+    project_id_raw = args.get("project_id")
+    include_archived = str(args.get("include_archived") or "").lower() in {"1", "true", "yes"}
+    include_deleted = str(args.get("include_deleted") or "").lower() in {"1", "true", "yes"}
+    try:
+        status_filter = normalize_status_filter(args.get("status"))
+    except WritingDomainError as exc:
+        return jsonify({"error": exc.code, "detail": exc.detail}), 400
+    try:
+        limit = max(1, min(200, int(args.get("limit", 50))))
+    except (TypeError, ValueError):
+        limit = 50
+
+    db = SessionLocal()
+    try:
+        stmt = select(WritingDocument).where(WritingDocument.user_id == uid)
+        if not include_archived:
+            stmt = stmt.where(WritingDocument.status != "archived")
+        if not include_deleted:
+            stmt = stmt.where(WritingDocument.status != "deleted")
+        if project_id_raw is None:
+            return jsonify({"error": "project_id_required", "detail": "project_id is required."}), 400
+        try:
+            pid = int(project_id_raw)
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid_project_id"}), 400
+        try:
+            require_owned_project(db, Project, user_id=uid, project_id=pid)
+        except WritingDomainError:
+            return jsonify({"error": "not_found"}), 404
+        stmt = stmt.where(WritingDocument.project_id == pid)
+        if status_filter:
+            stmt = stmt.where(WritingDocument.status == status_filter)
+        docs = db.execute(stmt.order_by(WritingDocument.updated_at.desc()).limit(limit)).scalars().all()
+        return jsonify({"items": [_writing_doc_to_dict(d) for d in docs], "count": len(docs)})
+    finally:
+        db.close()
+
+
+@app.route("/api/writing/documents", methods=["POST"])
+@login_required
+@limiter.limit("30 per hour")
+def create_writing_document():
+    uid = session["user_id"]
+    data = request.get_json(silent=True) or {}
+    try:
+        normalized = normalize_document_mutation(
+            str(data.get("title") or "Untitled draft"),
+            str(data.get("content") or ""),
+        )
+    except WritingDomainError as exc:
+        return jsonify({"error": exc.code, "detail": exc.detail}), 400
+    title = normalized.title or "Untitled draft"
+    content = normalized.content
+    editor_kind = normalize_editor_kind(data.get("editor_kind"))
+
+    project_id = data.get("project_id")
+    if project_id is None:
+        return jsonify({"error": "project_id_required", "detail": "Documents must belong to a project."}), 400
+    db = SessionLocal()
+    try:
+        project_id, denied = resolve_owned_project_id(db, Project, project_id, uid)
+        if denied or project_id is None:
+            log_security_event(
+                "authz_denied",
+                resource="project",
+                action="create_writing_document",
+                user_id=uid,
+                project_id=data.get("project_id"),
+            )
+            return jsonify({"error": "forbidden"}), 403
+
+        doc = WritingDocument(
+            user_id=uid,
+            project_id=project_id,
+            title=title,
+            content=content,
+            editor_kind=editor_kind,
+            current_version=1,
+            last_saved_hash=_doc_hash(content),
+            word_count=_word_count(content),
+            status="draft",
+        )
+        db.add(doc)
+        db.flush()
+        _append_document_version(db, uid=uid, doc=doc, source="create")
+        _log_document_activity(db, uid=uid, document_id=doc.id, action="create")
+        db.commit()
+        _emit_writing_observability("DocumentCreated", uid=uid, doc=doc)
+        return jsonify(_writing_doc_to_dict(doc)), 201
+    finally:
+        db.close()
+
+
+@app.route("/api/writing/documents/<int:doc_id>", methods=["GET"])
+@login_required
+def get_writing_document(doc_id):
+    db = SessionLocal()
+    try:
+        try:
+            doc = require_owned_document(
+                db,
+                WritingDocument,
+                user_id=session["user_id"],
+                document_id=doc_id,
+            )
+        except WritingDomainError:
+            return jsonify({"error": "not_found"}), 404
+        doc.last_opened_at = datetime.now(timezone.utc)
+        db.commit()
+        return jsonify(_writing_doc_to_dict(doc))
+    finally:
+        db.close()
+
+
+@app.route("/api/writing/documents/<int:doc_id>", methods=["PATCH"])
+@login_required
+@limiter.limit("120 per hour")
+def update_writing_document(doc_id):
+    uid = session["user_id"]
+    data = request.get_json(silent=True) or {}
+    db = SessionLocal()
+    try:
+        try:
+            doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=doc_id)
+        except WritingDomainError:
+            return jsonify({"error": "not_found"}), 404
+
+        client_version = data.get("current_version")
+        if client_version is not None and int(client_version) != int(doc.current_version or 1):
+            log_security_event(
+                "version_conflict",
+                resource="writing_document",
+                action="update_writing_document",
+                user_id=uid,
+                document_id=doc_id,
+            )
+            return jsonify(build_version_conflict_payload(int(doc.current_version or 1))), 409
+
+        if (doc.status or "") == "deleted" and any(k in data for k in ("title", "content", "editor_kind")):
+            return jsonify({"error": "validation_error", "detail": "deleted_documents_are_read_only"}), 400
+
+        if "title" in data:
+            try:
+                normalized = normalize_document_mutation(str(data.get("title") or ""), doc.content or "")
+            except WritingDomainError as exc:
+                return jsonify({"error": exc.code, "detail": exc.detail}), 400
+            doc.title = normalized.title
+        if "editor_kind" in data:
+            doc.editor_kind = normalize_editor_kind(data.get("editor_kind"))
+        if "status" in data:
+            status = str(data.get("status") or "draft").strip().lower()
+            try:
+                _apply_writing_status_transition(doc, status)
+            except WritingDomainError as exc:
+                return jsonify({"error": exc.code, "detail": exc.detail}), 400
+        if "project_id" in data:
+            raw_pid = data.get("project_id")
+            if raw_pid is None:
+                return jsonify({"error": "project_id_required"}), 400
+            pid, denied = resolve_owned_project_id(db, Project, raw_pid, uid)
+            if denied or pid is None:
+                return jsonify({"error": "forbidden"}), 403
+            doc.project_id = pid
+        if "content" in data:
+            try:
+                normalized = normalize_document_mutation(doc.title or "", str(data.get("content") or ""))
+            except WritingDomainError as exc:
+                return jsonify({"error": exc.code, "detail": exc.detail}), 400
+            next_content = normalized.content
+            next_hash = _doc_hash(next_content)
+            if next_hash != (doc.last_saved_hash or ""):
+                doc.content = next_content
+                doc.last_saved_hash = next_hash
+                doc.word_count = _word_count(next_content)
+                doc.current_version = next_version_number(doc.current_version)
+                _append_document_version(db, uid=uid, doc=doc, source="save")
+                if doc.status == "draft":
+                    _apply_writing_status_transition(doc, "active")
+
+        doc.updated_at = datetime.now(timezone.utc)
+        _log_document_activity(db, uid=uid, document_id=doc.id, action="update")
+        db.commit()
+        _emit_writing_observability("DocumentUpdated", uid=uid, doc=doc)
+        return jsonify(_writing_doc_to_dict(doc))
+    finally:
+        db.close()
+
+
+@app.route("/api/writing/documents/<int:doc_id>/autosave", methods=["POST"])
+@login_required
+@limiter.limit("120 per hour")
+def autosave_writing_document(doc_id):
+    uid = session["user_id"]
+    data = request.get_json(silent=True) or {}
+    db = SessionLocal()
+    try:
+        try:
+            doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=doc_id)
+        except WritingDomainError:
+            return jsonify({"error": "not_found"}), 404
+
+        try:
+            idempotency_key = normalize_idempotency_key(data.get("idempotency_key"))
+        except WritingDomainError as exc:
+            return jsonify({"error": exc.code, "detail": exc.detail}), 400
+
+        if is_idempotent_replay(doc.last_autosave_key, idempotency_key):
+            _emit_writing_observability(
+                "DocumentAutosaveReplay",
+                uid=uid,
+                doc=doc,
+                metadata={"idempotency_key": idempotency_key},
+            )
+            return jsonify(
+                {
+                    "ok": True,
+                    "unchanged": True,
+                    "idempotent_replay": True,
+                    "document": _writing_doc_to_dict(doc),
+                }
+            )
+
+        client_version = data.get("current_version")
+        if client_version is not None and int(client_version) != int(doc.current_version or 1):
+            return jsonify(build_version_conflict_payload(int(doc.current_version or 1))), 409
+
+        if (doc.status or "") == "deleted":
+            return jsonify({"error": "validation_error", "detail": "deleted_documents_are_read_only"}), 400
+
+        try:
+            normalized = normalize_document_mutation(
+                str(data.get("title") or doc.title or ""),
+                str(data.get("content") or ""),
+            )
+        except WritingDomainError as exc:
+            return jsonify({"error": exc.code, "detail": exc.detail}), 400
+        next_content = normalized.content
+        next_title = normalized.title
+        next_hash = _doc_hash(next_content)
+        changed = next_hash != (doc.last_saved_hash or "") or next_title != (doc.title or "")
+        if not changed:
+            return jsonify({"ok": True, "unchanged": True, "document": _writing_doc_to_dict(doc)})
+
+        doc.content = next_content
+        doc.title = next_title
+        doc.last_saved_hash = next_hash
+        doc.last_autosave_key = idempotency_key
+        doc.word_count = _word_count(next_content)
+        doc.current_version = next_version_number(doc.current_version)
+        doc.updated_at = datetime.now(timezone.utc)
+        if doc.status == "draft":
+            _apply_writing_status_transition(doc, "active")
+        _append_document_version(db, uid=uid, doc=doc, source="autosave")
+        _log_document_activity(
+            db,
+            uid=uid,
+            document_id=doc.id,
+            action="autosave",
+            meta={"bytes": len(next_content)},
+        )
+        db.commit()
+        _emit_writing_observability(
+            "DocumentAutosaved",
+            uid=uid,
+            doc=doc,
+            metadata={"idempotency_key": idempotency_key},
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "unchanged": False,
+                "idempotent_replay": False,
+                "document": _writing_doc_to_dict(doc),
+            }
+        )
+    finally:
+        db.close()
+
+
+@app.route("/api/writing/documents/<int:doc_id>/versions", methods=["GET"])
+@login_required
+def list_writing_document_versions(doc_id):
+    uid = session["user_id"]
+    db = SessionLocal()
+    try:
+        try:
+            require_owned_document(db, WritingDocument, user_id=uid, document_id=doc_id)
+        except WritingDomainError:
+            return jsonify({"error": "not_found"}), 404
+        versions = (
+            db.execute(
+                select(WritingDocumentVersion)
+                .where(WritingDocumentVersion.document_id == doc_id, WritingDocumentVersion.user_id == uid)
+                .order_by(WritingDocumentVersion.version_no.desc())
+                .limit(100)
+            )
+            .scalars()
+            .all()
+        )
+        return jsonify({"items": [_writing_doc_version_to_dict(v) for v in versions], "count": len(versions)})
+    finally:
+        db.close()
+
+
+@app.route("/api/writing/documents/<int:doc_id>/restore", methods=["POST"])
+@login_required
+@limiter.limit("30 per hour")
+def restore_writing_document_version(doc_id):
+    uid = session["user_id"]
+    data = request.get_json(silent=True) or {}
+    version_id = data.get("version_id")
+    if not version_id:
+        return jsonify({"error": "version_id_required"}), 400
+
+    db = SessionLocal()
+    try:
+        try:
+            doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=doc_id)
+        except WritingDomainError:
+            return jsonify({"error": "not_found"}), 404
+        if (doc.status or "") == "deleted":
+            return jsonify({"error": "validation_error", "detail": "deleted_documents_cannot_be_restored_in_place"}), 400
+        version = db.get(WritingDocumentVersion, int(version_id))
+        if not version or version.user_id != uid or version.document_id != doc_id:
+            return jsonify({"error": "not_found"}), 404
+
+        doc.title = (version.title or "")[:300]
+        doc.content = (version.content or "")[:200000]
+        doc.last_saved_hash = _doc_hash(doc.content or "")
+        doc.word_count = _word_count(doc.content or "")
+        doc.current_version = next_version_number(doc.current_version)
+        doc.updated_at = datetime.now(timezone.utc)
+        _append_document_version(db, uid=uid, doc=doc, source="restore")
+        _log_document_activity(
+            db,
+            uid=uid,
+            document_id=doc.id,
+            action="restore",
+            meta={"from_version_id": int(version_id)},
+        )
+        db.commit()
+        _emit_writing_observability(
+            "DocumentRestored",
+            uid=uid,
+            doc=doc,
+            metadata={"restored_from_version_id": int(version_id)},
+        )
+        payload = _writing_doc_to_dict(doc)
+        payload["restored_from_version_id"] = int(version_id)
+        return jsonify(payload)
     finally:
         db.close()
 

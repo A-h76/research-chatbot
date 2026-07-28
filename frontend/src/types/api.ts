@@ -498,6 +498,40 @@ export interface WritingResponse {
   warning: string;
 }
 
+export interface WritingDocument {
+  id: number;
+  title: string;
+  content: string;
+  project_id: number;
+  editor_kind: "markdown" | "richtext";
+  status: "draft" | "active" | "archived" | "deleted";
+  current_version: number;
+  last_opened_at: string | null;
+  word_count: number;
+  restored_from_version_id?: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface WritingDocumentVersion {
+  id: number;
+  document_id: number;
+  version_no: number;
+  title: string;
+  source: "create" | "save" | "autosave" | "restore";
+  created_at: string | null;
+}
+
+export interface WritingDocumentListResponse {
+  items: WritingDocument[];
+  count: number;
+}
+
+export interface WritingDocumentVersionListResponse {
+  items: WritingDocumentVersion[];
+  count: number;
+}
+
 // ── AI layer (backend/ai) ─────────────────────────────────────────────────────
 export interface AiPrompt {
   name: string;

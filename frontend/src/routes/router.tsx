@@ -17,7 +17,7 @@ import { PaperChatPage }            from "@/features/papers/pages/PaperChatPage"
 import { DashboardPage }            from "@/features/dashboard/DashboardPage";
 import { MultiPaperAnalysisPage }   from "@/features/analysis/pages/MultiPaperAnalysisPage";
 import { SearchPage }               from "@/features/search/pages/SearchPage";
-import { WritingPage }              from "@/features/writing/pages/WritingPage";
+import { WritingWorkspacePage }     from "@/features/writing/pages/WritingWorkspacePage";
 
 export const router = createBrowserRouter([
   { path: "/privacy",  element: <LegalPage slug="privacy" />, errorElement: <RouteErrorFallback /> },
@@ -50,7 +50,7 @@ export const router = createBrowserRouter([
       { path: "notes",                                 element: <NotesPage /> },
       { path: "memory",                                element: <MemoryPage /> },
       { path: "search",                                element: <SearchPage /> },
-      { path: "writing",                               element: <WritingPage /> },
+      { path: "writing",                               element: <WritingWorkspacePage /> },
       { path: "settings",                              element: <SettingsPage /> },
       { path: "settings/:section",                     element: <SettingsPage /> },
       { path: "*",                                     element: <Navigate to="/" replace /> },
