@@ -1302,17 +1302,41 @@ def login_page():
     )
 
 
+def _oauth_redirect_uri() -> str:
+    """Absolute /auth/callback URL for Google OAuth.
+
+    Railway terminates TLS at the edge; without an explicit https base,
+    Authlib/url_for can emit http://… which Google rejects (redirect_uri_mismatch).
+    """
+    base = (APP_BASE_URL or "").strip().rstrip("/")
+    railway = (os.environ.get("RAILWAY_PUBLIC_DOMAIN") or "").strip()
+    if railway and "://" not in railway:
+        railway = f"https://{railway}"
+
+    # Upgrade accidental http:// production bases to https://
+    if base.startswith("http://") and not any(
+        h in base for h in ("localhost", "127.0.0.1")
+    ):
+        base = "https://" + base[len("http://") :]
+
+    if base.startswith("https://") or (
+        base.startswith("http://") and any(h in base for h in ("localhost", "127.0.0.1"))
+    ):
+        return f"{base}/auth/callback"
+
+    if railway.startswith("https://"):
+        return f"{railway.rstrip('/')}/auth/callback"
+
+    host = (request.host or "").split(":")[0]
+    if host in {"localhost", "127.0.0.1"} or host.startswith("localhost"):
+        return url_for("auth_callback", _external=True)
+    return f"https://{request.host}/auth/callback"
+
+
 @app.route("/auth/google")
 @limiter.limit("5 per minute")
 def auth_google():
-    # Prefer APP_BASE_URL so Railway/proxy doesn't emit http:// redirect_uris
-    # (Google rejects redirect_uri_mismatch). Fall back to url_for locally.
-    base = (APP_BASE_URL or "").rstrip("/")
-    if base.startswith("https://") or base.startswith("http://"):
-        redirect_uri = f"{base}/auth/callback"
-    else:
-        redirect_uri = url_for("auth_callback", _external=True)
-    return google.authorize_redirect(redirect_uri)
+    return google.authorize_redirect(_oauth_redirect_uri())
 
 
 @app.route("/auth/callback")
