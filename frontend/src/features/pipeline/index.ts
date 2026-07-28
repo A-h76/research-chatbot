@@ -32,15 +32,16 @@ export {
   resolveAiStepper,
   resolveAiStateFromDocument,
   aiStateTokenClass,
+  aiStateFromUploadStatus,
   type AiStateId,
   type AiStateResolved,
 } from "./aiState";
-export { AiStateBadge, aiStateFromUploadStatus } from "./components/AiStateBadge";
+export { AiStateBadge } from "./components/AiStateBadge";
 export { PipelineStepper } from "./components/PipelineStepper";
 export { AiStateMixStrip } from "./components/AiStateMixStrip";
 export {
   PipelineStatusPanel,
   PipelineStatusCard,
-  isPipelineProcessing,
 } from "./components/PipelineStatusPanel";
+export { isPipelineProcessing } from "./isPipelineProcessing";
 export { PipelineDevPanel } from "./PipelineDevPanel";

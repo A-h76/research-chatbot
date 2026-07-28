@@ -1,18 +1,12 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Folder, FolderPlus, Pencil, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/common/Toast";
 import { cn } from "@/lib/utils";
 import { collectionsApi, type LibraryCollection } from "../collectionsApi";
-
-export function useLibraryCollections() {
-  return useQuery({
-    queryKey: ["library", "collections"],
-    queryFn: async () => (await collectionsApi.list()).items,
-  });
-}
+import { useLibraryCollections } from "../hooks/useLibraryCollections";
 
 export function CollectionsPanel({
   activeId,

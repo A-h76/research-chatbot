@@ -69,7 +69,8 @@ function DraftTab() {
     queryKey: ["writing", "documents", currentProjectId ?? "all", lifecycleView],
     queryFn: () =>
       writingApi.listDocuments(currentProjectId as number, {
-        status: lifecycleView,
+        // "Active" means the working set (draft + active). New docs start as draft.
+        status: lifecycleView === "active" ? undefined : lifecycleView,
         includeArchived: lifecycleView !== "active",
         includeDeleted: lifecycleView === "deleted",
       }),

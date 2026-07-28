@@ -162,16 +162,17 @@ export function FilesPage() {
     offset: page * PAGE_SIZE,
   };
   const { data: listData, isLoading } = useFiles(params);
-  const files = listData?.items ?? [];
+  const files = listData?.items;
+  const fileItems = files ?? [];
   const total = listData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const paperIds = useMemo(
-    () => files.filter((f) => f.kind === "document").map((f) => f.id),
+    () => (files ?? []).filter((f) => f.kind === "document").map((f) => f.id),
     [files],
   );
   const metaById = useMemo(() => {
     const m: Record<number, string> = {};
-    for (const f of files) m[f.id] = f.meta_status;
+    for (const f of files ?? []) m[f.id] = f.meta_status;
     return m;
   }, [files]);
   const { byId: pipelineById } = usePipelines(paperIds, metaById);
@@ -350,7 +351,7 @@ export function FilesPage() {
               <div key={i} className="h-12 animate-pulse bg-muted/40" />
             ))}
           </div>
-        ) : files.length === 0 ? (
+        ) : fileItems.length === 0 ? (
           hasFilters ? (
             <EmptyState
               title="No papers match your search"
@@ -403,7 +404,7 @@ export function FilesPage() {
               )}
             </div>
             <div className="overflow-hidden rounded-lg border border-border bg-card">
-              {files.map((f) => (
+              {fileItems.map((f) => (
                 <FileCard
                   key={f.id}
                   file={f}

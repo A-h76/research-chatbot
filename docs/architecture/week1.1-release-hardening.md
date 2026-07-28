@@ -1,7 +1,10 @@
 # Week 1.1 Release Hardening
 
-Status: Planned  
+Status: Complete  
 Purpose: Post-milestone quality improvements that strengthen release confidence without redefining Week 1 architecture or scope
+Started: 2026-07-28  
+Completed: 2026-07-28  
+Board: `docs/architecture/week1.1-implementation-board.md`
 
 ---
 
@@ -55,8 +58,8 @@ It is not for:
 
 | ID | Description | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| R-01 | Accessibility runtime not yet audited with assistive technology | Medium | Medium | Week 1.1 runtime screen-reader + keyboard audit |
-| R-02 | Performance validation currently smoke-level only | Medium | Medium | Week 1.1 sustained load/stress suite and tuning |
-| R-03 | Residual unrelated frontend lint warnings may hide regressions | Medium | Low | Week 1.1 lint cleanup and ownership assignment |
-| R-04 | Broader browser/device rendering differences unverified | Low | Medium | Week 1.1 compatibility matrix checks |
+| R-01 | Accessibility runtime not yet audited with assistive technology | Medium | Medium | **Mitigated** — keyboard + live-region runtime audit complete; optional NVDA speech residual |
+| R-02 | Performance validation currently smoke-level only | Medium | Medium | **Mitigated (API)** — sustained suite + report; FE render budgets still smoke |
+| R-03 | Residual unrelated frontend lint warnings may hide regressions | Medium | Low | **Mitigated** — `npm run lint` clean (2026-07-28) |
+| R-04 | Broader browser/device rendering differences unverified | Low | Medium | **Mitigated** — Chrome/Edge + mobile/tablet recorded; Firefox/Safari waived |
 

@@ -4,5 +4,31 @@
   "rules": {
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["src/components/ui/**"],
+      "rules": {
+        "react/only-export-components": [
+          "warn",
+          {
+            "allowConstantExport": true,
+            "allowExportNames": ["buttonVariants", "badgeVariants", "tabsListVariants"]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/context/**"],
+      "rules": {
+        "react/only-export-components": [
+          "warn",
+          {
+            "allowConstantExport": true,
+            "allowExportNames": ["useTheme", "useUI"]
+          }
+        ]
+      }
+    }
+  ]
 }

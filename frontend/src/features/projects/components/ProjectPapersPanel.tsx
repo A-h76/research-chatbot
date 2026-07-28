@@ -59,11 +59,12 @@ export function ProjectPapersPanel({ projectId }: { projectId: number }) {
     limit: 500,
     sort: "recent",
   });
-  const papers = data?.items ?? [];
-  const paperIds = useMemo(() => papers.map((f) => f.id), [papers]);
+  const papers = data?.items;
+  const paperItems = papers ?? [];
+  const paperIds = useMemo(() => (papers ?? []).map((f) => f.id), [papers]);
   const metaById = useMemo(() => {
     const m: Record<number, string> = {};
-    for (const f of papers) m[f.id] = f.meta_status;
+    for (const f of papers ?? []) m[f.id] = f.meta_status;
     return m;
   }, [papers]);
   const { byId: pipelineById } = usePipelines(paperIds, metaById);
@@ -83,7 +84,7 @@ export function ProjectPapersPanel({ projectId }: { projectId: number }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold">Papers ({data?.total ?? papers.length})</h2>
+          <h2 className="text-sm font-semibold">Papers ({data?.total ?? paperItems.length})</h2>
           <p className="text-xs text-muted-foreground">
             Upload here or assign papers from the library.
           </p>
@@ -99,20 +100,20 @@ export function ProjectPapersPanel({ projectId }: { projectId: number }) {
       </div>
 
       <LibraryUploadZone
-        compact={papers.length > 0}
+        compact={paperItems.length > 0}
         disabled={isUploading}
         onFiles={(f) => void upload(f)}
         inputId={`project-${projectId}-upload`}
       />
       <LibraryUploadQueue items={uploadItems} onClearFinished={clearFinished} />
 
-      {papers.length === 0 ? (
+      {paperItems.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center text-sm text-muted-foreground">
           No papers in this project yet. Upload above or assign from the library.
         </div>
       ) : (
         <div className="space-y-2">
-          {papers.map((f) => (
+          {paperItems.map((f) => (
             <PaperListRow
               key={f.id}
               file={f}
