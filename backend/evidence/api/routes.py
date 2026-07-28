@@ -12,6 +12,7 @@ from backend.evidence.api.errors import ErrorCode, EvidenceDomainError
 from backend.evidence.bindings import validate_binding_payload
 from backend.evidence.inspector import assemble_explain_response
 from backend.evidence.objects import serialize_evidence_object
+from backend.evidence.consensus import apply_consensus_stage
 from backend.evidence.query import normalize_evidence_query
 from backend.evidence.ranking import apply_ranking_stage
 from backend.evidence.retrieval import retrieve_evidence_objects
@@ -506,5 +507,73 @@ def create_evidence_blueprint(
     def evidence_rank():
         """Ranking stage: EvidenceQuery → Retrieval → ranked EvidenceObject[]."""
         return _run_ranking()
+
+    def _binding_relation_map(db, *, user_id: int, project_id: int, document_id: int | None) -> dict[int, str]:
+        if document_id is None or WritingSentenceBinding is None:
+            return {}
+        rows = db.execute(
+            select(WritingSentenceBinding).where(
+                WritingSentenceBinding.user_id == user_id,
+                WritingSentenceBinding.project_id == project_id,
+                WritingSentenceBinding.document_id == int(document_id),
+            )
+        ).scalars().all()
+        out: dict[int, str] = {}
+        for b in rows:
+            out[int(b.evidence_object_id)] = (b.relation or "supports").strip().lower()
+        return out
+
+    def _run_consensus():
+        """Consensus stage: EvidenceQuery → Retrieval → Ranking → aggregate."""
+        uid = _uid()
+        data = request.get_json(silent=True) or {}
+        raw = data.get("query") if isinstance(data.get("query"), dict) else data
+        db = SessionLocal()
+        try:
+            query = normalize_evidence_query(raw, user_id=uid)
+            require_owned_project(db, Project, user_id=uid, project_id=query["scope"]["project_id"])
+            doc_id = query["scope"].get("document_id")
+            if doc_id is not None:
+                doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=int(doc_id))
+                if int(doc.project_id) != int(query["scope"]["project_id"]):
+                    raise EvidenceDomainError(ErrorCode.NOT_FOUND, "document_not_in_project")
+            retrieved = retrieve_evidence_objects(
+                db,
+                query=query,
+                EvidenceObject=EvidenceObject,
+                WritingSentenceBinding=WritingSentenceBinding,
+                select=select,
+            )
+            ranked = apply_ranking_stage(retrieved, ranking_strategy=query["ranking_strategy"])
+            relations = _binding_relation_map(
+                db,
+                user_id=uid,
+                project_id=int(query["scope"]["project_id"]),
+                document_id=int(doc_id) if doc_id is not None else None,
+            )
+            result = apply_consensus_stage(ranked, binding_relations=relations)
+            log_evidence_metric(
+                "consensus",
+                user_id=uid,
+                project_id=query["scope"]["project_id"],
+                intent=query["intent"],
+                label=(result.get("consensus") or {}).get("label"),
+                supporting=(result.get("consensus") or {}).get("supporting"),
+                contradicting=(result.get("consensus") or {}).get("contradicting"),
+            )
+            return jsonify(result)
+        except ValueError as exc:
+            return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.post("/api/evidence/consensus")
+    @login_required
+    @limiter.limit("120 per hour")
+    def evidence_consensus():
+        """Consensus stage: EvidenceQuery → ranked EvidenceObjects + aggregate."""
+        return _run_consensus()
 
     return bp

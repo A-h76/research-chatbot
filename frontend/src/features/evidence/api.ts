@@ -40,6 +40,27 @@ export const evidenceApi = {
       ranking_strategy?: string;
     }>("/api/evidence/rank", query),
 
+  consensus: (query: Record<string, unknown>) =>
+    api.post<{
+      query: Record<string, unknown>;
+      objects: EvidenceObjectDTO[];
+      total: number;
+      truncated: boolean;
+      stage: string;
+      consensus_version?: string;
+      consensus?: {
+        label: string;
+        supporting: number;
+        contradicting: number;
+        neutral: number;
+        supporting_ids: number[];
+        contradicting_ids: number[];
+        neutral_ids: number[];
+      };
+      ranking_version?: string;
+      ranking_strategy?: string;
+    }>("/api/evidence/consensus", query),
+
   list: (projectId: number, opts?: { file_id?: number; status?: string }) => {
     const p = new URLSearchParams();
     if (opts?.file_id) p.set("file_id", String(opts.file_id));
