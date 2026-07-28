@@ -4,7 +4,7 @@
 **Constraint:** Founder in Pakistan; initial target **~100 users**; local wallets (JazzCash, EasyPaisa, NayaPay, SadaPay).  
 **Not in this gate:** Writing Studio 2.1–2.5 (product differentiation after Phase 2.0 validation).
 
-**Companions:** [`PROJECT_STATUS.md`](../PROJECT_STATUS.md) §16–17 · [`phase-2.0-ops-readiness.md`](./phase-2.0-ops-readiness.md)
+**Companions:** [`Dhund-Flow/PRODUCTION_READINESS.md`](../Dhund-Flow/PRODUCTION_READINESS.md) · [`PROJECT_STATUS.md`](../PROJECT_STATUS.md) · [`phase-2.0-ops-readiness.md`](./phase-2.0-ops-readiness.md)
 
 ---
 

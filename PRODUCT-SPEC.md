@@ -27,7 +27,8 @@ These inform engineering readiness but are **not** product UX contracts:
 
 | Document | Role |
 |----------|------|
-| [`PROJECT_STATUS.md`](PROJECT_STATUS.md) | Engineering architecture audit / backend inventory |
+| [`Dhund-Flow/PROJECT_STATUS.md`](Dhund-Flow/PROJECT_STATUS.md) | Executive engineering status (canonical) |
+| [`PROJECT_STATUS.md`](PROJECT_STATUS.md) | Root pointer → Dhund-Flow |
 | [`docs/SECURITY_BASELINE_PR1.md`](docs/SECURITY_BASELINE_PR1.md) … [`PR4`](docs/SECURITY_BASELINE_PR4.md) | Security hardening baselines |
 | Backend Phase 1–2 packages + APIs | Stable **capability** contracts the UI must reveal |
 
