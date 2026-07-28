@@ -92,8 +92,8 @@ Residual: optional NVDA speech pass (same class as Week 1.1 residual).
 | Decision | Status |
 |----------|--------|
 | Stage 4 automated verification | **GO** |
-| Tag `v0.2.0-rc1` | **Pending** — apply `migrations/0033_evidence_layer.sql` on staging Postgres; human RC checklist; optional runtime a11y |
-| Start Phase 2.3 Research Intelligence | **Blocked until RC approved** (ADD-0005) |
+| Tag `v0.2.0-rc1` | **DONE** (2026-07-28) — Postgres `0033` + staging smoke + checklist |
+| Start Phase 2.3 Research Intelligence | **OPEN** — begin at Evidence Query (Sprint 0) |
 
 ---
 
