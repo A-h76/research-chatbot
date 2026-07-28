@@ -88,6 +88,27 @@ export const evidenceApi = {
       ranking_strategy?: string;
     }>("/api/evidence/conflict", query),
 
+  reason: (query: Record<string, unknown>) =>
+    api.post<{
+      query: Record<string, unknown>;
+      objects: EvidenceObjectDTO[];
+      total: number;
+      truncated: boolean;
+      stage: string;
+      reasoning_version?: string;
+      reasoning?: {
+        summary_code: string;
+        sufficiency: string;
+        steps: Array<{ step: string; detail: string; code?: string }>;
+        evidence_ids: number[];
+        mediator_labels: string[];
+      };
+      conflict?: Record<string, unknown>;
+      consensus?: Record<string, unknown>;
+      ranking_version?: string;
+      ranking_strategy?: string;
+    }>("/api/evidence/reason", query),
+
   list: (projectId: number, opts?: { file_id?: number; status?: string }) => {
     const p = new URLSearchParams();
     if (opts?.file_id) p.set("file_id", String(opts.file_id));

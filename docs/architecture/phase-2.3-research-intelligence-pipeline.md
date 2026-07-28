@@ -15,7 +15,8 @@ Audience: Staff / principal engineers implementing Phase 2.3
 | 2 | Evidence Ranking | **Done** — `phase-2.3-evidence-ranking.md` |
 | 3 | Consensus Analysis | **Done** — `phase-2.3-evidence-consensus.md` |
 | 4 | Conflict Analysis | **Done** — `phase-2.3-evidence-conflict.md` |
-| 5–6 | Reasoning → Writing Intelligence | Planned |
+| 5 | Reasoning Pipeline | **Done** — `phase-2.3-evidence-reasoning.md` |
+| 6 | Writing Intelligence | Planned (generation **last**) |
 
 ---
 
@@ -132,7 +133,7 @@ Normalizer: `backend/evidence/query.py`.
 3. ~~Evidence Ranking~~ **Done** (`phase-2.3-evidence-ranking.md`)  
 4. ~~Consensus Analysis~~ **Done** (`phase-2.3-evidence-consensus.md`)  
 5. ~~Conflict Analysis~~ **Done** (`phase-2.3-evidence-conflict.md`)  
-6. Reasoning Pipeline  
+6. ~~Reasoning Pipeline~~ **Done** (`phase-2.3-evidence-reasoning.md`)  
 7. Writing Intelligence integration (generation **last**)
 
 Package guidance: grow under `backend/evidence/` or `backend/intelligence/` as **pipeline stages**, not five deployable services.

@@ -16,6 +16,7 @@ from backend.evidence.conflict import apply_conflict_stage
 from backend.evidence.consensus import apply_consensus_stage
 from backend.evidence.query import normalize_evidence_query
 from backend.evidence.ranking import apply_ranking_stage
+from backend.evidence.reasoning import apply_reasoning_stage
 from backend.evidence.retrieval import retrieve_evidence_objects
 from backend.evidence.reviews import next_object_status_after_review, validate_review_payload
 from backend.evidence.services.extract_service import PIPELINE_VERSION, run_evidence_extraction
@@ -630,5 +631,60 @@ def create_evidence_blueprint(
     def evidence_conflict():
         """Conflict stage: coded mediators between supporting and contradicting objects."""
         return _run_conflict()
+
+    def _run_reasoning():
+        """Reasoning stage: full pipeline through Conflict, then structured chain."""
+        uid = _uid()
+        data = request.get_json(silent=True) or {}
+        raw = data.get("query") if isinstance(data.get("query"), dict) else data
+        db = SessionLocal()
+        try:
+            query = normalize_evidence_query(raw, user_id=uid)
+            require_owned_project(db, Project, user_id=uid, project_id=query["scope"]["project_id"])
+            doc_id = query["scope"].get("document_id")
+            if doc_id is not None:
+                doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=int(doc_id))
+                if int(doc.project_id) != int(query["scope"]["project_id"]):
+                    raise EvidenceDomainError(ErrorCode.NOT_FOUND, "document_not_in_project")
+            retrieved = retrieve_evidence_objects(
+                db,
+                query=query,
+                EvidenceObject=EvidenceObject,
+                WritingSentenceBinding=WritingSentenceBinding,
+                select=select,
+            )
+            ranked = apply_ranking_stage(retrieved, ranking_strategy=query["ranking_strategy"])
+            relations = _binding_relation_map(
+                db,
+                user_id=uid,
+                project_id=int(query["scope"]["project_id"]),
+                document_id=int(doc_id) if doc_id is not None else None,
+            )
+            consensus = apply_consensus_stage(ranked, binding_relations=relations)
+            conflicted = apply_conflict_stage(consensus, binding_relations=relations)
+            result = apply_reasoning_stage(conflicted)
+            log_evidence_metric(
+                "reasoning",
+                user_id=uid,
+                project_id=query["scope"]["project_id"],
+                intent=query["intent"],
+                summary_code=(result.get("reasoning") or {}).get("summary_code"),
+                sufficiency=(result.get("reasoning") or {}).get("sufficiency"),
+                steps=len((result.get("reasoning") or {}).get("steps") or []),
+            )
+            return jsonify(result)
+        except ValueError as exc:
+            return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.post("/api/evidence/reason")
+    @login_required
+    @limiter.limit("120 per hour")
+    def evidence_reason():
+        """Reasoning stage: structured chain from prior RI stages (no generation)."""
+        return _run_reasoning()
 
     return bp
