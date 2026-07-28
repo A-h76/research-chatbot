@@ -42,7 +42,8 @@ RI pipeline: [`phase-2.3-research-intelligence-pipeline.md`](phase-2.3-research-
 | 1 — Evidence Retrieval | **Done** (`/api/evidence/search`, `/retrieve`) |
 | 2 — Evidence Ranking | **Done** (`/api/evidence/rank`, `default_v0`) |
 | 3 — Consensus Analysis | **Done** (`/api/evidence/consensus`) |
-| 4 — Conflict Analysis | **Next** |
+| 4 — Conflict Analysis | **Done** (`/api/evidence/conflict`) |
+| 5 — Reasoning Pipeline | **Next** |
 | 4 — Conflict Analysis | Not Started |
 | 5 — Reasoning Pipeline | Not Started |
 | 6 — Writing Intelligence integration | Not Started |

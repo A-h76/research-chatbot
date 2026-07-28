@@ -61,6 +61,33 @@ export const evidenceApi = {
       ranking_strategy?: string;
     }>("/api/evidence/consensus", query),
 
+  conflict: (query: Record<string, unknown>) =>
+    api.post<{
+      query: Record<string, unknown>;
+      objects: EvidenceObjectDTO[];
+      total: number;
+      truncated: boolean;
+      stage: string;
+      conflict_version?: string;
+      conflict?: {
+        has_conflict: boolean;
+        mediators: string[];
+        links: Array<{
+          a_id: number;
+          b_id: number;
+          a_stance: string;
+          b_stance: string;
+          mediators: string[];
+        }>;
+        pair_count: number;
+        supporting_ids: number[];
+        contradicting_ids: number[];
+      };
+      consensus?: Record<string, unknown>;
+      ranking_version?: string;
+      ranking_strategy?: string;
+    }>("/api/evidence/conflict", query),
+
   list: (projectId: number, opts?: { file_id?: number; status?: string }) => {
     const p = new URLSearchParams();
     if (opts?.file_id) p.set("file_id", String(opts.file_id));
