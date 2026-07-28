@@ -154,4 +154,4 @@ Fixture: `tests/fixtures/evidence/evidence_query_v0.json`.
 - [x] ADR-0007 accepted  
 - [x] This contract doc frozen  
 - [x] Fixture checked in  
-- [ ] Sprint 1 Retrieval implements against this contract (no redefinition)
+- [x] Sprint 1 Retrieval implements against this contract (no redefinition)

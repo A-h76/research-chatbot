@@ -11,6 +11,24 @@ export const evidenceApi = {
     selected_text?: string;
   }) => api.post<ExplainResponse>("/api/evidence/explain", body),
 
+  search: (query: Record<string, unknown>) =>
+    api.post<{
+      query: Record<string, unknown>;
+      objects: EvidenceObjectDTO[];
+      total: number;
+      truncated: boolean;
+      stage: string;
+    }>("/api/evidence/search", query),
+
+  retrieve: (query: Record<string, unknown>) =>
+    api.post<{
+      query: Record<string, unknown>;
+      objects: EvidenceObjectDTO[];
+      total: number;
+      truncated: boolean;
+      stage: string;
+    }>("/api/evidence/retrieve", query),
+
   list: (projectId: number, opts?: { file_id?: number; status?: string }) => {
     const p = new URLSearchParams();
     if (opts?.file_id) p.set("file_id", String(opts.file_id));

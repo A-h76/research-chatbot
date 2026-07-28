@@ -36,7 +36,7 @@ The core loop works: authenticate, chat (streaming), upload/import papers, run a
 
 **Week 2 / Phase 2.2 — Evidence Layer:** **CLOSED.** RC **`v0.2.0-rc1`** tagged (2026-07-28). Postgres staging migration `0033` applied; staging smoke + 36 regression tests green. Platform contracts frozen (ADR-0005).
 
-**Phase 2.3 — Research Intelligence:** **OPEN.** Sprint 0 Evidence Query **frozen** (ADR-0007). Next: Sprint 1 Retrieval against that contract. Platform `v0.2.0-rc1` remains frozen.
+**Phase 2.3 — Research Intelligence:** Sprint 0 Query **frozen**; Sprint 1 Retrieval **shipped** (`POST /api/evidence/search` + `/retrieve`). Next: Sprint 2 Ranking.
 
 **Phase 2.0 validation kit** remains frozen (`docs/phase-2.0-*.md`); researcher invites stay gated until Evidence Layer (2.2) lands on the writing shell.
 

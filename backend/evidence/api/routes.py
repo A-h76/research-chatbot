@@ -12,6 +12,8 @@ from backend.evidence.api.errors import ErrorCode, EvidenceDomainError
 from backend.evidence.bindings import validate_binding_payload
 from backend.evidence.inspector import assemble_explain_response
 from backend.evidence.objects import serialize_evidence_object
+from backend.evidence.query import normalize_evidence_query
+from backend.evidence.retrieval import retrieve_evidence_objects
 from backend.evidence.reviews import next_object_status_after_review, validate_review_payload
 from backend.evidence.services.extract_service import PIPELINE_VERSION, run_evidence_extraction
 from backend.evidence.services.logging import log_evidence_metric
@@ -406,5 +408,56 @@ def create_evidence_blueprint(
             return _err(exc)
         finally:
             db.close()
+
+    def _run_retrieval():
+        uid = _uid()
+        data = request.get_json(silent=True) or {}
+        # Allow either bare EvidenceQuery or { "query": { ... } }
+        raw = data.get("query") if isinstance(data.get("query"), dict) else data
+        db = SessionLocal()
+        try:
+            query = normalize_evidence_query(raw, user_id=uid)
+            require_owned_project(db, Project, user_id=uid, project_id=query["scope"]["project_id"])
+            doc_id = query["scope"].get("document_id")
+            if doc_id is not None:
+                doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=int(doc_id))
+                if int(doc.project_id) != int(query["scope"]["project_id"]):
+                    raise EvidenceDomainError(ErrorCode.NOT_FOUND, "document_not_in_project")
+            result = retrieve_evidence_objects(
+                db,
+                query=query,
+                EvidenceObject=EvidenceObject,
+                WritingSentenceBinding=WritingSentenceBinding,
+                select=select,
+            )
+            log_evidence_metric(
+                "retrieval",
+                user_id=uid,
+                project_id=query["scope"]["project_id"],
+                intent=query["intent"],
+                total=result.get("total"),
+                returned=len(result.get("objects") or []),
+            )
+            return jsonify(result)
+        except ValueError as exc:
+            return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.post("/api/evidence/search")
+    @login_required
+    @limiter.limit("120 per hour")
+    def evidence_search():
+        """Retrieval stage: EvidenceQuery → EvidenceObject[]."""
+        return _run_retrieval()
+
+    @bp.post("/api/evidence/retrieve")
+    @login_required
+    @limiter.limit("120 per hour")
+    def evidence_retrieve():
+        """Alias of /search — same EvidenceQuery contract (Sprint 1)."""
+        return _run_retrieval()
 
     return bp
