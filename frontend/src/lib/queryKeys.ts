@@ -2,6 +2,7 @@ export const queryKeys = {
   me: ["me"] as const,
   models: ["models"] as const,
   projects: ["projects"] as const,
+  projectHub: (id: number) => ["projects", id, "hub"] as const,
   conversations: ["conversations"] as const,
   conversation: (id: number) => ["conversations", id] as const,
   files: ["files"] as const,
@@ -22,4 +23,8 @@ export const queryKeys = {
   search: (q: string, kinds?: string[], projectId?: number | null) =>
             ["search", q, kinds ?? "all", projectId ?? null] as const,
   aiPrompts: ["ai", "prompts"] as const,
+  projectResearch: (projectId: number, researchId: number) =>
+    ["projects", projectId, "research", researchId] as const,
+  projectResearchHistory: (projectId: number) =>
+    ["projects", projectId, "research"] as const,
 };

@@ -5,7 +5,7 @@
 
 ## Canonical shape
 
-Every Soro AI feature should converge on:
+Every Dhund AI feature should converge on:
 
 - **answer** — primary response text (grounded)
 - **evidence** — supporting pointers / excerpts from corpus or Phase 1

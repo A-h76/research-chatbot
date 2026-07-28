@@ -46,7 +46,7 @@ export function CollectionToolbar({
         <input
           value={q}
           onChange={(e) => onQChange(e.target.value)}
-          placeholder="Search title, author, tag…"
+          placeholder="Search title, author, DOI, venue… (doi:10.x author:smith)"
           className="w-full bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
         />
         {q && (

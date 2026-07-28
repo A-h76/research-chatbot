@@ -1,5 +1,5 @@
 """
-Personal AI — ChatGPT-style chatbot backend (Phase 1)
+Personal AI / Dhund — ChatGPT-style chatbot backend (Phase 1)
 Flask + Google OAuth + Postgres/SQLite + OpenAI Responses API (streaming)
 + Projects + selective memory + auto titles + web search
 + File uploads (PDF/Word/image/text) + vision + RAG + citation manager.
@@ -75,6 +75,17 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 # NEVER set this in production.
 DEV_AUTO_LOGIN = os.environ.get("DEV_AUTO_LOGIN", "")
 ALLOWED_EMAILS = [e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()]
+# Closed beta: when true (or when ALLOWED_EMAILS is non-empty), unknown emails
+# cannot sign up. Production startup requires ALLOWED_EMAILS or this flag.
+BETA_INVITE_ONLY = (os.environ.get("BETA_INVITE_ONLY", "") or "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+CLOSED_BETA = BETA_INVITE_ONLY or bool(ALLOWED_EMAILS) or (
+    os.environ.get("CLOSED_BETA", "").strip().lower() in {"1", "true", "yes", "on"}
+)
 
 # Defaults kept to models with confident, verified pricing (see
 # backend/ai/cost_ledger.py's PRICING table and its own note on why
@@ -101,7 +112,7 @@ JOB_STATUS_CACHE_TTL_SECONDS = 3600
 # Transactional email (provider-agnostic; Resend today). Falls back to console
 # logging in development when no API key is configured.
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-EMAIL_FROM = os.environ.get("EMAIL_FROM", "Personal AI <onboarding@resend.dev>")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "Dhund <onboarding@resend.dev>")
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "")  # where tickets are routed
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000")
 IS_PRODUCTION = (
@@ -127,6 +138,11 @@ require_production_secrets(os.environ, is_production=IS_PRODUCTION)
 
 app = Flask(__name__)
 app.secret_key = resolve_flask_secret_key(os.environ, is_production=IS_PRODUCTION)
+# Railway/Render terminate TLS at the edge and forward X-Forwarded-Proto/Host.
+# Without ProxyFix, url_for(_external=True) and OAuth redirects become http://…
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_MB * 1024 * 1024
 # Secure session-cookie defaults (Secure flag only in production/HTTPS).
 # Absolute cookie lifetime matches SESSION_ABSOLUTE_HOURS; idle is enforced
@@ -324,6 +340,36 @@ def _enforce_session_ttl():
 
 
 @app.before_request
+def _enforce_session_version():
+    """Logout-all: bump User.session_version to invalidate other cookies."""
+    uid = session.get("user_id")
+    if not uid:
+        return
+    # Ops models may not be ready during very early import hooks — skip safely.
+    try:
+        db = SessionLocal()
+        try:
+            user = db.get(User, uid)
+            if not user:
+                return
+            current = int(getattr(user, "session_version", 0) or 0)
+            stamped = session.get("session_version")
+            if stamped is None:
+                session["session_version"] = current
+                return
+            if int(stamped) != current:
+                session.clear()
+                log_security_event("session_expired", reason="revoked", user_id=uid)
+                if request.path.startswith("/api/"):
+                    return jsonify({"error": "session_expired", "reason": "revoked"}), 401
+                return redirect(url_for("login_page"))
+        finally:
+            db.close()
+    except Exception:
+        return
+
+
+@app.before_request
 def csrf_protect():
     """Same-origin check for state-changing API calls — defense-in-depth on top
     of SameSite=Lax cookies. Non-browser clients (no Origin/Referer) pass."""
@@ -471,6 +517,17 @@ class User(Base):
     # first admin is always a manual DB update.
     is_admin = Column(Boolean, default=False)
 
+    # Closed-beta ops (migrations/0025) — extend, don't replace auth.
+    status = Column(String(30), default="active")  # pending_verification|active|suspended|deleted
+    email_verified = Column(Boolean, default=False)
+    email_verified_at = Column(DateTime, nullable=True)
+    password_hash = Column(String(255), nullable=True)
+    plan = Column(String(30), default="beta")  # free|beta|student|pro
+    session_version = Column(Integer, default=0)
+    monthly_cost_used = Column(Float, default=0.0)
+    monthly_cost_limit = Column(Float, default=20.0)
+    last_login_at = Column(DateTime, nullable=True)
+
 
 class Project(Base):
     __tablename__ = "projects"
@@ -524,6 +581,12 @@ class Message(Base):
 
 
 class Memory(Base):
+    """User / research memories.
+
+    Sprint C: research memories are AI-promoted from DerivedAnalysis(kind=research).
+    Chat-extracted rows use source='chat' and must not enter research context.
+    """
+
     __tablename__ = "memories"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -531,6 +594,14 @@ class Memory(Base):
     fact = Column(Text, nullable=False)
     importance = Column(Integer, default=3)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # Sprint C research memory
+    kind = Column(String(30), default="fact")  # finding|claim|contradiction|open_question|insight|fact
+    source = Column(String(20), default="chat")  # research|compare|gaps|manual|chat
+    source_ref = Column(String(80), default="")
+    payload = Column(Text, default="{}")  # JSON
+    pinned = Column(Integer, default=0)
+    status = Column(String(20), default="active")  # active|archived|deleted
+    claim_hash = Column(String(64), default="")
 
 
 class UserFile(Base):
@@ -570,6 +641,9 @@ class UserFile(Base):
     metadata_source = Column(String(30), default="extracted")  # extracted|crossref|openalex|user
     source_url = Column(String(500), default="")
     doi_verified = Column(Boolean, default=False)
+    # Phase 1b — stable identity for Connect library sync
+    external_provider = Column(String(30), default="")  # zotero|mendeley|…
+    external_item_id = Column(String(120), default="")
 
     chunks = relationship("Chunk", cascade="all, delete-orphan", back_populates="file")
 
@@ -611,11 +685,12 @@ class UploadBatch(Base):
 
 
 class UploadJob(Base):
-    """One row per pipeline stage per file (import | extract_metadata |
-    paper_analysis) — the actual queue worker.py polls with FOR UPDATE
-    SKIP LOCKED, claims, executes, and marks done/failed. Written by
-    upload_file()'s transactional outbox and by worker.py itself when
-    chaining follow-on stages — see processing-pipeline-architecture.md."""
+    """One row per pipeline stage per file (import | phase1_analysis |
+    paper_analysis; extract_metadata is legacy drain-only) — the actual
+    queue worker.py polls with FOR UPDATE SKIP LOCKED, claims, executes,
+    and marks done/failed. Written by upload_file()/confirm_upload()'s
+    transactional outbox and by worker.py itself when chaining follow-on
+    stages — see processing-pipeline-architecture.md."""
 
     __tablename__ = "upload_jobs"
     id = Column(Integer, primary_key=True)
@@ -878,7 +953,7 @@ class DerivedAnalysis(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
-    kind = Column(String(20), nullable=False)  # compare|gaps
+    kind = Column(String(20), nullable=False)  # compare|gaps|research
     selection_hash = Column(String(64), nullable=False)
     file_ids = Column(Text, default="[]")  # JSON list[int]
     data = Column(Text, default="")  # JSON
@@ -894,6 +969,154 @@ class Note(Base):
     file_id = Column(Integer, ForeignKey("files.id"), nullable=True)  # paper note
     title = Column(String(300), default="")
     content = Column(Text, default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class WritingDocument(Base):
+    __tablename__ = "documents"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    title = Column(String(300), default="")
+    content = Column(Text, default="")
+    editor_kind = Column(String(20), default="markdown")  # markdown|richtext
+    status = Column(String(20), default="draft")  # draft|active|archived|deleted
+    current_version = Column(Integer, default=1)  # optimistic locking
+    last_saved_hash = Column(String(64), default="")
+    last_autosave_key = Column(String(120), default="")
+    last_opened_at = Column(DateTime, nullable=True)
+    word_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class WritingDocumentVersion(Base):
+    __tablename__ = "document_versions"
+    id = Column(Integer, primary_key=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    version_no = Column(Integer, nullable=False)
+    title = Column(String(300), default="")
+    content = Column(Text, default="")
+    content_hash = Column(String(64), default="")
+    source = Column(String(20), default="save")  # create|save|autosave|restore
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class WritingDocumentActivity(Base):
+    __tablename__ = "document_activity"
+    id = Column(Integer, primary_key=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    action = Column(String(30), nullable=False)  # create|update|autosave|restore|archive
+    meta_json = Column(Text, default="{}")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class EvidenceObject(Base):
+    """Canonical Evidence Layer row (Week 2 / Phase 2.2). Soft FKs to files/projects."""
+
+    __tablename__ = "evidence_objects"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    project_id = Column(Integer, nullable=False)
+    file_id = Column(Integer, nullable=False)
+    page = Column(Integer, nullable=True)
+    char_start = Column(Integer, nullable=True)
+    char_end = Column(Integer, nullable=True)
+    section = Column(String(200), default="")
+    quote = Column(Text, nullable=False, default="")
+    claim = Column(Text, nullable=False, default="")
+    study_type = Column(String(80), default="")
+    study_quality = Column(String(40), default="")
+    supports_json = Column(Text, default="[]")
+    contradicts_json = Column(Text, default="[]")
+    limitations_json = Column(Text, default="[]")
+    confidence_band = Column(String(20), default="low")
+    status = Column(String(20), default="candidate")
+    pipeline_version = Column(String(40), nullable=False, default="2.2.0")
+    created_by = Column(String(80), default="analysis-pipeline")
+    content_hash = Column(String(64), nullable=False, default="")
+    supersedes_id = Column(Integer, nullable=True)
+    provenance_json = Column(Text, default="{}")
+    source_kg_node_id = Column(String(120), default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class ClaimReview(Base):
+    __tablename__ = "claim_reviews"
+    id = Column(Integer, primary_key=True)
+    evidence_object_id = Column(Integer, nullable=False)
+    user_id = Column(Integer, nullable=False)
+    project_id = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False)
+    reason = Column(Text, default="")
+    edited_claim = Column(Text, nullable=True)
+    edited_quote = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class WritingSentenceBinding(Base):
+    __tablename__ = "writing_sentence_bindings"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    project_id = Column(Integer, nullable=False)
+    document_id = Column(Integer, nullable=False)
+    evidence_object_id = Column(Integer, nullable=False)
+    block_id = Column(String(120), default="")
+    range_start = Column(Integer, nullable=True)
+    range_end = Column(Integer, nullable=True)
+    selected_text = Column(Text, default="")
+    relation = Column(String(20), default="supports")
+    created_by = Column(String(40), default="user")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class EvidenceExtractionRun(Base):
+    __tablename__ = "evidence_extraction_runs"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    project_id = Column(Integer, nullable=False)
+    file_id = Column(Integer, nullable=False)
+    pipeline_version = Column(String(40), nullable=False)
+    input_content_hash = Column(String(64), nullable=False)
+    status = Column(String(20), default="queued")
+    objects_created = Column(Integer, default=0)
+    error_json = Column(Text, default="{}")
+    job_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    finished_at = Column(DateTime, nullable=True)
+
+
+class ProjectQuestion(Base):
+    """Research question scoped to a project (Sprint A).
+
+    User-authored tracking — not notes (freeform prose) and not memories
+    (AI-curated findings). Status: open | answered | parked.
+    """
+
+    __tablename__ = "project_questions"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    text = Column(Text, nullable=False)
+    status = Column(String(20), default="open")  # open|answered|parked
+    source = Column(String(20), default="manual")  # manual|ai
+    linked_insight_id = Column(Integer, nullable=True)  # derived_analyses.id (no cross-Base FK)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime,
@@ -925,6 +1148,29 @@ class SearchIndex(Base):
     )
 
 
+# Closed-beta ops tables (migrations/0025) — registered on this Base so
+# SQLite create_all creates them; Postgres gets them via run_migrations.
+from security.ops import (
+    create_email_token_models,
+    create_invite_token_model,
+    create_security_event_model,
+    create_system_settings_model,
+)
+from backend.library.models import (
+    create_library_collection_models,
+    create_library_connection_model,
+    create_library_sync_run_model,
+)
+
+SystemSetting = create_system_settings_model(Base)
+SecurityEvent = create_security_event_model(Base)
+InviteToken = create_invite_token_model(Base)
+EmailVerificationToken, PasswordResetToken = create_email_token_models(Base)
+LibraryConnection = create_library_connection_model(Base)
+LibraryCollection, LibraryCollectionPaper = create_library_collection_models(Base)
+LibrarySyncRun = create_library_sync_run_model(Base)
+
+
 # checkfirst=True is SQLAlchemy's own default (verified: MetaData.create_all's
 # signature already defaults to it) — spelled out explicitly so it's not
 # a fact a reader has to already know. It's what makes this call safe to
@@ -945,6 +1191,13 @@ def ensure_columns():
         "ALTER TABLE messages ADD COLUMN attachments TEXT",
         "ALTER TABLE users ADD COLUMN custom_instructions TEXT",
         "ALTER TABLE memories ADD COLUMN importance INTEGER DEFAULT 3",
+        "ALTER TABLE memories ADD COLUMN kind VARCHAR(30) DEFAULT 'fact'",
+        "ALTER TABLE memories ADD COLUMN source VARCHAR(20) DEFAULT 'chat'",
+        "ALTER TABLE memories ADD COLUMN source_ref VARCHAR(80) DEFAULT ''",
+        "ALTER TABLE memories ADD COLUMN payload TEXT DEFAULT '{}'",
+        "ALTER TABLE memories ADD COLUMN pinned INTEGER DEFAULT 0",
+        "ALTER TABLE memories ADD COLUMN status VARCHAR(20) DEFAULT 'active'",
+        "ALTER TABLE memories ADD COLUMN claim_hash VARCHAR(64) DEFAULT ''",
         "ALTER TABLE conversations ADD COLUMN temperature FLOAT",
         "ALTER TABLE conversations ADD COLUMN reasoning_effort VARCHAR(20)",
         "ALTER TABLE conversations ADD COLUMN memory_enabled INTEGER DEFAULT 1",
@@ -1004,6 +1257,18 @@ def ensure_columns():
         # users.is_admin — migrations/0016, backend/prompts/routes.py's
         # admin-gated create/update routes.
         "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
+        # Closed-beta ops (migrations/0025)
+        "ALTER TABLE users ADD COLUMN status VARCHAR(30) DEFAULT 'active'",
+        "ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)",
+        "ALTER TABLE users ADD COLUMN plan VARCHAR(30) DEFAULT 'beta'",
+        "ALTER TABLE users ADD COLUMN session_version INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN monthly_cost_used FLOAT DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN monthly_cost_limit FLOAT DEFAULT 20",
+        "ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP",
+        "ALTER TABLE model_registry_cost_ledger ADD COLUMN estimated_cost FLOAT",
+        "ALTER TABLE model_registry_cost_ledger ADD COLUMN currency VARCHAR(8) DEFAULT 'USD'",
         # ── Scholarly provider integrations (migration 0018) ─────────────
         "ALTER TABLE files ADD COLUMN doi_verified BOOLEAN DEFAULT 0",
         "ALTER TABLE files ADD COLUMN crossref_last_synced TIMESTAMP",
@@ -1016,6 +1281,11 @@ def ensure_columns():
         "ALTER TABLE files ADD COLUMN metadata_source VARCHAR(30) DEFAULT 'extracted'",
         # ── Discover import stubs (migration 0021) ───────────────────────
         "ALTER TABLE files ADD COLUMN source_url VARCHAR(500) DEFAULT ''",
+        # ── Library sync Phase 1b (migration 0030) ───────────────────────
+        "ALTER TABLE files ADD COLUMN external_provider VARCHAR(30) DEFAULT ''",
+        "ALTER TABLE files ADD COLUMN external_item_id VARCHAR(120) DEFAULT ''",
+        "ALTER TABLE library_connections ADD COLUMN last_synced_at TIMESTAMP",
+        "ALTER TABLE library_connections ADD COLUMN sync_cursor TEXT DEFAULT ''",
     ):
         try:
             with engine.begin() as conn:
@@ -1050,6 +1320,33 @@ def ensure_columns():
         "CREATE INDEX IF NOT EXISTS ix_upload_jobs_user_status ON upload_jobs (user_id, status)",
         "CREATE INDEX IF NOT EXISTS ix_outbox_events_pending ON outbox_events (status, created_at) WHERE status = 'pending'",
         "CREATE INDEX IF NOT EXISTS ix_usage_logs_user ON usage_logs (user_id, created_at)",
+        # ── Hot-path chat / library / queue indexes (migrations/0022) ──
+        # Keep definitions identical to 0022 so CREATE INDEX IF NOT EXISTS
+        # does not leave a weaker SQLite-only definition that blocks Postgres.
+        "CREATE INDEX IF NOT EXISTS ix_messages_conversation_created ON messages (conversation_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_conversations_user_updated ON conversations (user_id, updated_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_conversations_user_project ON conversations (user_id, project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_conversations_user_file ON conversations (user_id, file_id)",
+        "CREATE INDEX IF NOT EXISTS ix_conversations_project ON conversations (project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_conversations_file ON conversations (file_id)",
+        "CREATE INDEX IF NOT EXISTS ix_files_user_project ON files (user_id, project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_files_conversation ON files (conversation_id)",
+        "CREATE INDEX IF NOT EXISTS ix_upload_jobs_type_status ON upload_jobs (job_type, status)",
+        "CREATE INDEX IF NOT EXISTS ix_upload_jobs_status_created ON upload_jobs (status, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_upload_jobs_file_type ON upload_jobs (file_id, job_type)",
+        "CREATE INDEX IF NOT EXISTS ix_outbox_events_status_created ON outbox_events (status, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_projects_user ON projects (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_memories_user ON memories (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_memories_user_project ON memories (user_id, project_id)",
+        "CREATE INDEX IF NOT EXISTS ix_memories_project_status ON memories (project_id, status)",
+        "CREATE INDEX IF NOT EXISTS ix_memories_claim_hash ON memories (user_id, project_id, kind, claim_hash)",
+        "CREATE INDEX IF NOT EXISTS ix_citations_user ON citations (user_id)",
+        # ── Library search (Phase 1.5) ───────────────────────────────────
+        "CREATE INDEX IF NOT EXISTS ix_files_user_created ON files (user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_files_user_year ON files (user_id, year)",
+        "CREATE INDEX IF NOT EXISTS ix_files_user_reading ON files (user_id, reading_status)",
+        "CREATE INDEX IF NOT EXISTS ix_files_user_meta ON files (user_id, meta_status)",
+        "CREATE INDEX IF NOT EXISTS ix_files_user_doi ON files (user_id, doi)",
     ):
         try:
             with engine.begin() as conn:
@@ -1089,9 +1386,9 @@ def login_page():
         return redirect("/")
 
     # ── DEV_AUTO_LOGIN bypass ─────────────────────────────────────────────────
-    # When DEV_AUTO_LOGIN is set (development only), automatically create and
-    # sign in a local dev account so you can work without Google OAuth.
-    if DEV_AUTO_LOGIN:
+    # Development only. If this is set on Railway without a healthy schema,
+    # the old path 500'd the whole /login page — catch and fall through.
+    if DEV_AUTO_LOGIN and not IS_PRODUCTION:
         db = SessionLocal()
         try:
             dev_email = "dev@localhost"
@@ -1105,27 +1402,70 @@ def login_page():
             access, refresh = create_jwt(user.id)
             session["jwt"] = {"access": access, "refresh": refresh}
             mark_session_login(session)
+            _record_user_login(user.id)
+            return redirect("/")
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "DEV_AUTO_LOGIN failed — showing login page. "
+                "On Railway: delete DEV_AUTO_LOGIN and set FLASK_ENV=production."
+            )
+            try:
+                db.rollback()
+            except Exception:
+                pass
         finally:
             db.close()
-        return redirect("/")
     # ─────────────────────────────────────────────────────────────────────────
 
     return render_template(
         "login.html",
         oauth_ready=bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
-        error=None,
+        closed_beta=CLOSED_BETA,
+        error=request.args.get("error"),
+        verified=request.args.get("verified") == "1",
+        app_base_url=APP_BASE_URL,
     )
 
 
+def _oauth_redirect_uri() -> str:
+    """Absolute /auth/callback URL for Google OAuth.
+
+    Railway terminates TLS at the edge; without an explicit https base,
+    Authlib/url_for can emit http://… which Google rejects (redirect_uri_mismatch).
+    """
+    base = (APP_BASE_URL or "").strip().rstrip("/")
+    railway = (os.environ.get("RAILWAY_PUBLIC_DOMAIN") or "").strip()
+    if railway and "://" not in railway:
+        railway = f"https://{railway}"
+
+    # Upgrade accidental http:// production bases to https://
+    if base.startswith("http://") and not any(
+        h in base for h in ("localhost", "127.0.0.1")
+    ):
+        base = "https://" + base[len("http://") :]
+
+    if base.startswith("https://") or (
+        base.startswith("http://") and any(h in base for h in ("localhost", "127.0.0.1"))
+    ):
+        return f"{base}/auth/callback"
+
+    if railway.startswith("https://"):
+        return f"{railway.rstrip('/')}/auth/callback"
+
+    host = (request.host or "").split(":")[0]
+    if host in {"localhost", "127.0.0.1"} or host.startswith("localhost"):
+        return url_for("auth_callback", _external=True)
+    return f"https://{request.host}/auth/callback"
+
+
 @app.route("/auth/google")
-@limiter.limit("30 per hour")
+@limiter.limit("5 per minute")
 def auth_google():
-    redirect_uri = url_for("auth_callback", _external=True)
-    return google.authorize_redirect(redirect_uri)
+    return google.authorize_redirect(_oauth_redirect_uri())
 
 
 @app.route("/auth/callback")
-@limiter.limit("60 per hour")
+@limiter.limit("20 per minute")
 def auth_callback():
     token = google.authorize_access_token()
     info = token.get("userinfo") or {}
@@ -1139,13 +1479,15 @@ def auth_callback():
             ),
             403,
         )
-    if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
-        log_security_event("oauth_denied", email=email, reason="not_allowlisted")
+    ok, reason = _signup_allowed(email)
+    if not ok:
+        log_security_event("oauth_denied", email=email, reason=reason)
+        _ops_events.record("oauth_denied", email=email, reason=reason, ip=request.remote_addr or "")
         return (
             render_template(
                 "login.html",
                 oauth_ready=True,
-                error="Access denied — this account is not allowed.",
+                error="Access denied — this account is not invited to the closed beta.",
             ),
             403,
         )
@@ -1157,16 +1499,22 @@ def auth_callback():
             db.add(user)
         user.name = info.get("name") or email
         user.picture = info.get("picture") or ""
+        # Google email is verified by the provider
+        user.email_verified = True
+        user.email_verified_at = user.email_verified_at or datetime.now(timezone.utc)
+        if not user.status or user.status == "pending_verification":
+            user.status = "active"
+        if reason == "invite":
+            _ops_invites.consume_invite_for_email(email)
+            _ops_events.record("invite_accepted", user_id=user.id, email=email)
         db.commit()
         session["user_id"] = user.id
         session["user_email"] = user.email
-        # Extra capability alongside the session, not a replacement for
-        # it — API/programmatic clients that can't hold a browser cookie
-        # can pick this up via GET /api/auth/jwt once the user has a
-        # session; nothing about the redirect/session flow above changed.
+        session["session_version"] = int(getattr(user, "session_version", 0) or 0)
         access, refresh = create_jwt(user.id)
         session["jwt"] = {"access": access, "refresh": refresh}
         mark_session_login(session)
+        _record_user_login(user.id)
     finally:
         db.close()
     return redirect("/")
@@ -1211,34 +1559,15 @@ def dev_login():
         access, refresh = create_jwt(user.id)
         session["jwt"] = {"access": access, "refresh": refresh}
         mark_session_login(session)
+        _record_user_login(user.id)
         return jsonify({"ok": True, "user_id": user.id})
     finally:
         db.close()
 
 
-# Magic-link auth — a third login method (session-based, same shape as
-# Google OAuth/dev-login), not a replacement for either. Built via a
-# factory taking explicit dependencies rather than `import server` inside
-# auth/magic_link.py — this file is normally run directly as __main__, so
-# a module named "server" importing "server" back would re-execute this
-# whole file under a second module identity and recurse. See
-# auth/magic_link.py's module docstring for the full explanation.
-from auth.magic_link import create_magic_link_blueprint
+# Magic-link blueprint is registered after closed-beta ops services are
+# wired (needs signup_allowed_fn) — see below near create_ops_blueprint.
 
-app.register_blueprint(
-    create_magic_link_blueprint(
-        secret_key=app.secret_key,
-        limiter=limiter,
-        email_service=email_service,
-        SessionLocal=SessionLocal,
-        User=User,
-        select=select,
-        ALLOWED_EMAILS=ALLOWED_EMAILS,
-        APP_BASE_URL=APP_BASE_URL,
-        create_jwt=create_jwt,
-        log_security_event=log_security_event,
-    )
-)
 
 from backend.storage import get_storage_backend
 from backend.upload.routes import create_documents_blueprint
@@ -1422,6 +1751,91 @@ def get_cost_ledger():
     return _cost_ledger
 
 
+# ── Closed-beta ops services (AI gate, kill switch, invites, password auth) ─
+from security.ops import (
+    AiAccessGate,
+    BetaMetricsService,
+    InviteService,
+    PasswordAuthService,
+    SecurityEventStore,
+    SystemSettingsService,
+    record_last_login,
+)
+from security.ops.estimates import estimate_chat_tokens
+from security.ops.invites import signup_allowed
+from security.ops.routes import create_ops_blueprint
+
+_ops_events = SecurityEventStore(SessionLocal, SecurityEvent, log_fn=log_security_event)
+_ops_settings = SystemSettingsService(SessionLocal, SystemSetting)
+_ops_invites = InviteService(SessionLocal, InviteToken)
+_ops_password = PasswordAuthService(
+    SessionLocal,
+    User,
+    EmailVerificationToken,
+    PasswordResetToken,
+    email_service=email_service,
+    app_base_url=APP_BASE_URL,
+    events=_ops_events,
+)
+ai_gate = AiAccessGate(
+    SessionLocal=SessionLocal,
+    User=User,
+    settings=_ops_settings,
+    quota_service=quota_service,
+    events=_ops_events,
+    select=select,
+)
+_beta_metrics = BetaMetricsService(
+    SessionLocal,
+    User,
+    Project,
+    UserFile,
+    DerivedAnalysis,
+    Memory,
+    select,
+)
+
+
+def _record_user_login(user_id: int) -> None:
+    record_last_login(SessionLocal, User, user_id)
+
+
+def _signup_allowed(email: str) -> tuple[bool, str]:
+    return signup_allowed(
+        email,
+        allowed_emails=ALLOWED_EMAILS,
+        invite_service=_ops_invites,
+        require_invite=BETA_INVITE_ONLY or bool(ALLOWED_EMAILS),
+    )
+
+
+_ops_password.signup_allowed_fn = _signup_allowed
+
+from auth.magic_link import create_magic_link_blueprint
+
+app.register_blueprint(
+    create_magic_link_blueprint(
+        secret_key=app.secret_key,
+        limiter=limiter,
+        email_service=email_service,
+        SessionLocal=SessionLocal,
+        User=User,
+        select=select,
+        ALLOWED_EMAILS=ALLOWED_EMAILS,
+        APP_BASE_URL=APP_BASE_URL,
+        create_jwt=create_jwt,
+        log_security_event=log_security_event,
+        signup_allowed_fn=_signup_allowed,
+        on_user_created=lambda user, email: (
+            _ops_invites.consume_invite_for_email(email),
+            _ops_events.record("invite_accepted", user_id=user.id, email=email),
+            _record_user_login(user.id),
+        ),
+        record_last_login_fn=_record_user_login,
+    )
+)
+
+
 from auth.decorators import create_admin_required
 from backend.ai.analytics import PromptAnalytics
 from backend.ai.domain_registry import DomainRegistry
@@ -1506,6 +1920,98 @@ def get_prompt_analytics(db_session):
 admin_required = create_admin_required(SessionLocal, User)
 
 app.register_blueprint(
+    create_ops_blueprint(
+        settings_service=_ops_settings,
+        event_store=_ops_events,
+        invite_service=_ops_invites,
+        password_auth=_ops_password,
+        ai_gate=ai_gate,
+        quota_service=quota_service,
+        beta_metrics=_beta_metrics,
+        email_service=email_service,
+        app_base_url=APP_BASE_URL,
+        login_required=login_required,
+        admin_required=admin_required,
+        mark_session_login=mark_session_login,
+        create_jwt=create_jwt,
+        record_last_login_fn=_record_user_login,
+        limiter=limiter,
+    )
+)
+
+# Library Bridge — BibTeX/RIS + Connect Library + Collections + Sync (Phase 1b)
+from backend.library.collections import CollectionService
+from backend.library.routes import create_library_bridge_blueprint
+from backend.library.service import LibraryImportService
+from backend.library.sync import LibrarySyncService
+from backend.writing.api.errors import WritingDomainError
+from backend.writing.events import make_writing_event, publish_writing_event
+from backend.writing.services import (
+    build_version_conflict_payload,
+    is_idempotent_replay,
+    normalize_editor_kind,
+    normalize_idempotency_key,
+    normalize_status_filter,
+    next_version_number,
+    require_owned_document,
+    require_owned_project,
+)
+from backend.writing.validation import ensure_transition_allowed
+from backend.writing.validation.schemas import normalize_document_mutation
+from backend.writing.services.logging import log_writing_metric
+from backend.scholarly.crossref import enrich_file_from_doi as _enrich_file_from_doi
+
+_collection_service = CollectionService(
+    SessionLocal,
+    LibraryCollection,
+    LibraryCollectionPaper,
+    UserFile,
+    select,
+)
+_library_import = LibraryImportService(
+    SessionLocal,
+    UserFile,
+    Project,
+    select,
+    enrich_file_from_doi=_enrich_file_from_doi,
+    collection_service=_collection_service,
+)
+_library_sync = LibrarySyncService(
+    SessionLocal,
+    UserFile,
+    LibraryConnection,
+    LibrarySyncRun,
+    select,
+    _library_import,
+    enrich_file_from_doi=_enrich_file_from_doi,
+)
+app.register_blueprint(
+    create_library_bridge_blueprint(
+        import_service=_library_import,
+        sync_service=_library_sync,
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        LibraryConnection=LibraryConnection,
+        Project=Project,
+        select_fn=select,
+        login_required=login_required,
+        app_base_url=APP_BASE_URL,
+        enrich_file_from_doi=_enrich_file_from_doi,
+        limiter=limiter,
+        collection_service=_collection_service,
+        storage=storage,
+        enqueue_import=lambda db, uid, fid: _enqueue_job(db, uid, fid, "import"),
+        enqueue_phase1=lambda db, uid, fid: _enqueue_job(db, uid, fid, "phase1_analysis"),
+        # Deferred: _file_to_dict is defined later in this module.
+        file_to_dict=lambda x: _file_to_dict(x),
+        upload_dir=UPLOAD_DIR,
+        max_file_mb=MAX_FILE_MB,
+        allowed_extensions=None,  # attach route defaults to PDF
+        LibrarySyncRun=LibrarySyncRun,
+    )
+)
+
+app.register_blueprint(
     create_prompts_blueprint(
         SessionLocal=SessionLocal,
         PromptVersion=PromptVersion,
@@ -1551,6 +2057,28 @@ app.register_blueprint(
         PromptExecution=PromptExecution,
     )
 )
+
+# Sprint A — Project workspace hub (single read model). CRUD stays below
+# until a later slice migrates those routes onto ProjectService.
+from backend.projects import create_project_service
+from backend.projects.research import create_project_research_service
+from backend.projects.memory import create_memory_promotion_service
+from backend.projects.routes import create_projects_blueprint
+from backend.analysis_pipeline.summary import build_phase1_prompt_context
+
+project_service = create_project_service(
+    SessionLocal=SessionLocal,
+    select=select,
+    Project=Project,
+    UserFile=UserFile,
+    Note=Note,
+    Memory=Memory,
+    Conversation=Conversation,
+    DerivedAnalysis=DerivedAnalysis,
+    ProjectQuestion=ProjectQuestion,
+    AnalysisPipelineResult=AnalysisPipelineResult,
+)
+# project_research_service + projects blueprint registered after responses_text().
 
 
 def _parse_usage_date_range():
@@ -2127,6 +2655,44 @@ def responses_text(prompt, json_mode=False, kind=None, user_id=None):
     return resp.output_text
 
 
+# Sprint B/C — project research + memory promotion (needs responses_text above).
+memory_promotion_service = create_memory_promotion_service(
+    SessionLocal=SessionLocal,
+    select=select,
+    Project=Project,
+    UserFile=UserFile,
+    Memory=Memory,
+    DerivedAnalysis=DerivedAnalysis,
+)
+project_research_service = create_project_research_service(
+    SessionLocal=SessionLocal,
+    select=select,
+    Project=Project,
+    UserFile=UserFile,
+    PaperAnalysis=PaperAnalysis,
+    DerivedAnalysis=DerivedAnalysis,
+    AnalysisPipelineResult=AnalysisPipelineResult,
+    get_prompt_builder=get_prompt_builder,
+    responses_text=responses_text,
+    utility_model=UTILITY_MODEL,
+    build_phase1_prompt_context=build_phase1_prompt_context,
+    memory_promotion_service=memory_promotion_service,
+    ai_gate=ai_gate,
+    cost_ledger=_cost_ledger,
+    events=_ops_events,
+    max_active_research=2,
+)
+app.register_blueprint(
+    create_projects_blueprint(
+        project_service=project_service,
+        project_research_service=project_research_service,
+        memory_promotion_service=memory_promotion_service,
+        login_required=login_required,
+        limiter=limiter,
+    )
+)
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # RESEARCH WORKSPACE — Milestone 3: automatic paper metadata extraction
 # ══════════════════════════════════════════════════════════════════════════
@@ -2265,16 +2831,30 @@ def _apply_metadata(file_id: int, text: str, content_hash: str, job_id=None) -> 
 
 
 def extract_metadata(file_id: int, text: str, content_hash: str) -> None:
-    """Fire-and-forget wrapper: starts _apply_metadata in a daemon thread."""
-    threading.Thread(
-        target=_apply_metadata,
-        args=(file_id, text, content_hash),
-        daemon=True,
-    ).start()
+    """DEPRECATED: enqueue phase1_analysis (no daemon threads).
+
+    Bibliographic fields come from Phase 1.1 via the worker chain
+    ``import → phase1_analysis → paper_analysis``. Kept as a named
+    entry point so any leftover callers still hit the queue.
+    """
+    from backend.analysis_pipeline.deprecation import warn_legacy
+
+    warn_legacy("server.extract_metadata")
+    db = SessionLocal()
+    try:
+        uf = db.get(UserFile, file_id)
+        if not uf:
+            return
+        if content_hash and not uf.content_hash:
+            uf.content_hash = content_hash
+        _enqueue_job(db, uf.user_id, file_id, "phase1_analysis")
+        db.commit()
+    finally:
+        db.close()
 
 
 def extract_metadata_sync(file_id: int, text: str, content_hash: str) -> None:
-    """Synchronous variant for use in tests where threading complicates things."""
+    """DEPRECATED: synchronous legacy metadata path for tests only."""
     _apply_metadata(file_id, text, content_hash)
 
 
@@ -2421,15 +3001,28 @@ def _run_paper_analysis(file_id: int, text: str, content_hash: str, job_id=None)
 
 
 def trigger_paper_analysis(file_id: int, text: str, content_hash: str, sync: bool = False) -> None:
-    """Fire paper analysis in a background thread (or inline when sync=True)."""
+    """DEPRECATED: enqueue paper_analysis (or run legacy inline when sync=True).
+
+    Prefer worker ``phase1_analysis → paper_analysis``. The async path no
+    longer spawns daemon threads — it writes UploadJob + OutboxEvent.
+    """
+    from backend.analysis_pipeline.deprecation import warn_legacy
+
+    warn_legacy("server.trigger_paper_analysis")
     if sync:
         _run_paper_analysis(file_id, text, content_hash)
-    else:
-        threading.Thread(
-            target=_run_paper_analysis,
-            args=(file_id, text, content_hash),
-            daemon=True,
-        ).start()
+        return
+    db = SessionLocal()
+    try:
+        uf = db.get(UserFile, file_id)
+        if not uf:
+            return
+        if content_hash and not uf.content_hash:
+            uf.content_hash = content_hash
+        _enqueue_job(db, uf.user_id, file_id, "paper_analysis")
+        db.commit()
+    finally:
+        db.close()
 
 
 def _analysis_to_dict(pa: PaperAnalysis) -> dict:
@@ -2455,14 +3048,17 @@ def _file_to_dict(x: UserFile) -> dict:
 
     Centralising this means every route (upload, list, patch, …) returns
     exactly the same shape and there is one place to add fields."""
-    return {
+    from backend.library.readiness import readiness_payload
+
+    n_chunks = len(x.chunks)
+    payload = {
         "id": x.id,
         "name": x.name,
         "kind": x.kind,
         "size": x.size,
         "project_id": x.project_id,
         "conversation_id": x.conversation_id,
-        "chunks": len(x.chunks),
+        "chunks": n_chunks,
         # ── research metadata ──
         "title": x.title or "",
         "authors": x.authors or "",
@@ -2478,11 +3074,15 @@ def _file_to_dict(x: UserFile) -> dict:
         "doi_verified": bool(getattr(x, "doi_verified", False)),
         "metadata_source": getattr(x, "metadata_source", "extracted") or "extracted",
         "source_url": getattr(x, "source_url", "") or "",
+        "external_provider": getattr(x, "external_provider", "") or "",
+        "external_item_id": getattr(x, "external_item_id", "") or "",
         "crossref_last_synced": (
             getattr(x, "crossref_last_synced", None).isoformat()
             if getattr(x, "crossref_last_synced", None) else None
         ),
     }
+    payload.update(readiness_payload(x, chunk_count=n_chunks))
+    return payload
 
 
 def extract_memories(user_id, project_id, convo_messages):
@@ -2497,7 +3097,17 @@ def extract_memories(user_id, project_id, convo_messages):
         facts = json.loads(text).get("facts", [])
         for f in facts[:5]:
             if f and f not in existing:
-                db.add(Memory(user_id=user_id, project_id=project_id, fact=f[:1000]))
+                db.add(
+                    Memory(
+                        user_id=user_id,
+                        project_id=project_id,
+                        fact=f[:1000],
+                        kind="fact",
+                        source="chat",
+                        status="active",
+                        payload="{}",
+                    )
+                )
         db.commit()
     except Exception:
         db.rollback()
@@ -2522,7 +3132,8 @@ def build_paper_chat_prompt(user, paper, now=None):
 
     Canonical text lives in ``backend.ai_core.prompts.legacy_paper_chat``
     (``LEGACY_PAPER_CHAT_PROMPT_VERSION``). Stage 1 pipeline path resolves the
-    same string via ``PromptRouter.route_legacy_paper_chat``.
+    same string via ``PromptRouter.route_legacy_paper_chat``. Prefer
+    ``build_paper_chat_system_prompt`` from /api/chat (PromptBuilder path).
     """
     from backend.ai_core.prompts.legacy_paper_chat import render_legacy_paper_chat_prompt
 
@@ -2540,6 +3151,70 @@ def _paper_chat_pipeline_mode():
     from backend.ai_core.paper_chat import paper_chat_pipeline_mode
 
     return paper_chat_pipeline_mode()
+
+
+def _paper_chat_use_prompt_builder() -> bool:
+    return os.environ.get("PAPER_CHAT_USE_PROMPT_BUILDER", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _paper_chat_phase1_context_enabled() -> bool:
+    """Inject persisted Phase 1 JSON as a developer message (does not replace RAG)."""
+    return os.environ.get("PAPER_CHAT_PHASE1_CONTEXT", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _load_paper_phase1_context(db, file_id: int) -> str:
+    """Compact Phase 1 block for paper chat, or empty if missing/failed."""
+    if not file_id or not _paper_chat_phase1_context_enabled():
+        return ""
+    try:
+        from backend.analysis_pipeline.persistence import load_analysis_result
+        from backend.analysis_pipeline.summary import build_phase1_prompt_context
+
+        result = load_analysis_result(db, AnalysisPipelineResult, file_id)
+        if not result or not result.phase_results:
+            return ""
+        return build_phase1_prompt_context(result.phase_results) or ""
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "paper_chat phase1 context load failed file_id=%s", file_id, exc_info=True
+        )
+        return ""
+
+
+def build_paper_chat_system_prompt(user, paper, now=None, phase1_context: str = ""):
+    """Paper chat system instructions via PromptBuilder (legacy text parity).
+
+    Returns ``(system_prompt, phase1_for_developer_message)``. Phase 1 is never
+    folded into the system string so Stage 1 shadow hashes stay comparable.
+    """
+    if not _paper_chat_use_prompt_builder():
+        return build_paper_chat_prompt(user, paper, now=now), (phase1_context or "").strip()
+
+    db = SessionLocal()
+    try:
+        builder = get_prompt_builder(db)
+        assembled = builder.build_paper_chat_instructions(
+            user_name=user.name or "",
+            paper_title=paper.title or paper.name or "",
+            authors=paper.authors,
+            year=paper.year,
+            venue=paper.venue,
+            phase1_context=phase1_context or "",
+            now=now,
+        )
+        return assembled.final, (assembled.rag or "").strip()
+    finally:
+        db.close()
 
 
 # Static opening sentence only — everything else build_system_prompt()
@@ -2683,6 +3358,7 @@ def _log_chat_cost(user_id, model, usage):
     prompt_tokens = getattr(usage, "input_tokens", 0) or 0
     completion_tokens = getattr(usage, "output_tokens", 0) or 0
     record_ai_call(model, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
+    cost = 0.0
     try:
         ledger = get_cost_ledger()
         cost = ledger.estimate_cost(model, prompt_tokens, completion_tokens)
@@ -2702,6 +3378,14 @@ def _log_chat_cost(user_id, model, usage):
             db.close()
     except Exception:
         logging.getLogger(__name__).warning("chat cost logging failed", exc_info=True)
+    try:
+        ai_gate.record_usage(
+            user_id,
+            tokens=prompt_tokens + completion_tokens,
+            cost_usd=cost,
+        )
+    except Exception:
+        logging.getLogger(__name__).warning("chat quota increment failed", exc_info=True)
 
 
 # ------------------------------------------------------------------ API: profile / models
@@ -2719,6 +3403,7 @@ def api_me():
                 "picture": user.picture or "",
                 "custom_instructions": user.custom_instructions or "",
                 "default_model": DEFAULT_MODEL,
+                "beta_mode": CLOSED_BETA,
             }
         )
     finally:
@@ -2819,10 +3504,11 @@ def _finish_upload_job(db, job_id, ok, error=None):
 
 def _enqueue_job(db, user_id, file_id, job_type, upload_batch_id=None):
     """Create an UploadJob + its paired OutboxEvent in one transaction —
-    the same transactional-outbox pattern upload_file() uses, factored out
-    so the queue worker can chain follow-on stages (import -> extract_
-    metadata -> paper_analysis) the same way instead of spawning threads.
-    Does not commit: caller folds this into its own transaction."""
+    the same transactional-outbox pattern upload_file() / confirm_upload()
+    use, factored out so the queue worker can chain follow-on stages
+    (import → phase1_analysis → paper_analysis) the same way instead of
+    spawning threads. Does not commit: caller folds this into its own
+    transaction."""
     job = UploadJob(
         upload_batch_id=upload_batch_id,
         file_id=file_id,
@@ -3015,20 +3701,20 @@ def _adjust_storage_usage(db, user_id, delta_bytes, delta_files):
 
 def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
     """Extract, chunk, embed, and persist Chunk rows for a document that's
-    already stored. Shared by the direct-upload route, the presigned-upload
-    confirm route, and the queue worker, so all three go through identical
-    processing. Returns the user-facing `note` (None on a normal successful
-    index).
+    already stored. Shared by the queue worker (and any caller that already
+    holds a local copy). HTTP upload routes enqueue an ``import`` job and
+    never call this in-request.
+
+    Returns the user-facing `note` (None on a normal successful index).
 
     `job_id`: pass an already-claimed UploadJob id (the queue worker does)
     to skip creating/finishing a second, duplicate tracking row — the
     worker owns that row's lifecycle instead.
 
     `on_processed(file_id, text, content_hash)`: called once real text has
-    been extracted and chunked, instead of the default behaviour (spawning
-    the legacy extract_metadata()/trigger_paper_analysis() daemon threads).
-    The queue worker passes one that enqueues the next jobs transactionally
-    instead of spawning threads."""
+    been extracted and chunked. The queue worker passes one that enqueues
+    ``phase1_analysis``. When omitted, this function enqueues
+    ``phase1_analysis`` itself (queue-only — no daemon threads)."""
     owns_job = job_id is None
     if owns_job:
         job_id = _start_upload_job(db, uf.user_id, uf.id, "import")
@@ -3082,11 +3768,10 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
             n_chunks = len(pieces)
         db.commit()
 
-        # Fire metadata + paper analysis asynchronously so the HTTP response is
-        # not blocked by model calls. Only for documents with real extracted text.
+        # Queue follow-up analysis — never spawn daemon threads here.
         if text and not is_note and n_chunks > 0:
             h = _sha256(text)
-            # Persist hash immediately so both background jobs can use it for
+            # Persist hash immediately so follow-up jobs can use it for
             # their idempotency checks.
             db2 = SessionLocal()
             try:
@@ -3099,8 +3784,9 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
             if on_processed:
                 on_processed(uf.id, text, h)
             else:
-                extract_metadata(uf.id, text, h)  # M3: bibliographic fields
-                trigger_paper_analysis(uf.id, text, h)  # M4: 14-field analysis
+                # Fallback for any non-worker caller: same chain as worker.
+                _enqueue_job(db, uf.user_id, uf.id, "phase1_analysis")
+                db.commit()
 
         if owns_job:
             _finish_upload_job(db, job_id, ok=True)
@@ -3117,16 +3803,16 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
 @limiter.limit("60 per hour")
 def upload_file():
     """Validate, store, and enqueue — nothing else. Extraction/chunking/
-    embedding no longer happen here (compare to confirm_upload(), which
-    still processes inline for now): this route's only job is to commit
-    an UploadJob + its OutboxEvent in the same transaction as the file
-    row, so a Queue Worker polling upload_jobs/outbox_events can pick the
-    work up. Replaces the old threading.Thread(daemon=True) call — that
-    approach had a real gap this closes: if the process died between
-    committing the file row and starting the thread, the work was silently
-    lost forever. Here, either the whole transaction commits (job + event
-    together) or none of it does — there is no window where a job exists
-    without the event that will get it picked up."""
+    embedding happen in the queue worker (same as confirm_upload): this
+    route's only job is to commit an UploadJob + its OutboxEvent in the
+    same transaction as the file row, so a Queue Worker polling
+    upload_jobs/outbox_events can pick the work up. Replaces the old
+    threading.Thread(daemon=True) call — that approach had a real gap
+    this closes: if the process died between committing the file row and
+    starting the thread, the work was silently lost forever. Here, either
+    the whole transaction commits (job + event together) or none of it
+    does — there is no window where a job exists without the event that
+    will get it picked up."""
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify({"error": "no_file"}), 400
@@ -3500,6 +4186,12 @@ def complete_multipart_upload_route():
 @login_required
 @limiter.limit("60 per hour")
 def confirm_upload():
+    """Verify the presigned object, create the file row, and enqueue import.
+
+    Matches ``upload_file()``: no inline extraction/analysis in the request
+    thread. Documents get an ``import`` UploadJob + OutboxEvent; the worker
+    chain is ``import → phase1_analysis → paper_analysis``.
+    """
     data = request.get_json(force=True, silent=True) or {}
     session_id = data.get("session_id")
     content_md5_b64 = data.get("content_md5_b64")
@@ -3580,8 +4272,9 @@ def confirm_upload():
             return jsonify({"error": "validation_failed"}), 502
 
         kind = kind_for_extension(ext)
+        uid = session["user_id"]
         uf = UserFile(
-            user_id=session["user_id"],
+            user_id=uid,
             project_id=us.project_id,
             conversation_id=us.conversation_id,
             name=us.name,
@@ -3592,22 +4285,28 @@ def confirm_upload():
             checksum_sha256=us.checksum_sha256,
         )
         db.add(uf)
+        db.flush()  # assigns uf.id
         us.status = "confirmed"
-        _adjust_storage_usage(db, session["user_id"], delta_bytes=info.size, delta_files=1)
+        _adjust_storage_usage(db, uid, delta_bytes=info.size, delta_files=1)
+
+        job_id = None
+        if kind == "document":
+            batch = UploadBatch(
+                user_id=uid,
+                project_id=us.project_id,
+                conversation_id=us.conversation_id,
+                source="presign",
+                file_count=1,
+            )
+            db.add(batch)
+            db.flush()
+            job_id = _enqueue_job(db, uid, uf.id, "import", upload_batch_id=batch.id)
+
         db.commit()
 
-        note = None
-        if kind == "document":
-            with provider.local_copy(us.key, suffix=ext) as local_path:
-                note = _process_document(db, uf, local_path, us.name, sniffed_mime)
-
-        db3 = SessionLocal()
-        try:
-            uf_out = db3.get(UserFile, uf.id)
-            result = _file_to_dict(uf_out) if uf_out else {}
-        finally:
-            db3.close()
-        result["note"] = note
+        result = _file_to_dict(uf)
+        result["note"] = None
+        result["job_id"] = job_id
         return jsonify(result)
     finally:
         db.close()
@@ -3734,131 +4433,42 @@ def reconcile_storage_cmd(apply):
 @app.route("/api/files", methods=["GET"])
 @login_required
 def list_files():
-    """Knowledge Library listing with server-side filtering, sorting, and
-    project-scoping.
+    """Knowledge Library listing — SQL-backed search, filters, pagination.
 
     Query params (all optional):
       project_id      int     – scope to one project (0 = unassigned)
-      kind            str     – "document" | "image" (default: all)
-      reading_status  str     – "unread" | "reading" | "read"
-      meta_status     str     – "done" | "pending" | "running" | "failed"
-      tag             str     – exact tag match (can repeat: ?tag=nlp&tag=cv)
-      q               str     – full-text search across name/title/authors/venue
-      sort            str     – "recent" (default) | "title" | "authors" |
-                                "year" | "reading_status" | "size"
-      order           str     – "asc" | "desc" (default: desc for recent/size,
-                                asc for everything else)
-      limit           int     – max rows (default 200, max 500)
-      offset          int     – pagination offset (default 0)
+      kind            str     – document | image
+      reading_status  str     – unread | reading | read
+      meta_status     str     – done | pending | running | failed
+      tag             str     – repeat for AND tag match
+      q               str     – full-text + field syntax (doi:, author:, title:, year:, venue:, tag:)
+      title, author, doi, year, venue, journal
+      year_from, year_to
+      import_source   str     – zotero | bibtex | ris | discover | upload | import
+      collection_id   int     – papers in this Library collection
+      recent_days     int     – added within N days
+      sort            str     – recent | title | authors | year | reading_status | size
+      order           str     – asc | desc
+      limit           int     – default 50, max 500
+      offset          int
     """
+    from backend.library.search import params_from_request, search_library
+
     uid = session["user_id"]
-    args = request.args
-
-    # ── parse params ─────────────────────────────────────────────────────
-    project_id_raw = args.get("project_id")
-    kind = args.get("kind", "").strip().lower() or None
-    reading_status = args.get("reading_status", "").strip().lower() or None
-    meta_status = args.get("meta_status", "").strip().lower() or None
-    tags_filter = args.getlist("tag")  # multi-value
-    q = args.get("q", "").strip().lower() or None
-    sort = args.get("sort", "recent").strip().lower()
-    order = args.get("order", "").strip().lower()  # "" → auto
-    try:
-        limit = max(1, min(500, int(args.get("limit", 200))))
-        offset = max(0, int(args.get("offset", 0)))
-    except (TypeError, ValueError):
-        limit, offset = 200, 0
-
-    # ── base query ───────────────────────────────────────────────────────
+    params = params_from_request(request.args, uid)
+    if params.collection_id:
+        file_ids = _collection_service.file_ids_in_collection(uid, params.collection_id)
+        if file_ids is None:
+            return jsonify({"error": "collection_not_found"}), 404
+        params.file_ids = file_ids
     db = SessionLocal()
     try:
-        q_stmt = select(UserFile).where(UserFile.user_id == uid)
-
-        # Project scoping
-        if project_id_raw is not None:
-            try:
-                pid = int(project_id_raw)
-                if pid == 0:
-                    q_stmt = q_stmt.where(UserFile.project_id.is_(None))
-                else:
-                    q_stmt = q_stmt.where(UserFile.project_id == pid)
-            except (TypeError, ValueError):
-                pass
-
-        # Kind filter
-        if kind in ("document", "image"):
-            q_stmt = q_stmt.where(UserFile.kind == kind)
-
-        # Reading status filter
-        if reading_status in ("unread", "reading", "read"):
-            q_stmt = q_stmt.where(UserFile.reading_status == reading_status)
-
-        # Meta status filter (e.g. "done" to show only fully processed papers)
-        if meta_status in ("pending", "running", "done", "failed"):
-            q_stmt = q_stmt.where(UserFile.meta_status == meta_status)
-
-        # Execute and load into memory for Python-side filtering
-        # (SQLite doesn't support JSON_CONTAINS; Postgres would let us push
-        # this down, but we keep it portable at MVP scale)
-        files = db.execute(q_stmt).scalars().all()
-
-        # ── tag filter (Python-side JSON scan) ───────────────────────────
-        if tags_filter:
-            wanted = {t.lower() for t in tags_filter if t}
-            filtered = []
-            for f in files:
-                try:
-                    ftags = {t.lower() for t in json.loads(f.tags or "[]")}
-                except Exception:
-                    ftags = set()
-                if wanted <= ftags:  # all wanted tags must be present
-                    filtered.append(f)
-            files = filtered
-
-        # ── full-text search (Python-side) ───────────────────────────────
-        if q:
-            words = q.split()
-
-            def _matches(f):
-                haystack = " ".join(
-                    filter(
-                        None,
-                        [
-                            f.name,
-                            f.title,
-                            f.authors,
-                            f.venue,
-                            f.abstract[:500] if f.abstract else "",
-                            " ".join(json.loads(f.tags or "[]")),
-                        ],
-                    )
-                ).lower()
-                return all(w in haystack for w in words)
-
-            files = [f for f in files if _matches(f)]
-
-        # ── sort ─────────────────────────────────────────────────────────
-        SORT_KEYS = {
-            "recent": lambda f: f.created_at or datetime.min,
-            "title": lambda f: (f.title or f.name or "").lower(),
-            "authors": lambda f: (f.authors or "").lower(),
-            "year": lambda f: f.year or "",
-            "reading_status": lambda f: {"reading": 0, "unread": 1, "read": 2}.get(f.reading_status or "unread", 1),
-            "size": lambda f: f.size or 0,
-        }
-        key_fn = SORT_KEYS.get(sort, SORT_KEYS["recent"])
-        reverse = (order == "desc") if order else sort in ("recent", "size")
-        files = sorted(files, key=key_fn, reverse=reverse)
-
-        # ── pagination ───────────────────────────────────────────────────
-        total = len(files)
-        page = files[offset : offset + limit]
-
+        total, page = search_library(db, UserFile, params)
         return jsonify(
             {
                 "total": total,
-                "offset": offset,
-                "limit": limit,
+                "offset": params.offset,
+                "limit": params.limit,
                 "items": [_file_to_dict(x) for x in page],
             }
         )
@@ -4130,13 +4740,30 @@ def dashboard():
 @app.route("/api/files/<int:fid>", methods=["GET"])
 @login_required
 def get_file(fid):
-    """Return full metadata for a single file, including analysis status."""
+    """Return full metadata for a single file, including analysis status.
+
+    When the paper belongs to a project, includes a nested ``project``
+    brief so the Paper Workspace can show Project → Paper (not Library → Paper).
+    """
     db = SessionLocal()
     try:
         x = db.get(UserFile, fid)
         if not x or x.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
-        return jsonify(_file_to_dict(x))
+        payload = _file_to_dict(x)
+        if x.project_id:
+            p = db.get(Project, x.project_id)
+            if p and p.user_id == session["user_id"]:
+                payload["project"] = {
+                    "id": p.id,
+                    "name": p.name,
+                    "emoji": p.emoji or "📁",
+                }
+            else:
+                payload["project"] = None
+        else:
+            payload["project"] = None
+        return jsonify(payload)
     finally:
         db.close()
 
@@ -4214,19 +4841,18 @@ def get_analysis(fid):
         pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
 
         if pa is None:
-            # No record yet — start analysis now and return pending
-            uf2 = db.get(UserFile, fid)
-            h = uf2.content_hash or ""
-            if h:
-                text = ""
-            else:
-                with storage.local_copy(uf2.path) as local_path:
-                    text = extract_text(local_path, uf2.mime, uf2.name)
-            if not h and text:
-                h = _sha256(text)
-                uf2.content_hash = h
-                db.commit()
-            trigger_paper_analysis(fid, text, h)
+            # No record yet — enqueue the worker chain and return pending.
+            # phase1_analysis chains to paper_analysis when done (or immediately
+            # if Phase 1 is already cached for this content_hash).
+            h = uf.content_hash or ""
+            if not h:
+                with storage.local_copy(uf.path) as local_path:
+                    text = extract_text(local_path, uf.mime, uf.name)
+                if text:
+                    h = _sha256(text)
+                    uf.content_hash = h
+            _enqueue_job(db, uf.user_id, fid, "phase1_analysis")
+            db.commit()
             return jsonify(
                 {
                     "file_id": fid,
@@ -4265,12 +4891,17 @@ def refresh_analysis(fid):
         if pa:
             pa.content_hash = ""
             pa.status = "pending"
-            db.commit()
+        else:
+            pa = PaperAnalysis(file_id=fid, user_id=uf.user_id, status="pending")
+            db.add(pa)
 
         with storage.local_copy(uf.path) as local_path:
             text = extract_text(local_path, uf.mime, uf.name)
         h = _sha256(text) if text else ""
-        trigger_paper_analysis(fid, text, h)
+        if h:
+            uf.content_hash = h
+        _enqueue_job(db, uf.user_id, fid, "paper_analysis")
+        db.commit()
         return jsonify({"ok": True, "status": "running"})
     finally:
         db.close()
@@ -4406,6 +5037,10 @@ def scholarly_discover_import():
     open_access_url = (body.get("open_access_url") or "").strip()
     openalex_id = (body.get("openalex_id") or body.get("id") or "").strip()
     project_id = body.get("project_id")
+    # Shared import pipeline entry: discover | related (Semantic Scholar).
+    import_source = (body.get("import_source") or "discover").strip().lower()
+    if import_source not in ("discover", "related", "openalex"):
+        import_source = "discover"
 
     if not title and not doi:
         return jsonify({"error": "title_or_doi_required"}), 400
@@ -4437,9 +5072,13 @@ def scholarly_discover_import():
                 })
 
         display_name = (title or f"openalex:{openalex_id}" or "openalex-import")[:300]
-        tags = ["from-discover"]
+        tags = ["from-related"] if import_source == "related" else ["from-discover"]
         if openalex_id:
-            tags.append(f"openalex:{openalex_id[:80]}")
+            # Related imports pass s2:<paperId>; Discover passes OpenAlex ids.
+            if openalex_id.startswith("s2:"):
+                tags.append(openalex_id[:80])
+            else:
+                tags.append(f"openalex:{openalex_id[:80]}")
 
         uf = UserFile(
             user_id=uid,
@@ -4497,7 +5136,16 @@ def scholarly_related(fid):
     Cache: 7 days per file.
     Returns {related, citing, recommended, cached_at, provider_version} | 503.
     """
+    from backend.scholarly import provider_enabled
     from backend.scholarly.semantic_scholar import get_related_papers
+
+    if not provider_enabled("semantic_scholar"):
+        return jsonify({
+            "error": "related_disabled",
+            "message": "Related papers are temporarily disabled.",
+            "related": [], "citing": [], "recommended": [],
+        }), 503
+
     db = SessionLocal()
     try:
         uf = db.get(UserFile, fid)
@@ -4798,6 +5446,492 @@ def delete_note(nid):
         db.close()
 
 
+def _doc_hash(content: str) -> str:
+    return _hashlib.sha256((content or "").encode("utf-8")).hexdigest()
+
+
+def _word_count(content: str) -> int:
+    return len([w for w in (content or "").split() if w.strip()])
+
+
+def _writing_doc_to_dict(d: WritingDocument) -> dict:
+    return {
+        "id": d.id,
+        "title": d.title or "",
+        "content": d.content or "",
+        "project_id": d.project_id,
+        "editor_kind": d.editor_kind or "markdown",
+        "status": d.status or "draft",
+        "current_version": int(d.current_version or 1),
+        "last_opened_at": d.last_opened_at.isoformat() if d.last_opened_at else None,
+        "word_count": int(d.word_count or 0),
+        "created_at": d.created_at.isoformat() if d.created_at else None,
+        "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+    }
+
+
+def _writing_doc_version_to_dict(v: WritingDocumentVersion) -> dict:
+    return {
+        "id": v.id,
+        "document_id": v.document_id,
+        "version_no": int(v.version_no or 0),
+        "title": v.title or "",
+        "source": v.source or "save",
+        "created_at": v.created_at.isoformat() if v.created_at else None,
+    }
+
+
+def _log_document_activity(
+    db,
+    *,
+    uid: int,
+    document_id: int,
+    action: str,
+    meta: dict | None = None,
+) -> None:
+    db.add(
+        WritingDocumentActivity(
+            user_id=uid,
+            document_id=document_id,
+            action=action,
+            meta_json=json.dumps(meta or {}),
+        )
+    )
+
+
+def _append_document_version(
+    db,
+    *,
+    uid: int,
+    doc: WritingDocument,
+    source: str,
+) -> WritingDocumentVersion:
+    content = doc.content or ""
+    version = WritingDocumentVersion(
+        document_id=doc.id,
+        user_id=uid,
+        version_no=int(doc.current_version or 1),
+        title=(doc.title or "")[:300],
+        content=content,
+        content_hash=_doc_hash(content),
+        source=source,
+    )
+    db.add(version)
+    return version
+
+
+def _apply_writing_status_transition(doc: WritingDocument, target_status: str) -> None:
+    current = (doc.status or "draft").strip().lower()
+    target = (target_status or "").strip().lower()
+    if not target or target == current:
+        return
+    ensure_transition_allowed(current, target)
+    doc.status = target
+
+
+def _emit_writing_observability(event_name: str, *, uid: int, doc: WritingDocument, metadata: dict | None = None) -> None:
+    payload = metadata or {}
+    publish_writing_event(
+        make_writing_event(
+            event_name,
+            user_id=uid,
+            document_id=doc.id,
+            metadata=payload,
+        )
+    )
+    log_writing_metric(
+        event_name,
+        user_id=uid,
+        document_id=doc.id,
+        status=doc.status,
+        current_version=int(doc.current_version or 1),
+    )
+
+
+@app.route("/api/writing/documents", methods=["GET"])
+@login_required
+def list_writing_documents():
+    uid = session["user_id"]
+    args = request.args
+    project_id_raw = args.get("project_id")
+    include_archived = str(args.get("include_archived") or "").lower() in {"1", "true", "yes"}
+    include_deleted = str(args.get("include_deleted") or "").lower() in {"1", "true", "yes"}
+    try:
+        status_filter = normalize_status_filter(args.get("status"))
+    except WritingDomainError as exc:
+        return jsonify({"error": exc.code, "detail": exc.detail}), 400
+    try:
+        limit = max(1, min(200, int(args.get("limit", 50))))
+    except (TypeError, ValueError):
+        limit = 50
+
+    db = SessionLocal()
+    try:
+        stmt = select(WritingDocument).where(WritingDocument.user_id == uid)
+        if not include_archived:
+            stmt = stmt.where(WritingDocument.status != "archived")
+        if not include_deleted:
+            stmt = stmt.where(WritingDocument.status != "deleted")
+        if project_id_raw is None:
+            return jsonify({"error": "project_id_required", "detail": "project_id is required."}), 400
+        try:
+            pid = int(project_id_raw)
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid_project_id"}), 400
+        try:
+            require_owned_project(db, Project, user_id=uid, project_id=pid)
+        except WritingDomainError:
+            return jsonify({"error": "not_found"}), 404
+        stmt = stmt.where(WritingDocument.project_id == pid)
+        if status_filter:
+            stmt = stmt.where(WritingDocument.status == status_filter)
+        docs = db.execute(stmt.order_by(WritingDocument.updated_at.desc()).limit(limit)).scalars().all()
+        return jsonify({"items": [_writing_doc_to_dict(d) for d in docs], "count": len(docs)})
+    finally:
+        db.close()
+
+
+@app.route("/api/writing/documents", methods=["POST"])
+@login_required
+@limiter.limit("30 per hour")
+def create_writing_document():
+    uid = session["user_id"]
+    data = request.get_json(silent=True) or {}
+    try:
+        normalized = normalize_document_mutation(
+            str(data.get("title") or "Untitled draft"),
+            str(data.get("content") or ""),
+        )
+    except WritingDomainError as exc:
+        return jsonify({"error": exc.code, "detail": exc.detail}), 400
+    title = normalized.title or "Untitled draft"
+    content = normalized.content
+    editor_kind = normalize_editor_kind(data.get("editor_kind"))
+
+    project_id = data.get("project_id")
+    if project_id is None:
+        return jsonify({"error": "project_id_required", "detail": "Documents must belong to a project."}), 400
+    db = SessionLocal()
+    try:
+        project_id, denied = resolve_owned_project_id(db, Project, project_id, uid)
+        if denied or project_id is None:
+            log_security_event(
+                "authz_denied",
+                resource="project",
+                action="create_writing_document",
+                user_id=uid,
+                project_id=data.get("project_id"),
+            )
+            return jsonify({"error": "forbidden"}), 403
+
+        doc = WritingDocument(
+            user_id=uid,
+            project_id=project_id,
+            title=title,
+            content=content,
+            editor_kind=editor_kind,
+            current_version=1,
+            last_saved_hash=_doc_hash(content),
+            word_count=_word_count(content),
+            status="draft",
+        )
+        db.add(doc)
+        db.flush()
+        _append_document_version(db, uid=uid, doc=doc, source="create")
+        _log_document_activity(db, uid=uid, document_id=doc.id, action="create")
+        db.commit()
+        _emit_writing_observability("DocumentCreated", uid=uid, doc=doc)
+        return jsonify(_writing_doc_to_dict(doc)), 201
+    finally:
+        db.close()
+
+
+@app.route("/api/writing/documents/<int:doc_id>", methods=["GET"])
+@login_required
+def get_writing_document(doc_id):
+    db = SessionLocal()
+    try:
+        try:
+            doc = require_owned_document(
+                db,
+                WritingDocument,
+                user_id=session["user_id"],
+                document_id=doc_id,
+            )
+        except WritingDomainError:
+            return jsonify({"error": "not_found"}), 404
+        doc.last_opened_at = datetime.now(timezone.utc)
+        db.commit()
+        return jsonify(_writing_doc_to_dict(doc))
+    finally:
+        db.close()
+
+
+@app.route("/api/writing/documents/<int:doc_id>", methods=["PATCH"])
+@login_required
+@limiter.limit("120 per hour")
+def update_writing_document(doc_id):
+    uid = session["user_id"]
+    data = request.get_json(silent=True) or {}
+    db = SessionLocal()
+    try:
+        try:
+            doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=doc_id)
+        except WritingDomainError:
+            return jsonify({"error": "not_found"}), 404
+
+        client_version = data.get("current_version")
+        if client_version is not None and int(client_version) != int(doc.current_version or 1):
+            log_security_event(
+                "version_conflict",
+                resource="writing_document",
+                action="update_writing_document",
+                user_id=uid,
+                document_id=doc_id,
+            )
+            return jsonify(build_version_conflict_payload(int(doc.current_version or 1))), 409
+
+        if (doc.status or "") == "deleted" and any(k in data for k in ("title", "content", "editor_kind")):
+            return jsonify({"error": "validation_error", "detail": "deleted_documents_are_read_only"}), 400
+
+        if "title" in data:
+            try:
+                normalized = normalize_document_mutation(str(data.get("title") or ""), doc.content or "")
+            except WritingDomainError as exc:
+                return jsonify({"error": exc.code, "detail": exc.detail}), 400
+            doc.title = normalized.title
+        if "editor_kind" in data:
+            doc.editor_kind = normalize_editor_kind(data.get("editor_kind"))
+        if "status" in data:
+            status = str(data.get("status") or "draft").strip().lower()
+            try:
+                _apply_writing_status_transition(doc, status)
+            except WritingDomainError as exc:
+                return jsonify({"error": exc.code, "detail": exc.detail}), 400
+        if "project_id" in data:
+            raw_pid = data.get("project_id")
+            if raw_pid is None:
+                return jsonify({"error": "project_id_required"}), 400
+            pid, denied = resolve_owned_project_id(db, Project, raw_pid, uid)
+            if denied or pid is None:
+                return jsonify({"error": "forbidden"}), 403
+            doc.project_id = pid
+        if "content" in data:
+            try:
+                normalized = normalize_document_mutation(doc.title or "", str(data.get("content") or ""))
+            except WritingDomainError as exc:
+                return jsonify({"error": exc.code, "detail": exc.detail}), 400
+            next_content = normalized.content
+            next_hash = _doc_hash(next_content)
+            if next_hash != (doc.last_saved_hash or ""):
+                doc.content = next_content
+                doc.last_saved_hash = next_hash
+                doc.word_count = _word_count(next_content)
+                doc.current_version = next_version_number(doc.current_version)
+                _append_document_version(db, uid=uid, doc=doc, source="save")
+                if doc.status == "draft":
+                    _apply_writing_status_transition(doc, "active")
+
+        doc.updated_at = datetime.now(timezone.utc)
+        _log_document_activity(db, uid=uid, document_id=doc.id, action="update")
+        db.commit()
+        _emit_writing_observability("DocumentUpdated", uid=uid, doc=doc)
+        return jsonify(_writing_doc_to_dict(doc))
+    finally:
+        db.close()
+
+
+@app.route("/api/writing/documents/<int:doc_id>/autosave", methods=["POST"])
+@login_required
+@limiter.limit("120 per hour")
+def autosave_writing_document(doc_id):
+    uid = session["user_id"]
+    data = request.get_json(silent=True) or {}
+    db = SessionLocal()
+    try:
+        try:
+            doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=doc_id)
+        except WritingDomainError:
+            return jsonify({"error": "not_found"}), 404
+
+        try:
+            idempotency_key = normalize_idempotency_key(data.get("idempotency_key"))
+        except WritingDomainError as exc:
+            return jsonify({"error": exc.code, "detail": exc.detail}), 400
+
+        if is_idempotent_replay(doc.last_autosave_key, idempotency_key):
+            _emit_writing_observability(
+                "DocumentAutosaveReplay",
+                uid=uid,
+                doc=doc,
+                metadata={"idempotency_key": idempotency_key},
+            )
+            return jsonify(
+                {
+                    "ok": True,
+                    "unchanged": True,
+                    "idempotent_replay": True,
+                    "document": _writing_doc_to_dict(doc),
+                }
+            )
+
+        client_version = data.get("current_version")
+        if client_version is not None and int(client_version) != int(doc.current_version or 1):
+            return jsonify(build_version_conflict_payload(int(doc.current_version or 1))), 409
+
+        if (doc.status or "") == "deleted":
+            return jsonify({"error": "validation_error", "detail": "deleted_documents_are_read_only"}), 400
+
+        try:
+            normalized = normalize_document_mutation(
+                str(data.get("title") or doc.title or ""),
+                str(data.get("content") or ""),
+            )
+        except WritingDomainError as exc:
+            return jsonify({"error": exc.code, "detail": exc.detail}), 400
+        next_content = normalized.content
+        next_title = normalized.title
+        next_hash = _doc_hash(next_content)
+        changed = next_hash != (doc.last_saved_hash or "") or next_title != (doc.title or "")
+        if not changed:
+            return jsonify({"ok": True, "unchanged": True, "document": _writing_doc_to_dict(doc)})
+
+        doc.content = next_content
+        doc.title = next_title
+        doc.last_saved_hash = next_hash
+        doc.last_autosave_key = idempotency_key
+        doc.word_count = _word_count(next_content)
+        doc.current_version = next_version_number(doc.current_version)
+        doc.updated_at = datetime.now(timezone.utc)
+        if doc.status == "draft":
+            _apply_writing_status_transition(doc, "active")
+        _append_document_version(db, uid=uid, doc=doc, source="autosave")
+        _log_document_activity(
+            db,
+            uid=uid,
+            document_id=doc.id,
+            action="autosave",
+            meta={"bytes": len(next_content)},
+        )
+        db.commit()
+        _emit_writing_observability(
+            "DocumentAutosaved",
+            uid=uid,
+            doc=doc,
+            metadata={"idempotency_key": idempotency_key},
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "unchanged": False,
+                "idempotent_replay": False,
+                "document": _writing_doc_to_dict(doc),
+            }
+        )
+    finally:
+        db.close()
+
+
+@app.route("/api/writing/documents/<int:doc_id>/versions", methods=["GET"])
+@login_required
+def list_writing_document_versions(doc_id):
+    uid = session["user_id"]
+    db = SessionLocal()
+    try:
+        try:
+            require_owned_document(db, WritingDocument, user_id=uid, document_id=doc_id)
+        except WritingDomainError:
+            return jsonify({"error": "not_found"}), 404
+        versions = (
+            db.execute(
+                select(WritingDocumentVersion)
+                .where(WritingDocumentVersion.document_id == doc_id, WritingDocumentVersion.user_id == uid)
+                .order_by(WritingDocumentVersion.version_no.desc())
+                .limit(100)
+            )
+            .scalars()
+            .all()
+        )
+        return jsonify({"items": [_writing_doc_version_to_dict(v) for v in versions], "count": len(versions)})
+    finally:
+        db.close()
+
+
+@app.route("/api/writing/documents/<int:doc_id>/restore", methods=["POST"])
+@login_required
+@limiter.limit("30 per hour")
+def restore_writing_document_version(doc_id):
+    uid = session["user_id"]
+    data = request.get_json(silent=True) or {}
+    version_id = data.get("version_id")
+    if not version_id:
+        return jsonify({"error": "version_id_required"}), 400
+
+    db = SessionLocal()
+    try:
+        try:
+            doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=doc_id)
+        except WritingDomainError:
+            return jsonify({"error": "not_found"}), 404
+        if (doc.status or "") == "deleted":
+            return jsonify({"error": "validation_error", "detail": "deleted_documents_cannot_be_restored_in_place"}), 400
+        version = db.get(WritingDocumentVersion, int(version_id))
+        if not version or version.user_id != uid or version.document_id != doc_id:
+            return jsonify({"error": "not_found"}), 404
+
+        doc.title = (version.title or "")[:300]
+        doc.content = (version.content or "")[:200000]
+        doc.last_saved_hash = _doc_hash(doc.content or "")
+        doc.word_count = _word_count(doc.content or "")
+        doc.current_version = next_version_number(doc.current_version)
+        doc.updated_at = datetime.now(timezone.utc)
+        _append_document_version(db, uid=uid, doc=doc, source="restore")
+        _log_document_activity(
+            db,
+            uid=uid,
+            document_id=doc.id,
+            action="restore",
+            meta={"from_version_id": int(version_id)},
+        )
+        db.commit()
+        _emit_writing_observability(
+            "DocumentRestored",
+            uid=uid,
+            doc=doc,
+            metadata={"restored_from_version_id": int(version_id)},
+        )
+        payload = _writing_doc_to_dict(doc)
+        payload["restored_from_version_id"] = int(version_id)
+        return jsonify(payload)
+    finally:
+        db.close()
+
+
+from backend.analysis_pipeline.persistence import load_analysis_result as _load_analysis_result
+from backend.evidence.api.routes import create_evidence_blueprint
+
+app.register_blueprint(
+    create_evidence_blueprint(
+        SessionLocal=SessionLocal,
+        Project=Project,
+        UserFile=UserFile,
+        WritingDocument=WritingDocument,
+        EvidenceObject=EvidenceObject,
+        ClaimReview=ClaimReview,
+        WritingSentenceBinding=WritingSentenceBinding,
+        EvidenceExtractionRun=EvidenceExtractionRun,
+        AnalysisPipelineResult=AnalysisPipelineResult,
+        UploadJob=UploadJob,
+        OutboxEvent=OutboxEvent,
+        select=select,
+        login_required=login_required,
+        limiter=limiter,
+        load_analysis_result=_load_analysis_result,
+        enqueue_job=_enqueue_job,
+    )
+)
+
+
 # ------------------------------------------------------------------ API: citations
 def bibtex_entry(c):
     first_author = (c.authors or "anon").split(";")[0].split(",")[0].strip()
@@ -4991,6 +6125,56 @@ def get_citation(cid):
         if not c or c.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
         return jsonify(_citation_to_dict(c))
+    finally:
+        db.close()
+
+
+@app.route("/api/citations/<int:cid>/format", methods=["GET"])
+@login_required
+def scholarly_format_citation(cid):
+    """Crossref-verified formatted citation for a citation manager row.
+
+    GET /api/citations/<cid>/format?style=apa  (apa|ieee|bibtex|mla)
+    Returns {citation, source, verified}. Falls back to local AI-style
+    formatting when DOI is missing or Crossref is unavailable.
+    """
+    from backend.scholarly.crossref import format_citation as crossref_format
+
+    style = (request.args.get("style") or "apa").lower()
+    if style not in ("apa", "ieee", "bibtex", "mla"):
+        return jsonify({"error": "unsupported style"}), 400
+
+    db = SessionLocal()
+    try:
+        c = db.get(Citation, cid)
+        if not c or c.user_id != session["user_id"]:
+            return jsonify({"error": "not_found"}), 404
+
+        local = format_citation(c, style if style != "mla" else "apa")
+        doi = (c.doi or "").strip()
+        if not doi:
+            return jsonify({
+                "citation": local,
+                "source": "ai",
+                "verified": False,
+                "message": "No DOI — showing locally formatted citation.",
+            })
+
+        try:
+            result = crossref_format(doi, style, db)
+        except Exception as exc:
+            app.logger.warning("citation format Crossref failed cid=%s: %s", cid, exc)
+            result = None
+
+        if result and result.get("verified") and result.get("citation"):
+            return jsonify(result)
+
+        return jsonify({
+            "citation": local or (result or {}).get("citation") or "",
+            "source": "ai",
+            "verified": False,
+            "message": "Crossref unavailable — showing locally formatted citation.",
+        })
     finally:
         db.close()
 
@@ -5224,66 +6408,11 @@ def create_project():
 @app.route("/api/projects/<int:pid>", methods=["GET"])
 @login_required
 def get_project(pid):
-    """Full project detail with scoped counts (papers, chats, memories).
-
-    Used by the Project Detail Page to populate the overview without
-    requiring the frontend to aggregate from multiple list queries.
-    """
-    uid = session["user_id"]
-    db = SessionLocal()
-    try:
-        p = db.get(Project, pid)
-        if not p or p.user_id != uid:
-            return jsonify({"error": "not_found"}), 404
-
-        # Scoped counts
-        paper_count = (
-            db.execute(
-                select(UserFile).where(
-                    UserFile.user_id == uid,
-                    UserFile.project_id == pid,
-                    UserFile.kind == "document",
-                )
-            )
-            .scalars()
-            .all()
-        )
-
-        chat_count = (
-            db.execute(select(Conversation).where(Conversation.user_id == uid, Conversation.project_id == pid))
-            .scalars()
-            .all()
-        )
-
-        memory_count = db.execute(select(Memory).where(Memory.user_id == uid, Memory.project_id == pid)).scalars().all()
-
-        # Reading status breakdown for papers in this project
-        rs_counts = {"unread": 0, "reading": 0, "read": 0}
-        for f in paper_count:
-            rs = f.reading_status or "unread"
-            if rs in rs_counts:
-                rs_counts[rs] += 1
-
-        return jsonify(
-            {
-                "id": p.id,
-                "name": p.name,
-                "emoji": p.emoji,
-                "description": p.description or "",
-                "instructions": p.instructions or "",
-                "created_at": p.created_at.isoformat() if p.created_at else None,
-                "stats": {
-                    "papers": len(paper_count),
-                    "chats": len(chat_count),
-                    "memories": len(memory_count),
-                    "unread": rs_counts["unread"],
-                    "reading": rs_counts["reading"],
-                    "read": rs_counts["read"],
-                },
-            }
-        )
-    finally:
-        db.close()
+    """Project detail with scoped counts (legacy). Prefer GET …/hub for workspace."""
+    detail = project_service.get_detail(pid, session["user_id"])
+    if detail is None:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(detail)
 
 
 @app.route("/api/projects/<int:pid>", methods=["PATCH"])
@@ -5782,7 +6911,7 @@ def export_data():
         db.close()
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
-    base = f"personal-ai-export-{stamp}"
+    base = f"dhund-export-{stamp}"
     title = f"Chat export — {uinfo['name']}"
 
     if fmt == "json":
@@ -5863,7 +6992,7 @@ def delete_account():
 
 
 # ------------------------------------------------------------------ support
-SUPPORT_CATEGORIES = {"general", "bug", "feature", "account"}
+SUPPORT_CATEGORIES = {"general", "bug", "feature", "account", "beta"}
 
 
 def _valid_email(e):
@@ -5874,7 +7003,7 @@ def _valid_email(e):
 
 def _support_ack_html(ticket_id, subject, message):
     return (
-        f"<p>Thanks for reaching out to Personal AI. We've logged your "
+        f"<p>Thanks for reaching out to Dhund. We've logged your "
         f"message and will get back to you soon.</p>"
         f"<p><b>Ticket:</b> #{ticket_id}<br><b>Subject:</b> "
         f"{subject or '(none)'}</p><hr>"
@@ -5983,6 +7112,10 @@ def update_memory(mid):
         if not m or m.user_id != session["user_id"]:
             return jsonify({"error": "not_found"}), 404
         if "fact" in data:
+            # AI-generated research memories are immutable
+            src = getattr(m, "source", None) or "chat"
+            if src != "manual" and src != "chat":
+                return jsonify({"error": "immutable", "detail": "AI research memories cannot be edited."}), 400
             m.fact = str(data["fact"])[:1000]
         if "importance" in data:
             m.importance = max(1, min(5, int(data["importance"])))
@@ -6052,7 +7185,7 @@ def run_tool(name, args, user_id, project_id):
 
 @app.route("/api/chat", methods=["POST"])
 @login_required
-@limiter.limit("60 per minute")
+@limiter.limit("20 per minute")
 def chat():
     data = request.get_json(silent=True) or {}
     cid = data.get("conversation_id")
@@ -6061,6 +7194,21 @@ def chat():
     regenerate = bool(data.get("regenerate"))
     search_mode = data.get("search", "auto")
     user_id = session["user_id"]
+
+    # Unified AI gate: kill switch, verification, daily budget, quotas
+    from security.ops.gate import AiAccessDenied
+
+    try:
+        ai_gate.preflight(
+            user_id,
+            token_estimate=estimate_chat_tokens(user_message),
+            cost_estimate=0.01,
+        )
+    except AiAccessDenied as exc:
+        return (
+            jsonify({"error": exc.code, "detail": exc.message}),
+            exc.http_status,
+        )
 
     db = SessionLocal()
     try:
@@ -6078,6 +7226,13 @@ def chat():
                 user_id=user_id,
                 project_id=convo.project_id,
                 conversation_id=convo.id,
+            )
+            _ops_events.record(
+                "authz_denied",
+                user_id=user_id,
+                resource="project",
+                action="chat",
+                project_id=convo.project_id,
             )
             project = None
 
@@ -6135,18 +7290,25 @@ def chat():
         paper_file_id = convo.file_id  # M7: paper chat scope (may be None)
         paper_plan = None
         paper_pipeline_mode = "false"
+        paper_phase1_context = ""
 
         # M7: if this is a paper chat, use a focused system prompt and
         # hard-scope retrieval to the single paper.
+        # PromptBuilder assembles the legacy M7 system text (parity).
         # Stage 1: optional ai_core pipeline (PAPER_CHAT_PIPELINE_ENABLED).
         # Soak-safe: any plan failure falls back to legacy so shadow/true
-        # never take Paper Chat down.
+        # never take Paper Chat down. Phase 1 JSON is injected as a
+        # developer message (does not alter Stage 1 system-prompt hashes).
         if paper_file_id:
             paper = db.get(UserFile, paper_file_id)
             if paper and paper.user_id == user_id:
+                paper_phase1_context = _load_paper_phase1_context(db, paper_file_id)
                 try:
                     from backend.ai_core.paper_chat import resolve_paper_chat_system_prompt
 
+                    legacy_base, paper_phase1_context = build_paper_chat_system_prompt(
+                        user, paper, phase1_context=paper_phase1_context
+                    )
                     system_prompt, paper_plan, paper_pipeline_mode = resolve_paper_chat_system_prompt(
                         user_name=user.name,
                         paper_title=paper.title or paper.name,
@@ -6156,12 +7318,15 @@ def chat():
                         file_id=paper_file_id,
                         project_id=convo.project_id,
                         question=(user_message or "")[:500] or None,
+                        legacy_prompt=legacy_base,
                     )
                 except Exception:
                     logging.getLogger(__name__).exception(
                         "paper_chat_stage1_plan_failed; falling back to legacy"
                     )
-                    system_prompt = build_paper_chat_prompt(user, paper)
+                    system_prompt, paper_phase1_context = build_paper_chat_system_prompt(
+                        user, paper, phase1_context=paper_phase1_context
+                    )
                     paper_plan = None
                     paper_pipeline_mode = "false"
             else:
@@ -6201,6 +7366,23 @@ def chat():
                 (i for i, m in enumerate(input_items) if m["role"] == "user"),
                 default=None,
             )
+
+            # Optional Phase 1 structured context (before RAG) — grounds
+            # answers without replacing excerpt retrieval.
+            if paper_file_id and paper_phase1_context:
+                input_items.append(
+                    {
+                        "role": "developer",
+                        "content": (
+                            "Structured analysis of this paper (Phase 1 pipeline). "
+                            "Use it to orient your answer (domain, study design, "
+                            "entities, evidence). Still ground specific claims in "
+                            "the retrieved excerpts that follow — do not invent "
+                            "details that are only implied by this summary.\n\n"
+                            + paper_phase1_context
+                        ),
+                    }
+                )
 
             # M7: paper chat hard-scopes RAG to the single paper file
             excerpts = rag_retrieve(user_id, convo_id, project_id, last_query[:500], file_id=paper_file_id)
@@ -7575,5 +8757,5 @@ def spa(path):
 if __name__ == "__main__":
     # Railway/Render/Fly set PORT; local default stays 5000.
     port = int(os.environ.get("PORT", "5000"))
-    print(f"Personal AI running -> http://0.0.0.0:{port}")
+    print(f"Dhund running -> http://0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

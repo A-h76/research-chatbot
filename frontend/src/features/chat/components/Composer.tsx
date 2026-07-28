@@ -264,7 +264,7 @@ export function Composer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Message Soro…"
+          placeholder="Message Dhund…"
           className="max-h-50 w-full resize-none bg-transparent px-2.5 py-1.5 text-[0.95rem] outline-none placeholder:text-muted-foreground"
         />
         <div className="mt-1 flex flex-wrap items-center gap-1.5">

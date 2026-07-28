@@ -1,0 +1,31 @@
+{
+  "query": {
+    "intent": "answer_question",
+    "scope": {
+      "user_id": 1,
+      "project_id": 2,
+      "file_ids": null,
+      "document_id": null
+    },
+    "filters": {
+      "status": ["accepted"],
+      "confidence_bands": ["high", "moderate", "low"],
+      "study_types": [],
+      "require_page_anchor": true
+    },
+    "ranking_strategy": "default_v0",
+    "result_limit": 20,
+    "query_text": "Drug X reduces HbA1c",
+    "anchors": {
+      "block_id": "",
+      "selected_text": ""
+    }
+  },
+  "objects": [],
+  "total": 0,
+  "truncated": false,
+  "stage": "ranking",
+  "ranking_version": "1.0.0",
+  "ranking_strategy": "default_v0",
+  "retrieval_version": "1.0.0"
+}

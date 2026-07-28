@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,10 +14,12 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/common/Toast";
 import { LEGAL_LINKS } from "@/features/legal/content";
+import { useMe } from "@/features/profile/useMe";
 import { supportApi, type SupportCategory } from "./api";
 
 const CATEGORIES: { value: SupportCategory; label: string }[] = [
   { value: "general", label: "General question" },
+  { value: "beta", label: "Beta feedback" },
   { value: "bug", label: "Bug report" },
   { value: "feature", label: "Feature request" },
   { value: "account", label: "Account / data" },
@@ -31,12 +33,21 @@ const FAQ = [
 ];
 
 export function SupportPage() {
+  const { data: me } = useMe();
+  const [searchParams] = useSearchParams();
+  const initialCategory = (searchParams.get("category") as SupportCategory) || "general";
   const [email, setEmail] = useState("");
-  const [category, setCategory] = useState<SupportCategory>("general");
+  const [category, setCategory] = useState<SupportCategory>(
+    CATEGORIES.some((c) => c.value === initialCategory) ? initialCategory : "general",
+  );
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (me?.email && !email) setEmail(me.email);
+  }, [me?.email, email]);
 
   const submit = async () => {
     setBusy(true);
@@ -58,7 +69,7 @@ export function SupportPage() {
         <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-4">
           <Link to="/" className="flex items-center gap-2 text-sm font-medium">
             <span className="flex size-7 items-center justify-center rounded-full border border-border">✦</span>
-            Soro
+            Dhund
           </Link>
           <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="size-4" /> Back to app
@@ -138,7 +149,7 @@ export function SupportPage() {
           {LEGAL_LINKS.map((l) => (
             <Link key={l.to} to={l.to} className="hover:text-foreground">{l.label}</Link>
           ))}
-          <span className="ml-auto">© {new Date().getFullYear()} Soro</span>
+          <span className="ml-auto">© {new Date().getFullYear()} Dhund</span>
         </div>
       </footer>
     </div>

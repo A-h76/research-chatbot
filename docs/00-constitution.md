@@ -132,23 +132,56 @@ ordering, Redis's byte-vs-string key encoding) that a mock would have
 hidden. Keep both halves: fast unit tests for logic, real containers for
 integration — neither replaces the other.
 
+### 11. Evidence First — AI features consume the Evidence Layer
+
+**Binding (accepted ADR-0003).** All knowledge shown to users as research
+fact must originate from stored evidence objects. LLMs may organise,
+summarise, compare, and explain; they may never invent evidence. Every
+generated research statement must be reproducible from stored
+`EvidenceObject` rows (or an explicit “insufficient evidence” state).
+
+**Every new AI feature must consume the Evidence Layer rather than bypass
+it.** Literature review generation, peer-review assistance, gap analysis,
+research Q&A, and Writing Studio AI surfaces retrieve structured evidence
+first, then optionally use an LLM to organise or explain. Features that
+call a model with only raw PDF text / chat history and no evidence-object
+contract violate this principle and require an ADR that explicitly
+waives it.
+
+**Today:** Writing Shell (`v0.1.0`) and Phase 1.5/1.7 produce inputs, but
+the Evidence Layer MVP (objects, bindings, Inspector, explain API) is
+the Week 2 / Phase 2.2 work that closes the **platform** gap. Until that
+layer ships, new AI writing features that claim research backing are out
+of scope (see Phase 2.4 sequencing in `docs/phase-2-writing-roadmap.md`).
+
+**Research Intelligence (ADD-0005 / ADR-0004 / ADR-0006):** After the Evidence
+Layer exists, intelligent features follow one staged pipeline over Evidence
+Queries — Retrieval → Ranking → Consensus → Conflict → Reasoning →
+Presentation. RI never owns knowledge; it only computes over EvidenceObjects.
+See `docs/architecture/phase-2.3-research-intelligence-pipeline.md`.
+
+**Evidence Layer contracts (ADR-0005):** EvidenceObject, Explain API,
+sentence bindings, review workflow, provenance, and confidence bands are
+frozen platform contracts as of `v0.2.0-rc1`. Breaking changes require a
+new ADR. See `docs/architecture/week2-evidence-layer-platform-contracts.md`.
+
 ---
 
-## 11. What this document is not
+## 12. What this document is not
 
 Not a mandate to retrofit every existing module to satisfy every
 principle immediately. Principle 1 already governs how gaps named here
 get closed: with an ADR, deliberately, one at a time — not as a
 side-effect of the next unrelated task.
 
-## 12. Where ADRs live
+## 13. Where ADRs live
 
 `docs/adr/NNNN-title.md`, numbered sequentially, never renumbered or
 deleted once merged — a reversed decision gets a new ADR that supersedes
 the old one, which stays in place as the historical record of what was
 tried and why it changed.
 
-## 13. ADR template
+## 14. ADR template
 
 ```markdown
 # ADR-NNNN: <title>

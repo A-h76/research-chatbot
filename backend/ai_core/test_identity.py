@@ -57,7 +57,7 @@ def test_load_identity_aliases():
 
 def test_as_system_text_contains_all_layers_in_order():
     text = load_identity_pack().as_system_text()
-    assert text.startswith("# Soro Identity Doctrine")
+    assert text.startswith("# Dhund Identity Doctrine")
     positions = [text.index(f"## {title}") for _, _, title in IDENTITY_LAYERS]
     assert positions == sorted(positions)
     assert "High" in text and "Medium" in text and "Low" in text
@@ -65,7 +65,7 @@ def test_as_system_text_contains_all_layers_in_order():
 
 def test_as_system_text_without_preamble():
     text = load_identity_pack().as_system_text(include_preamble=False)
-    assert not text.startswith("# Soro Identity Doctrine")
+    assert not text.startswith("# Dhund Identity Doctrine")
     assert "## Identity" in text
 
 

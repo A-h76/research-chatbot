@@ -1,5 +1,6 @@
 .env
 *.db
+*.bak
 uploads/
 __pycache__/
 *.pyc

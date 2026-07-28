@@ -52,7 +52,7 @@ def test_prompt_router_uses_identity_loader_di():
     )
     assert plan.template_key == "reading"
     assert plan.intent is ResearchIntent.READING
-    assert "Soro Identity Doctrine" in plan.system_text
+    assert "Dhund Identity Doctrine" in plan.system_text
     assert "inflammation" in plan.context_text
     messages = plan.messages()
     assert messages[0]["role"] == "system"

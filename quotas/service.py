@@ -76,6 +76,8 @@ class QuotaService:
             reset_at = reset_at.replace(tzinfo=timezone.utc)
         if not reset_at or reset_at <= now:
             user.monthly_token_used = 0
+            if hasattr(user, "monthly_cost_used"):
+                user.monthly_cost_used = 0
             user.quota_reset_at = now + self.RESET_PERIOD
             db.commit()
 
@@ -180,6 +182,11 @@ class QuotaService:
                     "limit": token_limit,
                     "percent": (round(100 * token_used / token_limit, 2) if token_limit else 0.0),
                     "reset_at": (user.quota_reset_at.isoformat() if user.quota_reset_at else None),
+                },
+                "cost": {
+                    "used_usd": float(getattr(user, "monthly_cost_used", 0) or 0),
+                    "limit_usd": float(getattr(user, "monthly_cost_limit", 0) or 0),
+                    "plan": getattr(user, "plan", None) or "beta",
                 },
             }
         finally:

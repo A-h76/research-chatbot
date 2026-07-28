@@ -17,8 +17,12 @@ export function useCompare() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CompareInput) => analysisApi.compare(body),
-    onSuccess: (result) => {
+    onSuccess: (result, body) => {
       qc.setQueryData(queryKeys.comparison(result.id), result);
+      if (body.project_id != null) {
+        void qc.invalidateQueries({ queryKey: queryKeys.projectHub(body.project_id) });
+        void qc.invalidateQueries({ queryKey: ["projects", body.project_id, "insights"] });
+      }
     },
   });
 }
@@ -48,8 +52,12 @@ export function useFindGaps() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CompareInput) => analysisApi.findGaps(body),
-    onSuccess: (result) => {
+    onSuccess: (result, body) => {
       qc.setQueryData(queryKeys.gaps(result.id), result);
+      if (body.project_id != null) {
+        void qc.invalidateQueries({ queryKey: queryKeys.projectHub(body.project_id) });
+        void qc.invalidateQueries({ queryKey: ["projects", body.project_id, "insights"] });
+      }
     },
   });
 }

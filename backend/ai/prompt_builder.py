@@ -13,6 +13,11 @@ parity path (chat_system only, flat output, all memories, project
 ownership) used by /api/chat. That path does NOT use AssembledPrompt.final
 section headers and does NOT prepend the global system_prompt.
 
+Paper chat uses build_paper_chat_instructions() — legacy M7 system text
+parity via ``render_legacy_paper_chat_prompt``. Optional ``phase1_context``
+is returned separately on AssembledPrompt.rag so the route can inject it
+as a developer message without changing Stage 1 system-prompt hash parity.
+
 Security notes (mechanics are in build()'s own comments below):
 
 - The system prompt is always the first section in `final` — nothing
@@ -68,7 +73,7 @@ from typing import Optional
 # Same fallback as historical server._CHAT_SYSTEM_FALLBACK — single source
 # so registry misses never fail a chat request.
 CHAT_SYSTEM_FALLBACK = (
-    "You are Personal AI, a helpful assistant specialised in academic "
+    "You are Dhund, a helpful assistant specialised in academic "
     "research and thesis writing, but able to help with anything. "
     "Use markdown. Be precise with citations and honest about "
     "uncertainty. When you used web search results or document excerpts, "
@@ -153,17 +158,27 @@ class PromptBuilder:
 
         memory_text = ""
         if memory_enabled:
-            global_mems, proj_mems = self.memory_engine.get_chat_memories(
-                user_id, project_id=owned_project_id
+            global_mems, _legacy_proj = self.memory_engine.get_chat_memories(
+                user_id, project_id=None
             )
             if global_mems:
                 block = "Things you remember about the user:\n" + "\n".join(f"- {m}" for m in global_mems)
                 parts.append(block)
                 memory_text = block
-            if proj_mems:
-                block = "Things you remember in this project:\n" + "\n".join(f"- {m}" for m in proj_mems)
-                parts.append(block)
-                memory_text = f"{memory_text}\n\n{block}".strip() if memory_text else block
+
+            if owned_project_id is not None:
+                research_mem_block = self.build_project_memory_context(
+                    user_id=user_id,
+                    project_id=owned_project_id,
+                    light=False,
+                )
+                if research_mem_block:
+                    parts.append(research_mem_block)
+                    memory_text = (
+                        f"{memory_text}\n\n{research_mem_block}".strip()
+                        if memory_text
+                        else research_mem_block
+                    )
 
         flat = "\n\n".join(parts)
         return AssembledPrompt(
@@ -181,6 +196,126 @@ class PromptBuilder:
             domain_version_id=None,
             document_type=None,
         )
+
+    def build_paper_chat_instructions(
+        self,
+        *,
+        user_name: str,
+        paper_title: str,
+        authors: Optional[str] = None,
+        year=None,
+        venue: Optional[str] = None,
+        phase1_context: Optional[str] = None,
+        now: Optional[datetime] = None,
+    ) -> AssembledPrompt:
+        """Paper Chat system instructions — parity with M7 legacy prompt.
+
+        System text is always ``render_legacy_paper_chat_prompt`` (same as
+        Stage 1 ``LEGACY_PAPER_CHAT_PROMPT_VERSION``). When ``phase1_context``
+        is provided it is stored on ``AssembledPrompt.rag`` for the caller to
+        inject as a developer message — it is NOT appended to ``final``, so
+        Stage 1 shadow hash parity against the legacy system prompt is
+        preserved.
+        """
+        from backend.ai_core.prompts.legacy_paper_chat import render_legacy_paper_chat_prompt
+        from backend.ai_core.versions import LEGACY_PAPER_CHAT_PROMPT_VERSION
+
+        system = render_legacy_paper_chat_prompt(
+            user_name=user_name,
+            paper_title=paper_title,
+            authors=authors,
+            year=year,
+            venue=venue,
+            now=now,
+        )
+        phase1 = (phase1_context or "").strip()
+        return AssembledPrompt(
+            system=system,
+            persona="",
+            project_context="",
+            memory="",
+            rag=phase1,
+            task="",
+            output_schema="",
+            final=system,
+            prompt_version_id=None,
+            persona_id=None,
+            domain=None,
+            domain_version_id=None,
+            document_type=LEGACY_PAPER_CHAT_PROMPT_VERSION,
+        )
+
+    def build_project_memory_context(
+        self,
+        *,
+        user_id: int,
+        project_id: int,
+        light: bool = False,
+        max_chars: int = 4000,
+        kinds: Optional[list] = None,
+    ) -> str:
+        """Developer-context block of project research memories (Sprint C).
+
+        Never includes chat-extracted memories. light=True for research console.
+        """
+        rows = self.memory_engine.get_project_memory_context(
+            user_id,
+            project_id,
+            kinds=kinds,
+            max_chars=max_chars,
+            light=light,
+        )
+        if not rows:
+            return ""
+        lines = [
+            "=== Project Research Memory (developer context — not user text) ===",
+            "Durable findings from prior project research. Prefer these when relevant.",
+            "Do not invent memories that are not listed.",
+        ]
+        for m in rows:
+            kind = getattr(m, "kind", None) or "fact"
+            pin = " [pinned]" if getattr(m, "pinned", 0) else ""
+            lines.append(f"- ({kind}{pin}) {m.fact}")
+        return "\n".join(lines)
+
+    def build_project_research(
+        self,
+        *,
+        intent: str,
+        query: str,
+        papers_json: str,
+        memory_context: str = "",
+    ) -> str:
+        """Project-scoped cross-paper research prompt (Sprint B).
+
+        Renders the versioned ``project_research`` template from PromptRegistry.
+        ProjectResearchService supplies data; PromptBuilder owns composition.
+        Optional light memory_context is prepended as developer context.
+        """
+        from backend.projects.prompts import INTENT_LABELS, PROJECT_RESEARCH_PROMPT
+        from jinja2.sandbox import SandboxedEnvironment
+
+        variables = {
+            "intent_label": INTENT_LABELS.get(intent, intent),
+            "query": (query or "").strip(),
+            "papers_json": papers_json,
+        }
+        try:
+            text, _ = self.prompt_registry.get_prompt("project_research", variables=variables)
+        except ValueError:
+            env = SandboxedEnvironment()
+            text = env.from_string(PROJECT_RESEARCH_PROMPT).render(**variables)
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "project_research prompt fetch failed, using fallback", exc_info=True
+            )
+            env = SandboxedEnvironment()
+            text = env.from_string(PROJECT_RESEARCH_PROMPT).render(**variables)
+
+        mem = (memory_context or "").strip()
+        if mem:
+            return f"{mem}\n\n{text}"
+        return text
 
     def _chat_system_opening(self) -> tuple[str, Optional[int]]:
         try:

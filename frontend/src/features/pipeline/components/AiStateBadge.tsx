@@ -69,13 +69,4 @@ export function AiStateBadge({
   );
 }
 
-/** Tiny helper for upload-queue rows that only know a coarse M2 status. */
-export function aiStateFromUploadStatus(
-  status: "uploading" | "uploaded" | "failed",
-): AiStateResolved {
-  if (status === "uploading") return resolveAiState({ uploading: true });
-  if (status === "failed") return resolveAiState({ uploadFailed: true });
-  return resolveAiState({ metaStatus: "pending" }); // Uploaded → Queued until pipeline advances
-}
-
 export type { AiStateId, AiStateResolved };

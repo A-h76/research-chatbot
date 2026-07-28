@@ -34,8 +34,8 @@ export function ProjectsPage() {
 
   return (
     <PageContainer
-      title="Research Projects"
-      description="Each project has its own knowledge context — papers, chats, and memory stay isolated."
+      title="Projects"
+      description="Your research home — open a project to collect papers, track questions, and work with evidence."
       actions={
         <Button
           onClick={() => { setEditing(null); setDialogOpen(true); }}
@@ -47,8 +47,8 @@ export function ProjectsPage() {
       {projects.length === 0 ? (
         <EmptyState
           icon={<FolderKanban className="size-8" />}
-          title="No projects yet"
-          description="Create a project to keep related papers, chats, and instructions together — with its own isolated AI context."
+          title="Start your first research project"
+          description="Dhund is organised around projects, not individual PDFs. Create one to keep papers, questions, and insights together."
           action={
             <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
               <Plus className="size-4" /> Create first project

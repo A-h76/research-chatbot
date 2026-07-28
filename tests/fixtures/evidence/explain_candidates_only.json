@@ -1,0 +1,25 @@
+{
+  "status": "ok",
+  "sufficiency": "weak",
+  "sentence": { "block_id": "blk_c", "text": "Maybe supported." },
+  "evidence": [
+    {
+      "id": 77,
+      "status": "candidate",
+      "confidence_band": "low",
+      "claim": "Unreviewed claim",
+      "quote": "snippet",
+      "page": 1,
+      "section": "",
+      "file_id": 3,
+      "relation": "supports",
+      "study_type": "",
+      "study_quality": "",
+      "supports": [],
+      "contradicts": [],
+      "limitations": []
+    }
+  ],
+  "chain": [],
+  "warnings": ["Unreviewed candidates only"]
+}

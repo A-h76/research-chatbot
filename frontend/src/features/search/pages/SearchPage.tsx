@@ -15,35 +15,11 @@ import { useSearch, useAskAi } from "../useSearch";
 import { useUI }         from "@/context/UIContext";
 import { cn }            from "@/lib/utils";
 import type { SearchResult, UserFile } from "@/types/api";
-
-// ── Discover (OpenAlex) types ─────────────────────────────────────────────────
-interface OpenAlexWork {
-  id: string;
-  doi: string;
-  title: string;
-  authors: string;
-  year: number | null;
-  venue: string;
-  abstract: string;
-  citation_count: number;
-  open_access_url: string;
-  concepts: string[];
-  source: string;
-}
+import { discoverWorks, type OpenAlexWork } from "../discoverApi";
 
 interface DiscoverImportResult {
   already_exists: boolean;
   file: UserFile;
-}
-
-async function discoverWorks(query: string, page: number): Promise<{ results: OpenAlexWork[]; page: number }> {
-  const params = new URLSearchParams({ q: query, page: String(page), per_page: "15" });
-  const res = await fetch(`/api/discover?${params}`, { credentials: "include" });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || body.error || "discover_unavailable");
-  }
-  return res.json();
 }
 
 async function importDiscoverWork(

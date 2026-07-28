@@ -1,0 +1,49 @@
+{
+  "query": {
+    "intent": "answer_question",
+    "scope": {
+      "user_id": 1,
+      "project_id": 2,
+      "file_ids": null,
+      "document_id": 55
+    },
+    "filters": {
+      "status": ["accepted"],
+      "confidence_bands": ["high", "moderate", "low"],
+      "study_types": [],
+      "require_page_anchor": true
+    },
+    "ranking_strategy": "default_v0",
+    "result_limit": 20,
+    "query_text": "Drug X reduces HbA1c",
+    "anchors": {
+      "block_id": "blk_12",
+      "selected_text": ""
+    }
+  },
+  "objects": [],
+  "total": 0,
+  "truncated": false,
+  "stage": "reasoning",
+  "reasoning_version": "1.0.0",
+  "reasoning": {
+    "summary_code": "insufficient",
+    "sufficiency": "insufficient",
+    "steps": [
+      {"step": "retrieval", "detail": "intent=answer_question; returned 0 of 0 EvidenceObject(s)."},
+      {"step": "ranking", "detail": "strategy=default_v0; top_ids=[]."},
+      {"step": "consensus", "detail": "label=none; supporting=0; contradicting=0; neutral=0."},
+      {"step": "conflict", "detail": "has_conflict=false; no supporting×contradicting pairs."},
+      {"step": "conclusion", "code": "insufficient", "detail": "No EvidenceObjects available to reason over."}
+    ],
+    "evidence_ids": [],
+    "mediator_labels": []
+  },
+  "conflict": null,
+  "conflict_version": "1.0.0",
+  "consensus": null,
+  "consensus_version": "1.0.0",
+  "ranking_version": "1.0.0",
+  "ranking_strategy": "default_v0",
+  "retrieval_version": "1.0.0"
+}

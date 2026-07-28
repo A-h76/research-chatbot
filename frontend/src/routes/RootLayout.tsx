@@ -1,10 +1,18 @@
+import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { useMe } from "@/features/profile/useMe";
 import { AppShell } from "@/components/layout/AppShell";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { Button } from "@/components/ui/button";
 
 export function RootLayout() {
   const { data: me, isLoading, isError } = useMe();
+
+  useEffect(() => {
+    if (isLoading || me) return;
+    // Full navigation — /login is a Flask template route, not a React route.
+    window.location.replace("/login");
+  }, [isLoading, isError, me]);
 
   if (isLoading) {
     return (
@@ -15,15 +23,15 @@ export function RootLayout() {
     );
   }
   if (isError || !me) {
-    // SessionExpiredModal (App-level) handles 401; keep a calm shell while it opens.
     return (
       <div
-        className="flex h-screen items-center justify-center bg-background px-6 text-center"
+        className="flex h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center"
         role="status"
       >
-        <p className="text-[13px] text-muted-foreground">
-          Waiting for sign-in…
-        </p>
+        <p className="text-[13px] text-muted-foreground">Redirecting to sign in…</p>
+        <Button variant="outline" size="sm" onClick={() => { window.location.href = "/login"; }}>
+          Sign in
+        </Button>
       </div>
     );
   }

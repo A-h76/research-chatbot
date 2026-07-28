@@ -1,4 +1,4 @@
-"""Soro AI Core — the product brain.
+"""Dhund AI Core — the product brain.
 
 Sprint 1–3: identity, context, router, validator.
 Sprint 4: Phase 1 adapters + ``Phase1Retrieval``.

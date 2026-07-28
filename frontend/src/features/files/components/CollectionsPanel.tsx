@@ -1,0 +1,201 @@
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Folder, FolderPlus, Pencil, Trash2, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "@/components/common/Toast";
+import { cn } from "@/lib/utils";
+import { collectionsApi, type LibraryCollection } from "../collectionsApi";
+import { useLibraryCollections } from "../hooks/useLibraryCollections";
+
+export function CollectionsPanel({
+  activeId,
+  onSelect,
+}: {
+  activeId: number | null;
+  onSelect: (id: number | null) => void;
+}) {
+  const qc = useQueryClient();
+  const { data: collections = [], isLoading } = useLibraryCollections();
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+
+  const invalidate = () => void qc.invalidateQueries({ queryKey: ["library", "collections"] });
+
+  const createMut = useMutation({
+    mutationFn: (n: string) => collectionsApi.create({ name: n }),
+    onSuccess: (row) => {
+      invalidate();
+      setCreating(false);
+      setName("");
+      onSelect(row.id);
+      toast.success(`Created “${row.name}”`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const renameMut = useMutation({
+    mutationFn: ({ id, n }: { id: number; n: string }) => collectionsApi.update(id, { name: n }),
+    onSuccess: () => {
+      invalidate();
+      setEditingId(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => collectionsApi.remove(id),
+    onSuccess: (_d, id) => {
+      invalidate();
+      if (activeId === id) onSelect(null);
+      toast.success("Collection removed — papers stay in your library");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const roots = collections.filter((c) => !c.parent_id);
+  const childrenOf = (id: number) => collections.filter((c) => c.parent_id === id);
+
+  function renderRow(c: LibraryCollection, depth = 0) {
+    const active = activeId === c.id;
+    if (editingId === c.id) {
+      return (
+        <div key={c.id} className="flex items-center gap-1 px-1 py-0.5" style={{ paddingLeft: 8 + depth * 12 }}>
+          <Input
+            value={editName}
+            className="h-7 text-xs"
+            autoFocus
+            onChange={(e) => setEditName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && editName.trim()) renameMut.mutate({ id: c.id, n: editName.trim() });
+              if (e.key === "Escape") setEditingId(null);
+            }}
+          />
+          <Button
+            size="sm"
+            className="h-7 px-2 text-xs"
+            disabled={!editName.trim()}
+            onClick={() => renameMut.mutate({ id: c.id, n: editName.trim() })}
+          >
+            Save
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <div key={c.id}>
+        <div
+          className={cn(
+            "group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors",
+            active
+              ? "bg-sidebar-accent font-medium text-foreground"
+              : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+          )}
+          style={{ paddingLeft: 8 + depth * 12 }}
+        >
+          <button type="button" className="flex min-w-0 flex-1 items-center gap-1.5" onClick={() => onSelect(c.id)}>
+            <Folder className="size-3.5 shrink-0" />
+            <span className="truncate">{c.name}</span>
+            <span className="ml-auto shrink-0 tabular-nums text-[10px] opacity-70">{c.paper_count}</span>
+          </button>
+          <button
+            type="button"
+            className="hidden rounded p-0.5 hover:bg-muted group-hover:inline-flex"
+            aria-label="Rename"
+            onClick={() => {
+              setEditingId(c.id);
+              setEditName(c.name);
+            }}
+          >
+            <Pencil className="size-3" />
+          </button>
+          <button
+            type="button"
+            className="hidden rounded p-0.5 text-destructive hover:bg-muted group-hover:inline-flex"
+            aria-label="Delete collection"
+            onClick={() => {
+              if (window.confirm(`Remove collection “${c.name}”? Papers stay in your library.`)) {
+                deleteMut.mutate(c.id);
+              }
+            }}
+          >
+            <Trash2 className="size-3" />
+          </button>
+        </div>
+        {childrenOf(c.id).map((ch) => renderRow(ch, depth + 1))}
+      </div>
+    );
+  }
+
+  return (
+    <aside className="w-full shrink-0 rounded-xl border border-border bg-card/40 p-3 sm:w-52">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Collections
+        </h2>
+        <button
+          type="button"
+          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label="New collection"
+          onClick={() => setCreating(true)}
+        >
+          <FolderPlus className="size-3.5" />
+        </button>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onSelect(null)}
+        className={cn(
+          "mb-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[13px]",
+          activeId == null
+            ? "bg-sidebar-accent font-medium text-foreground"
+            : "text-muted-foreground hover:bg-muted/60",
+        )}
+      >
+        All papers
+      </button>
+
+      {isLoading ? (
+        <p className="px-2 text-xs text-muted-foreground">Loading…</p>
+      ) : (
+        <div className="space-y-0.5">{roots.map((c) => renderRow(c))}</div>
+      )}
+
+      {creating && (
+        <div className="mt-2 flex items-center gap-1">
+          <Input
+            value={name}
+            placeholder="Folder name"
+            className="h-7 text-xs"
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && name.trim()) createMut.mutate(name.trim());
+              if (e.key === "Escape") setCreating(false);
+            }}
+          />
+          <Button
+            size="sm"
+            className="h-7 px-2"
+            disabled={!name.trim() || createMut.isPending}
+            onClick={() => createMut.mutate(name.trim())}
+          >
+            Add
+          </Button>
+          <button type="button" className="p-1 text-muted-foreground" onClick={() => setCreating(false)}>
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+
+      {!isLoading && collections.length === 0 && !creating && (
+        <p className="mt-2 px-1 text-[11px] leading-relaxed text-muted-foreground">
+          Folders organise papers without copying them. Zotero imports create collections automatically.
+        </p>
+      )}
+    </aside>
+  );
+}

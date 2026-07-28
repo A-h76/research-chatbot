@@ -174,7 +174,7 @@ function LaunchpadSkeleton() {
   );
 }
 
-/** Home = research launchpad (not an analytics dashboard). */
+/** Launchpad = research activity overview (Projects are home at `/`). */
 export function DashboardPage() {
   const navigate = useNavigate();
   const { data, isLoading } = useDashboard();

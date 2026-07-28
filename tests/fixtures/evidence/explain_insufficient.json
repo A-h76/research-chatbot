@@ -1,0 +1,11 @@
+{
+  "status": "ok",
+  "sufficiency": "insufficient",
+  "sentence": {
+    "block_id": "blk_missing",
+    "text": "Unsupported claim."
+  },
+  "evidence": [],
+  "chain": [],
+  "warnings": []
+}

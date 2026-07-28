@@ -1,0 +1,29 @@
+{
+  "query": {
+    "intent": "support_sentence",
+    "scope": {
+      "user_id": 1,
+      "project_id": 2,
+      "file_ids": null,
+      "document_id": 55
+    },
+    "filters": {
+      "status": ["accepted"],
+      "confidence_bands": ["high", "moderate", "low"],
+      "study_types": [],
+      "require_page_anchor": true
+    },
+    "ranking_strategy": "default_v0",
+    "result_limit": 20,
+    "query_text": "Drug X reduces HbA1c in adults.",
+    "anchors": {
+      "block_id": "blk_12",
+      "selected_text": "Drug X reduces HbA1c in adults."
+    }
+  },
+  "objects": [],
+  "total": 0,
+  "truncated": false,
+  "stage": "retrieval",
+  "retrieval_version": "1.0.0"
+}

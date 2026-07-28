@@ -41,7 +41,7 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="space-y-2">
           <h1 className="text-lg font-semibold tracking-tight">Something went wrong</h1>
           <p className="max-w-md text-[13px] text-muted-foreground">
-            Soro hit an unexpected error in this view. Your library and projects are safe —
+            Dhund hit an unexpected error in this view. Your library and projects are safe —
             try reloading, or go home and continue from there.
           </p>
           {import.meta.env.DEV && (

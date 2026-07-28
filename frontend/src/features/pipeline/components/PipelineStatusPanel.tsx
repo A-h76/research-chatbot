@@ -1,5 +1,6 @@
 import { PipelineStepper } from "./PipelineStepper";
 import { resolveAiState } from "../aiState";
+import { isPipelineProcessing } from "../isPipelineProcessing";
 import type { PipelineDerived } from "../types";
 import { useState } from "react";
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
@@ -18,19 +19,6 @@ function formatProcessedAgo(iso: string | null | undefined): string | null {
   if (hrs < 48) return `${hrs} hours ago`;
   const days = Math.round(hrs / 24);
   return days === 1 ? "1 day ago" : `${days} days ago`;
-}
-
-export function isPipelineProcessing(
-  derived: PipelineDerived,
-  metaStatus?: string | null,
-): boolean {
-  return (
-    derived.isQueued ||
-    derived.isRunning ||
-    derived.isAbsent ||
-    metaStatus === "pending" ||
-    metaStatus === "running"
-  );
 }
 
 /**

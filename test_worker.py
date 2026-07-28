@@ -286,6 +286,86 @@ def test_paper_analysis_sets_failed_status_and_reraises_on_ai_error(db, uf, mock
 
 
 # ------------------------------------------------------------ HANDLERS registration
-def test_handlers_dict_includes_both():
+def test_handlers_dict_includes_pipeline_jobs():
     assert worker.HANDLERS["extract_metadata"] is worker._handle_extract_metadata
+    assert worker.HANDLERS["phase1_analysis"] is worker._handle_phase1_analysis
     assert worker.HANDLERS["paper_analysis"] is worker._handle_paper_analysis
+    assert worker.HANDLERS["import"] is worker._handle_import
+
+
+# ------------------------------------------------------------ queue-only wrappers (no daemon threads)
+def test_extract_metadata_enqueues_phase1_not_thread(db, uf, mocker):
+    """Legacy extract_metadata() must hit the queue, not spawn a thread."""
+    thread_spy = mocker.patch("server.threading.Thread")
+    with pytest.warns(DeprecationWarning, match="extract_metadata"):
+        server.extract_metadata(uf.id, "unused text", "abc123")
+
+    thread_spy.assert_not_called()
+    jobs = (
+        db.execute(
+            server.select(server.UploadJob).where(
+                server.UploadJob.file_id == uf.id,
+                server.UploadJob.job_type == "phase1_analysis",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(jobs) == 1
+    assert jobs[0].status == "pending"
+    events = (
+        db.execute(
+            server.select(server.OutboxEvent).where(server.OutboxEvent.aggregate_id == jobs[0].id)
+        )
+        .scalars()
+        .all()
+    )
+    assert len(events) == 1
+    assert events[0].event_type == "job.enqueued"
+
+
+def test_trigger_paper_analysis_enqueues_job_not_thread(db, uf, mocker):
+    thread_spy = mocker.patch("server.threading.Thread")
+    with pytest.warns(DeprecationWarning, match="trigger_paper_analysis"):
+        server.trigger_paper_analysis(uf.id, "unused", "hash1", sync=False)
+
+    thread_spy.assert_not_called()
+    jobs = (
+        db.execute(
+            server.select(server.UploadJob).where(
+                server.UploadJob.file_id == uf.id,
+                server.UploadJob.job_type == "paper_analysis",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(jobs) == 1
+    assert jobs[0].status == "pending"
+
+
+def test_process_document_fallback_enqueues_phase1(db, uf, tmp_path, mocker):
+    """When on_processed is omitted, follow-ups go through the queue."""
+    paper = tmp_path / "p.txt"
+    paper.write_text("This is a long enough academic paper abstract for chunking tests. " * 20)
+    mocker.patch("server.extract_text", return_value=paper.read_text())
+    mocker.patch("server.embed_texts", return_value=[[0.1, 0.2]] * 5)
+    mocker.patch("server.chunk_text", return_value=["chunk a", "chunk b"])
+    thread_spy = mocker.patch("server.threading.Thread")
+
+    note = server._process_document(db, uf, str(paper), "p.txt", "text/plain")
+
+    assert note is None
+    thread_spy.assert_not_called()
+    jobs = (
+        db.execute(
+            server.select(server.UploadJob).where(
+                server.UploadJob.file_id == uf.id,
+                server.UploadJob.job_type == "phase1_analysis",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(jobs) == 1
+    assert jobs[0].status == "pending"

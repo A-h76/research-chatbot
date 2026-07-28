@@ -15,6 +15,7 @@ avoids that entirely, and is a cleaner dependency direction anyway
 """
 
 import re
+from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request, session
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -35,6 +36,9 @@ def create_magic_link_blueprint(
     APP_BASE_URL,
     create_jwt,
     log_security_event,
+    signup_allowed_fn=None,
+    on_user_created=None,
+    record_last_login_fn=None,
 ):
     bp = Blueprint("magic_link", __name__, url_prefix="/auth/magic-link")
     serializer = URLSafeTimedSerializer(secret_key, salt="magic-link")
@@ -46,6 +50,14 @@ def create_magic_link_blueprint(
         data = request.get_json(silent=True) or {}
         return _normalize_email(data.get("email"))
 
+    def _may_sign_in(email: str) -> bool:
+        if signup_allowed_fn is not None:
+            ok, _reason = signup_allowed_fn(email)
+            return ok
+        if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+            return False
+        return True
+
     @bp.route("", methods=["POST"])
     @limiter.limit("3 per hour", key_func=_rate_limit_key)
     def request_magic_link():
@@ -56,9 +68,7 @@ def create_magic_link_blueprint(
 
         # Deliberately generic response regardless of whether the email is
         # actually allowed — confirming/denying via the response would let
-        # an attacker enumerate valid/allowlisted addresses. The allowlist
-        # check below controls whether an email is sent, not what the
-        # caller is told.
+        # an attacker enumerate valid/allowlisted addresses.
         generic_response = jsonify(
             {
                 "ok": True,
@@ -66,7 +76,7 @@ def create_magic_link_blueprint(
             }
         )
 
-        if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+        if not _may_sign_in(email):
             log_security_event("magic_link_denied", email=email)
             return generic_response
 
@@ -106,28 +116,38 @@ def create_magic_link_blueprint(
         if not email:
             return jsonify({"error": "invalid_token"}), 401
 
-        if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
-            # Re-checked here too: the allowlist could change between a
-            # link being sent and being clicked, and this is the point
-            # that actually grants access, not just sends an email.
+        if not _may_sign_in(email):
             log_security_event("magic_link_denied", email=email, stage="verify")
             return jsonify({"error": "not_allowed"}), 403
 
         db = SessionLocal()
         try:
             user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+            created = False
             if not user:
                 user = User(email=email, name=email, auth_provider="magic")
                 db.add(user)
-                db.commit()
+                created = True
+            user.email_verified = True
+            user.email_verified_at = getattr(user, "email_verified_at", None) or datetime.now(
+                timezone.utc
+            )
+            if not getattr(user, "status", None) or user.status == "pending_verification":
+                user.status = "active"
+            db.commit()
+            if created and on_user_created:
+                on_user_created(user, email)
 
             session["user_id"] = user.id
             session["user_email"] = user.email
+            session["session_version"] = int(getattr(user, "session_version", 0) or 0)
             access, refresh = create_jwt(user.id)
             session["jwt"] = {"access": access, "refresh": refresh}
             from security.session_ttl import mark_session_login
 
             mark_session_login(session)
+            if record_last_login_fn:
+                record_last_login_fn(user.id)
 
             return jsonify(
                 {
@@ -140,5 +160,4 @@ def create_magic_link_blueprint(
         finally:
             db.close()
 
-    bp._serializer = serializer  # exposed for tests only
     return bp

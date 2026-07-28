@@ -49,6 +49,8 @@ def create_cost_ledger_model(Base):
         completion_tokens = Column(Integer, default=0)
         total_tokens = Column(Integer, default=0)
         cost = Column(Float, default=0.0)
+        estimated_cost = Column(Float, nullable=True)
+        currency = Column(String(8), default="USD")
         created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
         # Closes the gap prompt-engine-audit.md §3 flagged: which prompt
         # version produced this call. Same cross-Base reasoning as
@@ -106,17 +108,24 @@ class CostLedger:
         cost,
         action="chat",
         prompt_version_id=None,
+        estimated_cost=None,
+        currency="USD",
     ):
-        db_session.add(
-            self._Model(
-                user_id=user_id,
-                model=model,
-                action=action,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
-                cost=cost,
-                prompt_version_id=prompt_version_id,
-            )
+        kwargs = dict(
+            user_id=user_id,
+            model=model,
+            action=action,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            cost=cost,
+            prompt_version_id=prompt_version_id,
         )
+        # Optional columns (migration 0025) — ignore if model lacks them
+        Model = self._Model
+        if hasattr(Model, "estimated_cost"):
+            kwargs["estimated_cost"] = estimated_cost
+        if hasattr(Model, "currency"):
+            kwargs["currency"] = currency
+        db_session.add(Model(**kwargs))
         db_session.commit()

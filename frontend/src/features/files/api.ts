@@ -90,6 +90,16 @@ export interface LibraryListParams {
   meta_status?: "pending" | "running" | "done" | "failed";
   tag?: string[];
   q?: string;
+  title?: string;
+  author?: string;
+  doi?: string;
+  year?: string;
+  year_from?: string;
+  year_to?: string;
+  venue?: string;
+  import_source?: "zotero" | "mendeley" | "bibtex" | "ris" | "discover" | "upload" | "import";
+  collection_id?: number | null;
+  recent_days?: number;
   sort?: "recent" | "title" | "authors" | "year" | "reading_status" | "size";
   order?: "asc" | "desc";
   limit?: number;
@@ -119,6 +129,13 @@ export interface LibraryStats {
   top_tags: LibraryTag[];
 }
 
+export interface LibraryFacets {
+  total: number;
+  reading_status: { unread: number; reading: number; read: number };
+  import_source: Record<string, number>;
+  years: { year: string; count: number }[];
+}
+
 function buildLibraryQuery(params: LibraryListParams): string {
   const p = new URLSearchParams();
   if (params.project_id != null) p.set("project_id", String(params.project_id));
@@ -126,6 +143,16 @@ function buildLibraryQuery(params: LibraryListParams): string {
   if (params.reading_status) p.set("reading_status", params.reading_status);
   if (params.meta_status)    p.set("meta_status", params.meta_status);
   if (params.q)              p.set("q", params.q);
+  if (params.title)          p.set("title", params.title);
+  if (params.author)         p.set("author", params.author);
+  if (params.doi)            p.set("doi", params.doi);
+  if (params.year)           p.set("year", params.year);
+  if (params.year_from)      p.set("year_from", params.year_from);
+  if (params.year_to)        p.set("year_to", params.year_to);
+  if (params.venue)          p.set("venue", params.venue);
+  if (params.import_source)  p.set("import_source", params.import_source);
+  if (params.collection_id != null) p.set("collection_id", String(params.collection_id));
+  if (params.recent_days != null) p.set("recent_days", String(params.recent_days));
   if (params.sort)           p.set("sort", params.sort);
   if (params.order)          p.set("order", params.order);
   if (params.limit != null)  p.set("limit", String(params.limit));
@@ -153,6 +180,11 @@ export const filesApi = {
   stats: (projectId?: number | null) => {
     const qs = projectId != null ? `?project_id=${projectId}` : "";
     return api.get<LibraryStats>(`/api/library/stats${qs}`);
+  },
+
+  facets: (projectId?: number | null) => {
+    const qs = projectId != null ? `?project_id=${projectId}` : "";
+    return api.get<LibraryFacets>(`/api/library/facets${qs}`);
   },
 
   // ── Single file ──

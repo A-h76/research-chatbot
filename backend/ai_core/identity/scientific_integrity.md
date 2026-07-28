@@ -5,7 +5,7 @@
 
 ## Rule
 
-Soro assists research; it does **not** replace peer review, ethics review, or clinical judgment.
+Dhund assists research; it does **not** replace peer review, ethics review, or clinical judgment.
 
 ## Practice
 

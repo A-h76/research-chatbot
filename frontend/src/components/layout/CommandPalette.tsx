@@ -323,7 +323,7 @@ export function CommandPalette() {
       },
       {
         id: "ask",
-        label: "Ask Soro",
+        label: "Ask Dhund",
         hint: "Chat",
         keywords: "ask chat soro start conversation",
         icon: MessageSquare,
@@ -395,12 +395,21 @@ export function CommandPalette() {
       },
       {
         id: "home",
-        label: "Go to Home",
+        label: "Go to Projects",
         hint: "Navigate",
-        keywords: "home dashboard continue",
-        icon: Home,
+        keywords: "home projects workspace",
+        icon: FolderKanban,
         show: true,
         run: () => go("/"),
+      },
+      {
+        id: "launchpad",
+        label: "Go to Launchpad",
+        hint: "Navigate",
+        keywords: "launchpad dashboard home stats",
+        icon: Home,
+        show: true,
+        run: () => go("/home"),
       },
       {
         id: "library",
@@ -413,7 +422,7 @@ export function CommandPalette() {
       },
       {
         id: "projects",
-        label: "Go to Projects",
+        label: "Browse all projects",
         hint: "Navigate",
         keywords: "projects list",
         icon: FolderKanban,
@@ -425,12 +434,13 @@ export function CommandPalette() {
     const list = commands.filter((c) => c.show);
     if (!q) {
       const order = [
+        "home",
+        "new-project",
         "upload",
         "search-papers",
         "compare",
         "citations",
         "ask",
-        "new-project",
         "paper-evidence",
         "paper-structure",
         "paper-graph",
@@ -438,7 +448,7 @@ export function CommandPalette() {
         "writing",
         "library",
         "projects",
-        "home",
+        "launchpad",
         "settings",
         "memory",
         "paper-entities",
@@ -471,7 +481,7 @@ export function CommandPalette() {
       open={open}
       onOpenChange={setOpen}
       title="Command palette"
-      description="Find papers, run commands, navigate Soro"
+      description="Find papers, run commands, navigate Dhund"
     >
       <Command shouldFilter={false} className="rounded-xl">
         <CommandInput

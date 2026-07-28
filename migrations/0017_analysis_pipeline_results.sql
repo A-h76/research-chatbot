@@ -18,5 +18,23 @@ CREATE TABLE IF NOT EXISTS analysis_pipeline_results (
 CREATE INDEX IF NOT EXISTS idx_analysis_pipeline_results_user
     ON analysis_pipeline_results(user_id);
 
--- Allow longer job_type values (phase1_analysis)
+-- Widen job_type for phase1_analysis. processing_metrics_daily (0009) depends
+-- on upload_jobs.job_type, so drop the matview first, alter, then recreate.
+DROP MATERIALIZED VIEW IF EXISTS processing_metrics_daily CASCADE;
+
 ALTER TABLE upload_jobs ALTER COLUMN job_type TYPE VARCHAR(40);
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS processing_metrics_daily AS
+SELECT
+    date_trunc('day', created_at)                      AS bucket_date,
+    job_type,
+    count(*)                                           AS jobs_count,
+    count(*) FILTER (WHERE status = 'done')             AS success_count,
+    count(*) FILTER (WHERE status = 'failed')            AS failure_count,
+    avg(extract(epoch FROM (finished_at - started_at)) * 1000)
+        FILTER (WHERE finished_at IS NOT NULL)          AS avg_duration_ms
+FROM upload_jobs
+GROUP BY 1, 2;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ix_processing_metrics_daily
+    ON processing_metrics_daily (bucket_date, job_type);

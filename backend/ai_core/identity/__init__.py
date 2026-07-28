@@ -1,4 +1,4 @@
-"""Soro identity doctrine.
+"""Dhund identity doctrine.
 
 Public API: ``IdentityLoader``, ``load_identity()`` / ``load_identity_pack()``.
 

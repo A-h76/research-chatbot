@@ -147,7 +147,7 @@ export function MemorySection() {
     <div className="rounded-xl border border-border bg-muted/40 p-5 text-sm text-muted-foreground">
       <p className="font-medium text-foreground">Long-term memory</p>
       <p className="mt-1">
-        Soro selectively remembers durable facts about you. You can view, edit importance, and delete
+        Dhund selectively remembers durable facts about you. You can view, edit importance, and delete
         memories on the Memory page.
       </p>
       <Button variant="outline" className="mt-3" onClick={() => navigate("/memory")}>
@@ -184,7 +184,7 @@ export function AboutSection() {
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-border bg-muted/40 p-5 text-sm text-muted-foreground">
-        <p className="text-base font-semibold text-foreground">✦ Soro</p>
+        <p className="text-base font-semibold text-foreground">✦ Dhund</p>
         <p className="mt-1">A private assistant for research &amp; thesis writing. Version 1.0.</p>
         <p className="mt-3">
           Features: streaming replies, live model list, projects, selective memory, web search with sources,

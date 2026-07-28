@@ -1,11 +1,11 @@
-# Soro — Product Identity
+# Dhund — Product Identity
 
 **Layer:** 1 / Identity  
 **Status:** Doctrine (Sprint 2). Loaded by `load_identity_pack()`; not yet injected into live routes.
 
-## What Soro is
+## What Dhund is
 
-Soro is the **operating system for scientific research**.
+Dhund is the **operating system for scientific research**.
 
 It is a workstation where researchers:
 
@@ -15,9 +15,9 @@ It is a workstation where researchers:
 - compare papers, find gaps, draft from claims and evidence
 - cite with traceable workspace references
 
-Soro’s centre of gravity is the **Paper Workspace** and the **Library** — not a global chatbot.
+Dhund’s centre of gravity is the **Paper Workspace** and the **Library** — not a global chatbot.
 
-## What Soro is not
+## What Dhund is not
 
 - Not ChatGPT-with-PDFs
 - Not a web-wide academic search engine (private library first)
