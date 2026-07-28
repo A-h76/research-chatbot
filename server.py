@@ -1022,6 +1022,86 @@ class WritingDocumentActivity(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class EvidenceObject(Base):
+    """Canonical Evidence Layer row (Week 2 / Phase 2.2). Soft FKs to files/projects."""
+
+    __tablename__ = "evidence_objects"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    project_id = Column(Integer, nullable=False)
+    file_id = Column(Integer, nullable=False)
+    page = Column(Integer, nullable=True)
+    char_start = Column(Integer, nullable=True)
+    char_end = Column(Integer, nullable=True)
+    section = Column(String(200), default="")
+    quote = Column(Text, nullable=False, default="")
+    claim = Column(Text, nullable=False, default="")
+    study_type = Column(String(80), default="")
+    study_quality = Column(String(40), default="")
+    supports_json = Column(Text, default="[]")
+    contradicts_json = Column(Text, default="[]")
+    limitations_json = Column(Text, default="[]")
+    confidence_band = Column(String(20), default="low")
+    status = Column(String(20), default="candidate")
+    pipeline_version = Column(String(40), nullable=False, default="2.2.0")
+    created_by = Column(String(80), default="analysis-pipeline")
+    content_hash = Column(String(64), nullable=False, default="")
+    supersedes_id = Column(Integer, nullable=True)
+    provenance_json = Column(Text, default="{}")
+    source_kg_node_id = Column(String(120), default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class ClaimReview(Base):
+    __tablename__ = "claim_reviews"
+    id = Column(Integer, primary_key=True)
+    evidence_object_id = Column(Integer, nullable=False)
+    user_id = Column(Integer, nullable=False)
+    project_id = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False)
+    reason = Column(Text, default="")
+    edited_claim = Column(Text, nullable=True)
+    edited_quote = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class WritingSentenceBinding(Base):
+    __tablename__ = "writing_sentence_bindings"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    project_id = Column(Integer, nullable=False)
+    document_id = Column(Integer, nullable=False)
+    evidence_object_id = Column(Integer, nullable=False)
+    block_id = Column(String(120), default="")
+    range_start = Column(Integer, nullable=True)
+    range_end = Column(Integer, nullable=True)
+    selected_text = Column(Text, default="")
+    relation = Column(String(20), default="supports")
+    created_by = Column(String(40), default="user")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class EvidenceExtractionRun(Base):
+    __tablename__ = "evidence_extraction_runs"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    project_id = Column(Integer, nullable=False)
+    file_id = Column(Integer, nullable=False)
+    pipeline_version = Column(String(40), nullable=False)
+    input_content_hash = Column(String(64), nullable=False)
+    status = Column(String(20), default="queued")
+    objects_created = Column(Integer, default=0)
+    error_json = Column(Text, default="{}")
+    job_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    finished_at = Column(DateTime, nullable=True)
+
+
 class ProjectQuestion(Base):
     """Research question scoped to a project (Sprint A).
 
@@ -5825,6 +5905,31 @@ def restore_writing_document_version(doc_id):
         return jsonify(payload)
     finally:
         db.close()
+
+
+from backend.analysis_pipeline.persistence import load_analysis_result as _load_analysis_result
+from backend.evidence.api.routes import create_evidence_blueprint
+
+app.register_blueprint(
+    create_evidence_blueprint(
+        SessionLocal=SessionLocal,
+        Project=Project,
+        UserFile=UserFile,
+        WritingDocument=WritingDocument,
+        EvidenceObject=EvidenceObject,
+        ClaimReview=ClaimReview,
+        WritingSentenceBinding=WritingSentenceBinding,
+        EvidenceExtractionRun=EvidenceExtractionRun,
+        AnalysisPipelineResult=AnalysisPipelineResult,
+        UploadJob=UploadJob,
+        OutboxEvent=OutboxEvent,
+        select=select,
+        login_required=login_required,
+        limiter=limiter,
+        load_analysis_result=_load_analysis_result,
+        enqueue_job=_enqueue_job,
+    )
+)
 
 
 # ------------------------------------------------------------------ API: citations

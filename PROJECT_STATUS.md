@@ -3,7 +3,7 @@
 **Document type:** Engineering architecture audit (source of truth for development)  
 **Audience:** Staff / senior engineers taking ownership of this codebase  
 **Audit date:** 2026-07-26  
-**Last updated:** 2026-07-28 (Writing Studio Shell **v0.1.0**; Week 1.1 hardening **Complete** — lint, sustained load, runtime a11y, compat matrix; next: Week 2 Evidence Engine)  
+**Last updated:** 2026-07-28 (Writing Studio Shell **v0.1.0** + Week 1.1 **Complete**; Week 2 Evidence Layer **design frozen** — ADD/ADR-0003/Principle 11 + migration `0033` + `backend/evidence/` scaffold; implementation board Planned)  
 **Method:** Codebase inspection — features described as Implemented must exist in code; planned-only design docs are called out explicitly  
 
 **Branding note (inconsistency):** Product marketed as **Dhund** (Research OS). Code/docs still mix **Personal AI** (README, login), **Soro** (`frontend/index.html`, Design System v2), **Research Workspace** (`templates/login.html`), and **ResearchOS** (CI, `brain.md`, systemd). Same application, not forks. Prefer **Dhund** in new user-facing copy.
@@ -32,9 +32,11 @@ The core loop works: authenticate, chat (streaming), upload/import papers, run a
 
 **Product Phase 2.1 / Week 1 (Writing Studio Shell) is Released (2026-07-28) as git tags `v0.1.0-rc1` → `v0.1.0`.** Project-scoped documents, optimistic-lock autosave with idempotency, version history/restore, lifecycle (draft→active→archived→deleted), Stage 4 contract/security/reliability/perf-smoke/a11y-structural gates verified. **No AI writing in this milestone.** Canonical: `docs/architecture/week1-*.md`, `docs/architecture/week1-release-decision.md`.
 
-**Next parallel tracks:**
-- **Week 1.1 — Release Hardening** (non-blocking): lint cleanup, sustained load, runtime a11y, broader browser checks — `docs/architecture/week1.1-release-hardening.md`
-- **Week 2 / Phase 2.2 — Evidence Engine** (differentiator): retrieve, structure, and reason over research evidence — not unsupported AI generation
+**Week 1.1 — Release Hardening:** Complete (`v0.1.1` path) — lint, sustained load, runtime a11y, compat matrix.
+
+**Week 2 / Phase 2.2 — Evidence Layer:** **CLOSED.** RC **`v0.2.0-rc1`** tagged (2026-07-28). Postgres staging migration `0033` applied; staging smoke + 36 regression tests green. Platform contracts frozen (ADR-0005).
+
+**Phase 2.3 — Research Intelligence:** **OPEN** at Sprint 0 (Evidence Query contract) → Retrieval. One pipeline (ADR-0006). RI never owns knowledge. See `docs/architecture/phase-2.3-research-intelligence-pipeline.md`.
 
 **Phase 2.0 validation kit** remains frozen (`docs/phase-2.0-*.md`); researcher invites stay gated until Evidence Layer (2.2) lands on the writing shell.
 
@@ -51,9 +53,9 @@ It is **not** public multi-tenant SaaS-hardened: dual stacks (chat vs Prompt Eng
 | Backend docstring | `server.py` header: “Personal AI — … (Phase 1)” |
 | Phase-1 pipeline packages | Each declares `PIPELINE_VERSION = "1.0.0"` / `SCHEMA_VERSION = "1.0.0"` internally |
 | Integration layer | `backend/analysis_pipeline` → `PIPELINE_VERSION = "2.0.0"` |
-| Schema migrations | `migrations/0001` … **`0032`** (`0031` Writing Studio tables; `0032` autosave idempotency key) |
+| Schema migrations | `migrations/0001` … **`0033`** (`0031`/`0032` Writing; **`0033` Evidence Layer** — designed, apply during BE-A) |
 
-Treat product release **`v0.1.0`** as the Writing Studio Shell baseline, with additive Postgres migrations through **0032**, analysis-pipeline libraries at **1.0.0**, and analysis integration at **2.0.0**.
+Treat product release **`v0.1.0`** as the Writing Studio Shell baseline, with Evidence Layer schema designed in **0033** (not yet wired into `server.py` models), analysis-pipeline libraries at **1.0.0**, and analysis integration at **2.0.0**.
 
 ## Overall architecture
 

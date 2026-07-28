@@ -384,11 +384,67 @@ def _handle_paper_analysis(db, job):
         raise  # let run_job()'s own try/except apply retry/backoff
 
 
+def _handle_evidence_extract(db, job):
+    """Project Phase 1 outputs into candidate EvidenceObjects (Week 2)."""
+    from backend.analysis_pipeline.persistence import load_analysis_result
+    from backend.evidence.services.extract_service import run_evidence_extraction
+
+    # Prefer project_id from outbox payload; fall back to file.project_id
+    project_id = None
+    force = False
+    already_applied = False
+    events = (
+        db.execute(
+            select(OutboxEvent).where(
+                OutboxEvent.aggregate_type == "upload_job",
+                OutboxEvent.aggregate_id == job.id,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for ev in events:
+        try:
+            payload = json.loads(ev.payload or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        if payload.get("project_id") is not None:
+            project_id = int(payload["project_id"])
+        force = bool(payload.get("force")) or force
+        already_applied = bool(payload.get("already_applied")) or already_applied
+
+    if already_applied and not force:
+        return
+
+    uf = db.get(UserFile, job.file_id)
+    if not uf:
+        raise RuntimeError(f"file {job.file_id} no longer exists")
+    if project_id is None:
+        if uf.project_id is None:
+            raise RuntimeError("evidence_extract requires project_id")
+        project_id = int(uf.project_id)
+
+    run_evidence_extraction(
+        db,
+        user_id=job.user_id,
+        project_id=project_id,
+        file_id=job.file_id,
+        UserFile=UserFile,
+        AnalysisPipelineResult=AnalysisPipelineResult,
+        EvidenceObject=server.EvidenceObject,
+        EvidenceExtractionRun=server.EvidenceExtractionRun,
+        load_analysis_result=load_analysis_result,
+        force=force,
+        job_id=job.id,
+    )
+
+
 HANDLERS = {
     "import": _handle_import,
     "extract_metadata": _handle_extract_metadata,
     "phase1_analysis": _handle_phase1_analysis,
     "paper_analysis": _handle_paper_analysis,
+    "evidence_extract": _handle_evidence_extract,
 }
 
 

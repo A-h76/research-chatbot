@@ -21,6 +21,10 @@ import { toast } from "@/components/common/Toast";
 import { cn } from "@/lib/utils";
 import type { WritingAction } from "@/types/api";
 import { trackWritingEvent } from "../utils/telemetry";
+import { EvidenceInspectorPanel } from "@/features/evidence/components/EvidenceInspectorPanel";
+import { useEvidenceExplain } from "@/features/evidence/hooks/useEvidenceExplain";
+import { evidenceApi } from "@/features/evidence/api";
+import type { EvidenceObjectDTO } from "@/features/evidence/types";
 
 const ACTIONS: { key: WritingAction; label: string; icon: React.ReactNode; desc: string }[] = [
   { key: "rewrite_academic", label: "Academic", icon: <GraduationCap className="size-3.5" />, desc: "Formal academic register" },
@@ -64,6 +68,17 @@ function DraftTab() {
   const [lifecycleView, setLifecycleView] = useState<"active" | "archived" | "deleted">("active");
   const retryTimeoutRef = useRef<number | null>(null);
   const [isOffline, setIsOffline] = useState<boolean>(!window.navigator.onLine);
+  const [selectedText, setSelectedText] = useState("");
+  const [evidenceRefresh, setEvidenceRefresh] = useState(0);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const evidenceExplain = useEvidenceExplain({
+    documentId: activeId,
+    projectId: currentProjectId,
+    selectedText,
+    enabled: activeId != null && currentProjectId != null,
+    refreshKey: evidenceRefresh,
+  });
 
   const docsQuery = useQuery({
     queryKey: ["writing", "documents", currentProjectId ?? "all", lifecycleView],
@@ -444,7 +459,7 @@ function DraftTab() {
         </span>
       </div>
 
-      <div className="grid min-h-0 gap-3 lg:grid-cols-[1fr_1fr_260px]">
+      <div className="grid min-h-0 gap-3 lg:grid-cols-[1fr_1fr_220px_280px]">
         <div className="flex min-h-0 flex-col gap-1.5">
           <div className="flex items-center justify-between">
             <input
@@ -458,8 +473,23 @@ function DraftTab() {
             )}
           </div>
           <textarea
+            ref={editorRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onSelect={() => {
+              const el = editorRef.current;
+              if (!el) return;
+              const start = el.selectionStart ?? 0;
+              const end = el.selectionEnd ?? 0;
+              if (end > start) setSelectedText(el.value.slice(start, end));
+            }}
+            onMouseUp={() => {
+              const el = editorRef.current;
+              if (!el) return;
+              const start = el.selectionStart ?? 0;
+              const end = el.selectionEnd ?? 0;
+              if (end > start) setSelectedText(el.value.slice(start, end));
+            }}
             placeholder="Paste a paragraph, section, or abstract…"
             rows={16}
             aria-label="Writing draft editor"
@@ -552,6 +582,15 @@ function DraftTab() {
             )}
           </div>
         </div>
+
+        <EvidenceInspectorPanel
+          result={evidenceExplain.result}
+          status={evidenceExplain.status}
+          stickyText={selectedText}
+          documentId={activeId}
+          projectId={currentProjectId}
+          onBound={() => setEvidenceRefresh((n) => n + 1)}
+        />
       </div>
     </div>
   );
