@@ -14,6 +14,10 @@ Audience: Staff / principal engineers implementing Phase 2.3
 | 1 | Evidence Retrieval | Next |
 | 2–6 | Ranking → … → Writing Intelligence | Planned |
 
+---
+
+## 1) Three architectural eras (clean boundaries)
+
 ```text
 Phase 1 — Research Analysis
   PDF → Document Understanding → Knowledge Graph
