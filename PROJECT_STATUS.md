@@ -40,12 +40,13 @@ This root file is a **pointer only**. The former mega-audit was split so status 
 Analysis → Evidence Platform (frozen) → Research Intelligence
 ```
 
-## Architecture principles (5)
+## Architecture principles (5 → 6)
 
 1. Evidence First  
 2. Research Intelligence computes over evidence  
 3. Research Intelligence never owns knowledge  
 4. Platform contracts are append-only  
 5. All AI research features consume Evidence Query  
+6. No layer may bypass the one beneath it without an ADR  
 
-Full detail: [Dhund-Flow/PROJECT_STATUS.md](Dhund-Flow/PROJECT_STATUS.md)
+Full detail: [Dhund-Flow/PROJECT_STATUS.md](Dhund-Flow/PROJECT_STATUS.md) · Model Router: [SYSTEM_ARCHITECTURE.md](Dhund-Flow/SYSTEM_ARCHITECTURE.md#4-model-router-capability-not-provider)
