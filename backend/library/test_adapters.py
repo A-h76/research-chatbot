@@ -96,8 +96,15 @@ def test_mendeley_parse_document():
 
 
 def test_mendeley_adapter_configured_without_env(monkeypatch):
-    monkeypatch.delenv("MENDELEY_CLIENT_ID", raising=False)
-    monkeypatch.delenv("MENDELEY_CLIENT_SECRET", raising=False)
+    for name in (
+        "MENDELEY_CLIENT_ID",
+        "MENDELEY_CLIENT_SECRET",
+        "MENDELEY_APP_ID",
+        "MENDELEY_APP_SECRET",
+        "MENDELEY_ID",
+        "MENDELEY_SECRET",
+    ):
+        monkeypatch.delenv(name, raising=False)
     adapter = get_adapter("mendeley")
     assert isinstance(adapter, ImportAdapter)
     assert adapter.configured() is False
@@ -105,7 +112,33 @@ def test_mendeley_adapter_configured_without_env(monkeypatch):
 
 
 def test_zotero_adapter_configured_without_env(monkeypatch):
-    monkeypatch.delenv("ZOTERO_CLIENT_KEY", raising=False)
-    monkeypatch.delenv("ZOTERO_CLIENT_SECRET", raising=False)
+    for name in (
+        "ZOTERO_CLIENT_KEY",
+        "ZOTERO_CLIENT_SECRET",
+        "ZOTERO_CLIENT_ID",
+        "ZOTERO_API_KEY",
+        "ZOTERO_API_SECRET",
+    ):
+        monkeypatch.delenv(name, raising=False)
     adapter = get_adapter("zotero")
     assert adapter.configured() is False
+
+
+def test_zotero_configured_accepts_client_id_alias(monkeypatch):
+    monkeypatch.delenv("ZOTERO_CLIENT_KEY", raising=False)
+    monkeypatch.delenv("ZOTERO_API_KEY", raising=False)
+    monkeypatch.setenv("ZOTERO_CLIENT_ID", "alias-key")
+    monkeypatch.setenv("ZOTERO_CLIENT_SECRET", "alias-secret")
+    from backend.library import zotero as zotero_mod
+
+    assert zotero_mod.zotero_configured() is True
+    assert zotero_mod.zotero_missing_env() == []
+
+
+def test_mendeley_configured_strips_quotes(monkeypatch):
+    monkeypatch.setenv("MENDELEY_CLIENT_ID", '"abcde"')
+    monkeypatch.setenv("MENDELEY_CLIENT_SECRET", "'secret-value-16'")
+    from backend.library import mendeley as mendeley_mod
+
+    assert mendeley_mod.mendeley_configured() is True
+    assert mendeley_mod._client_creds()[0] == "abcde"

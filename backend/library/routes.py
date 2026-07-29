@@ -196,6 +196,7 @@ def create_library_bridge_blueprint(
                         "external_user_id": (z.external_user_id if z else "") or "",
                         "last_synced_at": z.last_synced_at.isoformat() if z and z.last_synced_at else None,
                         "incremental_sync": True,
+                        "missing_env": zotero_mod.zotero_missing_env(),
                     },
                     "mendeley": {
                         "available": mendeley_mod.mendeley_configured(),
@@ -205,6 +206,7 @@ def create_library_bridge_blueprint(
                         "external_user_id": (m.external_user_id if m else "") or "",
                         "last_synced_at": m.last_synced_at.isoformat() if m and m.last_synced_at else None,
                         "incremental_sync": True,
+                        "missing_env": mendeley_mod.mendeley_missing_env(),
                     },
                     "formats": ["bibtex", "ris"],
                     "adapters": ["bibtex", "ris", "zotero", "mendeley", "openalex"],

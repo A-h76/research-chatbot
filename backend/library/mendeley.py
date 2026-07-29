@@ -21,18 +21,38 @@ MENDELEY_AUTHORIZE_URL = "https://api.mendeley.com/oauth/authorize"
 MENDELEY_TOKEN_URL = "https://api.mendeley.com/oauth/token"
 MENDELEY_API = "https://api.mendeley.com"
 
+_MENDELEY_ID_NAMES = ("MENDELEY_CLIENT_ID", "MENDELEY_APP_ID", "MENDELEY_ID")
+_MENDELEY_SECRET_NAMES = ("MENDELEY_CLIENT_SECRET", "MENDELEY_APP_SECRET", "MENDELEY_SECRET")
+
+
+def _env_first(*names: str) -> str:
+    for name in names:
+        raw = os.environ.get(name)
+        if raw is None:
+            continue
+        val = str(raw).strip().strip('"').strip("'").strip()
+        if val:
+            return val
+    return ""
+
 
 def mendeley_configured() -> bool:
-    return bool(
-        (os.environ.get("MENDELEY_CLIENT_ID") or "").strip()
-        and (os.environ.get("MENDELEY_CLIENT_SECRET") or "").strip()
-    )
+    return bool(_env_first(*_MENDELEY_ID_NAMES) and _env_first(*_MENDELEY_SECRET_NAMES))
+
+
+def mendeley_missing_env() -> list[str]:
+    missing: list[str] = []
+    if not _env_first(*_MENDELEY_ID_NAMES):
+        missing.append("MENDELEY_CLIENT_ID")
+    if not _env_first(*_MENDELEY_SECRET_NAMES):
+        missing.append("MENDELEY_CLIENT_SECRET")
+    return missing
 
 
 def _client_creds() -> tuple[str, str]:
     return (
-        (os.environ.get("MENDELEY_CLIENT_ID") or "").strip(),
-        (os.environ.get("MENDELEY_CLIENT_SECRET") or "").strip(),
+        _env_first(*_MENDELEY_ID_NAMES),
+        _env_first(*_MENDELEY_SECRET_NAMES),
     )
 
 

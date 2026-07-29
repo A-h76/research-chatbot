@@ -10,6 +10,7 @@ export interface LibraryConnections {
     external_user_id: string;
     last_synced_at?: string | null;
     incremental_sync?: boolean;
+    missing_env?: string[];
   };
   mendeley: {
     available: boolean;
@@ -19,6 +20,7 @@ export interface LibraryConnections {
     external_user_id?: string;
     last_synced_at?: string | null;
     incremental_sync?: boolean;
+    missing_env?: string[];
   };
   formats: string[];
   adapters?: string[];

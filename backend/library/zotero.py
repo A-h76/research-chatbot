@@ -19,18 +19,42 @@ ZOTERO_AUTHORIZE_URL = "https://www.zotero.org/oauth/authorize"
 ZOTERO_ACCESS_TOKEN_URL = "https://www.zotero.org/oauth/access"
 ZOTERO_API = "https://api.zotero.org"
 
+# Primary names match https://www.zotero.org/oauth/apps (“Client Key / Secret”).
+# Aliases cover common paste mistakes from other Zotero API docs.
+_ZOTERO_KEY_NAMES = ("ZOTERO_CLIENT_KEY", "ZOTERO_CLIENT_ID", "ZOTERO_API_KEY")
+_ZOTERO_SECRET_NAMES = ("ZOTERO_CLIENT_SECRET", "ZOTERO_API_SECRET")
+
+
+def _env_first(*names: str) -> str:
+    """First non-empty env value; strips whitespace and wrapping quotes."""
+    for name in names:
+        raw = os.environ.get(name)
+        if raw is None:
+            continue
+        val = str(raw).strip().strip('"').strip("'").strip()
+        if val:
+            return val
+    return ""
+
 
 def zotero_configured() -> bool:
-    return bool(
-        (os.environ.get("ZOTERO_CLIENT_KEY") or "").strip()
-        and (os.environ.get("ZOTERO_CLIENT_SECRET") or "").strip()
-    )
+    return bool(_env_first(*_ZOTERO_KEY_NAMES) and _env_first(*_ZOTERO_SECRET_NAMES))
+
+
+def zotero_missing_env() -> list[str]:
+    """Which primary env vars are empty (for UI / ops; never returns secrets)."""
+    missing: list[str] = []
+    if not _env_first(*_ZOTERO_KEY_NAMES):
+        missing.append("ZOTERO_CLIENT_KEY")
+    if not _env_first(*_ZOTERO_SECRET_NAMES):
+        missing.append("ZOTERO_CLIENT_SECRET")
+    return missing
 
 
 def _client_creds() -> tuple[str, str]:
     return (
-        (os.environ.get("ZOTERO_CLIENT_KEY") or "").strip(),
-        (os.environ.get("ZOTERO_CLIENT_SECRET") or "").strip(),
+        _env_first(*_ZOTERO_KEY_NAMES),
+        _env_first(*_ZOTERO_SECRET_NAMES),
     )
 
 

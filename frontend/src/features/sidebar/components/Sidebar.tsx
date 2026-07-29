@@ -16,10 +16,11 @@ import {
   Quote,
   StickyNote,
   GitCompare,
-  Link2,
   PenLine,
+  Upload,
 } from "lucide-react";
 import { AccountMenu } from "./AccountMenu";
+import { MendeleyIcon, ZoteroIcon } from "./BrandIcons";
 import { useUI } from "@/context/UIContext";
 import { useFiles } from "@/features/files/useFiles";
 import { cn } from "@/lib/utils";
@@ -31,12 +32,14 @@ function NavItem({
   active,
   onClick,
   muted,
+  nested,
 }: {
   icon: React.ReactNode;
   label: string;
   active?: boolean;
   onClick: () => void;
   muted?: boolean;
+  nested?: boolean;
 }) {
   return (
     <button
@@ -44,6 +47,7 @@ function NavItem({
       onClick={onClick}
       className={cn(
         "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors",
+        nested && "py-1.5 pl-2",
         active
           ? "bg-sidebar-accent font-medium text-foreground"
           : "text-sidebar-foreground hover:bg-sidebar-accent/80",
@@ -122,10 +126,13 @@ export function SidebarContents({
 }) {
   const [newOpen, setNewOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(true);
   const { setActiveView, currentProjectId } = useUI();
   const navigate = useNavigate();
   const location = useLocation();
   const path = location.pathname;
+  const search = location.search;
+  const hash = location.hash;
 
   const isHome = path === "/home";
   const isProjects = path === "/" || path.startsWith("/projects");
@@ -135,9 +142,13 @@ export function SidebarContents({
     (path.startsWith("/papers/") && !path.includes("/chat"));
   const isResearch = path.startsWith("/research") || path.startsWith("/analysis");
   const isWriting = path.startsWith("/writing");
-  const isIntegrations =
+  const importProvider = new URLSearchParams(search).get("provider");
+  const isImportPanel =
     (path.startsWith("/library") || path.startsWith("/files")) &&
-    (location.hash === "#import" || location.search.includes("import=1"));
+    (hash === "#import" || search.includes("import=1") || Boolean(importProvider));
+  const isZoteroImport = isImportPanel && importProvider === "zotero";
+  const isMendeleyImport = isImportPanel && importProvider === "mendeley";
+  const isUploadImport = isImportPanel && importProvider === "upload";
   const isGlobalChat =
     path.startsWith("/chat") || path.startsWith("/c/");
   const isPaperChat = path.startsWith("/papers/") && path.includes("/chat");
@@ -149,10 +160,17 @@ export function SidebarContents({
     path.startsWith("/notes") ||
     path.startsWith("/memory");
 
+  const libraryExpanded = libraryOpen || isLibrary;
+
   function go(view: Parameters<typeof setActiveView>[0], next: string) {
     setActiveView(view);
     navigate(next);
     setNewOpen(false);
+  }
+
+  function goLibraryImport(provider: "zotero" | "mendeley" | "upload") {
+    setLibraryOpen(true);
+    go("library", `/library?provider=${provider}#import`);
   }
 
   return (
@@ -194,7 +212,7 @@ export function SidebarContents({
                 type="button"
                 role="menuitem"
                 className="flex w-full px-3 py-1.5 text-left text-[13px] hover:bg-muted"
-                onClick={() => go("library", "/library#import")}
+                onClick={() => go("library", "/library?provider=zotero#import")}
               >
                 Import papers
               </button>
@@ -233,12 +251,81 @@ export function SidebarContents({
           active={isProjects}
           onClick={() => go("projects", "/")}
         />
-        <NavItem
-          icon={<Library className="size-4" />}
-          label="Library"
-          active={isLibrary && !isIntegrations}
-          onClick={() => go("library", "/library")}
-        />
+
+        <div>
+          <button
+            type="button"
+            onClick={() => {
+              if (!isLibrary) {
+                setLibraryOpen(true);
+                go("library", "/library");
+                return;
+              }
+              setLibraryOpen((o) => !o);
+            }}
+            aria-expanded={libraryExpanded}
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors",
+              isLibrary && !isImportPanel
+                ? "bg-sidebar-accent font-medium text-foreground"
+                : isLibrary
+                  ? "font-medium text-foreground"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent/80",
+            )}
+          >
+            <Library
+              className={cn(
+                "size-4 shrink-0",
+                isLibrary ? "text-foreground" : "text-muted-foreground",
+              )}
+            />
+            <span className="flex-1 truncate">Library</span>
+            <ChevronRight
+              className={cn(
+                "size-3.5 text-muted-foreground transition-transform",
+                libraryExpanded && "rotate-90",
+              )}
+            />
+          </button>
+
+          {libraryExpanded && (
+            <div className="mt-0.5 space-y-0.5 border-l border-sidebar-border ml-4 pl-1.5">
+              <p className="px-2 pb-0.5 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Import
+              </p>
+              <NavItem
+                nested
+                icon={<ZoteroIcon className="size-4 rounded-[3px]" />}
+                label="Import from Zotero"
+                active={isZoteroImport}
+                onClick={() => goLibraryImport("zotero")}
+              />
+              <NavItem
+                nested
+                icon={<MendeleyIcon className="size-4 rounded-[3px]" />}
+                label="Import from Mendeley"
+                active={isMendeleyImport}
+                onClick={() => goLibraryImport("mendeley")}
+              />
+              <NavItem
+                nested
+                icon={<Upload className="size-4" />}
+                label="Upload PDF"
+                active={isUploadImport}
+                onClick={() => goLibraryImport("upload")}
+              />
+              <NavItem
+                nested
+                muted
+                icon={<Library className="size-4" />}
+                label="All papers"
+                active={isLibrary && !isImportPanel}
+                onClick={() => go("library", "/library")}
+              />
+            </div>
+          )}
+        </div>
+
         <NavItem
           icon={<GitCompare className="size-4" />}
           label="Research"
@@ -256,12 +343,6 @@ export function SidebarContents({
       <div className="mx-3 my-1 border-t border-sidebar-border" />
 
       <nav className="space-y-0.5 px-2 pb-1" aria-label="Workspace">
-        <NavItem
-          icon={<Link2 className="size-4" />}
-          label="Integrations"
-          active={isIntegrations}
-          onClick={() => go("library", "/library#import")}
-        />
         <NavItem
           icon={<Settings className="size-4" />}
           label="Settings"

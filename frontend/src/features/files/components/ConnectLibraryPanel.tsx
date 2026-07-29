@@ -20,6 +20,7 @@ import {
   type ZoteroCollection,
 } from "../libraryBridgeApi";
 import { LibraryImportDialog } from "./LibraryImportDialog";
+import { cn } from "@/lib/utils";
 
 export function ConnectLibraryPanel({
   projectId,
@@ -64,6 +65,26 @@ export function ConnectLibraryPanel({
     setSearchParams(next, { replace: true });
     void qc.invalidateQueries({ queryKey: ["library-connections"] });
   }, [searchParams, setSearchParams, qc]);
+
+  /** Sidebar deep-links: ?provider=zotero|mendeley|upload + #import */
+  useEffect(() => {
+    const provider = searchParams.get("provider");
+    if (!provider) return;
+    const t = window.setTimeout(() => {
+      document.getElementById("import")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      if (provider === "zotero") {
+        document.getElementById("import-zotero")?.focus();
+      } else if (provider === "mendeley") {
+        document.getElementById("import-mendeley")?.focus();
+      } else if (provider === "upload") {
+        document.getElementById("library-upload-input")?.click();
+      }
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [searchParams]);
 
   const connectZotero = async () => {
     setBusy(true);
@@ -221,6 +242,7 @@ export function ConnectLibraryPanel({
 
   const zotero = connections?.zotero;
   const mendeley = connections?.mendeley;
+  const focusProvider = searchParams.get("provider");
 
   return (
     <>
@@ -252,7 +274,16 @@ export function ConnectLibraryPanel({
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border border-border p-3">
+          <div
+            id="import-zotero"
+            tabIndex={-1}
+            className={cn(
+              "rounded-lg border p-3 outline-none transition-colors",
+              focusProvider === "zotero"
+                ? "border-primary/50 bg-primary/5 ring-2 ring-primary/20"
+                : "border-border",
+            )}
+          >
             <div className="flex items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-medium">Zotero</p>
@@ -276,12 +307,12 @@ export function ConnectLibraryPanel({
                   onClick={connectZotero}
                   title={
                     zotero?.available === false
-                      ? "Set ZOTERO_CLIENT_KEY / SECRET on the server"
+                      ? `Missing on server: ${(zotero.missing_env ?? ["ZOTERO_CLIENT_KEY", "ZOTERO_CLIENT_SECRET"]).join(", ")}`
                       : undefined
                   }
                 >
                   {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
-                  {zotero?.available === false ? "Not configured" : "Connect Zotero"}
+                  {zotero?.available === false ? "Server OAuth not set" : "Connect Zotero"}
                 </Button>
               ) : (
                 <>
@@ -304,12 +335,29 @@ export function ConnectLibraryPanel({
             )}
             {zotero?.available === false && (
               <p className="mt-2 text-[11px] text-muted-foreground">
-                Or export BibTeX/RIS from Zotero and import above — works today.
+                Set{" "}
+                <code className="text-[10px]">
+                  {(zotero.missing_env ?? ["ZOTERO_CLIENT_KEY", "ZOTERO_CLIENT_SECRET"]).join(
+                    " + ",
+                  )}
+                </code>{" "}
+                on the <strong>deployed</strong> host (Railway Variables). Local{" "}
+                <code className="text-[10px]">.env</code> is not shipped in Docker. Or import
+                BibTeX/RIS above.
               </p>
             )}
           </div>
 
-          <div className="rounded-lg border border-border p-3">
+          <div
+            id="import-mendeley"
+            tabIndex={-1}
+            className={cn(
+              "rounded-lg border p-3 outline-none transition-colors",
+              focusProvider === "mendeley"
+                ? "border-primary/50 bg-primary/5 ring-2 ring-primary/20"
+                : "border-border",
+            )}
+          >
             <div className="flex items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-medium">Mendeley</p>
@@ -333,12 +381,12 @@ export function ConnectLibraryPanel({
                   onClick={connectMendeley}
                   title={
                     mendeley?.available === false
-                      ? "Set MENDELEY_CLIENT_ID / SECRET on the server"
+                      ? `Missing on server: ${(mendeley.missing_env ?? ["MENDELEY_CLIENT_ID", "MENDELEY_CLIENT_SECRET"]).join(", ")}`
                       : undefined
                   }
                 >
                   {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
-                  {mendeley?.available === false ? "Not configured" : "Connect Mendeley"}
+                  {mendeley?.available === false ? "Server OAuth not set" : "Connect Mendeley"}
                 </Button>
               ) : (
                 <>
@@ -361,7 +409,15 @@ export function ConnectLibraryPanel({
             )}
             {mendeley?.available === false && (
               <p className="mt-2 text-[11px] text-muted-foreground">
-                Or export BibTeX/RIS from Mendeley and import above — works today.
+                Set{" "}
+                <code className="text-[10px]">
+                  {(mendeley.missing_env ?? ["MENDELEY_CLIENT_ID", "MENDELEY_CLIENT_SECRET"]).join(
+                    " + ",
+                  )}
+                </code>{" "}
+                on the <strong>deployed</strong> host (Railway Variables). Local{" "}
+                <code className="text-[10px]">.env</code> is not shipped in Docker. Or import
+                BibTeX/RIS above.
               </p>
             )}
           </div>

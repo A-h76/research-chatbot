@@ -139,6 +139,9 @@ export function FilesPage() {
         const offset = page * PAGE_SIZE;
         if (offset > 0) next.set("offset", String(offset));
         else next.delete("offset");
+        // Preserve sidebar import deep-link (?provider=zotero|mendeley|upload)
+        const provider = prev.get("provider");
+        if (provider) next.set("provider", provider);
         return next;
       }, { replace: true });
     }, 250);
