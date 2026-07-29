@@ -30,7 +30,8 @@ Branding: product is **Dhund**. Code/docs may still say Personal AI / Soro / Res
 2. **Research Intelligence computes over evidence** — retrieve, rank, aggregate, conflict-code, reason, then (last) write.  
 3. **Research Intelligence never owns knowledge** — no parallel research corpus; no inventing EvidenceObjects.  
 4. **Platform contracts are append-only** — breaking changes need an ADR (or equivalent).  
-5. **All AI research features consume Evidence Query** — Writing, Reviewer, Compare, Assistant submit the same ask shape.
+5. **All AI research features consume Evidence Query** — Writing, Reviewer, Compare, Assistant submit the same ask shape.  
+6. **No layer may bypass the one directly beneath it without an approved ADR** — enforces the dependency map in [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md).
 
 Read these before changing Evidence / RI code.
 

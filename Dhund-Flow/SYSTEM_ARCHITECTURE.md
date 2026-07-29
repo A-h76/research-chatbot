@@ -1,12 +1,42 @@
 # SYSTEM_ARCHITECTURE — Dhund
 
 **Audience:** Engineers changing structure, wiring, or pipeline stages  
-**Last updated:** 2026-07-28  
+**Last updated:** 2026-07-29  
 **Status index:** [PROJECT_STATUS.md](PROJECT_STATUS.md)
 
 ---
 
-## 1) Architecture eras
+## 1) Dependency direction
+
+Upper layers depend on lower layers. They do **not** reach around them.
+
+```text
+Applications
+    │
+    ▼
+Research Intelligence
+    │
+    ▼
+Evidence Platform
+    │
+    ▼
+Analysis Pipeline
+    │
+    ▼
+Document Import
+```
+
+| Layer | Role |
+|-------|------|
+| Applications | Writing · Reviewer · Compare · Assistant · Library UI |
+| Research Intelligence | Retrieval → Ranking → Consensus → Conflict → Reasoning → Writing Intelligence |
+| Evidence Platform | EvidenceObjects · Explain · Bindings · Reviews · Provenance (frozen) |
+| Analysis Pipeline | Phase 1.1–1.7 · grading · graph projections |
+| Document Import | Upload · Bridge · worker import · text extraction |
+
+---
+
+## 2) Architecture eras
 
 ```text
 Era 1 — Analysis
@@ -30,30 +60,70 @@ Rules:
 
 ---
 
-## 2) Architecture principles
+## 3) Architecture principles
 
 1. Evidence First  
 2. Research Intelligence computes over evidence  
 3. Research Intelligence never owns knowledge  
 4. Platform contracts are append-only  
 5. All AI research features consume Evidence Query  
+6. **No layer may bypass the one directly beneath it without an approved ADR.**  
+
+Principle 6 formalises §1: Applications must not call Evidence / Analysis / Import directly when RI is the correct entry; RI must not invent knowledge outside Evidence Platform; etc.
 
 ---
 
-## 3) High-level stack
+## 4) Model Router (capability, not provider)
+
+Architecture depends on **capabilities**, not vendors. Model routing lives in `backend/ai/` — it is **not** a sixth product layer above Import/Evidence; it is the abstraction between capability calls and providers.
+
+```text
+Research Intelligence (and other callers)
+        │
+        ▼
+   Model Router          ← task / capability → model string
+        │
+        ▼
+  Model Registry         ← provider dispatch
+        │
+ ┌──────┼────────┐
+ ▼      ▼        ▼
+OpenAI Claude Gemini
+```
+
+Prefer capability-shaped calls:
+
+| Capability shape | Not |
+|------------------|-----|
+| `reason()` · `retrieve()` · `write()` · `review()` | `call_openai()` · `call_gemini()` |
+
+Notes:
+
+- `ModelRouter.get_model_for_task(task_name)` selects the model; `ModelRegistry` dispatches to the provider.  
+- Many RI stages (**Retrieval, Ranking, Consensus, Conflict, Reasoning**) are **deterministic / coded** — they do not need a model. Generation (Writing Intelligence, and future narration) is where routing matters.  
+- Legacy chat still calling OpenAI Responses directly is known debt — new research-facing AI should go through Evidence Query + Model Router, not a private provider client.
+
+---
+
+## 5) High-level stack
 
 ```text
 Browser (React SPA)
     ↓ session cookie  /  Bearer JWT (selected routes)
 Flask (server.py + blueprints)
     ↓
-Services (quotas, storage, AI registries, search, AnalysisPipelineService, evidence/*)
+Services (quotas, storage, search, AnalysisPipelineService, evidence/*)
+    ↓
+Model Router → Model Registry   (when a capability needs an LLM)
+    ↓
+ ┌──────┼────────┐
+ ▼      ▼        ▼
+OpenAI Claude Gemini
     ↓
 Postgres (or SQLite for local API-only) + Object storage (R2 / local / S3)
     ↓
 worker.py (UploadJob queue via FOR UPDATE SKIP LOCKED)
     ↓  import → phase1_analysis (1.1–1.7) → paper_analysis
-OpenAI / optional Anthropic / Gemini
 ```
 
 | Layer | Technology |
@@ -64,11 +134,11 @@ OpenAI / optional Anthropic / Gemini
 | Queue | Postgres `upload_jobs` — **not** Celery (ADR-0001) |
 | Cache | Optional Redis (job status mirror) |
 | Storage | Cloudflare R2 / local / S3 (two facades today — see debt) |
-| AI | OpenAI Responses (chat) + ModelRegistry (multi-provider) |
+| AI routing | `backend/ai/model_router.py` + `model_registry.py` |
 
 ---
 
-## 4) Important flows
+## 6) Important flows
 
 ### Library → Analysis → Evidence
 
@@ -116,7 +186,7 @@ Shell is `v0.1.0`. Evidence-backed writing uses RI Writing Intelligence, not fre
 
 ---
 
-## 5) Package map (selected)
+## 7) Package map (selected)
 
 | Area | Path |
 |------|------|
@@ -126,7 +196,7 @@ Shell is `v0.1.0`. Evidence-backed writing uses RI Writing Intelligence, not fre
 | Writing shell services | `backend/writing/` |
 | Analysis orchestration | `backend/analysis_pipeline/` |
 | Phase 1 engines | processing / pipeline packages under repo |
-| Prompt Engine | `backend/ai/` |
+| Prompt Engine + Model Router / Registry | `backend/ai/` |
 | Library Bridge | `backend/library/` |
 | Auth | `auth/` |
 | Storage (legacy) | `storage/` |
@@ -137,7 +207,7 @@ Shell is `v0.1.0`. Evidence-backed writing uses RI Writing Intelligence, not fre
 
 ---
 
-## 6) Evidence Query (universal ask)
+## 8) Evidence Query (universal ask)
 
 Minimal fields: `intent` · `scope` · `filters` · `ranking_strategy` · `result_limit`  
 Forbidden on the query: `prompt`, `model`, `temperature`, `embeddings`, `vector_index`.
@@ -146,7 +216,23 @@ Canonical: `docs/architecture/phase-2.3-evidence-query-contract.md` (ADR-0007).
 
 ---
 
-## 7) Further reading
+## 9) Future evolution
+
+New capabilities (agent workflows, automation, collaborative review, publication pipelines) fit **above** Research Intelligence or **consume** it — they do not reach into Evidence / Analysis / Import without an ADR (principle 6).
+
+```text
+Applications · Agents · Publication · Collaboration
+      │
+      ▼
+Research Intelligence
+      │
+      ▼
+Evidence Platform → … → Document Import
+```
+
+---
+
+## 10) Further reading
 
 - `docs/00-constitution.md`  
 - `docs/architecture/week2-evidence-layer-platform-contracts.md`  
