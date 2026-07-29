@@ -12,16 +12,44 @@ different module identity and re-run everything up to that same import,
 recursing. Passing the handful of things this module needs explicitly
 avoids that entirely, and is a cleaner dependency direction anyway
 (Constitution Principle 9) than reaching into another module's globals.
+
+Phase 3: tokens are single-use (jti stored hashed); request rate limits
+combine email + IP.
 """
 
+from __future__ import annotations
+
+import hashlib
 import re
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request, session
+from flask_limiter.util import get_remote_address
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from sqlalchemy import Column, DateTime, Integer, String, select
 
 TOKEN_MAX_AGE_SECONDS = 15 * 60
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def create_magic_link_token_model(Base):
+    """Single-use magic-link jti store (Phase 3 / F2.4)."""
+
+    class MagicLinkToken(Base):
+        __tablename__ = "magic_link_tokens"
+        id = Column(Integer, primary_key=True)
+        token_hash = Column(String(64), unique=True, nullable=False)
+        email = Column(String(320), nullable=False)
+        expires_at = Column(DateTime, nullable=False)
+        used_at = Column(DateTime, nullable=True)
+        created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    return MagicLinkToken
+
+
+def _hash_jti(jti: str) -> str:
+    return hashlib.sha256(jti.encode("utf-8")).hexdigest()
 
 
 def create_magic_link_blueprint(
@@ -36,19 +64,24 @@ def create_magic_link_blueprint(
     APP_BASE_URL,
     create_jwt,
     log_security_event,
+    MagicLinkToken,
     signup_allowed_fn=None,
     on_user_created=None,
     record_last_login_fn=None,
 ):
     bp = Blueprint("magic_link", __name__, url_prefix="/auth/magic-link")
     serializer = URLSafeTimedSerializer(secret_key, salt="magic-link")
+    bp._serializer = serializer  # tests mint via issue_token()
 
     def _normalize_email(raw):
         return (raw or "").strip().lower()
 
-    def _rate_limit_key():
+    def _email_rate_key():
         data = request.get_json(silent=True) or {}
-        return _normalize_email(data.get("email"))
+        return "ml-email:" + _normalize_email(data.get("email"))
+
+    def _ip_rate_key():
+        return "ml-ip:" + (get_remote_address() or "unknown")
 
     def _may_sign_in(email: str) -> bool:
         if signup_allowed_fn is not None:
@@ -58,8 +91,30 @@ def create_magic_link_blueprint(
             return False
         return True
 
+    def issue_token(email: str) -> str:
+        """Mint a single-use signed token and persist its jti hash."""
+        email = _normalize_email(email)
+        jti = secrets.token_urlsafe(24)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=TOKEN_MAX_AGE_SECONDS)
+        db = SessionLocal()
+        try:
+            db.add(
+                MagicLinkToken(
+                    token_hash=_hash_jti(jti),
+                    email=email,
+                    expires_at=expires_at,
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+        return serializer.dumps({"email": email, "jti": jti})
+
+    bp.issue_token = issue_token
+
     @bp.route("", methods=["POST"])
-    @limiter.limit("3 per hour", key_func=_rate_limit_key)
+    @limiter.limit("20 per hour", key_func=_ip_rate_key)
+    @limiter.limit("3 per hour", key_func=_email_rate_key)
     def request_magic_link():
         data = request.get_json(silent=True) or {}
         email = _normalize_email(data.get("email"))
@@ -80,7 +135,7 @@ def create_magic_link_blueprint(
             log_security_event("magic_link_denied", email=email)
             return generic_response
 
-        token = serializer.dumps({"email": email})
+        token = issue_token(email)
         verify_url = f"{APP_BASE_URL}/auth/magic-link?token={token}"
         html = (
             f"<p>Click below to sign in — this link expires in 15 minutes.</p>"
@@ -96,7 +151,7 @@ def create_magic_link_blueprint(
         return generic_response
 
     @bp.route("/verify", methods=["POST"])
-    @limiter.limit("20 per hour")
+    @limiter.limit("20 per hour", key_func=_ip_rate_key)
     def verify_magic_link():
         data = request.get_json(silent=True) or {}
         token = data.get("token")
@@ -113,7 +168,8 @@ def create_magic_link_blueprint(
             return jsonify({"error": "invalid_token"}), 401
 
         email = payload.get("email")
-        if not email:
+        jti = payload.get("jti")
+        if not email or not jti:
             return jsonify({"error": "invalid_token"}), 401
 
         if not _may_sign_in(email):
@@ -122,6 +178,28 @@ def create_magic_link_blueprint(
 
         db = SessionLocal()
         try:
+            row = db.execute(
+                select(MagicLinkToken).where(
+                    MagicLinkToken.token_hash == _hash_jti(jti),
+                    MagicLinkToken.used_at.is_(None),
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                log_security_event("magic_link_verify_failed", reason="reused_or_unknown", email=email)
+                return jsonify({"error": "invalid_token", "detail": "token_already_used"}), 401
+            now = datetime.now(timezone.utc)
+            exp = row.expires_at
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp < now:
+                log_security_event("magic_link_verify_failed", reason="expired_row", email=email)
+                return jsonify({"error": "token_expired"}), 401
+            if (row.email or "").lower() != email:
+                return jsonify({"error": "invalid_token"}), 401
+
+            # Consume before creating session — single-use (Phase 3 / F2.4).
+            row.used_at = now
+
             user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
             created = False
             if not user:
@@ -129,9 +207,7 @@ def create_magic_link_blueprint(
                 db.add(user)
                 created = True
             user.email_verified = True
-            user.email_verified_at = getattr(user, "email_verified_at", None) or datetime.now(
-                timezone.utc
-            )
+            user.email_verified_at = getattr(user, "email_verified_at", None) or now
             if not getattr(user, "status", None) or user.status == "pending_verification":
                 user.status = "active"
             db.commit()
@@ -141,7 +217,9 @@ def create_magic_link_blueprint(
             session["user_id"] = user.id
             session["user_email"] = user.email
             session["session_version"] = int(getattr(user, "session_version", 0) or 0)
-            access, refresh = create_jwt(user.id)
+            access, refresh = create_jwt(
+                user.id, session_version=int(getattr(user, "session_version", 0) or 0)
+            )
             session["jwt"] = {"access": access, "refresh": refresh}
             from security.session_ttl import mark_session_login
 

@@ -1,0 +1,79 @@
+# Gateway routing policy — operational config read by AIGateway at runtime.
+#
+# Governance: docs/AI_POLICY_v1.0.md
+# Model tier assignments: docs/AI_MODEL_REGISTRY.yaml
+#
+# This file maps tasks to concrete models. It reflects the tier assignments
+# in AI_MODEL_REGISTRY.yaml. When the registry changes, update this file to match.
+#
+# Escalation tiers (from AI_MODEL_REGISTRY.yaml):
+#   fast        → gpt-5-mini        (≥ 85% of calls target)
+#   balanced    → gpt-5.5           (≤ 14% of calls target)
+#   publication → gpt-5.5-pro       (≤ 1% of calls target)
+#
+# Special-purpose (fixed, not escalated):
+#   web_search  → gpt-4o-mini-search-preview  (search blueprint only)
+#   moderation  → omni-moderation-latest       (input screening, pre-LLM)
+#
+# Changing model strings requires the same evidence standard as a registry change.
+
+tasks:
+  # RAG — local corpus retrieval + answer synthesis
+  rag:
+    fast: gpt-5-mini
+    balanced: gpt-5-mini
+    publication: gpt-5.5
+
+  # Web-augmented search — uses search_preview model, mode ignored
+  web_search:
+    fast: gpt-4o-mini-search-preview
+    balanced: gpt-4o-mini-search-preview
+    publication: gpt-4o-mini-search-preview
+
+  # Paper ingestion + structured metadata extraction
+  paper_analysis:
+    fast: gpt-5-mini
+    balanced: gpt-5.5
+    publication: gpt-5.5
+
+  # Lightweight metadata tagging at upload time
+  extract_metadata:
+    fast: gpt-5-mini
+    balanced: gpt-5-mini
+    publication: gpt-5.5
+
+  # Writing Intelligence — Planner
+  planner:
+    fast: gpt-5-mini
+    balanced: gpt-5.5
+    publication: gpt-5.5
+
+  # Writing Intelligence — Context Builder
+  context_builder:
+    fast: gpt-5-mini
+    balanced: gpt-5.5
+    publication: gpt-5.5
+
+  # Writing Intelligence — Section Generator
+  section_generator:
+    fast: gpt-5.5
+    balanced: gpt-5.5
+    publication: gpt-5.5-pro
+
+  # Writing Intelligence — Reviewer (grounding + citation checks)
+  reviewer:
+    fast: gpt-5-mini
+    balanced: gpt-5-mini
+    publication: gpt-5.5-pro
+
+  # Full literature review orchestration (planner → generate → review)
+  literature_review:
+    fast: gpt-5.5
+    balanced: gpt-5.5
+    publication: gpt-5.5-pro
+
+  # Input moderation — fixed, never escalated
+  moderation:
+    fast: omni-moderation-latest
+    balanced: omni-moderation-latest
+    publication: omni-moderation-latest

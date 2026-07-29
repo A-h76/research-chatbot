@@ -3,12 +3,20 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/common/Toast";
 import { evidenceApi } from "../api";
+import { useEvidenceReason } from "../hooks/useEvidenceReason";
 import type { EvidenceObjectDTO, ExplainResponse, Sufficiency } from "../types";
 
 const SUFFICIENCY_COPY: Record<Sufficiency, string> = {
   sufficient: "Supported by accepted evidence",
   weak: "Only unreviewed or weak evidence",
   insufficient: "Insufficient evidence for this sentence",
+};
+
+const MEDIATOR_LABELS: Record<string, string> = {
+  population_differs: "Population differs",
+  dosage_differs: "Dosage differs",
+  method_differs: "Method differs",
+  outcome_differs: "Outcome differs",
 };
 
 export function EvidenceInspectorPanel({
@@ -28,6 +36,12 @@ export function EvidenceInspectorPanel({
 }) {
   const qc = useQueryClient();
   const sufficiency = result?.sufficiency ?? "insufficient";
+  const ri = useEvidenceReason({
+    documentId: documentId ?? null,
+    projectId: projectId ?? null,
+    selectedText: stickyText || "",
+    enabled: documentId != null && projectId != null,
+  });
 
   const libraryQuery = useQuery({
     queryKey: ["evidence", "library", projectId],
@@ -101,6 +115,71 @@ export function EvidenceInspectorPanel({
           <span className="text-muted-foreground">Selection: </span>
           {stickyText}
         </p>
+      ) : null}
+
+      {stickyText && ri.status !== "idle" ? (
+        <div className="space-y-2 rounded-md border border-border bg-card p-2.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Research Intelligence
+            </span>
+            {ri.status === "loading" && (
+              <span className="text-[10px] text-muted-foreground">Computing…</span>
+            )}
+          </div>
+          {ri.result?.consensus?.label ? (
+            <div className="flex flex-wrap gap-1">
+              <span className="rounded border border-border px-1.5 py-0.5 text-[10px] uppercase">
+                Consensus: {ri.result.consensus.label}
+              </span>
+              <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                +{ri.result.consensus.supporting ?? 0} / −{ri.result.consensus.contradicting ?? 0} / ~
+                {ri.result.consensus.neutral ?? 0}
+              </span>
+            </div>
+          ) : null}
+          {ri.result?.conflict?.has_conflict ? (
+            <div className="flex flex-wrap gap-1">
+              {(ri.result.conflict.mediators ?? []).length > 0 ? (
+                (ri.result.conflict.mediators ?? []).map((m) => (
+                  <span
+                    key={m}
+                    className="rounded border border-amber-700/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-950 dark:text-amber-100"
+                  >
+                    {MEDIATOR_LABELS[m] || m}
+                  </span>
+                ))
+              ) : (
+                <span className="text-[10px] text-muted-foreground">
+                  Conflict present (mediators uncoded)
+                </span>
+              )}
+            </div>
+          ) : null}
+          {ri.result?.reasoning?.summary_code ? (
+            <p className="text-[11px] text-muted-foreground">
+              Summary:{" "}
+              <span className="font-medium text-foreground">
+                {ri.result.reasoning.summary_code}
+              </span>
+              {ri.result.reasoning.sufficiency
+                ? ` · ${ri.result.reasoning.sufficiency}`
+                : ""}
+            </p>
+          ) : null}
+          {ri.result?.reasoning?.steps?.length ? (
+            <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-muted-foreground">
+              {ri.result.reasoning.steps.map((step, i) => (
+                <li key={`${step.step}-${i}`}>
+                  <span className="font-medium text-foreground/80">{step.step}</span>: {step.detail}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+          {ri.status === "error" && (
+            <p className="text-[10px] text-muted-foreground">Could not load RI reason stage.</p>
+          )}
+        </div>
       ) : null}
 
       {result?.evidence?.length ? (

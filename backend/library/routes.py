@@ -15,6 +15,14 @@ from . import zotero as zotero_mod
 from . import mendeley as mendeley_mod
 from .bibtex import to_bibtex
 from .ris import to_ris
+from security.token_crypto import seal_secret, unseal_secret
+from security.request_validation import (
+    RequestValidationError,
+    optional_int,
+    parse_json_object,
+    reject_unknown_fields,
+    require_string,
+)
 
 
 def create_library_bridge_blueprint(
@@ -39,10 +47,34 @@ def create_library_bridge_blueprint(
     max_file_mb=50,
     allowed_extensions=None,
     LibrarySyncRun=None,
+    token_secret_key="",
 ):
     bp = Blueprint("library_bridge", __name__)
     # Prefer full import (extract + chunk + phase1); fall back to phase1-only.
     _enqueue_after_attach = enqueue_import or enqueue_phase1
+    _tok_key = token_secret_key or ""
+
+    def _seal(plain: str) -> str:
+        return seal_secret(plain, secret_key=_tok_key)
+
+    def _unseal(stored: str) -> str:
+        return unseal_secret(stored, secret_key=_tok_key)
+
+    def _store_oauth(row, *, access_token=None, access_secret=None, refresh_token=None):
+        """Persist OAuth secrets encrypted at rest (Phase 4)."""
+        if access_token is not None:
+            row.access_token = _seal(access_token)
+        if access_secret is not None:
+            row.access_secret = _seal(access_secret)
+        if refresh_token is not None:
+            row.refresh_token = _seal(refresh_token)
+
+    def _oauth_plain(row) -> dict:
+        return {
+            "access_token": _unseal(row.access_token or ""),
+            "access_secret": _unseal(row.access_secret or ""),
+            "refresh_token": _unseal(row.refresh_token or ""),
+        }
 
     def _rate(spec):
         def deco(fn):
@@ -318,16 +350,22 @@ def create_library_bridge_blueprint(
                     user_id=_uid(),
                     provider="zotero",
                     external_user_id=tokens.get("user_id") or "",
-                    access_token=tokens.get("access_token") or "",
-                    access_secret=tokens.get("access_secret") or "",
                     meta_json=meta,
                     status="active",
+                )
+                _store_oauth(
+                    row,
+                    access_token=tokens.get("access_token") or "",
+                    access_secret=tokens.get("access_secret") or "",
                 )
                 db.add(row)
             else:
                 row.external_user_id = tokens.get("user_id") or row.external_user_id
-                row.access_token = tokens.get("access_token") or ""
-                row.access_secret = tokens.get("access_secret") or ""
+                _store_oauth(
+                    row,
+                    access_token=tokens.get("access_token") or "",
+                    access_secret=tokens.get("access_secret") or "",
+                )
                 row.meta_json = meta
                 row.status = "active"
                 row.updated_at = datetime.now(timezone.utc)
@@ -344,8 +382,7 @@ def create_library_bridge_blueprint(
             row = _get_connection(db, _uid(), "zotero")
             if row:
                 row.status = "revoked"
-                row.access_token = ""
-                row.access_secret = ""
+                _store_oauth(row, access_token="", access_secret="")
                 row.updated_at = datetime.now(timezone.utc)
                 db.commit()
             return jsonify({"ok": True})
@@ -361,10 +398,11 @@ def create_library_bridge_blueprint(
             if not row:
                 return jsonify({"error": "not_connected"}), 400
             try:
+                toks = _oauth_plain(row)
                 adapter = get_adapter("zotero")
                 items = adapter.list_folders(
-                    access_token=row.access_token,
-                    access_secret=row.access_secret,
+                    access_token=toks["access_token"],
+                    access_secret=toks["access_secret"],
                     external_user_id=row.external_user_id,
                 )
             except Exception as exc:
@@ -377,8 +415,12 @@ def create_library_bridge_blueprint(
     @login_required
     @_rate("5 per hour")
     def zotero_import():
-        data = request.get_json(silent=True) or {}
-        collection_key = (data.get("collection_key") or "all").strip()
+        try:
+            data = parse_json_object(request.get_json(silent=True))
+            reject_unknown_fields(data, {"collection_key", "project_id", "limit", "create_project"})
+            collection_key = require_string(data, "collection_key", max_len=200, required=False) or "all"
+        except RequestValidationError as exc:
+            return exc.to_response()
         coll_name = ""
         db = SessionLocal()
         try:
@@ -386,11 +428,12 @@ def create_library_bridge_blueprint(
             if not row:
                 return jsonify({"error": "not_connected"}), 400
             try:
+                toks = _oauth_plain(row)
                 adapter = get_adapter("zotero")
                 if collection_key not in {"all", "", "root"}:
                     z_cols = adapter.list_folders(
-                        access_token=row.access_token,
-                        access_secret=row.access_secret,
+                        access_token=toks["access_token"],
+                        access_secret=toks["access_secret"],
                         external_user_id=row.external_user_id,
                     )
                     for c in z_cols:
@@ -398,8 +441,8 @@ def create_library_bridge_blueprint(
                             coll_name = c.get("name") or ""
                             break
                 records = adapter.fetch_records(
-                    access_token=row.access_token,
-                    access_secret=row.access_secret,
+                    access_token=toks["access_token"],
+                    access_secret=toks["access_secret"],
                     external_user_id=row.external_user_id,
                     collection_key=collection_key,
                     collection_name=coll_name,
@@ -476,17 +519,23 @@ def create_library_bridge_blueprint(
                     user_id=_uid(),
                     provider="mendeley",
                     external_user_id=profile.get("id") or "",
+                    meta_json=meta,
+                    status="active",
+                )
+                _store_oauth(
+                    row,
                     access_token=tokens.get("access_token") or "",
                     access_secret="",
                     refresh_token=tokens.get("refresh_token") or "",
-                    meta_json=meta,
-                    status="active",
                 )
                 db.add(row)
             else:
                 row.external_user_id = profile.get("id") or row.external_user_id
-                row.access_token = tokens.get("access_token") or ""
-                row.refresh_token = tokens.get("refresh_token") or row.refresh_token
+                _store_oauth(
+                    row,
+                    access_token=tokens.get("access_token") or "",
+                    refresh_token=tokens.get("refresh_token") or _oauth_plain(row)["refresh_token"],
+                )
                 row.meta_json = meta
                 row.status = "active"
                 row.updated_at = datetime.now(timezone.utc)
@@ -503,8 +552,7 @@ def create_library_bridge_blueprint(
             row = _get_connection(db, _uid(), "mendeley")
             if row:
                 row.status = "revoked"
-                row.access_token = ""
-                row.refresh_token = ""
+                _store_oauth(row, access_token="", refresh_token="")
                 row.updated_at = datetime.now(timezone.utc)
                 db.commit()
             return jsonify({"ok": True})
@@ -512,19 +560,22 @@ def create_library_bridge_blueprint(
             db.close()
 
     def _mendeley_access_token(db, row) -> str:
-        token = (row.access_token or "").strip()
+        toks = _oauth_plain(row)
+        token = (toks["access_token"] or "").strip()
         if token:
             return token
-        refresh = (row.refresh_token or "").strip()
+        refresh = (toks["refresh_token"] or "").strip()
         if not refresh:
             return ""
         refreshed = mendeley_mod.refresh_access_token(refresh)
-        row.access_token = refreshed.get("access_token") or ""
-        if refreshed.get("refresh_token"):
-            row.refresh_token = refreshed["refresh_token"]
+        _store_oauth(
+            row,
+            access_token=refreshed.get("access_token") or "",
+            refresh_token=refreshed.get("refresh_token") or refresh,
+        )
         row.updated_at = datetime.now(timezone.utc)
         db.commit()
-        return row.access_token or ""
+        return _oauth_plain(row)["access_token"] or ""
 
     @bp.route("/api/library/mendeley/folders", methods=["GET"])
     @login_required
@@ -541,16 +592,19 @@ def create_library_bridge_blueprint(
                 adapter = get_adapter("mendeley")
                 items = adapter.list_folders(access_token=token)
             except Exception as exc:
-                if row.refresh_token:
+                refresh = _oauth_plain(row)["refresh_token"]
+                if refresh:
                     try:
-                        refreshed = mendeley_mod.refresh_access_token(row.refresh_token)
-                        row.access_token = refreshed.get("access_token") or ""
-                        if refreshed.get("refresh_token"):
-                            row.refresh_token = refreshed["refresh_token"]
+                        refreshed = mendeley_mod.refresh_access_token(refresh)
+                        _store_oauth(
+                            row,
+                            access_token=refreshed.get("access_token") or "",
+                            refresh_token=refreshed.get("refresh_token") or refresh,
+                        )
                         row.updated_at = datetime.now(timezone.utc)
                         db.commit()
                         adapter = get_adapter("mendeley")
-                        items = adapter.list_folders(access_token=row.access_token)
+                        items = adapter.list_folders(access_token=_oauth_plain(row)["access_token"])
                         return jsonify({"items": items})
                     except Exception as exc2:
                         return jsonify({"error": "mendeley_api_error", "detail": str(exc2)[:200]}), 502
@@ -563,8 +617,18 @@ def create_library_bridge_blueprint(
     @login_required
     @_rate("5 per hour")
     def mendeley_import():
-        data = request.get_json(silent=True) or {}
-        folder_id = (data.get("folder_id") or data.get("collection_key") or "all").strip()
+        try:
+            data = parse_json_object(request.get_json(silent=True))
+            reject_unknown_fields(
+                data, {"folder_id", "collection_key", "project_id", "limit", "create_project"}
+            )
+            folder_id = (
+                require_string(data, "folder_id", max_len=200, required=False)
+                or require_string(data, "collection_key", max_len=200, required=False)
+                or "all"
+            )
+        except RequestValidationError as exc:
+            return exc.to_response()
         folder_name = ""
         db = SessionLocal()
         try:
@@ -623,23 +687,16 @@ def create_library_bridge_blueprint(
             connection_id = row.id
             token_kwargs = {}
             if provider == "zotero":
+                toks = _oauth_plain(row)
                 token_kwargs = {
-                    "access_token": row.access_token,
-                    "access_secret": row.access_secret,
+                    "access_token": toks["access_token"],
+                    "access_secret": toks["access_secret"],
                     "external_user_id": row.external_user_id,
                 }
             else:
-                token = row.access_token or ""
-                if not token and row.refresh_token:
-                    try:
-                        refreshed = mendeley_mod.refresh_access_token(row.refresh_token)
-                        row.access_token = refreshed.get("access_token") or ""
-                        if refreshed.get("refresh_token"):
-                            row.refresh_token = refreshed["refresh_token"]
-                        db.commit()
-                        token = row.access_token
-                    except Exception as exc:
-                        return jsonify({"error": "mendeley_api_error", "detail": str(exc)[:200]}), 502
+                token = _mendeley_access_token(db, row)
+                if not token:
+                    return jsonify({"error": "not_connected"}), 400
                 token_kwargs = {"access_token": token}
         finally:
             db.close()

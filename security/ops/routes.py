@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, redirect, request, session
 
+from security.request_validation import (
+    RequestValidationError,
+    parse_json_object,
+    reject_unknown_fields,
+    require_string,
+)
+
 
 def create_ops_blueprint(
     *,
@@ -68,8 +75,14 @@ def create_ops_blueprint(
     @bp.route("/auth/register", methods=["POST"])
     @_rate("5 per minute")
     def register():
-        data = request.get_json(silent=True) or {}
-        email = str(data.get("email") or "")
+        try:
+            data = parse_json_object(request.get_json(silent=True), allow_empty=False)
+            reject_unknown_fields(data, {"name", "email", "password"})
+            email = require_string(data, "email", max_len=320)
+            name = require_string(data, "name", max_len=200, required=False)
+            password = require_string(data, "password", max_len=200, min_len=10, strip=False)
+        except RequestValidationError as exc:
+            return exc.to_response()
         # Closed-beta gate — same rule as Google/magic
         if hasattr(password_auth, "signup_allowed_fn") and password_auth.signup_allowed_fn:
             ok, reason = password_auth.signup_allowed_fn(email)
@@ -77,9 +90,9 @@ def create_ops_blueprint(
                 event_store.record("invite_denied", email=email, reason=reason)
                 return jsonify({"error": "not_invited"}), 403
         payload, err = password_auth.register(
-            name=str(data.get("name") or ""),
+            name=name,
             email=email,
-            password=str(data.get("password") or ""),
+            password=password,
         )
         if err == "email_taken":
             return jsonify({"error": "email_taken"}), 409
@@ -103,11 +116,14 @@ def create_ops_blueprint(
     @bp.route("/auth/password-login", methods=["POST"])
     @_rate("5 per minute")
     def password_login():
-        data = request.get_json(silent=True) or {}
-        user, err = password_auth.login(
-            str(data.get("email") or ""),
-            str(data.get("password") or ""),
-        )
+        try:
+            data = parse_json_object(request.get_json(silent=True), allow_empty=False)
+            reject_unknown_fields(data, {"email", "password"})
+            email = require_string(data, "email", max_len=320)
+            password = require_string(data, "password", max_len=200, strip=False)
+        except RequestValidationError as exc:
+            return exc.to_response()
+        user, err = password_auth.login(email, password)
         if err:
             status = 403 if err in {"email_unverified", "account_inactive"} else 401
             return jsonify({"error": err}), status
@@ -117,7 +133,9 @@ def create_ops_blueprint(
         if mark_session_login:
             mark_session_login(session)
         if create_jwt:
-            access, refresh = create_jwt(user["id"])
+            access, refresh = create_jwt(
+                user["id"], session_version=int(user.get("session_version", 0) or 0)
+            )
             session["jwt"] = {"access": access, "refresh": refresh}
         if record_last_login_fn:
             record_last_login_fn(user["id"])

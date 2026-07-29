@@ -29,6 +29,7 @@ import { PaperEntitiesTab } from "../components/PaperEntitiesTab";
 import { PaperEvidenceTab } from "../components/PaperEvidenceTab";
 import { PaperKnowledgeGraphTab } from "../components/PaperKnowledgeGraphTab";
 import { PaperRelatedTab } from "../components/PaperRelatedTab";
+import { ExtractEvidenceButton } from "@/features/evidence/components/ExtractEvidenceButton";
 
 const ANALYZE_ERROR_MESSAGES: Record<string, string> = {
   not_ready: "This paper is still being processed. Try again in a moment.",
@@ -340,6 +341,19 @@ export function PaperOverviewPage() {
             </>
           }
         />
+
+        {(file.project_id || file.project?.id) && (
+          <div className="flex flex-wrap items-center gap-2">
+            <ExtractEvidenceButton
+              projectId={file.project?.id ?? file.project_id}
+              fileId={id}
+              readiness={file.research_readiness}
+            />
+            <span className="text-[11px] text-muted-foreground">
+              Evidence Extraction Pipeline → candidate EvidenceObjects (review in Writing Inspector)
+            </span>
+          </div>
+        )}
 
         {/* D3: processing → expanded above tabs; ready → collapsed below stage */}
         {(isPipelineProcessing(pipelineDerived, file.meta_status) ||

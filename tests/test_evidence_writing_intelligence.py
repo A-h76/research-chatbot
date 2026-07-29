@@ -147,11 +147,14 @@ def test_writing_generates_grounded_paragraph():
     assert resp.status_code == 200, resp.get_json()
     body = resp.get_json()
     assert body["stage"] == "writing"
-    assert body["writing_version"] == "1.0.0"
+    assert body["writing_version"] == "1.3.1"
     w = body["writing"]
     assert w["status"] == "ok"
     assert w["mode"] == "grounded_v0"
     assert w["paragraph"]
+    assert w.get("sections")
+    assert w.get("metrics") is not None
+    assert w.get("review") is not None
     assert "Drug X reduces HbA1c" in w["paragraph"]
     cite_ids = {c["evidence_id"] for c in w["citations"]}
     assert cite_ids.issubset({seeded["support_id"], seeded["support2_id"]})

@@ -7,6 +7,11 @@ decorator ran (a str user_id, matching create_jwt's identity, or None
 for jwt_optional with no/invalid token) — a route shouldn't need to know
 which decorator protected it to know where to look.
 
+Optional session_version checker (Phase 2 / F2.1): server.py registers a
+callback that rejects JWTs whose ``sv`` claim does not match
+User.session_version (logout-all / password reset). Unit tests that never
+call set_jwt_session_version_checker keep the previous behaviour.
+
 create_admin_required() below is a different, session-based check (not
 JWT) for the Prompt Engine's admin-gated routes (backend/prompts/routes.py)
 — a factory, not a plain decorator, because it needs SessionLocal/User
@@ -18,19 +23,40 @@ request-scoped global proxy, not a real object that needs construction."""
 from functools import wraps
 
 from flask import g, jsonify, session
-from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import get_jwt, get_jwt_identity
 from flask_jwt_extended import jwt_required as _jwt_required
+
+# Optional: (claims: dict, identity: str|None) -> Flask response | None
+_jwt_session_version_checker = None
+
+
+def set_jwt_session_version_checker(fn):
+    """Register (or clear with None) the JWT session_version verifier."""
+    global _jwt_session_version_checker
+    _jwt_session_version_checker = fn
+
+
+def _run_session_version_check():
+    checker = _jwt_session_version_checker
+    if checker is None:
+        return None
+    return checker(get_jwt(), get_jwt_identity())
 
 
 def jwt_required():
     """Verifies the Authorization: Bearer <token> header; aborts with
     401 (via flask_jwt_extended's own error handlers) if missing,
-    malformed, or expired. Sets g.current_user on success."""
+    malformed, or expired. Sets g.current_user on success.
+    When a session_version checker is registered, also rejects revoked tokens.
+    """
 
     def decorator(fn):
         @_jwt_required()
         @wraps(fn)
         def wrapper(*args, **kwargs):
+            denied = _run_session_version_check()
+            if denied is not None:
+                return denied
             g.current_user = get_jwt_identity()
             return fn(*args, **kwargs)
 
@@ -48,7 +74,12 @@ def jwt_optional(fn):
     @_jwt_required(optional=True)
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        g.current_user = get_jwt_identity()  # None if no token given
+        identity = get_jwt_identity()
+        if identity is not None:
+            denied = _run_session_version_check()
+            if denied is not None:
+                return denied
+        g.current_user = identity  # None if no token given
         return fn(*args, **kwargs)
 
     return wrapper

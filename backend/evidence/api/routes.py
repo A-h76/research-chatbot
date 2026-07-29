@@ -48,6 +48,9 @@ def create_evidence_blueprint(
     limiter: Any,
     load_analysis_result: Callable,
     enqueue_job: Callable | None = None,
+    ai_gateway: Any = None,
+    get_model_registry: Callable | None = None,
+    writing_quality_mode: str = "balanced",
 ) -> Blueprint:
     bp = Blueprint("evidence", __name__)
 
@@ -719,7 +722,24 @@ def create_evidence_blueprint(
             consensus = apply_consensus_stage(ranked, binding_relations=relations)
             conflicted = apply_conflict_stage(consensus, binding_relations=relations)
             reasoned = apply_reasoning_stage(conflicted)
-            result = apply_writing_intelligence_stage(reasoned)
+            composer = None
+            if ai_gateway is not None and get_model_registry is not None:
+                from backend.evidence.writing.gateway_composer import make_gateway_composer
+
+                section_type = str((query.get("section_type") or "")).strip().lower()
+                task = (
+                    "literature_review"
+                    if section_type == "literature_review"
+                    else "section_generator"
+                )
+                composer = make_gateway_composer(
+                    ai_gateway=ai_gateway,
+                    model_registry=get_model_registry(db),
+                    mode=writing_quality_mode,
+                    user_id=uid,
+                    task=task,
+                )
+            result = apply_writing_intelligence_stage(reasoned, composer=composer)
             log_evidence_metric(
                 "writing_intelligence",
                 user_id=uid,

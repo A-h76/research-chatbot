@@ -1,17 +1,17 @@
-"""HTTP security headers (PR4).
+"""HTTP security headers (PR4 + Phase 4 CSP enforce).
 
-Baseline headers on every response. CSP is Report-Only in production by
-default so we can observe violations without breaking the SPA / OAuth /
-SSE / KaTeX paths. Development skips CSP unless CSP_REPORT_ONLY=1.
+Baseline headers on every response. Production defaults to **enforcing**
+CSP (Phase 4). Rollback: set CSP_REPORT_ONLY=1 to emit Report-Only only.
+Disable entirely with CSP_DISABLE=1.
 """
 
 from __future__ import annotations
 
-from typing import Mapping, MutableMapping, Optional
+from typing import Mapping, MutableMapping, Optional, Tuple
 
-# Conservative Report-Only policy for the production SPA served same-origin.
+# Conservative policy for the production SPA served same-origin.
 # Allows Google profile images + data/blob previews; keeps scripts same-origin.
-PROD_CSP_REPORT_ONLY = (
+PROD_CSP = (
     "default-src 'self'; "
     "base-uri 'self'; "
     "object-src 'none'; "
@@ -26,8 +26,8 @@ PROD_CSP_REPORT_ONLY = (
     "media-src 'self' blob:"
 )
 
-# Looser Report-Only for local Vite HMR when explicitly enabled.
-DEV_CSP_REPORT_ONLY = (
+# Looser policy for local Vite HMR when explicitly enabled.
+DEV_CSP = (
     "default-src 'self'; "
     "base-uri 'self'; "
     "object-src 'none'; "
@@ -43,22 +43,59 @@ DEV_CSP_REPORT_ONLY = (
     "media-src 'self' blob:"
 )
 
+# Back-compat aliases
+PROD_CSP_REPORT_ONLY = PROD_CSP
+DEV_CSP_REPORT_ONLY = DEV_CSP
+
 
 def _truthy(value: Optional[str]) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def resolve_csp(
+    *,
+    is_production: bool,
+    environ: Mapping[str, str],
+) -> Tuple[Optional[str], bool]:
+    """Return (policy, enforce).
+
+    enforce=True → Content-Security-Policy
+    enforce=False → Content-Security-Policy-Report-Only (or omit if no policy)
+    """
+    if _truthy(environ.get("CSP_DISABLE")) or _truthy(environ.get("CSP_REPORT_ONLY_DISABLE")):
+        return None, False
+
+    custom = (environ.get("CSP_POLICY") or environ.get("CSP_REPORT_ONLY_POLICY") or "").strip()
+    if is_production:
+        policy = custom or PROD_CSP
+        # Phase 4: enforce by default; CSP_REPORT_ONLY=1 rolls back to report-only.
+        enforce = not _truthy(environ.get("CSP_REPORT_ONLY"))
+        return policy, enforce
+
+    # Development: only when explicitly requested
+    force_report = _truthy(environ.get("CSP_REPORT_ONLY"))
+    force_enforce = _truthy(environ.get("CSP_ENFORCE"))
+    if not (force_report or force_enforce):
+        return None, False
+    policy = custom or DEV_CSP
+    return policy, force_enforce
+
+
 def build_csp_report_only(*, is_production: bool, environ: Mapping[str, str]) -> Optional[str]:
-    """Return a Report-Only CSP string, or None to omit the header."""
-    force = _truthy(environ.get("CSP_REPORT_ONLY"))
-    disable = _truthy(environ.get("CSP_REPORT_ONLY_DISABLE"))
-    if disable:
+    """Deprecated helper — prefer resolve_csp(). Kept for older tests."""
+    policy, enforce = resolve_csp(is_production=is_production, environ=environ)
+    if policy is None:
         return None
-    if is_production or force:
-        if is_production:
-            return (environ.get("CSP_REPORT_ONLY_POLICY") or "").strip() or PROD_CSP_REPORT_ONLY
-        return (environ.get("CSP_REPORT_ONLY_POLICY") or "").strip() or DEV_CSP_REPORT_ONLY
-    return None
+    if enforce:
+        return None  # enforcing path uses a different header
+    return policy
+
+
+def _is_authenticated_surface(path: Optional[str]) -> bool:
+    """API/auth JSON surfaces must not be cached by shared proxies/browsers."""
+    if not path:
+        return False
+    return path == "/api" or path.startswith("/api/") or path == "/auth" or path.startswith("/auth/")
 
 
 def apply_security_headers(
@@ -66,6 +103,7 @@ def apply_security_headers(
     *,
     is_production: bool,
     environ: Mapping[str, str],
+    request_path: Optional[str] = None,
 ) -> MutableMapping:
     """Mutate ``response.headers`` (Werkzeug/Flask Response) in place."""
     headers = response.headers
@@ -76,7 +114,6 @@ def apply_security_headers(
         "Permissions-Policy",
         "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     )
-    # Disable legacy XSS auditor (modern browsers ignore/remove it).
     headers.setdefault("X-XSS-Protection", "0")
 
     if is_production:
@@ -85,8 +122,14 @@ def apply_security_headers(
             "max-age=31536000; includeSubDomains",
         )
 
-    csp = build_csp_report_only(is_production=is_production, environ=environ)
-    if csp:
-        headers.setdefault("Content-Security-Policy-Report-Only", csp)
+    if _is_authenticated_surface(request_path):
+        headers.setdefault("Cache-Control", "no-store")
+
+    policy, enforce = resolve_csp(is_production=is_production, environ=environ)
+    if policy:
+        if enforce:
+            headers.setdefault("Content-Security-Policy", policy)
+        else:
+            headers.setdefault("Content-Security-Policy-Report-Only", policy)
 
     return response

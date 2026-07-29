@@ -49,9 +49,11 @@ def test_create_and_decode_round_trip():
         assert claims["sub"] == "42"
         assert claims["role"] == "researcher"
         assert claims["type"] == "access"
+        assert claims["sv"] == 0
 
         refresh_claims = decode_jwt(refresh)
         assert refresh_claims["type"] == "refresh"
+        assert refresh_claims["sv"] == 0
 
 
 def test_decode_malformed_token_raises_jwt_error():

@@ -47,6 +47,53 @@ def test_require_production_secrets_ok_with_minimum():
             "GOOGLE_CLIENT_ID": "id",
             "GOOGLE_CLIENT_SECRET": "secret",
             "ALLOWED_EMAILS": "beta@dhund.com",
+            "OPENAI_API_KEY": "sk-test",
+            "CLAMAV_OPTIONAL": "1",
+        },
+        is_production=True,
+    )
+
+
+def test_require_production_secrets_requires_openai():
+    with pytest.raises(SystemExit, match="OPENAI_API_KEY"):
+        require_production_secrets(
+            {
+                "FLASK_ENV": "production",
+                "FLASK_SECRET_KEY": "prod-secret-key-at-least-32-chars!!",
+                "GOOGLE_CLIENT_ID": "id",
+                "GOOGLE_CLIENT_SECRET": "secret",
+                "ALLOWED_EMAILS": "beta@dhund.com",
+                "CLAMAV_OPTIONAL": "1",
+            },
+            is_production=True,
+        )
+
+
+def test_require_production_secrets_requires_clamav_or_optional():
+    with pytest.raises(SystemExit, match="CLAMAV"):
+        require_production_secrets(
+            {
+                "FLASK_ENV": "production",
+                "FLASK_SECRET_KEY": "prod-secret-key-at-least-32-chars!!",
+                "GOOGLE_CLIENT_ID": "id",
+                "GOOGLE_CLIENT_SECRET": "secret",
+                "ALLOWED_EMAILS": "beta@dhund.com",
+                "OPENAI_API_KEY": "sk-test",
+            },
+            is_production=True,
+        )
+
+
+def test_require_production_secrets_clamav_enabled_ok():
+    require_production_secrets(
+        {
+            "FLASK_ENV": "production",
+            "FLASK_SECRET_KEY": "prod-secret-key-at-least-32-chars!!",
+            "GOOGLE_CLIENT_ID": "id",
+            "GOOGLE_CLIENT_SECRET": "secret",
+            "ALLOWED_EMAILS": "beta@dhund.com",
+            "OPENAI_API_KEY": "sk-test",
+            "CLAMAV_ENABLED": "1",
         },
         is_production=True,
     )
@@ -60,6 +107,8 @@ def test_require_production_secrets_requires_invite_gate():
                 "FLASK_SECRET_KEY": "prod-secret-key-at-least-32-chars!!",
                 "GOOGLE_CLIENT_ID": "id",
                 "GOOGLE_CLIENT_SECRET": "secret",
+                "OPENAI_API_KEY": "sk-test",
+                "CLAMAV_OPTIONAL": "1",
             },
             is_production=True,
         )
@@ -74,6 +123,8 @@ def test_require_production_secrets_r2_requires_creds():
                 "GOOGLE_CLIENT_ID": "id",
                 "GOOGLE_CLIENT_SECRET": "secret",
                 "ALLOWED_EMAILS": "a@b.com",
+                "OPENAI_API_KEY": "sk-test",
+                "CLAMAV_OPTIONAL": "1",
                 "STORAGE_PROVIDER": "r2",
                 "R2_BUCKET": "bucket",
             },

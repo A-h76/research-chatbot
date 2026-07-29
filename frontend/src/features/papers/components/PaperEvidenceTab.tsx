@@ -1,3 +1,8 @@
+/**
+ * Paper tab: Phase 1.5 Evidence Grading (GRADE / frameworks).
+ * This is NOT the Evidence Platform / Research Intelligence EvidenceObject Inspector
+ * (that lives in Writing Studio).
+ */
 import { useMemo } from "react";
 import { AlertCircle, Scale } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";

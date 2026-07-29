@@ -53,3 +53,16 @@ def test_clamps_result_limit():
     raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
     raw["result_limit"] = 999
     assert normalize_evidence_query(raw, user_id=1)["result_limit"] == 100
+
+
+def test_default_and_valid_section_type():
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    q = normalize_evidence_query(raw, user_id=1)
+    assert q["section_type"] == "support_sentence"
+    raw["section_type"] = "literature_review"
+    assert normalize_evidence_query(raw, user_id=1)["section_type"] == "literature_review"
+    try:
+        normalize_evidence_query({**raw, "section_type": "blog_post"}, user_id=1)
+        assert False
+    except ValueError as exc:
+        assert "section_type" in str(exc)

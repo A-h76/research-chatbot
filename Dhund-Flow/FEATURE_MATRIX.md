@@ -1,7 +1,7 @@
 # FEATURE_MATRIX — Implemented vs planned
 
 **Legend:** **Implemented** · **Partial** · **Planned** · **Not Implemented**  
-**Last updated:** 2026-07-28  
+**Last updated:** 2026-07-29  
 **Rule:** “Implemented” must exist in code; design-only stays Planned.
 
 ---
@@ -17,11 +17,15 @@
 | Discover / OpenAlex | Implemented | Stubs + DOI dedup |
 | Paper Workspace (Phase 1 tabs) | Implemented | Structure → Graph, Narrative, Chat |
 | Analysis pipeline 1.1–1.7 + worker | Implemented | Deterministic engines + orchestration |
+| Evidence Extraction Pipeline | Implemented | Sync API + worker; Library/Paper **Extract evidence** UI |
 | Writing Studio Shell | Implemented | `v0.1.0` — autosave, versions, lifecycle |
 | Evidence Platform (2.2) | Implemented | Frozen `v0.2.0-rc1` |
 | Research Intelligence (2.3) | Implemented | Sprints 0–6 APIs |
-| Writing Intelligence (grounded) | Implemented | `/api/evidence/writing` — generation last |
-| Legacy `POST /api/writing` transforms | Partial | Not the Studio foundation |
+| Writing Intelligence (grounded) | Partial | `grounded_v0` + M1 Planner/Context/Section Generator + section intents |
+| Evidence Discovery | Planned | Milestone 2 |
+| Research Session | Planned | Orchestration (not knowledge store) |
+| RI Inspector enrichment | Implemented | Consensus / conflict / reason in Writing Inspector |
+| Legacy `POST /api/writing` transforms | Partial | Labeled **style only** — not evidence-backed |
 | Citations manager | Implemented | Styles + BibTeX; insert-into-draft Planned |
 | Compare / Gaps | Implemented | Cached derived analyses |
 | Notes / Projects / Memory | Implemented | |
@@ -38,6 +42,8 @@
 | Research Assistant | Planned | Evidence Query → reason → answer |
 | Publication engine | Planned | Later |
 
+**Naming:** Paper “Evidence” tab = Phase 1.5 GRADE grading. RI EvidenceObjects live under Writing Inspector / Evidence Platform — not the same surface.
+
 ---
 
 ## Research Intelligence APIs (Phase 2.3)
@@ -50,7 +56,7 @@
 | Consensus | `POST /api/evidence/consensus` | Implemented |
 | Conflict | `POST /api/evidence/conflict` | Implemented |
 | Reasoning | `POST /api/evidence/reason` | Implemented |
-| Writing Intelligence | `POST /api/evidence/writing` | Implemented (`grounded_v0`) |
+| Writing Intelligence | `POST /api/evidence/writing` | Implemented (`grounded_v0`, writing_version 1.3.1, Gateway + Reviewer + Verify + Markdown export w/ evidence trail) |
 | Explain (platform) | `POST /api/evidence/explain` | Implemented (frozen) |
 
 ---

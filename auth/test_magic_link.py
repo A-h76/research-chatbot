@@ -14,11 +14,20 @@ import server
 EMAIL = "magic-link-verify@example.com"
 
 
+def _allow_test_email():
+    """Ensure closed-beta gate allows EMAIL for the duration of a verify test."""
+    if EMAIL not in server.ALLOWED_EMAILS:
+        server.ALLOWED_EMAILS.append(EMAIL)
+        return True
+    return False
+
+
 def _serializer():
-    # The blueprint exposes its serializer instance for exactly this —
-    # building a token the same way the real request handler does,
-    # without duplicating the secret/salt logic here.
     return server.app.blueprints["magic_link"]._serializer
+
+
+def _issue_token(email=EMAIL):
+    return server.app.blueprints["magic_link"].issue_token(email)
 
 
 def _cleanup():
@@ -28,6 +37,13 @@ def _cleanup():
         if u:
             db.delete(u)
             db.commit()
+        for row in (
+            db.execute(server.select(server.MagicLinkToken).where(server.MagicLinkToken.email == EMAIL))
+            .scalars()
+            .all()
+        ):
+            db.delete(row)
+        db.commit()
     finally:
         db.close()
 
@@ -77,88 +93,123 @@ def test_verify_expired_token():
     # real and wired correctly: any token is "expired" against max_age=-1.
     import itsdangerous
 
-    with server.app.app_context():
-        token = _serializer().dumps({"email": EMAIL})
-        try:
-            _serializer().loads(token, max_age=-1)
-            assert False, "expected SignatureExpired"
-        except itsdangerous.SignatureExpired:
-            pass
+    added = _allow_test_email()
+    try:
+        with server.app.app_context():
+            token = _issue_token(EMAIL)
+            try:
+                _serializer().loads(token, max_age=-1)
+                assert False, "expected SignatureExpired"
+            except itsdangerous.SignatureExpired:
+                pass
 
-    # And confirm the actual HTTP endpoint rejects a signature-invalid
-    # token the same way (same code path the real 15-minute expiry hits).
-    with server.app.test_client() as client:
-        resp = client.post("/auth/magic-link/verify", json={"token": token + "tampered"})
-        assert resp.status_code == 401, resp.get_json()
+        with server.app.test_client() as client:
+            resp = client.post("/auth/magic-link/verify", json={"token": token + "tampered"})
+            assert resp.status_code == 401, resp.get_json()
+    finally:
+        if added:
+            server.ALLOWED_EMAILS.remove(EMAIL)
+        _cleanup()
 
 
 def test_verify_creates_new_user_with_magic_provider():
     _cleanup()
-    with server.app.app_context():
-        token = _serializer().dumps({"email": EMAIL})
-    with server.app.test_client() as client:
-        resp = client.post("/auth/magic-link/verify", json={"token": token})
-        data = resp.get_json()
-        print(
-            "   verify (new user):",
-            resp.status_code,
-            {k: v for k, v in data.items() if k not in ("access_token", "refresh_token")},
-        )
-        assert resp.status_code == 200, data
-        assert data["access_token"] and data["refresh_token"]
-
-        with client.session_transaction() as sess:
-            assert sess["user_id"] == data["user_id"]
-            assert "jwt" in sess
-
-    db = server.SessionLocal()
+    added = _allow_test_email()
     try:
-        user = db.get(server.User, data["user_id"])
-        assert user.auth_provider == "magic", user.auth_provider
+        with server.app.app_context():
+            token = _issue_token(EMAIL)
+        with server.app.test_client() as client:
+            resp = client.post("/auth/magic-link/verify", json={"token": token})
+            data = resp.get_json()
+            print(
+                "   verify (new user):",
+                resp.status_code,
+                {k: v for k, v in data.items() if k not in ("access_token", "refresh_token")},
+            )
+            assert resp.status_code == 200, data
+            assert data["access_token"] and data["refresh_token"]
+
+            with client.session_transaction() as sess:
+                assert sess["user_id"] == data["user_id"]
+                assert "jwt" in sess
+
+        db = server.SessionLocal()
+        try:
+            user = db.get(server.User, data["user_id"])
+            assert user.auth_provider == "magic", user.auth_provider
+        finally:
+            db.close()
     finally:
-        db.close()
+        if added:
+            server.ALLOWED_EMAILS.remove(EMAIL)
+        _cleanup()
+
+
+def test_verify_token_is_single_use():
     _cleanup()
+    added = _allow_test_email()
+    try:
+        with server.app.app_context():
+            token = _issue_token(EMAIL)
+        with server.app.test_client() as client:
+            first = client.post("/auth/magic-link/verify", json={"token": token})
+            assert first.status_code == 200, first.get_json()
+            second = client.post("/auth/magic-link/verify", json={"token": token})
+            assert second.status_code == 401, second.get_json()
+            assert second.get_json().get("detail") == "token_already_used"
+    finally:
+        if added:
+            server.ALLOWED_EMAILS.remove(EMAIL)
+        _cleanup()
 
 
 def test_verify_does_not_overwrite_existing_auth_provider():
     _cleanup()
-    db = server.SessionLocal()
+    added = _allow_test_email()
     try:
-        u = server.User(email=EMAIL, name=EMAIL, auth_provider="google")
-        db.add(u)
-        db.commit()
-        uid = u.id
-    finally:
-        db.close()
+        db = server.SessionLocal()
+        try:
+            u = server.User(email=EMAIL, name=EMAIL, auth_provider="google")
+            db.add(u)
+            db.commit()
+            uid = u.id
+        finally:
+            db.close()
 
-    with server.app.app_context():
-        token = _serializer().dumps({"email": EMAIL})
-    with server.app.test_client() as client:
-        resp = client.post("/auth/magic-link/verify", json={"token": token})
-        assert resp.status_code == 200, resp.get_json()
-        assert resp.get_json()["user_id"] == uid
+        with server.app.app_context():
+            token = _issue_token(EMAIL)
+        with server.app.test_client() as client:
+            resp = client.post("/auth/magic-link/verify", json={"token": token})
+            assert resp.status_code == 200, resp.get_json()
+            assert resp.get_json()["user_id"] == uid
 
-    db = server.SessionLocal()
-    try:
-        user = db.get(server.User, uid)
-        assert (
-            user.auth_provider == "google"
-        ), f"magic-link login must not overwrite an existing provider, got {user.auth_provider!r}"
+        db = server.SessionLocal()
+        try:
+            user = db.get(server.User, uid)
+            assert (
+                user.auth_provider == "google"
+            ), f"magic-link login must not overwrite an existing provider, got {user.auth_provider!r}"
+        finally:
+            db.close()
     finally:
-        db.close()
-    _cleanup()
+        if added:
+            server.ALLOWED_EMAILS.remove(EMAIL)
+        _cleanup()
 
 
 def test_verify_denied_when_not_in_allowlist():
+    prior = list(server.ALLOWED_EMAILS)
+    server.ALLOWED_EMAILS.clear()
     server.ALLOWED_EMAILS.append("only-this-one@example.com")
     try:
         with server.app.app_context():
-            token = _serializer().dumps({"email": EMAIL})
+            token = _issue_token(EMAIL)
         with server.app.test_client() as client:
             resp = client.post("/auth/magic-link/verify", json={"token": token})
             assert resp.status_code == 403, resp.get_json()
     finally:
-        server.ALLOWED_EMAILS.remove("only-this-one@example.com")
+        server.ALLOWED_EMAILS.clear()
+        server.ALLOWED_EMAILS.extend(prior)
     _cleanup()
 
 

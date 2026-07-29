@@ -104,6 +104,24 @@ each independently tested against real infrastructure before moving on).
 Continue it — no task should leave `server.py` unable to boot or a route
 unable to serve a request when it's done.
 
+### 8.5 Product workflow first — thin vertical slices over feature collections
+
+Roadmap items start from a researcher problem and end as one complete,
+measurable workflow. Architecture should remain stable and serve workflow
+outcomes, not drive breadth-first feature exposure.
+
+Ship one polished workflow at a time (for example, Evidence-backed
+Literature Review), then measure and improve before opening the next
+workflow surface.
+
+### 8.6 Platform freeze discipline
+
+Once foundational platform layers are accepted for a release window, no
+new platform subsystem work should start unless it either (a) directly
+unblocks the active validated workflow, or (b) fixes a demonstrated
+production limitation. Prefer workflow completion over architecture
+expansion.
+
 ### 9. Dependency Inversion — interfaces for LLM providers, storage, queues, databases
 
 **Uneven today, named plainly**:

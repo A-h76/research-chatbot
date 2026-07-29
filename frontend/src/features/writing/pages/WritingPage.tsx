@@ -23,8 +23,18 @@ import type { WritingAction } from "@/types/api";
 import { trackWritingEvent } from "../utils/telemetry";
 import { EvidenceInspectorPanel } from "@/features/evidence/components/EvidenceInspectorPanel";
 import { useEvidenceExplain } from "@/features/evidence/hooks/useEvidenceExplain";
+import { useGroundedWriting, WRITING_SECTION_OPTIONS, type WritingSectionType } from "@/features/evidence/hooks/useGroundedWriting";
 import { evidenceApi } from "@/features/evidence/api";
-import type { EvidenceObjectDTO } from "@/features/evidence/types";
+import {
+  GroundedDraftVerify,
+  persistGroundedBindings,
+} from "@/features/writing/components/GroundedDraftVerify";
+import {
+  buildLiteratureReviewMarkdown,
+  downloadMarkdownFile,
+  loadGroundedExportSnapshot,
+  saveGroundedExportSnapshot,
+} from "@/features/writing/utils/groundedMarkdownExport";
 
 const ACTIONS: { key: WritingAction; label: string; icon: React.ReactNode; desc: string }[] = [
   { key: "rewrite_academic", label: "Academic", icon: <GraduationCap className="size-3.5" />, desc: "Formal academic register" },
@@ -35,6 +45,29 @@ const ACTIONS: { key: WritingAction; label: string; icon: React.ReactNode; desc:
   { key: "generate_abstract", label: "Abstract", icon: <FileText className="size-3.5" />, desc: "Structured abstract" },
   { key: "improve_conclusion", label: "Conclusion", icon: <Wand2 className="size-3.5" />, desc: "Strengthen ending" },
 ];
+
+function FlaskConicalIcon() {
+  // Local inline icon to avoid depending on lucide version for FlaskConical
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-3.5"
+      aria-hidden
+    >
+      <path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2" />
+      <path d="M8.5 2h7" />
+      <path d="M7 16h10" />
+    </svg>
+  );
+}
 
 function buildAutosaveKey(
   docId: number,
@@ -70,6 +103,9 @@ function DraftTab() {
   const [isOffline, setIsOffline] = useState<boolean>(!window.navigator.onLine);
   const [selectedText, setSelectedText] = useState("");
   const [evidenceRefresh, setEvidenceRefresh] = useState(0);
+  const [sectionType, setSectionType] = useState<WritingSectionType>("literature_review");
+  const [groundedBaseline, setGroundedBaseline] = useState<string | null>(null);
+  const [editsSinceInsert, setEditsSinceInsert] = useState(0);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
 
   const evidenceExplain = useEvidenceExplain({
@@ -79,6 +115,19 @@ function DraftTab() {
     enabled: activeId != null && currentProjectId != null,
     refreshKey: evidenceRefresh,
   });
+  const grounded = useGroundedWriting();
+
+  useEffect(() => {
+    if (!grounded.last || grounded.last.status !== "ok" || activeId == null) return;
+    saveGroundedExportSnapshot({
+      documentId: activeId,
+      title: draftTitle || "Literature review",
+      body: grounded.last.paragraph || input,
+      writing: grounded.last,
+      writing_version: grounded.last.writing_version,
+      savedAt: new Date().toISOString(),
+    });
+  }, [grounded.last, activeId, draftTitle, input]);
 
   const docsQuery = useQuery({
     queryKey: ["writing", "documents", currentProjectId ?? "all", lifecycleView],
@@ -426,10 +475,77 @@ function DraftTab() {
         </div>
       )}
 
-      {/* Action toolbar — not marketing cards */}
+      {/* Evidence-backed generate (RI) — separate from style transforms */}
       <div className="flex flex-wrap items-center gap-1.5 border-b border-border pb-3">
         <span className="mr-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Transform
+          Evidence
+        </span>
+        <label className="sr-only" htmlFor="writing-section-type">
+          Section type
+        </label>
+        <select
+          id="writing-section-type"
+          value={sectionType}
+          onChange={(e) => setSectionType(e.target.value as WritingSectionType)}
+          className="h-8 rounded-md border border-border bg-card px-2 text-[12px] text-foreground"
+          disabled={grounded.isPending}
+        >
+          {WRITING_SECTION_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.experimental ? `${opt.label} (experimental)` : opt.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          disabled={
+            grounded.isPending ||
+            activeId == null ||
+            currentProjectId == null ||
+            activeDoc?.status === "deleted"
+          }
+          title="Research Intelligence: generate from accepted EvidenceObjects only"
+          className={cn(
+            "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
+            grounded.isPending
+              ? "border-primary bg-accent-soft text-primary"
+              : "border-border bg-card text-foreground hover:bg-muted/50",
+          )}
+          onClick={() => {
+            if (activeId == null || currentProjectId == null) {
+              toast.error("Select a project document first");
+              return;
+            }
+            const focus = selectedText.trim() || input.trim();
+            if (!focus) {
+              toast.error("Select a sentence or paste draft text first");
+              return;
+            }
+            grounded.generate({
+              projectId: currentProjectId,
+              documentId: activeId,
+              selectedText,
+              draftFallback: input,
+              sectionType,
+            });
+          }}
+        >
+          {grounded.isPending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <FlaskConicalIcon />
+          )}
+          Generate from evidence
+        </button>
+        <span className="text-[11px] text-muted-foreground">
+          Section planner · RI pipeline · blocked if insufficient
+        </span>
+      </div>
+
+      {/* Style-only transforms — not evidence-backed */}
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-border pb-3">
+        <span className="mr-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Style only
         </span>
         {ACTIONS.map(({ key, label, icon, desc }) => (
           <button
@@ -437,7 +553,7 @@ function DraftTab() {
             type="button"
             onClick={() => run(key)}
             disabled={loading}
-            title={desc}
+            title={`${desc} (not evidence-backed)`}
             className={cn(
               "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
               loading && activeAction === key
@@ -455,7 +571,7 @@ function DraftTab() {
           </button>
         ))}
         <span className="ml-auto hidden text-[11px] text-muted-foreground sm:inline">
-          Does not invent citations or data
+          Style transforms do not invent citations — they are not Research Intelligence
         </span>
       </div>
 
@@ -475,7 +591,14 @@ function DraftTab() {
           <textarea
             ref={editorRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setInput(next);
+              if (groundedBaseline != null) {
+                // Character delta vs post-insert baseline (quality signal for Lit Review).
+                setEditsSinceInsert(Math.abs(next.length - groundedBaseline.length));
+              }
+            }}
             onSelect={() => {
               const el = editorRef.current;
               if (!el) return;
@@ -529,6 +652,168 @@ function DraftTab() {
               </div>
             )}
           </div>
+
+          {grounded.last && (
+            <div
+              className={cn(
+                "mb-2 rounded-lg border p-3 text-[12px]",
+                grounded.last.status === "ok"
+                  ? "border-emerald-700/30 bg-emerald-500/5"
+                  : "border-amber-700/30 bg-amber-500/5",
+              )}
+              role="status"
+            >
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <p className="font-medium text-foreground">
+                  {grounded.last.status === "ok"
+                    ? "Grounded draft (EvidenceObjects)"
+                    : "Blocked — insufficient evidence"}
+                </p>
+                <span className="text-[10px] uppercase text-muted-foreground">
+                  {grounded.last.mode}
+                </span>
+              </div>
+              {grounded.last.status === "blocked" ? (
+                <p className="text-muted-foreground">
+                  {grounded.last.blocked_reason || "insufficient_evidence"}. Extract and accept
+                  evidence from Research Ready papers, then retry.
+                </p>
+              ) : (
+                <>
+                  {grounded.last.section_type ? (
+                    <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {grounded.last.section_type.replace(/_/g, " ")}
+                      {grounded.last.metrics
+                        ? ` · grounding ${(grounded.last.metrics.grounding_pct * 100).toFixed(0)}% · coverage ${((grounded.last.metrics.citation_coverage ?? 0) * 100).toFixed(0)}% · unsupported ${grounded.last.metrics.unsupported_claims ?? 0}`
+                        : null}
+                      {grounded.last.review
+                        ? ` · research reviewer ${grounded.last.review.status} (${(grounded.last.review.pass_rate * 100).toFixed(0)}%)`
+                        : null}
+                    </p>
+                  ) : null}
+                  <GroundedDraftVerify
+                    writing={grounded.last}
+                    onRevise={() => {
+                      if (activeId == null || currentProjectId == null) return;
+                      grounded.generate({
+                        projectId: currentProjectId,
+                        documentId: activeId,
+                        selectedText,
+                        draftFallback: input,
+                        sectionType,
+                      });
+                    }}
+                  />
+                  {grounded.last.review?.issues?.length ? (
+                    <ul className="mt-2 space-y-1 border-t border-border pt-2 text-[11px] text-amber-800 dark:text-amber-200">
+                      {grounded.last.review.issues
+                        .filter((issue) => !issue.section_id)
+                        .map((issue, idx) => (
+                          <li key={`${issue.code}-${idx}`}>
+                            [{issue.severity}] {issue.message}
+                          </li>
+                        ))}
+                    </ul>
+                  ) : null}
+                  {grounded.last.citations.length > 0 && (
+                    <ul className="mt-2 space-y-1 border-t border-border pt-2 text-[11px] text-muted-foreground">
+                      {grounded.last.citations.map((c) => (
+                        <li key={c.evidence_id}>
+                          #{c.evidence_id}
+                          {c.page != null ? ` · p.${c.page}` : ""} — {c.claim}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {grounded.last.warnings?.length ? (
+                    <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-200">
+                      {grounded.last.warnings.join(" ")}
+                    </p>
+                  ) : null}
+                  <p className="mt-2 text-[10px] text-muted-foreground">{grounded.last.disclaimer}</p>
+                  {editsSinceInsert > 0 ? (
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      Char edits since insert: {editsSinceInsert} (quality signal)
+                    </p>
+                  ) : null}
+                  <div className="mt-2 flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[11px]"
+                      onClick={async () => {
+                        if (!grounded.last?.paragraph || activeId == null) return;
+                        const nextPara = grounded.last.paragraph;
+                        setInput((prev) => {
+                          const merged = prev.trim()
+                            ? `${prev.trim()}\n\n${nextPara}`
+                            : nextPara;
+                          setGroundedBaseline(merged);
+                          return merged;
+                        });
+                        setEditsSinceInsert(0);
+                        const persist = await persistGroundedBindings({
+                          documentId: activeId,
+                          writing: grounded.last,
+                          createBinding: evidenceApi.createBinding,
+                        });
+                        saveGroundedExportSnapshot({
+                          documentId: activeId,
+                          title: draftTitle || "Literature review",
+                          body: input.trim()
+                            ? `${input.trim()}\n\n${nextPara}`
+                            : nextPara,
+                          writing: grounded.last,
+                          writing_version: grounded.last.writing_version,
+                          savedAt: new Date().toISOString(),
+                        });
+                        trackWritingEvent("grounded_insert", {
+                          section_type: grounded.last.section_type || "literature_review",
+                          grounding_pct: grounded.last.metrics?.grounding_pct,
+                          reviewer_pass_rate: grounded.last.metrics?.reviewer_pass_rate,
+                          citation_count: grounded.last.citations.length,
+                          bindings_saved: persist.saved,
+                          bindings_failed: persist.failed,
+                        });
+                        if (persist.failed > 0) {
+                          toast.error(
+                            `Inserted draft; ${persist.failed} evidence link(s) failed to save`,
+                          );
+                        } else {
+                          toast.success(
+                            persist.saved > 0
+                              ? `Inserted grounded draft · ${persist.saved} evidence link(s) saved`
+                              : "Inserted grounded draft — verify evidence links before export",
+                          );
+                        }
+                      }}
+                    >
+                      Insert into draft
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-[11px]"
+                      onClick={() => {
+                        if (groundedBaseline != null) {
+                          trackWritingEvent("edits_before_export", {
+                            section_type: sectionType,
+                            edits_since_insert: editsSinceInsert,
+                            char_delta: Math.abs(input.length - groundedBaseline.length),
+                          });
+                        }
+                        grounded.clear();
+                        setGroundedBaseline(null);
+                        setEditsSinceInsert(0);
+                      }}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {warning && (
             <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[12px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
@@ -607,12 +892,52 @@ function ExportTab() {
   const { data: notesData } = useNotes({ project_id: currentProjectId });
   const notes = notesData?.items ?? [];
   const { data: convos = [] } = useConversations();
+  const docsQuery = useQuery({
+    queryKey: ["writing", "documents", currentProjectId ?? "all", "export"],
+    queryFn: () =>
+      writingApi.listDocuments(currentProjectId as number, {
+        includeArchived: false,
+        includeDeleted: false,
+      }),
+    enabled: currentProjectId != null,
+  });
+  const writingDocs = docsQuery.data?.items ?? [];
 
   function download(url: string, fname: string) {
     const a = document.createElement("a");
     a.href = url;
     a.download = fname;
     a.click();
+  }
+
+  function exportLitReviewDoc(doc: { id: number; title?: string; content?: string }) {
+    const snap = loadGroundedExportSnapshot(doc.id);
+    const body = (doc.content || snap?.body || "").trim();
+    if (!body) {
+      toast.error("Draft is empty — generate and insert a grounded review first");
+      return;
+    }
+    const md = buildLiteratureReviewMarkdown({
+      title: doc.title || snap?.title || "Literature review",
+      body,
+      writing: snap?.writing ?? null,
+      writing_version: snap?.writing_version,
+    });
+    const safe = (doc.title || "literature-review")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 60);
+    downloadMarkdownFile(`${safe || "literature-review"}-${doc.id}.md`, md);
+    trackWritingEvent("grounded_export", {
+      document_id: doc.id,
+      has_evidence_appendix: Boolean(snap?.writing),
+    });
+    toast.success(
+      snap?.writing
+        ? "Exported Markdown with evidence appendix + bibliography"
+        : "Exported Markdown (no evidence snapshot — regenerate to include appendix)",
+    );
   }
 
   async function exportNotes(fmt: "md" | "txt" | "docx") {
@@ -676,6 +1001,35 @@ function ExportTab() {
           <Quote className="size-3.5" /> Open Citations
         </Link>
       </div>
+
+      <section className="rounded-lg border border-border bg-card px-3">
+        <div className="flex items-center gap-2 border-b border-border py-2">
+          <FileText className="size-3.5 text-muted-foreground" />
+          <h2 className="text-[12px] font-semibold">Evidence-backed literature review</h2>
+        </div>
+        {writingDocs.length === 0 ? (
+          <p className="py-3 text-[12px] text-muted-foreground">
+            No writing drafts yet. Generate from evidence on the Draft tab, then export here.
+          </p>
+        ) : (
+          writingDocs.map((doc) => {
+            const snap = loadGroundedExportSnapshot(doc.id);
+            return (
+              <ExportRow
+                key={doc.id}
+                title={doc.title || "Untitled draft"}
+                subtitle={
+                  snap?.writing
+                    ? `Markdown · appendix + bibliography · traceability ready`
+                    : "Markdown · generate from evidence to attach appendix"
+                }
+                formats={[{ label: ".md", fmt: "md" }]}
+                onExport={() => exportLitReviewDoc(doc)}
+              />
+            );
+          })
+        )}
+      </section>
 
       <section className="rounded-lg border border-border bg-card px-3">
         <div className="flex items-center gap-2 border-b border-border py-2">

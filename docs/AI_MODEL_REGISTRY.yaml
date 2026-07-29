@@ -1,0 +1,116 @@
+# AI Model Registry
+#
+# Owned by: Platform Engineering
+# Governed by: docs/AI_POLICY_v1.0.md
+#
+# This file is the replaceable configuration layer.
+# The policy document (AI_POLICY_v1.0.md) is the stable governance layer.
+# Changing models here does NOT require editing the policy document.
+# Changing escalation rules or SLOs DOES require a policy document update.
+#
+# Every change to this file requires the same evidence standard as a policy change:
+#   - benchmark results
+#   - telemetry trend or cost analysis
+#   - answer to: quality acceptable? cost acceptable? latency acceptable?
+#
+# registry_version is independent of policy_version.
+# Increment registry_version on any model assignment change.
+#
+# Allowed models in OpenAI project (verified 2026-07-29):
+#   gpt-5-mini
+#   gpt-5.5
+#   gpt-5.5-pro
+#   text-embedding-3-small
+#   gpt-4o-mini-search-preview
+#   omni-moderation-latest
+
+registry_version: "1.1"
+policy_version: "1.0"
+updated: "2026-07-29"
+
+# ── Escalation tiers ──────────────────────────────────────────────────────────
+# These three tiers participate in the fast → standard → publication escalation
+# chain defined in AI_POLICY_v1.0.md. SLO targets apply to these tiers only.
+
+tiers:
+  fast:
+    provider: openai
+    model: "gpt-5-mini"
+    intended_usage:
+      - Metadata extraction and tagging
+      - Lightweight summarisation
+      - Formatting and structuring
+      - UI-facing tasks (autocomplete, labels, short responses)
+      - Initial retrieval scoring
+    notes: "Default tier. Target ≥ 85% of all LLM calls."
+
+  standard:
+    provider: openai
+    model: "gpt-5.5"
+    intended_usage:
+      - Writing planner (section structure, outline)
+      - Context builder (evidence allocation to sections)
+      - Consensus and conflict analysis
+      - Multi-document synthesis and ranking
+      - Evidence-grounded paragraph drafting (balanced mode)
+    notes: "Escalated from fast on retriever/planner signals. Target ≤ 14% of calls."
+
+  publication:
+    provider: openai
+    model: "gpt-5.5-pro"
+    intended_usage:
+      - Final literature review generation
+      - Discussion and conclusion writing
+      - Reviewer arbitration (unsupported claim resolution)
+      - Citation binding quality pass
+    notes: "Escalated from standard on reviewer/citation signals only. Target ≤ 1% of calls."
+
+# ── Special-purpose models ────────────────────────────────────────────────────
+# Not part of the escalation chain. Each has a single named role.
+# SLO targets do not apply. Usage is task-scoped, not volume-controlled.
+
+special:
+  search_preview:
+    provider: openai
+    model: "gpt-4o-mini-search-preview"
+    intended_usage:
+      - Web-augmented search queries (backend/search/ routes)
+      - Real-time literature discovery when local corpus is insufficient
+      - Supplementary evidence retrieval (not a replacement for RAG pipeline)
+    notes: >
+      Use only in search blueprint for live web retrieval tasks.
+      Do not route standard RAG or writing tasks here — those belong in the
+      escalation tiers above. Model name includes 'preview'; monitor for
+      GA replacement and update registry when available.
+
+  embeddings:
+    provider: openai
+    model: "text-embedding-3-small"
+    intended_usage:
+      - Semantic search and retrieval (vector store queries)
+      - Document indexing at upload time
+      - Evidence similarity scoring
+    notes: >
+      Not subject to tier SLOs. Governed by retrieval pipeline.
+      Upgrade to text-embedding-3-large only with benchmark evidence showing
+      meaningful recall improvement on Dhund's evidence corpus.
+
+  moderation:
+    provider: openai
+    model: "omni-moderation-latest"
+    intended_usage:
+      - User input moderation before LLM calls
+      - Upload content screening
+    notes: >
+      Run before any user-supplied text reaches an LLM tier.
+      'latest' alias is intentional — OpenAI rotates this automatically.
+      No registry version bump needed when OpenAI updates the underlying model.
+
+# ── Version history ───────────────────────────────────────────────────────────
+# 1.0  2026-07-29  Initial registry. Tiers: fast=gpt-5-mini, standard=gpt-5.5,
+#                  publication=gpt-5.5-pro, embeddings=text-embedding-3-small.
+# 1.1  2026-07-29  Added provider field to all tiers. Promoted embeddings to
+#                  special-purpose section. Added search_preview
+#                  (gpt-4o-mini-search-preview) and moderation
+#                  (omni-moderation-latest) as named special-purpose models
+#                  reflecting verified project allowlist.

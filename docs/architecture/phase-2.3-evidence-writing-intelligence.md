@@ -21,6 +21,11 @@ Retrieval → Ranking → Consensus → Conflict → Reasoning → Writing
 
 Unlocks safe entry to roadmap Phase 2.4 (optional LLM narration can wrap this later without bypassing the gate).
 
+**Milestone 1 + Sprint A:** Writing Intelligence is Planner → Context Builder
+(structured argument: themes / consensus / conflict / methodology / chronology) →
+Section Generator with Gateway synthesis (`[#id]` markers; heuristic fallback).
+`writing_version` **1.3.0**.
+
 ---
 
 ## Gate

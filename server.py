@@ -173,6 +173,8 @@ from flask_jwt_extended import JWTManager
 
 jwt_manager = JWTManager(app)
 from auth import JWTError, create_get_current_user, create_jwt, decode_jwt
+from auth.decorators import set_jwt_session_version_checker
+from auth.jwt_utils import session_version_matches
 
 # ------------------------------------------------------------------ logging
 from observability import (
@@ -215,7 +217,7 @@ class EmailService:
                 "[dev email - not sent]\n  to: %s\n  subject: %s\n  body:\n%s",
                 ", ".join(recipients),
                 subject,
-                text or _html_to_text(html),
+                _redact_email_secrets(text or _html_to_text(html)),
             )
             return True
         payload = {
@@ -253,6 +255,16 @@ def _html_to_text(html):
     import re
 
     return re.sub(r"<[^>]+>", "", html or "").strip()
+
+
+def _redact_email_secrets(body: str) -> str:
+    """Strip magic-link / reset tokens from console email logs (Phase 3)."""
+    import re
+
+    text = body or ""
+    text = re.sub(r"(token=)[^&\s\"'<>]+", r"\1[REDACTED]", text, flags=re.I)
+    text = re.sub(r"(/auth/magic-link\?[^\s\"'<>]+)", "/auth/magic-link?[REDACTED]", text, flags=re.I)
+    return text
 
 
 email_service = EmailService(RESEND_API_KEY, EMAIL_FROM)
@@ -371,9 +383,13 @@ def _enforce_session_version():
 
 @app.before_request
 def csrf_protect():
-    """Same-origin check for state-changing API calls — defense-in-depth on top
-    of SameSite=Lax cookies. Non-browser clients (no Origin/Referer) pass."""
-    if request.method in SAFE_METHODS or not request.path.startswith("/api/"):
+    """Same-origin check for state-changing /api/* and /auth/* calls —
+    defense-in-depth on top of SameSite=Lax cookies.
+    Non-browser clients (no Origin/Referer) pass."""
+    if request.method in SAFE_METHODS:
+        return
+    path = request.path or ""
+    if not (path.startswith("/api/") or path.startswith("/auth/")):
         return
     src = request.headers.get("Origin") or request.headers.get("Referer")
     if not src:
@@ -418,7 +434,12 @@ def _finish_request_observability(response):
             "duration_ms": round(duration * 1000, 1),
         },
     )
-    apply_security_headers(response, is_production=IS_PRODUCTION, environ=os.environ)
+    apply_security_headers(
+        response,
+        is_production=IS_PRODUCTION,
+        environ=os.environ,
+        request_path=request.path,
+    )
     return response
 
 
@@ -1150,6 +1171,7 @@ class SearchIndex(Base):
 
 # Closed-beta ops tables (migrations/0025) — registered on this Base so
 # SQLite create_all creates them; Postgres gets them via run_migrations.
+from auth.magic_link import create_magic_link_token_model
 from security.ops import (
     create_email_token_models,
     create_invite_token_model,
@@ -1166,6 +1188,7 @@ SystemSetting = create_system_settings_model(Base)
 SecurityEvent = create_security_event_model(Base)
 InviteToken = create_invite_token_model(Base)
 EmailVerificationToken, PasswordResetToken = create_email_token_models(Base)
+MagicLinkToken = create_magic_link_token_model(Base)
 LibraryConnection = create_library_connection_model(Base)
 LibraryCollection, LibraryCollectionPaper = create_library_collection_models(Base)
 LibrarySyncRun = create_library_sync_run_model(Base)
@@ -1399,7 +1422,10 @@ def login_page():
                 db.commit()
             session["user_id"] = user.id
             session["user_email"] = user.email
-            access, refresh = create_jwt(user.id)
+            session["session_version"] = int(getattr(user, "session_version", 0) or 0)
+            access, refresh = create_jwt(
+                user.id, session_version=int(getattr(user, "session_version", 0) or 0)
+            )
             session["jwt"] = {"access": access, "refresh": refresh}
             mark_session_login(session)
             _record_user_login(user.id)
@@ -1511,7 +1537,9 @@ def auth_callback():
         session["user_id"] = user.id
         session["user_email"] = user.email
         session["session_version"] = int(getattr(user, "session_version", 0) or 0)
-        access, refresh = create_jwt(user.id)
+        access, refresh = create_jwt(
+            user.id, session_version=int(getattr(user, "session_version", 0) or 0)
+        )
         session["jwt"] = {"access": access, "refresh": refresh}
         mark_session_login(session)
         _record_user_login(user.id)
@@ -1530,18 +1558,19 @@ def logout():
 
 
 @app.route("/api/dev-login", methods=["POST"])
+@limiter.limit("10 per hour")
 def dev_login():
     """Sign in as the local dev user without Google OAuth.
 
-    Only works when DEV_AUTO_LOGIN is set in the environment.
-    Returns 403 in production / when DEV_AUTO_LOGIN is not set.
+    Requires DEV_AUTO_LOGIN and a non-production environment.
+    Returns 403 when either gate fails (Phase 2 / F2.2).
     """
-    if not DEV_AUTO_LOGIN:
+    if not (DEV_AUTO_LOGIN and not IS_PRODUCTION):
         return (
             jsonify(
                 {
                     "error": "dev_login_disabled",
-                    "detail": "Set DEV_AUTO_LOGIN=1 in your .env file to use this endpoint.",
+                    "detail": "Dev login requires DEV_AUTO_LOGIN=1 and a non-production environment.",
                 }
             ),
             403,
@@ -1556,10 +1585,14 @@ def dev_login():
             db.commit()
         session["user_id"] = user.id
         session["user_email"] = user.email
-        access, refresh = create_jwt(user.id)
+        session["session_version"] = int(getattr(user, "session_version", 0) or 0)
+        access, refresh = create_jwt(
+            user.id, session_version=int(getattr(user, "session_version", 0) or 0)
+        )
         session["jwt"] = {"access": access, "refresh": refresh}
         mark_session_login(session)
         _record_user_login(user.id)
+        log_security_event("dev_login", user_id=user.id)
         return jsonify({"ok": True, "user_id": user.id})
     finally:
         db.close()
@@ -1626,6 +1659,28 @@ from backend.search.routes import create_search_blueprint
 get_current_user = create_get_current_user(SessionLocal, User)
 
 
+def _jwt_session_version_check(claims, identity):
+    """Reject JWTs after logout-all / password reset (Phase 2 / F2.1)."""
+    try:
+        user_id = int(identity)
+    except (TypeError, ValueError):
+        return jsonify({"error": "token_revoked", "detail": "reauthenticate"}), 401
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        if user is None:
+            return jsonify({"error": "token_revoked", "detail": "reauthenticate"}), 401
+        current_sv = int(getattr(user, "session_version", 0) or 0)
+        if not session_version_matches(claims or {}, current_sv):
+            return jsonify({"error": "token_revoked", "detail": "reauthenticate"}), 401
+    finally:
+        db.close()
+    return None
+
+
+set_jwt_session_version_checker(_jwt_session_version_check)
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # JWT — extra capability alongside session/OAuth login, for API/programmatic
 # clients that can't hold a browser cookie. Neither route below touches the
@@ -1653,22 +1708,41 @@ def get_session_jwt():
     stored = session.get("jwt")
     if stored:
         try:
-            decode_jwt(stored["access"])
-            return jsonify({"access_token": stored["access"], "refresh_token": stored["refresh"]})
+            claims = decode_jwt(stored["access"])
+            # Reject cached JWT if logout-all bumped session_version.
+            db = SessionLocal()
+            try:
+                user = db.get(User, session["user_id"])
+                cur = int(getattr(user, "session_version", 0) or 0) if user else -1
+            finally:
+                db.close()
+            if session_version_matches(claims, cur):
+                return jsonify({"access_token": stored["access"], "refresh_token": stored["refresh"]})
         except JWTError:
             pass  # expired/invalid — fall through and mint a fresh pair
-    access, refresh = create_jwt(session["user_id"])
+    db = SessionLocal()
+    try:
+        user = db.get(User, session["user_id"])
+        sv = int(getattr(user, "session_version", 0) or 0) if user else 0
+    finally:
+        db.close()
+    access, refresh = create_jwt(session["user_id"], session_version=sv)
     session["jwt"] = {"access": access, "refresh": refresh}
     return jsonify({"access_token": access, "refresh_token": refresh})
 
 
 @app.route("/api/auth/token", methods=["POST"])
+@limiter.limit("30 per minute")
 def refresh_jwt():
     """Exchange a refresh token for a new access token. The email+password
     variant of this endpoint doesn't apply — this app has no password-based
     accounts, only Google OAuth — so this covers just the refresh_token
     grant, which every client holding a JWT eventually needs regardless of
-    how the original token was issued."""
+    how the original token was issued.
+
+    Phase 2 / F2.1: refresh tokens must carry a matching ``sv`` claim or
+    they are treated as revoked (logout-all / password reset).
+    """
     data = request.get_json(silent=True) or {}
     refresh_token = data.get("refresh_token")
     if not refresh_token:
@@ -1689,14 +1763,21 @@ def refresh_jwt():
 
     db = SessionLocal()
     try:
-        # A refresh token survives account deletion unless checked here —
-        # don't mint new access tokens for a user that no longer exists.
-        if not db.get(User, user_id):
+        user = db.get(User, user_id)
+        if not user:
             return jsonify({"error": "invalid_refresh_token"}), 401
+        current_sv = int(getattr(user, "session_version", 0) or 0)
+        if not session_version_matches(claims, current_sv):
+            log_security_event(
+                "jwt_refresh_revoked",
+                user_id=user_id,
+                reason="session_version_mismatch",
+            )
+            return jsonify({"error": "token_revoked", "detail": "reauthenticate"}), 401
+        access, new_refresh = create_jwt(user_id, session_version=current_sv)
     finally:
         db.close()
 
-    access, new_refresh = create_jwt(user_id)
     return jsonify({"access_token": access, "refresh_token": new_refresh})
 
 
@@ -1825,6 +1906,7 @@ app.register_blueprint(
         APP_BASE_URL=APP_BASE_URL,
         create_jwt=create_jwt,
         log_security_event=log_security_event,
+        MagicLinkToken=MagicLinkToken,
         signup_allowed_fn=_signup_allowed,
         on_user_created=lambda user, email: (
             _ops_invites.consume_invite_for_email(email),
@@ -1839,6 +1921,7 @@ app.register_blueprint(
 from auth.decorators import create_admin_required
 from backend.ai.analytics import PromptAnalytics
 from backend.ai.domain_registry import DomainRegistry
+from backend.ai.gateway import AIGateway, validate_registry
 from backend.ai.memory_engine import MemoryEngine
 from backend.ai.model_router import ModelRouter
 from backend.ai.persona_engine import PersonaEngine
@@ -1875,6 +1958,8 @@ model_router = ModelRouter(
         "_default": DEFAULT_MODEL,
     }
 )
+ai_model_gateway = AIGateway(model_router)
+validate_registry()  # logs tier/model summary; pass openai_client to verify API access
 
 # Also a genuine startup-time singleton — DomainRegistry is pure Python,
 # no DB session, same category as ModelRouter (see that class's own
@@ -2008,6 +2093,7 @@ app.register_blueprint(
         max_file_mb=MAX_FILE_MB,
         allowed_extensions=None,  # attach route defaults to PDF
         LibrarySyncRun=LibrarySyncRun,
+        token_secret_key=app.secret_key,
     )
 )
 
@@ -2040,6 +2126,7 @@ app.register_blueprint(
         quota_service=quota_service,
         storage_backend=get_storage_backend(),
         model_router=model_router,
+        ai_gateway=ai_model_gateway,
         get_prompt_builder=get_prompt_builder,
         domain_registry=domain_registry,
         AnalysisPipelineResult=AnalysisPipelineResult,
@@ -2054,7 +2141,10 @@ app.register_blueprint(
         Chunk=Chunk,
         get_prompt_builder=get_prompt_builder,
         model_router=model_router,
+        ai_gateway=ai_model_gateway,
         PromptExecution=PromptExecution,
+        limiter=limiter,
+        ai_gate=ai_gate,
     )
 )
 
@@ -5928,6 +6018,8 @@ app.register_blueprint(
         limiter=limiter,
         load_analysis_result=_load_analysis_result,
         enqueue_job=_enqueue_job,
+        ai_gateway=ai_model_gateway,
+        get_model_registry=get_model_registry,
     )
 )
 
@@ -7194,6 +7286,19 @@ def chat():
     regenerate = bool(data.get("regenerate"))
     search_mode = data.get("search", "auto")
     user_id = session["user_id"]
+
+    # Phase 3 / F4.1 — hard cap before token estimates / model calls.
+    MAX_CHAT_MESSAGE_CHARS = 32_000
+    if len(user_message) > MAX_CHAT_MESSAGE_CHARS:
+        return (
+            jsonify(
+                {
+                    "error": "message_too_long",
+                    "message": f"Message must be at most {MAX_CHAT_MESSAGE_CHARS} characters",
+                }
+            ),
+            400,
+        )
 
     # Unified AI gate: kill switch, verification, daily budget, quotas
     from security.ops.gate import AiAccessDenied
