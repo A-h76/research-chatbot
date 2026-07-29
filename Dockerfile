@@ -18,6 +18,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+# Cache-bust comment: ensure PyYAML and deps install after gateway import (2026-07-29).
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
