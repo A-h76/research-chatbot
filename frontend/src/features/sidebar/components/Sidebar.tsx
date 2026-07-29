@@ -295,14 +295,14 @@ export function SidebarContents({
               </p>
               <NavItem
                 nested
-                icon={<ZoteroIcon className="size-4 rounded-[3px]" />}
+                icon={<ZoteroIcon className="size-4" />}
                 label="Import from Zotero"
                 active={isZoteroImport}
                 onClick={() => goLibraryImport("zotero")}
               />
               <NavItem
                 nested
-                icon={<MendeleyIcon className="size-4 rounded-[3px]" />}
+                icon={<MendeleyIcon className="size-4" />}
                 label="Import from Mendeley"
                 active={isMendeleyImport}
                 onClick={() => goLibraryImport("mendeley")}
