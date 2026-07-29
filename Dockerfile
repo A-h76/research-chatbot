@@ -8,7 +8,7 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM python:3.12-slim-bookworm
+FROM python:3.13-slim-bookworm
 WORKDIR /app
 
 RUN apt-get update \
@@ -18,7 +18,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-# Cache-bust comment: ensure PyYAML and deps install after gateway import (2026-07-29).
+# Cache-bust: align with Railway Python 3.13 + ensure PyYAML installs (2026-07-29).
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
