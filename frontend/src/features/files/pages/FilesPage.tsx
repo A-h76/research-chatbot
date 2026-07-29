@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Library, X } from "lucide-react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { ChevronLeft, ChevronRight, FileUp, Library, Link2, X } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
@@ -84,6 +84,7 @@ function ProjectScopeBanner() {
 /** D5 — Dense Library (T1) + CollectionToolbar + Phase 1.5 search. */
 export function FilesPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentProjectId, setCurrentProjectId } = useUI();
@@ -113,6 +114,12 @@ export function FilesPage() {
     return raw ? Number(raw) : null;
   });
   // Sync URL when search/filters change (debounced q)
+  useEffect(() => {
+    if (location.hash !== "#import") return;
+    const el = document.getElementById("import");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [location.hash]);
+
   useEffect(() => {
     const t = window.setTimeout(() => {
       setSearchParams((prev) => {
@@ -363,11 +370,56 @@ export function FilesPage() {
               }
             />
           ) : (
-            <EmptyState
-              icon={<Library className="size-8" />}
-              title="Your library is empty"
-              description="Import BibTeX/RIS or upload a PDF to get started."
-            />
+            <div className="rounded-xl border border-border bg-card/40 px-4 py-10 text-center">
+              <Library className="mx-auto size-8 text-muted-foreground" aria-hidden />
+              <p className="mt-3 text-sm font-medium text-foreground">Start your research</p>
+              <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+                Import papers into Dhund, then attach PDFs until they become Research Ready.
+              </p>
+              <div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-auto justify-start gap-2 px-3 py-2.5 text-left"
+                  onClick={() => {
+                    document.getElementById("import")?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "start",
+                    });
+                  }}
+                >
+                  <FileUp className="size-4 shrink-0 text-primary" />
+                  <span>
+                    <span className="block text-[13px] font-medium">Upload PDF</span>
+                    <span className="block text-[11px] font-normal text-muted-foreground">
+                      Drag files into the drop zone above
+                    </span>
+                  </span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-auto justify-start gap-2 px-3 py-2.5 text-left"
+                  onClick={() => {
+                    document.getElementById("import")?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "start",
+                    });
+                  }}
+                >
+                  <Link2 className="size-4 shrink-0 text-primary" />
+                  <span>
+                    <span className="block text-[13px] font-medium">Zotero / Mendeley</span>
+                    <span className="block text-[11px] font-normal text-muted-foreground">
+                      Connect and import a collection
+                    </span>
+                  </span>
+                </Button>
+              </div>
+              <p className="mt-4 text-[12px] text-muted-foreground">
+                Or import BibTeX / RIS from the Import research panel above.
+              </p>
+            </div>
           )
         ) : (
           <>

@@ -17,6 +17,7 @@
 | [`docs/AI_POLICY_v1.0.md`](../docs/AI_POLICY_v1.0.md) | Model routing policy and escalation rules |
 | [PLATFORM_FREEZE_v1.0.md](PLATFORM_FREEZE_v1.0.md) | Platform + product freeze · allowed scope |
 | [`docs/BETA_EXECUTION_PLAN_v0.2.1.md`](../docs/BETA_EXECUTION_PLAN_v0.2.1.md) | **Frozen** v0.2.1 beta execution (Writing → Trust → Export → Validation) |
+| [`docs/UI_UX_VISION_BETA_v1.0.md`](../docs/UI_UX_VISION_BETA_v1.0.md) | **Frozen** Beta UI/UX — Research OS identity · Writing desk |
 | [`docs/RESEARCHER_VALIDATION_v0.2.1.md`](../docs/RESEARCHER_VALIDATION_v0.2.1.md) | **Active** — 5 researchers → friction fixes → invite 20 |
 | [`docs/SECURITY_BASELINE_v1.0.md`](../docs/SECURITY_BASELINE_v1.0.md) | Security baseline · **Frozen** for controlled beta |
 | [`RELEASE_CRITERIA.md`](../RELEASE_CRITERIA.md) | Can we ship? — per-release must-have checklist |

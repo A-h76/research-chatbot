@@ -10,13 +10,14 @@ import {
   FileText,
   Loader2,
   Home,
-  Wand2,
   Plus,
   ChevronRight,
   Search,
   Quote,
   StickyNote,
   GitCompare,
+  Link2,
+  PenLine,
 } from "lucide-react";
 import { AccountMenu } from "./AccountMenu";
 import { useUI } from "@/context/UIContext";
@@ -78,7 +79,7 @@ function RecentPapersList({ projectId }: { projectId: number | null }) {
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 px-3 py-1 text-xs text-muted-foreground">
-        <Loader2 className="size-3 animate-spin" /> Loading…
+        <Loader2 className="size-3 animate-spin" /> Opening papers…
       </div>
     );
   }
@@ -108,9 +109,9 @@ function RecentPapersList({ projectId }: { projectId: number | null }) {
 }
 
 /**
- * Primary: Projects · Library · Writing.
- * Projects are home (`/`). Launchpad lives at `/home` under More.
- * Global Chat demoted under More (routes kept).
+ * Primary workflow nav (UI_UX_VISION_BETA_v1.0):
+ * Home · Projects · Library · Research · Writing | Integrations · Settings
+ * Ask Dhund / tools demoted under More.
  */
 export function SidebarContents({
   me,
@@ -126,23 +127,24 @@ export function SidebarContents({
   const location = useLocation();
   const path = location.pathname;
 
+  const isHome = path === "/home";
   const isProjects = path === "/" || path.startsWith("/projects");
-  const isLaunchpad = path === "/home";
   const isLibrary =
     path.startsWith("/library") ||
     path.startsWith("/files") ||
     (path.startsWith("/papers/") && !path.includes("/chat"));
+  const isResearch = path.startsWith("/research") || path.startsWith("/analysis");
   const isWriting = path.startsWith("/writing");
+  const isIntegrations =
+    (path.startsWith("/library") || path.startsWith("/files")) &&
+    (location.hash === "#import" || location.search.includes("import=1"));
   const isGlobalChat =
     path.startsWith("/chat") || path.startsWith("/c/");
   const isPaperChat = path.startsWith("/papers/") && path.includes("/chat");
   const isSettings = path.startsWith("/settings");
   const isMoreActive =
-    isLaunchpad ||
     isGlobalChat ||
     path.startsWith("/search") ||
-    path.startsWith("/research") ||
-    path.startsWith("/analysis") ||
     path.startsWith("/citations") ||
     path.startsWith("/notes") ||
     path.startsWith("/memory");
@@ -156,8 +158,12 @@ export function SidebarContents({
   return (
     <div className="flex h-full flex-col" onClickCapture={onNavigate}>
       <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-        <div className="flex size-6 items-center justify-center rounded-md bg-primary text-[11px] font-semibold text-primary-foreground">
-          S
+        <div
+          className="flex size-6 items-center justify-center rounded-md bg-primary text-[11px] font-semibold text-primary-foreground"
+          title="Dhund — Research Operating System"
+          aria-hidden
+        >
+          D
         </div>
         <span className="text-[15px] font-semibold tracking-tight">Dhund</span>
         <div className="relative ml-auto">
@@ -188,9 +194,9 @@ export function SidebarContents({
                 type="button"
                 role="menuitem"
                 className="flex w-full px-3 py-1.5 text-left text-[13px] hover:bg-muted"
-                onClick={() => go("library", "/library")}
+                onClick={() => go("library", "/library#import")}
               >
-                Upload paper
+                Import papers
               </button>
               <button
                 type="button"
@@ -216,6 +222,12 @@ export function SidebarContents({
 
       <nav className="space-y-0.5 px-2 pb-1" aria-label="Primary">
         <NavItem
+          icon={<Home className="size-4" />}
+          label="Home"
+          active={isHome}
+          onClick={() => go("library", "/home")}
+        />
+        <NavItem
           icon={<FolderKanban className="size-4" />}
           label="Projects"
           active={isProjects}
@@ -224,18 +236,40 @@ export function SidebarContents({
         <NavItem
           icon={<Library className="size-4" />}
           label="Library"
-          active={isLibrary}
+          active={isLibrary && !isIntegrations}
           onClick={() => go("library", "/library")}
         />
         <NavItem
-          icon={<Wand2 className="size-4" />}
+          icon={<GitCompare className="size-4" />}
+          label="Research"
+          active={isResearch}
+          onClick={() => go("library", "/research/compare")}
+        />
+        <NavItem
+          icon={<PenLine className="size-4" />}
           label="Writing"
           active={isWriting}
           onClick={() => go("citations", "/writing")}
         />
       </nav>
 
-      {/* D6 — demoted tools + global chat */}
+      <div className="mx-3 my-1 border-t border-sidebar-border" />
+
+      <nav className="space-y-0.5 px-2 pb-1" aria-label="Workspace">
+        <NavItem
+          icon={<Link2 className="size-4" />}
+          label="Integrations"
+          active={isIntegrations}
+          onClick={() => go("library", "/library#import")}
+        />
+        <NavItem
+          icon={<Settings className="size-4" />}
+          label="Settings"
+          active={isSettings}
+          onClick={() => go("settings", "/settings")}
+        />
+      </nav>
+
       <div className="px-2 pb-2">
         <button
           type="button"
@@ -248,7 +282,7 @@ export function SidebarContents({
               : "text-muted-foreground hover:bg-sidebar-accent/80 hover:text-foreground",
           )}
         >
-          <span className="flex-1">More</span>
+          <span className="flex-1">More tools</span>
           <ChevronRight
             className={cn(
               "size-3.5 transition-transform",
@@ -260,24 +294,10 @@ export function SidebarContents({
           <div className="mt-0.5 space-y-0.5 pl-1">
             <NavItem
               muted
-              icon={<Home className="size-4" />}
-              label="Launchpad"
-              active={isLaunchpad}
-              onClick={() => go("library", "/home")}
-            />
-            <NavItem
-              muted
               icon={<Search className="size-4" />}
               label="Search"
               active={path.startsWith("/search")}
               onClick={() => go("chat", "/search")}
-            />
-            <NavItem
-              muted
-              icon={<GitCompare className="size-4" />}
-              label="Compare"
-              active={path.startsWith("/research") || path.startsWith("/analysis")}
-              onClick={() => go("library", "/research/compare")}
             />
             <NavItem
               muted
@@ -314,15 +334,7 @@ export function SidebarContents({
       </div>
 
       <div className="border-t border-sidebar-border p-2">
-        <NavItem
-          icon={<Settings className="size-4" />}
-          label="Settings"
-          active={isSettings}
-          onClick={() => go("settings", "/settings")}
-        />
-        <div className="mt-1">
-          <AccountMenu me={me} />
-        </div>
+        <AccountMenu me={me} />
       </div>
     </div>
   );

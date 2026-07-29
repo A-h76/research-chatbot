@@ -15,6 +15,7 @@ Platform is considered sufficient for v0.2.x. New platform work is frozen unless
 - [x] AI Infrastructure v1.0 frozen (AI Gateway + policy + modes + telemetry + guardrail)
 - [x] AI Policy v1.0 frozen (`docs/AI_POLICY_v1.0.md`)
 - [x] Security Baseline v1.0 frozen (`docs/SECURITY_BASELINE_v1.0.md`)
+- [x] UI/UX Vision Beta v1.0 frozen (`docs/UI_UX_VISION_BETA_v1.0.md`)
 - [x] Product strategy frozen around Evidence-backed Literature Review first
 - [x] Product decisions governance in place (`docs/PRODUCT_DECISIONS.md`)
 - [x] Engineering roadmap aligned to workflow-first delivery
