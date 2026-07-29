@@ -96,7 +96,7 @@ DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "gpt-5-mini")
 UTILITY_MODEL = os.environ.get("UTILITY_MODEL", "gpt-5-mini")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "text-embedding-3-small")
 FALLBACK_MODELS = [
-    m.strip() for m in os.environ.get("MODELS", "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo").split(",") if m.strip()
+    m.strip() for m in os.environ.get("MODELS", "gpt-5.5,gpt-5-mini,gpt-5.5-pro").split(",") if m.strip()
 ]
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")

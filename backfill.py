@@ -113,7 +113,7 @@ Papers (as structured analyses):
 
 MODELS = {
     "default_model": os.environ.get("DEFAULT_MODEL", "gpt-5-mini"),
-    "utility_model": os.environ.get("UTILITY_MODEL", "gpt-4o-mini"),
+    "utility_model": os.environ.get("UTILITY_MODEL", "gpt-5-mini"),
     "embed_model": os.environ.get("EMBED_MODEL", "text-embedding-3-small"),
 }
 
