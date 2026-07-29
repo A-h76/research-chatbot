@@ -87,7 +87,7 @@ class ModelRegistry:
         # entirely unset) kept to a model with confident pricing in
         # CostLedger.PRICING, same reasoning as server.py's own
         # DEFAULT_MODEL default.
-        self.default_model = os.environ.get("DEFAULT_MODEL", "gpt-4o-mini")
+        self.default_model = os.environ.get("DEFAULT_MODEL", "gpt-5-mini")
         self.embed_model = os.environ.get("EMBED_MODEL", "text-embedding-3-small")
         self._cost_ledger = CostLedger(CostLedgerEntry)
 
