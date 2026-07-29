@@ -107,6 +107,32 @@
   --ink-300: #D1D5DB;
   --ink-500: #6B7280;
   --ink-900: #111827;
+  --chart-1: #0f6e6a;
+  --chart-2: #14807b;
+  --chart-3: #3d9a94;
+  --chart-4: #7bc4bf;
+  --chart-5: #d8f0ee;
+  --chart-background: var(--card);
+  --chart-foreground: var(--foreground);
+  --chart-foreground-muted: var(--muted-foreground);
+  --chart-line-primary: var(--primary);
+  --chart-line-secondary: var(--chart-2);
+  --chart-crosshair: var(--primary);
+  --chart-grid: var(--border);
+  --chart-brush-border: var(--chart-grid);
+  --chart-tooltip-background: color-mix(in srgb, var(--popover) 92%, transparent);
+  --chart-tooltip-foreground: var(--popover-foreground);
+  --chart-tooltip-muted: var(--muted-foreground);
+  --chart-marker-background: var(--card);
+  --chart-marker-border: var(--border);
+  --chart-marker-foreground: var(--foreground);
+  --chart-label: var(--muted-foreground);
+  --chart-scale-01: #f0fafa;
+  --chart-scale-02: #d8f0ee;
+  --chart-scale-03: #a8d9d5;
+  --chart-scale-04: #5fb3ad;
+  --chart-scale-05: #0f6e6a;
+  --chart-scale-pattern-color: #f0fafa;
 }
 
 .dark {
@@ -160,6 +186,32 @@
   --ink-300: #52525B;
   --ink-500: #A1A1AA;
   --ink-900: #FAFAFA;
+  --chart-1: #14a39c;
+  --chart-2: #1bb5ad;
+  --chart-3: #5ec9c2;
+  --chart-4: #0d2f2d;
+  --chart-5: #0a2220;
+  --chart-background: var(--card);
+  --chart-foreground: var(--foreground);
+  --chart-foreground-muted: var(--muted-foreground);
+  --chart-line-primary: var(--primary);
+  --chart-line-secondary: var(--chart-2);
+  --chart-crosshair: var(--primary);
+  --chart-grid: var(--border);
+  --chart-brush-border: var(--chart-grid);
+  --chart-tooltip-background: color-mix(in srgb, var(--popover) 92%, transparent);
+  --chart-tooltip-foreground: var(--popover-foreground);
+  --chart-tooltip-muted: var(--muted-foreground);
+  --chart-marker-background: var(--card);
+  --chart-marker-border: var(--border);
+  --chart-marker-foreground: var(--foreground);
+  --chart-label: var(--muted-foreground);
+  --chart-scale-01: #0a2220;
+  --chart-scale-02: #0d2f2d;
+  --chart-scale-03: #14807b;
+  --chart-scale-04: #14a39c;
+  --chart-scale-05: #5ec9c2;
+  --chart-scale-pattern-color: #0a2220;
 }
 
 @theme inline {
@@ -234,6 +286,32 @@
   --radius-md: calc(var(--radius) - 3px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 5px);
+  --color-chart-scale-pattern-color: var(--chart-scale-pattern-color);
+  --color-chart-scale-05: var(--chart-scale-05);
+  --color-chart-scale-04: var(--chart-scale-04);
+  --color-chart-scale-03: var(--chart-scale-03);
+  --color-chart-scale-02: var(--chart-scale-02);
+  --color-chart-scale-01: var(--chart-scale-01);
+  --color-chart-label: var(--chart-label);
+  --color-chart-marker-foreground: var(--chart-marker-foreground);
+  --color-chart-marker-border: var(--chart-marker-border);
+  --color-chart-marker-background: var(--chart-marker-background);
+  --color-chart-tooltip-muted: var(--chart-tooltip-muted);
+  --color-chart-tooltip-foreground: var(--chart-tooltip-foreground);
+  --color-chart-tooltip-background: var(--chart-tooltip-background);
+  --chart-brush-border: var(--chart-brush-border);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-crosshair: var(--chart-crosshair);
+  --chart-line-secondary: var(--chart-line-secondary);
+  --chart-line-primary: var(--chart-line-primary);
+  --color-chart-foreground-muted: var(--chart-foreground-muted);
+  --color-chart-foreground: var(--chart-foreground);
+  --color-chart-background: var(--chart-background);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
 }
 
 @layer base {
@@ -431,3 +509,27 @@
 .dark .hljs-attr, .dark .hljs-attribute, .dark .hljs-variable, .dark .hljs-template-variable { color: #ffa657; }
 .dark .hljs-built_in, .dark .hljs-class .hljs-title { color: #79c0ff; }
 .dark .hljs-tag, .dark .hljs-name { color: #7ee787; }
+
+/* Manuscript paper — quiet grain (Haikei-inspired, not decorative blobs) */
+.manuscript-surface {
+  position: relative;
+}
+.manuscript-surface::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 180px 180px;
+}
+.dark .manuscript-surface::before {
+  opacity: 0.05;
+}
+@media (prefers-reduced-motion: reduce) {
+  .manuscript-surface::before {
+    display: none;
+  }
+}

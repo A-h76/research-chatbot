@@ -12,6 +12,9 @@ import {
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Bar } from "@/components/charts/bar";
+import { BarChart } from "@/components/charts/bar-chart";
+import { BarXAxis } from "@/components/charts/bar-x-axis";
 import { AiStateBadge, usePipelines, type AiStateResolved } from "@/features/pipeline";
 import { useDashboard } from "./useDashboard";
 import { cn } from "@/lib/utils";
@@ -225,13 +228,15 @@ export function DashboardPage() {
         ) : !data ? (
           <p className="text-sm text-muted-foreground">Could not load home.</p>
         ) : data.library.total_papers === 0 ? (
-          <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center">
-            <p className="text-[15px] font-medium">Start your library</p>
-            <p className="mt-1 text-[13px] text-muted-foreground">
-              Upload a paper to open a research workspace.
+          <div className="px-1 py-14 text-center sm:py-16">
+            <p className="text-[22px] font-semibold tracking-tight text-foreground">
+              Start your research
             </p>
-            <Button className="mt-4 gap-2" onClick={() => navigate("/library")}>
-              <Upload className="size-4" /> Upload paper
+            <p className="mx-auto mt-2 max-w-sm text-[14px] leading-relaxed text-muted-foreground">
+              Import a paper into your library. Dhund opens a research workspace — not a blank chat.
+            </p>
+            <Button className="mt-6 gap-2" onClick={() => navigate("/library#import")}>
+              <Upload className="size-4" /> Import research
             </Button>
           </div>
         ) : (
@@ -246,27 +251,41 @@ export function DashboardPage() {
 
             <section>
               <SectionLabel>Today in your library</SectionLabel>
-              <div className="rounded-lg border border-border bg-card px-4">
-                <MetricRow
-                  label="Papers analysed"
-                  value={data.library.analysed ?? 0}
-                  hint="Structure · classify · evidence ready"
-                />
-                <MetricRow
-                  label="Still processing"
-                  value={data.library.processing ?? 0}
-                  hint="Queued or running pipeline"
-                />
-                <MetricRow
-                  label="Currently reading"
-                  value={data.library.reading}
-                  hint="Marked in progress"
-                />
-                <MetricRow
-                  label="Paper conversations"
-                  value={paperChats}
-                  hint="Recent research chats on papers"
-                />
+              <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+                <div className="h-[140px] w-full">
+                  <BarChart
+                    data={[
+                      { name: "Unread", count: data.library.unread },
+                      { name: "Reading", count: data.library.reading },
+                      { name: "Read", count: data.library.read },
+                    ]}
+                    xDataKey="name"
+                    aspectRatio="16 / 7"
+                    animationDuration={700}
+                    className="h-full w-full"
+                    margin={{ top: 12, right: 8, bottom: 28, left: 8 }}
+                  >
+                    <Bar dataKey="count" fill="var(--primary)" />
+                    <BarXAxis showAllLabels maxLabels={3} />
+                  </BarChart>
+                </div>
+                <div className="rounded-md border border-border px-3">
+                  <MetricRow
+                    label="Papers analysed"
+                    value={data.library.analysed ?? 0}
+                    hint="Structure · classify · evidence ready"
+                  />
+                  <MetricRow
+                    label="Still processing"
+                    value={data.library.processing ?? 0}
+                    hint="Queued or running pipeline"
+                  />
+                  <MetricRow
+                    label="Paper conversations"
+                    value={paperChats}
+                    hint="Recent research chats on papers"
+                  />
+                </div>
               </div>
             </section>
 

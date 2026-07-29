@@ -11,6 +11,12 @@ import {
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { useFiles } from "@/features/files/useFiles";
 import { useNotes } from "@/features/notes/useNotes";
 import { useConversations } from "@/features/chat/hooks/useConversation";
@@ -591,7 +597,7 @@ function DraftTab() {
             />
           )}
 
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-muted/30 p-2 sm:p-3">
+          <div className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/80 bg-[#faf9f7] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] sm:p-5 dark:bg-[#121212]">
             <textarea
               ref={editorRef}
               value={input}
@@ -620,7 +626,7 @@ function DraftTab() {
               rows={18}
               aria-label="Manuscript editor"
               disabled={activeDoc?.status === "deleted"}
-              className="min-h-[22rem] w-full flex-1 resize-y rounded-md border border-zinc-200 bg-white px-6 py-5 text-[14px] leading-7 text-zinc-900 shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-[#141414] dark:text-zinc-100 dark:placeholder:text-zinc-500"
+              className="relative z-[1] mx-auto min-h-[24rem] w-full max-w-[42rem] flex-1 resize-y border-0 bg-transparent px-1 py-2 text-[15px] leading-[1.8] tracking-[-0.011em] text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-zinc-100 dark:placeholder:text-zinc-500"
             />
           </div>
 
@@ -717,15 +723,28 @@ function DraftTab() {
                     onRevise={runGroundedGenerate}
                   />
                   {grounded.last.review?.issues?.length ? (
-                    <ul className="mt-2 space-y-1 border-t border-border pt-2 text-[11px] text-amber-800 dark:text-amber-200">
-                      {grounded.last.review.issues
-                        .filter((issue) => !issue.section_id)
-                        .map((issue, idx) => (
-                          <li key={`${issue.code}-${idx}`}>
-                            [{issue.severity}] {issue.message}
-                          </li>
-                        ))}
-                    </ul>
+                    <Accordion className="mt-2 border-t border-border pt-1">
+                      <AccordionItem value="reviewer">
+                        <AccordionTrigger className="py-2 text-[12px]">
+                          Research Reviewer
+                          <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                            {grounded.last.review.issues.length} issue
+                            {grounded.last.review.issues.length === 1 ? "" : "s"}
+                          </span>
+                        </AccordionTrigger>
+                        <AccordionContent className="pb-2">
+                          <ul className="space-y-1 text-[11px] text-amber-800 dark:text-amber-200">
+                            {grounded.last.review.issues
+                              .filter((issue) => !issue.section_id)
+                              .map((issue, idx) => (
+                                <li key={`${issue.code}-${idx}`}>
+                                  [{issue.severity}] {issue.message}
+                                </li>
+                              ))}
+                          </ul>
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
                   ) : null}
                   {grounded.last.warnings?.length ? (
                     <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-200">

@@ -1,8 +1,9 @@
 /**
  * Sequential research-stage progress (UI_UX_VISION_BETA_v1.0).
- * Never say Thinking / Generating / Loading.
+ * One stage at a time — never Thinking / Generating / Loading.
  */
 import { useEffect, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,7 @@ export function ResearchProgressStage({
   className,
 }: Props) {
   const [index, setIndex] = useState(0);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     if (!active) {
@@ -44,48 +46,63 @@ export function ResearchProgressStage({
 
   if (!active) return null;
 
+  const current = stages[index] ?? stages[0];
+
   return (
     <div
       role="status"
       aria-live="polite"
       aria-busy="true"
       className={cn(
-        "rounded-lg border border-border bg-muted/30 px-4 py-3",
+        "overflow-hidden rounded-lg border border-border bg-muted/30 px-4 py-3",
         className,
       )}
     >
       <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         Research progress
       </p>
-      <ul className="space-y-1.5">
-        {stages.map((label, i) => {
-          const done = i < index;
-          const current = i === index;
-          return (
+
+      {/* Current stage — single focus */}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={current}
+          initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={reduceMotion ? undefined : { opacity: 0, y: -4 }}
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          className="flex items-center gap-2.5"
+        >
+          <span
+            className="relative flex size-3.5 shrink-0 items-center justify-center"
+            aria-hidden
+          >
+            <span className="absolute inset-0 rounded-full bg-primary/25" />
+            <span className="size-2 animate-pulse rounded-full bg-primary" />
+          </span>
+          <p className="text-[14px] font-medium tracking-tight text-foreground">
+            {current}…
+          </p>
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Completed trail — quiet */}
+      {index > 0 ? (
+        <ul className="mt-2.5 space-y-1 border-t border-border/60 pt-2">
+          {stages.slice(0, index).map((label) => (
             <li
               key={label}
-              className={cn(
-                "flex items-center gap-2 text-[13px] transition-opacity",
-                done && "text-muted-foreground",
-                current && "font-medium text-foreground",
-                !done && !current && "opacity-40 text-muted-foreground",
-              )}
+              className="flex items-center gap-2 text-[12px] text-muted-foreground"
             >
-              {done ? (
-                <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
-              ) : current ? (
-                <span
-                  className="size-3.5 shrink-0 animate-pulse rounded-full bg-primary"
-                  aria-hidden
-                />
-              ) : (
-                <span className="size-3.5 shrink-0 rounded-full border border-border" aria-hidden />
-              )}
-              <span>{label}{current ? "…" : done ? "" : ""}</span>
+              <Check
+                className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400"
+                aria-hidden
+              />
+              <span>{label}</span>
             </li>
-          );
-        })}
-      </ul>
+          ))}
+        </ul>
+      ) : null}
+
       {liveMetric ? (
         <p className="mt-2 text-[11px] tabular-nums text-muted-foreground">{liveMetric}</p>
       ) : null}

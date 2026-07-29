@@ -3,6 +3,7 @@
  * Paragraph → marker hover → evidence cards → Accept | Revise
  */
 import { useMemo, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Check, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -63,7 +64,7 @@ function ParagraphWithMarkers({
   }, [text]);
 
   return (
-    <p className="whitespace-pre-wrap leading-relaxed text-foreground">
+    <p className="whitespace-pre-wrap text-[15px] leading-[1.75] tracking-[-0.01em] text-foreground">
       {parts.map((part, i) =>
         part.type === "text" ? (
           <span key={i}>{part.value}</span>
@@ -72,11 +73,11 @@ function ParagraphWithMarkers({
             key={`${part.id}-${i}`}
             type="button"
             className={cn(
-              "mx-0.5 inline rounded px-1 py-0.5 text-[11px] font-medium underline-offset-2",
+              "mx-0.5 inline rounded px-1 py-0.5 text-[11px] font-medium underline-offset-2 transition-colors",
               bindingMap.has(part.id)
                 ? "bg-emerald-500/15 text-emerald-800 underline dark:text-emerald-200"
                 : "bg-amber-500/15 text-amber-800 dark:text-amber-200",
-              activeId === part.id && "ring-1 ring-emerald-600/50",
+              activeId === part.id && "ring-1 ring-primary/40",
             )}
             title={
               bindingMap.get(part.id)?.claim ||
@@ -129,6 +130,7 @@ function SectionVerify({
 }) {
   const [hoverId, setHoverId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const reduceMotion = useReducedMotion();
   const bindingMap = useMemo(() => bindingsById(section), [section]);
   const activeId = selectedId ?? hoverId;
   const activeBinding = activeId != null ? bindingMap.get(activeId) : undefined;
@@ -139,11 +141,11 @@ function SectionVerify({
   return (
     <div
       className={cn(
-        "rounded-md border p-2",
+        "rounded-md border p-3",
         accepted ? "border-emerald-700/40 bg-emerald-500/5" : "border-border bg-card/40",
       )}
     >
-      <div className="mb-1 flex items-center justify-between gap-2">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           {section.title || section.id}
           {section.confidence ? ` · ${section.confidence}` : ""}
@@ -172,27 +174,35 @@ function SectionVerify({
         onSelect={setSelectedId}
       />
 
-      {activeBinding ? (
-        <div className="mt-2">
-          <EvidenceCard binding={activeBinding} />
-        </div>
-      ) : (section.bindings?.length ?? 0) > 0 ? (
-        <div className="mt-2 space-y-1">
-          <p className="text-[10px] text-muted-foreground">Hover a [#id] marker to inspect evidence</p>
-          <div className="grid gap-1 sm:grid-cols-2">
-            {(section.bindings || []).slice(0, 4).map((b) => (
-              <button
-                key={b.evidence_id}
-                type="button"
-                className="text-left"
-                onClick={() => setSelectedId(b.evidence_id)}
-              >
-                <EvidenceCard binding={b} />
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      <AnimatePresence mode="wait" initial={false}>
+        {activeBinding ? (
+          <motion.div
+            key={activeBinding.evidence_id}
+            initial={reduceMotion ? false : { opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={reduceMotion ? undefined : { opacity: 0, x: 10 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="mt-3 border-l-2 border-primary/40 pl-3"
+          >
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Evidence
+            </p>
+            <EvidenceCard binding={activeBinding} />
+          </motion.div>
+        ) : (section.bindings?.length ?? 0) > 0 ? (
+          <motion.div
+            key="hint"
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={reduceMotion ? undefined : { opacity: 0 }}
+            className="mt-2"
+          >
+            <p className="text-[10px] text-muted-foreground">
+              Click a [#id] marker to inspect evidence
+            </p>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {sectionIssues.length ? (
         <ul className="mt-2 space-y-0.5 text-[10px] text-amber-800 dark:text-amber-200">

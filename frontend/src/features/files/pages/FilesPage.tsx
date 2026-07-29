@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, FileUp, Library, Link2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileUp, Link2, X } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
@@ -370,17 +370,18 @@ export function FilesPage() {
               }
             />
           ) : (
-            <div className="rounded-xl border border-border bg-card/40 px-4 py-10 text-center">
-              <Library className="mx-auto size-8 text-muted-foreground" aria-hidden />
-              <p className="mt-3 text-sm font-medium text-foreground">Start your research</p>
-              <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                Import papers into Dhund, then attach PDFs until they become Research Ready.
+            <div className="px-2 py-14 text-center sm:py-16">
+              <p className="text-[22px] font-semibold tracking-tight text-foreground">
+                Start your research
               </p>
-              <div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">
+              <p className="mx-auto mt-2 max-w-md text-[14px] leading-relaxed text-muted-foreground">
+                Import papers into Dhund, attach PDFs, and wait until they become Research Ready —
+                then write from evidence.
+              </p>
+              <div className="mx-auto mt-8 flex max-w-md flex-col gap-3 sm:flex-row sm:justify-center">
                 <Button
                   type="button"
-                  variant="outline"
-                  className="h-auto justify-start gap-2 px-3 py-2.5 text-left"
+                  className="gap-2"
                   onClick={() => {
                     document.getElementById("import")?.scrollIntoView({
                       behavior: "smooth",
@@ -388,18 +389,13 @@ export function FilesPage() {
                     });
                   }}
                 >
-                  <FileUp className="size-4 shrink-0 text-primary" />
-                  <span>
-                    <span className="block text-[13px] font-medium">Upload PDF</span>
-                    <span className="block text-[11px] font-normal text-muted-foreground">
-                      Drag files into the drop zone above
-                    </span>
-                  </span>
+                  <FileUp className="size-4" />
+                  Upload PDF
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-auto justify-start gap-2 px-3 py-2.5 text-left"
+                  className="gap-2"
                   onClick={() => {
                     document.getElementById("import")?.scrollIntoView({
                       behavior: "smooth",
@@ -407,16 +403,11 @@ export function FilesPage() {
                     });
                   }}
                 >
-                  <Link2 className="size-4 shrink-0 text-primary" />
-                  <span>
-                    <span className="block text-[13px] font-medium">Zotero / Mendeley</span>
-                    <span className="block text-[11px] font-normal text-muted-foreground">
-                      Connect and import a collection
-                    </span>
-                  </span>
+                  <Link2 className="size-4" />
+                  Zotero / Mendeley
                 </Button>
               </div>
-              <p className="mt-4 text-[12px] text-muted-foreground">
+              <p className="mt-5 text-[12px] text-muted-foreground">
                 Or import BibTeX / RIS from the Import research panel above.
               </p>
             </div>

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/common/Toast";
@@ -80,6 +81,8 @@ export function EvidenceInspectorPanel({
   const linkable = (libraryQuery.data?.items ?? []).filter(
     (e) => e.status === "accepted" || e.status === "candidate",
   );
+  const reduceMotion = useReducedMotion();
+  const focusKey = stickyText ? `sel-${stickyText.slice(0, 48)}` : "idle";
 
   return (
     <aside
@@ -93,6 +96,15 @@ export function EvidenceInspectorPanel({
         )}
       </div>
 
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={focusKey}
+          initial={reduceMotion ? false : { opacity: 0, x: 12 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={reduceMotion ? undefined : { opacity: 0, x: 8 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-col gap-3"
+        >
       <div
         className={cn(
           "rounded-md border px-2.5 py-2 text-[12px]",
@@ -251,6 +263,8 @@ export function EvidenceInspectorPanel({
           </ol>
         </div>
       ) : null}
+        </motion.div>
+      </AnimatePresence>
     </aside>
   );
 }

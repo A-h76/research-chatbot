@@ -1,7 +1,10 @@
 /**
- * Research Confidence — decision metrics only (not AI vanity scores).
+ * Research Confidence — decision metrics + Bklit coverage ring.
  */
 import { cn } from "@/lib/utils";
+import { Ring } from "@/components/charts/ring";
+import { RingCenter } from "@/components/charts/ring-center";
+import { RingChart } from "@/components/charts/ring-chart";
 import type { WritingMetrics, WritingReview } from "@/features/evidence/hooks/useGroundedWriting";
 
 type Props = {
@@ -23,11 +26,12 @@ export function ResearchConfidenceStrip({ metrics, review, className }: Props) {
   const reviewerStatus = review?.status ?? metrics?.reviewer_status ?? null;
 
   const empty = coverage == null && grounding == null && unsupported == null && !reviewerStatus;
+  const ringValue = coverage ?? grounding;
 
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border bg-card px-3 py-2",
+        "flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-border bg-card px-3 py-2",
         className,
       )}
       role="region"
@@ -42,25 +46,81 @@ export function ResearchConfidenceStrip({ metrics, review, className }: Props) {
         </span>
       ) : (
         <>
-          {coverage != null && (
-            <Metric label="Evidence coverage" value={`${coverage}%`} />
+          {ringValue != null && (
+            <div className="flex items-center gap-3">
+              <div className="size-[72px] shrink-0">
+                <RingChart
+                  data={[
+                    {
+                      label: coverage != null ? "Coverage" : "Grounding",
+                      value: ringValue,
+                      maxValue: 100,
+                      color: "var(--primary)",
+                    },
+                  ]}
+                  size={72}
+                  strokeWidth={8}
+                  ringGap={4}
+                  baseInnerRadius={20}
+                  animationDuration={700}
+                >
+                  <Ring index={0} showGlow={false} />
+                  <RingCenter
+                    suffix="%"
+                    defaultLabel={coverage != null ? "Coverage" : "Grounding"}
+                  />
+                </RingChart>
+              </div>
+              <div className="flex flex-col gap-1">
+                {coverage != null && grounding != null && coverage !== grounding && (
+                  <Metric label="Grounding" value={`${grounding}%`} />
+                )}
+                {reviewerStatus != null && (
+                  <Metric
+                    label="Research Reviewer"
+                    value={
+                      String(reviewerStatus).toLowerCase() === "pass"
+                        ? "Passed"
+                        : "Needs review"
+                    }
+                    tone={
+                      String(reviewerStatus).toLowerCase() === "pass" ? "ok" : "warn"
+                    }
+                  />
+                )}
+                {unsupported != null && (
+                  <Metric
+                    label="Unsupported"
+                    value={String(unsupported)}
+                    tone={unsupported === 0 ? "ok" : "warn"}
+                  />
+                )}
+              </div>
+            </div>
           )}
-          {grounding != null && coverage == null && (
-            <Metric label="Grounding" value={`${grounding}%`} />
-          )}
-          {reviewerStatus != null && (
-            <Metric
-              label="Research Reviewer"
-              value={String(reviewerStatus).toLowerCase() === "pass" ? "Passed" : "Needs review"}
-              tone={String(reviewerStatus).toLowerCase() === "pass" ? "ok" : "warn"}
-            />
-          )}
-          {unsupported != null && (
-            <Metric
-              label="Unsupported"
-              value={String(unsupported)}
-              tone={unsupported === 0 ? "ok" : "warn"}
-            />
+          {ringValue == null && (
+            <>
+              {reviewerStatus != null && (
+                <Metric
+                  label="Research Reviewer"
+                  value={
+                    String(reviewerStatus).toLowerCase() === "pass"
+                      ? "Passed"
+                      : "Needs review"
+                  }
+                  tone={
+                    String(reviewerStatus).toLowerCase() === "pass" ? "ok" : "warn"
+                  }
+                />
+              )}
+              {unsupported != null && (
+                <Metric
+                  label="Unsupported"
+                  value={String(unsupported)}
+                  tone={unsupported === 0 ? "ok" : "warn"}
+                />
+              )}
+            </>
           )}
         </>
       )}
