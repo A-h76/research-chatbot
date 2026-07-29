@@ -22,6 +22,7 @@ re-litigated:
 """
 
 from .cost_ledger import CostLedger
+from .gateway import AIGateway, validate_registry
 from .model_registry import ModelError, ModelRegistry
 from .models import create_pipeline_version_model, create_prompt_version_model
 from .prompt_registry import Persona, PromptExecution, PromptRegistry, PromptVersion, TemplateError
@@ -37,4 +38,6 @@ __all__ = [
     "ModelRegistry",
     "ModelError",
     "CostLedger",
+    "AIGateway",
+    "validate_registry",
 ]

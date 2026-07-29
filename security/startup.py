@@ -69,6 +69,17 @@ def require_production_secrets(
     if not (environ.get("GOOGLE_CLIENT_SECRET") or "").strip():
         missing.append("GOOGLE_CLIENT_SECRET")
 
+    # Phase 3: refuse to boot without a provider key — silent mid-request
+    # failures are worse than a clear startup refusal.
+    if not (environ.get("OPENAI_API_KEY") or "").strip():
+        missing.append("OPENAI_API_KEY")
+
+    if not (environ.get("RESEND_API_KEY") or "").strip():
+        log.warning(
+            "RESEND_API_KEY unset in production — transactional email "
+            "(magic link, password reset) will log to console only."
+        )
+
     # Closed beta: refuse open signup in production.
     allowed = (environ.get("ALLOWED_EMAILS") or "").strip()
     invite_only = (environ.get("BETA_INVITE_ONLY") or "").strip().lower() in {
@@ -87,11 +98,24 @@ def require_production_secrets(
         )
 
     clam = (environ.get("CLAMAV_ENABLED") or "").strip().lower()
-    if clam not in {"1", "true", "yes", "on"}:
-        log.warning(
-            "CLAMAV_ENABLED is off in production — uploads are magic-byte validated "
-            "but not virus-scanned. Set CLAMAV_ENABLED=1 with a reachable clamd."
-        )
+    clam_on = clam in {"1", "true", "yes", "on"}
+    clam_optional = (environ.get("CLAMAV_OPTIONAL") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not clam_on:
+        if clam_optional:
+            log.warning(
+                "CLAMAV_ENABLED is off in production (CLAMAV_OPTIONAL=1) — uploads are "
+                "magic-byte validated but not virus-scanned."
+            )
+        else:
+            # Phase 4: require ClamAV unless explicitly opted out.
+            missing.append("CLAMAV_ENABLED (or set CLAMAV_OPTIONAL=1 to acknowledge risk)")
+    else:
+        log.info("CLAMAV_ENABLED is on — upload virus scanning required.")
 
     if _r2_is_configured(environ):
         for key in ("R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"):

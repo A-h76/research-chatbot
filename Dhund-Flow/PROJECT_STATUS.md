@@ -2,7 +2,7 @@
 
 **Document type:** Executive status only (not a wiki)  
 **Audience:** Staff / senior engineers onboarding or auditing  
-**Last updated:** 2026-07-28  
+**Last updated:** 2026-07-29  
 **Detail docs:** [`Dhund-Flow/`](./) (this folder)
 
 Branding: product is **Dhund**. Code/docs may still say Personal AI / Soro / ResearchOS — same app, not forks.
@@ -15,8 +15,8 @@ Branding: product is **Dhund**. Code/docs may still say Personal AI / Soro / Res
 |-------|--------|
 | **Platform** | Evidence Platform |
 | **Status** | **Frozen** |
-| **Current development** | Phase 2.3 Research Intelligence |
-| **Phase 2.3 sprints** | **0–6 complete** |
+| **Current development** | **Milestone 1 — Research Writing** (WI modules + section intents) |
+| **Phase 2.3 sprints** | **0–6 complete** + productization Waves A–D |
 | **Last release (Evidence)** | `v0.2.0-rc1` |
 | **Writing Shell baseline** | `v0.1.0` (+ Week 1.1 hardening) |
 | **Architecture status** | Stable |
@@ -62,7 +62,8 @@ Each era builds on the previous **without replacing it**.
 |-------|-----------------|--------|
 | **Platform** | `v0.2.0-rc1` | Evidence Platform **Frozen** (ADR-0005) |
 | **Evidence Platform** | Frozen | Objects, Explain, bindings, reviews, provenance, bands |
-| **Research Intelligence** | Sprint 0–6 **Done** | Pipeline live under `backend/evidence/` |
+| **Research Intelligence** | Sprint 0–6 **Done** | Pipeline + Writing Extract / Grounded Generate / Inspector RI |
+| **Evidence Extraction Pipeline** | Continuous | Quality backlog — not an architecture reopen |
 | **Contracts** | Frozen + Query v0 | Evidence Layer + Evidence Query (ADR-0007) |
 | **Writing Studio Shell** | `v0.1.0` | Autosave / versions / lifecycle (no freeform AI shell) |
 | **Schema migrations** | through **0033** | Writing 0031–32; Evidence 0033 |

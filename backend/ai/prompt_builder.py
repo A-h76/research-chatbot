@@ -330,13 +330,16 @@ class PromptBuilder:
             return CHAT_SYSTEM_FALLBACK, None
 
     def _chat_project_context(self, project_id: int, user_id: int) -> str:
+        if user_id is None:
+            return ""
         db = self.SessionLocal()
         try:
             project = db.get(self.Project, project_id)
             if project is None:
                 return ""
             owner_id = getattr(project, "user_id", None)
-            if owner_id is not None and int(owner_id) != int(user_id):
+            # Fail closed: require an owning user_id that matches the caller.
+            if owner_id is None or int(owner_id) != int(user_id):
                 return ""
             chunks = [f'Current project: "{getattr(project, "name", "") or ""}".']
             instructions = getattr(project, "instructions", None) or ""
@@ -390,9 +393,11 @@ class PromptBuilder:
             db = self.SessionLocal()
             try:
                 project = db.get(self.Project, project_id)
-                if project:
+                # Phase 3 / F3.2: never inject another user's project (or any
+                # project) when user_id is missing — fail closed.
+                if project is not None and user_id is not None:
                     owner_id = getattr(project, "user_id", None)
-                    if owner_id is None or user_id is None or int(owner_id) == int(user_id):
+                    if owner_id is not None and int(owner_id) == int(user_id):
                         project_context = "\n".join(
                             s for s in (project.description, project.instructions) if s
                         )

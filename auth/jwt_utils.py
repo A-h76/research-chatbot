@@ -6,6 +6,10 @@ exception hierarchy directly.
 Requires an active Flask app/request context (JWTManager(app) configured
 in server.py) — these functions read app.config at call time via
 flask_jwt_extended, they don't take an app reference themselves.
+
+Session binding (Phase 2 / F2.1): every token carries claim ``sv`` =
+User.session_version at mint time. After logout-all / password reset
+(session_version bump), tokens with a stale ``sv`` are rejected.
 """
 
 from flask_jwt_extended import create_access_token, create_refresh_token, decode_token
@@ -17,16 +21,21 @@ class JWTError(Exception):
     catch this one type, not flask_jwt_extended's or PyJWT's."""
 
 
-def create_jwt(user_id, additional_claims=None):
-    """Returns (access_token, refresh_token) for `user_id` — the same
-    User.id the rest of this app's session-based login already uses, so
-    a JWT-authenticated request and a session-authenticated request
-    refer to the same identity space. Expiry comes from JWT_ACCESS_
-    TOKEN_EXPIRES / JWT_REFRESH_TOKEN_EXPIRES in app.config, set once in
-    server.py, not per call."""
+# Claim name for User.session_version binding (logout-all / revoke).
+SESSION_VERSION_CLAIM = "sv"
+
+
+def create_jwt(user_id, additional_claims=None, *, session_version=0):
+    """Returns (access_token, refresh_token) for `user_id`.
+
+    Always embeds ``sv`` (session_version) so revoke_all_sessions /
+    password reset invalidate JWTs as well as cookie sessions.
+    """
     identity = str(user_id)
-    access = create_access_token(identity=identity, additional_claims=additional_claims)
-    refresh = create_refresh_token(identity=identity, additional_claims=additional_claims)
+    claims = dict(additional_claims or {})
+    claims[SESSION_VERSION_CLAIM] = int(session_version or 0)
+    access = create_access_token(identity=identity, additional_claims=claims)
+    refresh = create_refresh_token(identity=identity, additional_claims=claims)
     return access, refresh
 
 
@@ -36,3 +45,13 @@ def decode_jwt(token):
         return decode_token(token)
     except Exception as e:
         raise JWTError(str(e)) from e
+
+
+def session_version_matches(claims: dict, current_version: int) -> bool:
+    """True when token ``sv`` equals the user's current session_version."""
+    if not isinstance(claims, dict) or SESSION_VERSION_CLAIM not in claims:
+        return False
+    try:
+        return int(claims[SESSION_VERSION_CLAIM]) == int(current_version or 0)
+    except (TypeError, ValueError):
+        return False

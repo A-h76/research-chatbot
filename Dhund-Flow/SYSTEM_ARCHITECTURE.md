@@ -20,6 +20,9 @@ Research Intelligence
 Evidence Platform
     │
     ▼
+Evidence Extraction Pipeline
+    │
+    ▼
 Analysis Pipeline
     │
     ▼
@@ -31,6 +34,7 @@ Document Import
 | Applications | Writing · Reviewer · Compare · Assistant · Library UI |
 | Research Intelligence | Retrieval → Ranking → Consensus → Conflict → Reasoning → Writing Intelligence |
 | Evidence Platform | EvidenceObjects · Explain · Bindings · Reviews · Provenance (frozen) |
+| Evidence Extraction Pipeline | Analysis JSON → candidate EvidenceObjects (not “Evidence Engine”) |
 | Analysis Pipeline | Phase 1.1–1.7 · grading · graph projections |
 | Document Import | Upload · Bridge · worker import · text extraction |
 
@@ -57,6 +61,9 @@ Rules:
 - Eras compose; they do not rewrite each other.
 - RI **never owns knowledge** — only computes over EvidenceObjects.
 - Guided generation sits **last** (Writing Intelligence), after coded stages.
+- Writing Intelligence modules (Milestone 1): Planner → Context Builder → Section Generator (+ Citation Binder / Reviewer later).
+- Evaluation is a **process** (metrics on every writing response / PR), not a separate roadmap phase.
+- Product capabilities: [PRODUCT_CAPABILITY_MILESTONES.md](PRODUCT_CAPABILITY_MILESTONES.md).
 
 ---
 
@@ -140,14 +147,15 @@ worker.py (UploadJob queue via FOR UPDATE SKIP LOCKED)
 
 ## 6) Important flows
 
-### Library → Analysis → Evidence
+### Library → Analysis → Extraction → Evidence
 
 ```text
 Upload / Bridge import
   → worker: import → phase1_analysis (1.1–1.7)
   → paper_analysis (LLM overview + Phase 1 context)
-  → evidence_extract (EvidenceObjects candidates)
-  → review / accept → Inspector + Explain
+  → Evidence Extraction Pipeline (evidence_extract)
+  → candidate EvidenceObjects → Review / Accept
+  → Inspector + Explain (Evidence Platform)
 ```
 
 ### Research Intelligence (Evidence Query)

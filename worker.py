@@ -31,7 +31,7 @@ import server
 # reuse). worker.py already does `import server` for the DB models/engine
 # above — safe here since worker.py is its own standalone process, never
 # imported back by server.py itself.
-from backend.ai import ModelRegistry, PromptRegistry
+from backend.ai import AIGateway, ModelRegistry, PromptRegistry
 from observability import configure_logging, correlation_id_var, start_worker_metrics_server
 from server import (
     AnalysisPipelineResult,
@@ -56,6 +56,9 @@ MAX_ATTEMPTS = int(os.environ.get("WORKER_MAX_ATTEMPTS", "5"))
 METRICS_PORT = int(os.environ.get("WORKER_METRICS_PORT", "9101"))
 # Loopback by default so the worker scrape port is not world-reachable (PR2).
 METRICS_BIND = (os.environ.get("WORKER_METRICS_BIND") or "127.0.0.1").strip() or "127.0.0.1"
+DEFAULT_AI_MODE = (os.environ.get("AI_QUALITY_MODE") or "balanced").strip().lower()
+
+ai_gateway = AIGateway(server.model_router)
 
 
 def _require_postgres():
@@ -239,9 +242,11 @@ def _handle_extract_metadata(db, job):
             "extract_metadata",
             variables={"excerpt": text[:META_EXCERPT_CHARS], "max_chars": META_EXCERPT_CHARS},
         )
-        result = model_registry.call(
-            server.UTILITY_MODEL,
-            [{"role": "user", "content": prompt}],
+        result = ai_gateway.call(
+            model_registry=model_registry,
+            task="extract_metadata",
+            mode=DEFAULT_AI_MODE,
+            messages=[{"role": "user", "content": prompt}],
             user_id=uf.user_id,
             response_format={"type": "json_object"},
         )
@@ -337,9 +342,11 @@ def _handle_paper_analysis(db, job):
             response_format = PAPER_ANALYSIS_RESPONSE_FORMAT
             if assembled.domain == "medical":
                 response_format = medical_response_format(assembled.document_type)
-            result = model_registry.call(
-                server.UTILITY_MODEL,
-                [{"role": "user", "content": prompt_text}],
+            result = ai_gateway.call(
+                model_registry=model_registry,
+                task="paper_analysis",
+                mode=DEFAULT_AI_MODE,
+                messages=[{"role": "user", "content": prompt_text}],
                 user_id=uf.user_id,
                 response_format=response_format,
             )
@@ -348,9 +355,11 @@ def _handle_paper_analysis(db, job):
                 "paper_analysis",
                 variables={"text": text[:ANALYSIS_MAX_CHARS], "max_chars": ANALYSIS_MAX_CHARS},
             )
-            result = model_registry.call(
-                server.UTILITY_MODEL,
-                [{"role": "user", "content": prompt}],
+            result = ai_gateway.call(
+                model_registry=model_registry,
+                task="paper_analysis",
+                mode=DEFAULT_AI_MODE,
+                messages=[{"role": "user", "content": prompt}],
                 user_id=uf.user_id,
                 response_format=PAPER_ANALYSIS_RESPONSE_FORMAT,
             )

@@ -22,6 +22,9 @@ ModelRouter.get_model_for_task("rag") rather than a fixed injected
 string, and writes one PromptExecution row per call (pending -> success/
 failed), closing the audit-trail gap prompt-engine-audit.md flagged.
 
+Phase 2 / F10.4: optional ``limiter`` + ``ai_gate`` (wired from server.py)
+prevent unmetered embed/LLM cost. Tests may omit both.
+
 Constructor-injected (SessionLocal, models, get_prompt_builder,
 model_router, PromptExecution), never `import server` — same reason as
 every other module in auth/, quotas/, and backend/: server.py runs as
@@ -39,6 +42,10 @@ from sqlalchemy import select
 from auth.decorators import jwt_required
 from backend.ai import ModelError, ModelRegistry
 from backend.ai.prompts import ensure_default_prompts
+
+# Cap query size at the HTTP edge (Phase 2 / F4.1 / F10.4).
+MAX_SEARCH_QUERY_CHARS = 2_000
+MAX_RAG_QUERY_CHARS = 8_000
 
 
 def _cosine(a, b):
@@ -84,16 +91,56 @@ def _search_chunks(
     return scored[:limit]
 
 
-def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder, model_router, PromptExecution):
+def create_search_blueprint(
+    *,
+    SessionLocal,
+    UserFile,
+    Chunk,
+    get_prompt_builder,
+    model_router,
+    PromptExecution,
+    ai_gateway=None,
+    limiter=None,
+    ai_gate=None,
+):
     bp = Blueprint("search", __name__)
+
+    def _limit(spec):
+        def deco(fn):
+            if limiter is None:
+                return fn
+            return limiter.limit(spec)(fn)
+
+        return deco
 
     @bp.route("/api/documents/search", methods=["GET"])
     @jwt_required()
+    @_limit("30 per minute")
     def search_documents():
         user_id = int(g.current_user)
         q = (request.args.get("q") or "").strip()
         if len(q) < 2:
             return jsonify({"error": "query_too_short", "message": "Query must be at least 2 characters"}), 400
+        if len(q) > MAX_SEARCH_QUERY_CHARS:
+            return (
+                jsonify(
+                    {
+                        "error": "query_too_long",
+                        "message": f"Query must be at most {MAX_SEARCH_QUERY_CHARS} characters",
+                    }
+                ),
+                400,
+            )
+
+        if ai_gate is not None:
+            from security.ops.gate import AiAccessDenied
+
+            try:
+                # Embeddings only — lighter estimate than full RAG completion.
+                ai_gate.preflight(user_id, token_estimate=max(50, len(q) // 4), cost_estimate=0.001)
+            except AiAccessDenied as exc:
+                return jsonify({"error": exc.code, "detail": exc.message}), exc.http_status
+
         file_id = request.args.get("file_id", type=int)
         project_id = request.args.get("project_id", type=int)
         limit = max(1, min(50, request.args.get("limit", default=20, type=int) or 20))
@@ -138,12 +185,46 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder
 
     @bp.route("/api/rag", methods=["POST"])
     @jwt_required()
+    @_limit("20 per hour")
     def rag_answer():
         user_id = int(g.current_user)
-        data = request.get_json(silent=True) or {}
-        query = (data.get("query") or "").strip()
-        if len(query) < 2:
-            return jsonify({"error": "query_too_short", "message": "Query must be at least 2 characters"}), 400
+        from security.request_validation import (
+            RequestValidationError,
+            parse_json_object,
+            reject_unknown_fields,
+            require_string,
+            optional_int,
+        )
+
+        try:
+            data = parse_json_object(request.get_json(silent=True), allow_empty=False)
+            reject_unknown_fields(
+                data,
+                {
+                    "query",
+                    "file_id",
+                    "project_id",
+                    "top_k",
+                    "quality_mode",
+                    "confidence",
+                },
+            )
+            query = require_string(data, "query", max_len=MAX_RAG_QUERY_CHARS, min_len=2)
+        except RequestValidationError as exc:
+            return exc.to_response()
+
+        if ai_gate is not None:
+            from security.ops.gate import AiAccessDenied
+
+            try:
+                ai_gate.preflight(
+                    user_id,
+                    token_estimate=max(500, len(query) // 3),
+                    cost_estimate=0.02,
+                )
+            except AiAccessDenied as exc:
+                return jsonify({"error": exc.code, "detail": exc.message}), exc.http_status
+
         file_id = data.get("file_id")
         project_id = data.get("project_id")
         top_k = max(1, min(20, int(data.get("top_k") or 6)))
@@ -204,7 +285,13 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder
             except ValueError as exc:
                 return jsonify({"error": "prompt_assembly_failed", "message": str(exc)}), 502
 
-            model = model_router.get_model_for_task("rag")
+            quality_mode = (data.get("quality_mode") or "balanced").strip().lower()
+            confidence = data.get("confidence")
+            if confidence is not None:
+                try:
+                    confidence = float(confidence)
+                except (TypeError, ValueError):
+                    confidence = None
             execution = PromptExecution(
                 prompt_version_id=assembled.prompt_version_id,
                 persona_id=assembled.persona_id,
@@ -218,12 +305,25 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder
 
             started = time.perf_counter()
             try:
-                result = model_registry.call(
-                    model,
-                    [{"role": "user", "content": assembled.final}],
-                    user_id=user_id,
-                    prompt_version_id=assembled.prompt_version_id,
-                )
+                messages = [{"role": "user", "content": assembled.final}]
+                if ai_gateway is not None:
+                    result = ai_gateway.call(
+                        model_registry=model_registry,
+                        task="rag",
+                        mode=quality_mode,
+                        confidence=confidence,
+                        messages=messages,
+                        user_id=user_id,
+                        prompt_version_id=assembled.prompt_version_id,
+                    )
+                else:
+                    model = model_router.get_model_for_task("rag")
+                    result = model_registry.call(
+                        model,
+                        messages,
+                        user_id=user_id,
+                        prompt_version_id=assembled.prompt_version_id,
+                    )
             except ModelError as exc:
                 execution.status = "failed"
                 db.commit()
@@ -233,6 +333,13 @@ def create_search_blueprint(*, SessionLocal, UserFile, Chunk, get_prompt_builder
             execution.tokens_used = result.get("total_tokens")
             execution.latency_ms = int((time.perf_counter() - started) * 1000)
             db.commit()
+
+            if ai_gate is not None:
+                ai_gate.record_usage(
+                    user_id,
+                    tokens=int(result.get("total_tokens") or 0),
+                    cost_usd=float(result.get("cost") or 0.0),
+                )
 
             return (
                 jsonify(

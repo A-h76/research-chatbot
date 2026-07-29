@@ -1,6 +1,6 @@
 # ENGINEERING_ROADMAP
 
-**Last updated:** 2026-07-28  
+**Last updated:** 2026-07-29  
 **Canonical product writing sequence:** `docs/phase-2-writing-roadmap.md`  
 **RI detail:** `docs/architecture/add-0005-research-intelligence-pipeline.md`
 
@@ -19,6 +19,7 @@ Keep this file scannable: **Completed · Current · Next · Later**. Historical 
 | Evidence Platform | **`v0.2.0-rc1`** — Phase 2.2 **CLOSED**, contracts frozen |
 | Research Intelligence core pipeline | Phase 2.3 Sprints **0–6** |
 | | Query → Retrieval → Ranking → Consensus → Conflict → Reasoning → Writing Intelligence |
+| RI Writing productization (Wave A–D) | Extract UI · Grounded Generate · Inspector RI · naming/smoke docs |
 
 Phase 2.0 validation **kit** remains frozen; researcher sessions gated by product ops, not missing kit docs.
 
@@ -28,10 +29,12 @@ Phase 2.0 validation **kit** remains frozen; researcher sessions gated by produc
 
 | Track | Focus |
 |-------|--------|
-| **RI productization** | Surface Evidence / reason / writing APIs in Writing Studio UX |
+| **Milestone 1 — Research Writing** | **v0.2.1** — Sprints A–C done; **Researcher Validation Active** ([protocol](../docs/RESEARCHER_VALIDATION_v0.2.1.md): smoke → 5 → friction → 20) |
+| **Platform discipline** | Freeze active — see [PLATFORM_FREEZE_v1.0.md](PLATFORM_FREEZE_v1.0.md) |
+| **Evaluation (every PR)** | Name a metric improved (retrieval / ranking / consensus / writing) |
+| **Evidence Extraction quality** | Continuous — [EXTRACTION_QUALITY_BACKLOG.md](EXTRACTION_QUALITY_BACKLOG.md) |
 | **Ops hardening** | Verify live host checklist (migrations ≤0033, secrets, metrics) |
 | **SaaS-PK (parallel)** | Plans / quotas / manual JazzCash-EasyPaisa — `docs/public-saas-readiness-pk.md` |
-| **Stabilization** | Keep Evidence contracts frozen; no dual knowledge stores |
 
 ---
 
@@ -39,10 +42,11 @@ Phase 2.0 validation **kit** remains frozen; researcher sessions gated by produc
 
 | Item | Notes |
 |------|--------|
-| **Research Reviewer** | Compiler-shaped: search → coverage → support checks → warnings (ADD Month 8) |
-| **Compare consistency** | Same EvidenceObject representation for papers/methods/findings |
-| **Research Assistant** | Question → Evidence Query → … → Reasoning → Answer (no PDF-as-answer) |
-| **Citation insert into draft** | Connect existing citation manager; don’t rebuild |
+| **M1 Sprint 3** | Citation Binder · Reviewer · paragraph-level insert |
+| **Milestone 2 — Evidence Discovery** | Search → cards → consensus/conflict → Inspector → jump into Writing |
+| **Milestone 3 — Explainability** | Inspector full RI chain → generated paragraph |
+| **Research Session** | Orchestration layer (query history, accepted evidence, draft links) — not a knowledge store |
+| **Compare / Assistant** | Same EvidenceObject representation; no PDF-as-answer |
 
 ---
 

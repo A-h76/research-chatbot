@@ -92,6 +92,7 @@ def create_documents_blueprint(
     quota_service,
     storage_backend,
     model_router,
+    ai_gateway=None,
     get_prompt_builder,
     domain_registry,
     AnalysisPipelineResult=None,
@@ -439,7 +440,13 @@ def create_documents_blueprint(
                 return jsonify({"error": "prompt_not_found", "message": str(exc)}), 400
 
             model_registry = ModelRegistry(db)
-            model = model_router.get_model_for_task("paper_analysis")
+            quality_mode = (body.get("quality_mode") or "balanced").strip().lower()
+            confidence = body.get("confidence")
+            if confidence is not None:
+                try:
+                    confidence = float(confidence)
+                except (TypeError, ValueError):
+                    confidence = None
 
             execution = PromptExecution(
                 prompt_version_id=assembled.prompt_version_id,
@@ -471,13 +478,27 @@ def create_documents_blueprint(
 
             started = time.perf_counter()
             try:
-                result = model_registry.call(
-                    model,
-                    [{"role": "user", "content": assembled.final}],
-                    user_id=user_id,
-                    response_format=response_format,
-                    prompt_version_id=assembled.prompt_version_id,
-                )
+                messages = [{"role": "user", "content": assembled.final}]
+                if ai_gateway is not None:
+                    result = ai_gateway.call(
+                        model_registry=model_registry,
+                        task="paper_analysis",
+                        mode=quality_mode,
+                        confidence=confidence,
+                        messages=messages,
+                        user_id=user_id,
+                        response_format=response_format,
+                        prompt_version_id=assembled.prompt_version_id,
+                    )
+                else:
+                    model = model_router.get_model_for_task("paper_analysis")
+                    result = model_registry.call(
+                        model,
+                        messages,
+                        user_id=user_id,
+                        response_format=response_format,
+                        prompt_version_id=assembled.prompt_version_id,
+                    )
                 data = json.loads(result["content"])
             except ModelError as exc:
                 execution.status = "failed"

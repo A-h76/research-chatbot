@@ -15,6 +15,7 @@ import { AiStateBadge, type AiStateResolved } from "@/features/pipeline";
 import { toast } from "@/components/common/Toast";
 import type { Project, UserFile } from "@/types/api";
 import { libraryBridgeApi } from "../libraryBridgeApi";
+import { ExtractEvidenceButton } from "@/features/evidence/components/ExtractEvidenceButton";
 
 const STATUS_ICONS = {
   unread: BookOpen,
@@ -103,6 +104,15 @@ export function FileCard({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        {isPaper && readiness === "research_ready" && file.project_id != null && (
+          <ExtractEvidenceButton
+            projectId={file.project_id}
+            fileId={file.id}
+            readiness={readiness}
+            stopPropagation
+            className="hidden sm:inline-flex"
+          />
+        )}
         {isPaper && readiness && readiness !== "research_ready" && (
           <span
             className="hidden rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline"

@@ -1,0 +1,88 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildLiteratureReviewMarkdown,
+  computeExportTraceability,
+} from "./groundedMarkdownExport";
+import type { GroundedWritingResult } from "@/features/evidence/hooks/useGroundedWriting";
+
+describe("buildLiteratureReviewMarkdown", () => {
+  it("includes body, appendix, bibliography, and metadata", () => {
+    const writing = {
+      status: "ok",
+      blocked_reason: null,
+      mode: "grounded_v0",
+      section_type: "literature_review",
+      paragraph: "Benefit shown [#1].",
+      citations: [],
+      warnings: [],
+      disclaimer: "Verify against sources.",
+      bibliography: [
+        {
+          evidence_id: 1,
+          page: 4,
+          claim: "Drug X helps",
+          quote: "significant reduction",
+          confidence_band: "high",
+          study_type: "RCT",
+        },
+      ],
+      sections: [
+        {
+          id: "themes",
+          title: "Themes",
+          paragraph: "Benefit shown [#1].",
+          citations: [],
+          evidence_ids: [1],
+          bindings: [
+            {
+              evidence_id: 1,
+              page: 4,
+              claim: "Drug X helps",
+              quote: "significant reduction",
+              confidence_band: "high",
+              study_type: "RCT",
+            },
+          ],
+          confidence: "high",
+          status: "ok",
+        },
+      ],
+      metrics: {
+        grounding_pct: 1,
+        citation_coverage: 1,
+        unsupported_sentence_rate: 0,
+        unsupported_claims: 0,
+        paragraph_count: 1,
+        evidence_linked_paragraphs: 1,
+        unique_evidence_cited: 1,
+        supporting_count: 1,
+      },
+      review: {
+        status: "pass",
+        pass_rate: 1,
+        sections_checked: 1,
+        sections_passed: 1,
+        issue_count: 0,
+        issues: [],
+      },
+    } as GroundedWritingResult;
+
+    const md = buildLiteratureReviewMarkdown({
+      title: "HbA1c review",
+      body: "Benefit shown [#1].",
+      writing,
+      writing_version: "1.3.1",
+      exported_at: "2026-07-29T12:00:00.000Z",
+    });
+
+    expect(md).toContain("# HbA1c review");
+    expect(md).toContain("## Literature review");
+    expect(md).toContain("## Evidence appendix");
+    expect(md).toContain("### Evidence #1");
+    expect(md).toContain("## Bibliography");
+    expect(md).toContain("1. [#1] Drug X helps, page 4");
+    expect(md).toContain("## Generation metadata");
+    expect(md).toContain("evidence_traceability_100: yes");
+    expect(computeExportTraceability(writing).meets_100).toBe(true);
+  });
+});

@@ -109,7 +109,7 @@ def test_build_omits_empty_sections_from_final(env):
 def test_build_section_order_is_system_persona_project_memory_rag_task_schema(env):
     _make_task(env)
     env["persona_engine"].create("Reviewer", "d", "You are a reviewer.")
-    proj = env["Project"](description="A project about widgets.")
+    proj = env["Project"](user_id=1, description="A project about widgets.")
     env["db"].add(proj)
     env["db"].commit()
     env["db"].add(env["Memory"](user_id=1, fact="likes widgets"))
@@ -171,17 +171,27 @@ def test_build_no_persona_given_leaves_persona_id_none(env):
 # ------------------------------------------------------------ project context
 def test_build_project_context_joins_description_and_instructions(env):
     _make_task(env)
-    proj = env["Project"](description="About widgets.", instructions="Be concise.")
+    proj = env["Project"](user_id=1, description="About widgets.", instructions="Be concise.")
     env["db"].add(proj)
     env["db"].commit()
 
-    result = env["builder"].build("q", "ask", project_id=proj.id)
+    result = env["builder"].build("q", "ask", project_id=proj.id, user_id=1)
     assert result.project_context == "About widgets.\nBe concise."
+
+
+def test_build_skips_project_context_when_user_id_missing(env):
+    _make_task(env)
+    proj = env["Project"](user_id=1, description="About widgets.", instructions="Be concise.")
+    env["db"].add(proj)
+    env["db"].commit()
+
+    result = env["builder"].build("q", "ask", project_id=proj.id)  # no user_id
+    assert result.project_context == ""
 
 
 def test_build_missing_project_leaves_empty_context_without_raising(env):
     _make_task(env)
-    result = env["builder"].build("q", "ask", project_id=999999)
+    result = env["builder"].build("q", "ask", project_id=999999, user_id=1)
     assert result.project_context == ""
 
 

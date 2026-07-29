@@ -14,6 +14,7 @@ PERSIST_EVENTS = frozenset(
     {
         "oauth_denied",
         "magic_link_denied",
+        "magic_link_verify_failed",
         "login_failed",
         "password_changed",
         "email_verified",
@@ -31,6 +32,10 @@ PERSIST_EVENTS = frozenset(
         "admin_budget_changed",
         "session_revoked_all",
         "research_queue_full",
+        "csrf_blocked",
+        "jwt_refresh_revoked",
+        "dev_login",
+        "rate_limit_exceeded",
     }
 )
 

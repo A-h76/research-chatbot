@@ -54,6 +54,12 @@ def test_vite_dev_origin_allowed_when_dev_frontend_origins_set(monkeypatch):
     assert resp.get_json().get("error") != "csrf_origin_mismatch"
 
 
+def test_mismatched_origin_on_auth_path_is_blocked():
+    resp = client().post("/auth/magic-link", json={"email": "a@b.com"}, headers={"Origin": "http://evil.com"})
+    assert resp.status_code == 403
+    assert resp.get_json()["error"] == "csrf_origin_mismatch"
+
+
 def test_vite_fallback_port_allowed_in_non_production():
     """Vite bumps to 5174/5175/… when 5173 is busy — those origins must also pass."""
     if server.IS_PRODUCTION:

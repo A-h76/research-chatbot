@@ -103,7 +103,9 @@ def test_apply_writing_stage_envelope():
     }
     out = apply_writing_intelligence_stage(reasoned)
     assert out["stage"] == "writing"
-    assert out["writing_version"] == "1.0.0"
+    assert out["writing_version"] == "1.3.1"
     assert out["writing"]["status"] == "ok"
     assert out["writing"]["mode"] == "grounded_v0"
+    assert out["writing"]["sections"]
+    assert out["writing"]["metrics"] is not None
     assert out["objects"][0]["id"] == 10

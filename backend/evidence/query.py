@@ -13,6 +13,18 @@ INTENTS = frozenset(
         "list_project",
     }
 )
+# Append-only Writing Intelligence section types (Milestone 1).
+SECTION_TYPES = frozenset(
+    {
+        "support_sentence",
+        "introduction",
+        "literature_review",
+        "discussion",
+        "clinical_summary",
+        "research_gap",
+        "executive_summary",
+    }
+)
 BANDS = frozenset({"low", "moderate", "high"})
 STATUSES = frozenset({"candidate", "accepted", "rejected", "superseded"})
 
@@ -83,6 +95,14 @@ def normalize_evidence_query(raw: dict[str, Any], *, user_id: int) -> dict[str, 
     if not isinstance(anchors_in, dict):
         raise ValueError("anchors must be an object")
 
+    section_raw = raw.get("section_type")
+    if section_raw is None or section_raw == "":
+        section_type = "support_sentence"
+    else:
+        section_type = str(section_raw).strip().lower()
+        if section_type not in SECTION_TYPES:
+            raise ValueError(f"invalid section_type: {section_type}")
+
     return {
         "intent": intent,
         "scope": scope,
@@ -99,4 +119,5 @@ def normalize_evidence_query(raw: dict[str, Any], *, user_id: int) -> dict[str, 
             "block_id": (anchors_in.get("block_id") or "")[:120],
             "selected_text": (anchors_in.get("selected_text") or "")[:2000],
         },
+        "section_type": section_type,
     }
