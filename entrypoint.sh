@@ -1,4 +1,10 @@
 #!/bin/sh
+# Ensure critical runtime deps exist (guards against stale Railway image caches).
+if ! python -c "import yaml" 2>/dev/null; then
+  echo "entrypoint: PyYAML missing — installing…"
+  pip install --no-cache-dir "PyYAML>=6.0"
+fi
+
 # Apply SQL migrations before serving. Do not abort boot if they fail —
 # a dead container surfaces as Railway "upstream error" with no HTTP.
 if [ -n "${DATABASE_URL:-}" ]; then
