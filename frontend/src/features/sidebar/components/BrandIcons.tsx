@@ -1,11 +1,13 @@
-/** Brand marks for Library import nav — Zotero favicon + Mendeley SVG. */
+/** Brand marks for Library import nav — bundled via Vite (works in SPA catch-all). */
 
 import { cn } from "@/lib/utils";
+import zoteroIconUrl from "@/assets/brand/zotero.ico";
+import mendeleyIconUrl from "@/assets/brand/mendeley.svg";
 
 export function ZoteroIcon({ className }: { className?: string }) {
   return (
     <img
-      src="/brand/zotero.ico"
+      src={zoteroIconUrl}
       alt=""
       width={16}
       height={16}
@@ -18,7 +20,7 @@ export function ZoteroIcon({ className }: { className?: string }) {
 export function MendeleyIcon({ className }: { className?: string }) {
   return (
     <img
-      src="/brand/mendeley.svg"
+      src={mendeleyIconUrl}
       alt=""
       width={16}
       height={16}

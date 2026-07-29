@@ -8853,6 +8853,13 @@ def spa(path):
         "robots.txt",
     ):
         abort(404)
+    # Serve real Vite public/ files (e.g. /brand/*.svg) before falling back
+    # to the SPA shell — otherwise browsers get index.html and show broken icons.
+    if path:
+        candidate = os.path.normpath(os.path.join(FRONTEND_DIST, path))
+        dist_root = os.path.normpath(FRONTEND_DIST)
+        if candidate.startswith(dist_root + os.sep) and os.path.isfile(candidate):
+            return send_from_directory(FRONTEND_DIST, path)
     index_path = os.path.join(FRONTEND_DIST, "index.html")
     if not os.path.exists(index_path):
         return ("Frontend build not found — run `npm run build` in frontend/.", 501)

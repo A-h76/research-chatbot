@@ -40,7 +40,10 @@ export function ConnectLibraryPanel({
   const [folderId, setFolderId] = useState("all");
   const [createProject, setCreateProject] = useState(true);
   const [projectName, setProjectName] = useState("");
-  const [busy, setBusy] = useState(false);
+  /** Per-action busy so Connect Zotero doesn't spin Mendeley too. */
+  const [busyKey, setBusyKey] = useState<
+    null | "zotero" | "mendeley" | "zotero-import" | "mendeley-import" | "zotero-sync" | "mendeley-sync"
+  >(null);
 
   const { data: connections } = useQuery({
     queryKey: ["library-connections"],
@@ -76,9 +79,15 @@ export function ConnectLibraryPanel({
         block: "start",
       });
       if (provider === "zotero") {
-        document.getElementById("import-zotero")?.focus();
+        document.getElementById("import-zotero")?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
       } else if (provider === "mendeley") {
-        document.getElementById("import-mendeley")?.focus();
+        document.getElementById("import-mendeley")?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
       } else if (provider === "upload") {
         document.getElementById("library-upload-input")?.click();
       }
@@ -87,29 +96,29 @@ export function ConnectLibraryPanel({
   }, [searchParams]);
 
   const connectZotero = async () => {
-    setBusy(true);
+    setBusyKey("zotero");
     try {
       const res = await libraryBridgeApi.zoteroConnect();
       window.location.href = res.authorize_url;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Zotero connect failed");
-      setBusy(false);
+      setBusyKey(null);
     }
   };
 
   const connectMendeley = async () => {
-    setBusy(true);
+    setBusyKey("mendeley");
     try {
       const res = await libraryBridgeApi.mendeleyConnect();
       window.location.href = res.authorize_url;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Mendeley connect failed");
-      setBusy(false);
+      setBusyKey(null);
     }
   };
 
   const openZoteroImport = async () => {
-    setBusy(true);
+    setBusyKey("zotero-import");
     try {
       const res = await libraryBridgeApi.zoteroCollections();
       setCollections(res.items);
@@ -120,12 +129,12 @@ export function ConnectLibraryPanel({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not load collections");
     } finally {
-      setBusy(false);
+      setBusyKey(null);
     }
   };
 
   const openMendeleyImport = async () => {
-    setBusy(true);
+    setBusyKey("mendeley-import");
     try {
       const res = await libraryBridgeApi.mendeleyFolders();
       setFolders(res.items);
@@ -136,12 +145,12 @@ export function ConnectLibraryPanel({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not load folders");
     } finally {
-      setBusy(false);
+      setBusyKey(null);
     }
   };
 
   const runZoteroImport = async () => {
-    setBusy(true);
+    setBusyKey("zotero-import");
     try {
       const res = await libraryBridgeApi.zoteroImport({
         collection_key: collectionKey,
@@ -159,12 +168,12 @@ export function ConnectLibraryPanel({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Zotero import failed");
     } finally {
-      setBusy(false);
+      setBusyKey(null);
     }
   };
 
   const runMendeleyImport = async () => {
-    setBusy(true);
+    setBusyKey("mendeley-import");
     try {
       const res = await libraryBridgeApi.mendeleyImport({
         folder_id: folderId,
@@ -182,7 +191,7 @@ export function ConnectLibraryPanel({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Mendeley import failed");
     } finally {
-      setBusy(false);
+      setBusyKey(null);
     }
   };
 
@@ -199,7 +208,7 @@ export function ConnectLibraryPanel({
   };
 
   const syncZotero = async () => {
-    setBusy(true);
+    setBusyKey("zotero-sync");
     try {
       const res = await libraryBridgeApi.zoteroSync();
       toast.success(
@@ -212,12 +221,12 @@ export function ConnectLibraryPanel({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Zotero sync failed");
     } finally {
-      setBusy(false);
+      setBusyKey(null);
     }
   };
 
   const syncMendeley = async () => {
-    setBusy(true);
+    setBusyKey("mendeley-sync");
     try {
       const res = await libraryBridgeApi.mendeleySync();
       toast.success(
@@ -230,7 +239,7 @@ export function ConnectLibraryPanel({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Mendeley sync failed");
     } finally {
-      setBusy(false);
+      setBusyKey(null);
     }
   };
 
@@ -303,7 +312,7 @@ export function ConnectLibraryPanel({
               {!zotero?.connected ? (
                 <Button
                   size="sm"
-                  disabled={busy || zotero?.available === false}
+                  disabled={busyKey === "zotero" || zotero?.available === false}
                   onClick={connectZotero}
                   title={
                     zotero?.available === false
@@ -311,15 +320,28 @@ export function ConnectLibraryPanel({
                       : undefined
                   }
                 >
-                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
+                  {busyKey === "zotero" ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Link2 className="size-3.5" />
+                  )}
                   {zotero?.available === false ? "Server OAuth not set" : "Connect Zotero"}
                 </Button>
               ) : (
                 <>
-                  <Button size="sm" disabled={busy} onClick={openZoteroImport}>
+                  <Button
+                    size="sm"
+                    disabled={busyKey === "zotero-import"}
+                    onClick={openZoteroImport}
+                  >
                     Import collection
                   </Button>
-                  <Button size="sm" variant="outline" disabled={busy} onClick={syncZotero}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busyKey === "zotero-sync"}
+                    onClick={syncZotero}
+                  >
                     Sync now
                   </Button>
                   <Button size="sm" variant="ghost" onClick={disconnectZotero}>
@@ -377,7 +399,7 @@ export function ConnectLibraryPanel({
               {!mendeley?.connected ? (
                 <Button
                   size="sm"
-                  disabled={busy || mendeley?.available === false}
+                  disabled={busyKey === "mendeley" || mendeley?.available === false}
                   onClick={connectMendeley}
                   title={
                     mendeley?.available === false
@@ -385,15 +407,28 @@ export function ConnectLibraryPanel({
                       : undefined
                   }
                 >
-                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
+                  {busyKey === "mendeley" ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Link2 className="size-3.5" />
+                  )}
                   {mendeley?.available === false ? "Server OAuth not set" : "Connect Mendeley"}
                 </Button>
               ) : (
                 <>
-                  <Button size="sm" disabled={busy} onClick={openMendeleyImport}>
+                  <Button
+                    size="sm"
+                    disabled={busyKey === "mendeley-import"}
+                    onClick={openMendeleyImport}
+                  >
                     Import folder
                   </Button>
-                  <Button size="sm" variant="outline" disabled={busy} onClick={syncMendeley}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busyKey === "mendeley-sync"}
+                    onClick={syncMendeley}
+                  >
                     Sync now
                   </Button>
                   <Button size="sm" variant="ghost" onClick={disconnectMendeley}>
@@ -496,8 +531,8 @@ export function ConnectLibraryPanel({
             <Button variant="outline" onClick={() => setZoteroOpen(false)}>
               Cancel
             </Button>
-            <Button disabled={busy} onClick={runZoteroImport}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+            <Button disabled={busyKey === "zotero-import"} onClick={runZoteroImport}>
+              {busyKey === "zotero-import" ? <Loader2 className="size-4 animate-spin" /> : null}
               Import
             </Button>
           </DialogFooter>
@@ -548,8 +583,8 @@ export function ConnectLibraryPanel({
             <Button variant="outline" onClick={() => setMendeleyOpen(false)}>
               Cancel
             </Button>
-            <Button disabled={busy} onClick={runMendeleyImport}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+            <Button disabled={busyKey === "mendeley-import"} onClick={runMendeleyImport}>
+              {busyKey === "mendeley-import" ? <Loader2 className="size-4 animate-spin" /> : null}
               Import
             </Button>
           </DialogFooter>
