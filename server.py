@@ -92,8 +92,8 @@ CLOSED_BETA = BETA_INVITE_ONLY or bool(ALLOWED_EMAILS) or (
 # gpt-5-family is deliberately excluded there) — not a claim that gpt-5
 # doesn't exist or can't be used; a user can still pick it manually from
 # the live-fetched dropdown. Only what's used automatically changed.
-DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "gpt-4o-mini")
-UTILITY_MODEL = os.environ.get("UTILITY_MODEL", "gpt-4o-mini")
+DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "gpt-5-mini")
+UTILITY_MODEL = os.environ.get("UTILITY_MODEL", "gpt-5-mini")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "text-embedding-3-small")
 FALLBACK_MODELS = [
     m.strip() for m in os.environ.get("MODELS", "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo").split(",") if m.strip()
