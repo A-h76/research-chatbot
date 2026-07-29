@@ -75,11 +75,13 @@ export function ChatTopControls({
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Delete this chat?"
-        description="This can't be undone."
-        confirmLabel="Delete"
+        entityName={conversation.title || "Untitled chat"}
+        description="Messages in this conversation will be permanently removed."
+        confirmLabel="Delete chat"
+        cancelLabel="Keep chat"
         destructive
-        onConfirm={() => {
-          deleteConv.mutate(conversation.id);
+        onConfirm={async () => {
+          await deleteConv.mutateAsync(conversation.id);
           toast.success("Chat deleted");
           navigate("/");
         }}

@@ -4,6 +4,7 @@ import { FunnelChart } from "@/components/charts/funnel-chart";
 import { Ring } from "@/components/charts/ring";
 import { RingCenter } from "@/components/charts/ring-center";
 import { RingChart } from "@/components/charts/ring-chart";
+import { LibraryHealthSkeleton } from "@/components/common/ResearchSkeletons";
 import { libraryBridgeApi, type LibraryHealth } from "../libraryBridgeApi";
 
 const STEPS: { key: keyof LibraryHealth["by_readiness"]; label: string }[] = [
@@ -45,7 +46,7 @@ export function LibraryHealthStrip({
 }: {
   projectId?: number | null;
 }) {
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["library", "health", projectId ?? "all"],
     queryFn: () => libraryBridgeApi.health(projectId),
     staleTime: 30_000,
@@ -56,6 +57,7 @@ export function LibraryHealthStrip({
     [data],
   );
 
+  if (isLoading) return <LibraryHealthSkeleton />;
   if (!data || data.total === 0) return null;
 
   const lastSync = data.sync.connections

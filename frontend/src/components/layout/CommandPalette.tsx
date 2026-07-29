@@ -12,11 +12,13 @@ import {
 } from "@/components/ui/command";
 import {
   BookOpen,
+  FileDown,
   FileText,
   FolderKanban,
   GitCompare,
   Home,
   Library,
+  Link2,
   MessageSquare,
   Network,
   Plus,
@@ -118,8 +120,8 @@ function paperTitle(f: UserFile): string {
 }
 
 /**
- * D8 — ⌘K command palette v1: find (papers / projects / chats) + navigate + core commands.
- * Scope-aware; private library first (no web-wide search).
+ * D8 — ⌘K command palette: research actions first (write / import / export),
+ * then find (papers / projects / chats) + navigate. Scope-aware; private library first.
  */
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -250,10 +252,65 @@ export function CommandPalette() {
   const visibleCommands = useMemo(() => {
     const commands: Cmd[] = [
       {
-        id: "upload",
-        label: "Upload paper",
+        id: "write-lit-review",
+        label: "Write literature review",
+        hint: "Writing",
+        keywords:
+          "write literature review generate grounded draft evidence manuscript section",
+        icon: FlaskConical,
+        show: true,
+        run: () => go("/writing?action=lit-review"),
+      },
+      {
+        id: "writing-desk",
+        label: "Open writing desk",
+        hint: "Writing",
+        keywords: "writing desk draft manuscript outline evidence reviewer",
+        icon: Wand2,
+        show: true,
+        run: () => go("/writing"),
+      },
+      {
+        id: "writing-evidence",
+        label: "Open evidence inspector",
+        hint: "Writing",
+        keywords: "evidence inspector verify citations markers writing",
+        icon: FlaskConical,
+        show: true,
+        run: () => go("/writing?focus=evidence"),
+      },
+      {
+        id: "export-markdown",
+        label: "Export Markdown",
+        hint: "Writing",
+        keywords: "export markdown md literature review download writing",
+        icon: FileDown,
+        show: true,
+        run: () => go("/writing?tab=export"),
+      },
+      {
+        id: "import-research",
+        label: "Import research",
         hint: "Library",
-        keywords: "upload paper pdf document add",
+        keywords: "import research bibtex ris zotero mendeley collection",
+        icon: Library,
+        show: true,
+        run: () => go("/library#import"),
+      },
+      {
+        id: "import-zotero",
+        label: "Import Zotero / Mendeley",
+        hint: "Library",
+        keywords: "zotero mendeley connect import reference manager",
+        icon: Link2,
+        show: true,
+        run: () => go("/library#import"),
+      },
+      {
+        id: "upload",
+        label: "Upload PDF",
+        hint: "Library",
+        keywords: "upload paper pdf document add file",
         icon: Upload,
         show: true,
         run: () => go("/library?upload=1"),
@@ -279,8 +336,8 @@ export function CommandPalette() {
       {
         id: "compare",
         label: "Compare papers",
-        hint: "Tool",
-        keywords: "compare gaps multi paper analysis",
+        hint: "Research",
+        keywords: "compare gaps multi paper analysis research",
         icon: GitCompare,
         show: true,
         run: () => go("/research/compare"),
@@ -302,15 +359,6 @@ export function CommandPalette() {
         icon: StickyNote,
         show: true,
         run: () => go("/notes"),
-      },
-      {
-        id: "writing",
-        label: "Open writing",
-        hint: "Writing",
-        keywords: "writing draft abstract export",
-        icon: Wand2,
-        show: true,
-        run: () => go("/writing"),
       },
       {
         id: "new-project",
@@ -341,9 +389,9 @@ export function CommandPalette() {
       },
       {
         id: "paper-evidence",
-        label: "Open Evidence",
+        label: "Open paper evidence",
         hint: "Paper",
-        keywords: "evidence grade quality bias",
+        keywords: "evidence grade quality bias paper",
         icon: FlaskConical,
         show: paperId != null,
         run: () => go(`/papers/${paperId}?tab=evidence`),
@@ -395,21 +443,21 @@ export function CommandPalette() {
       },
       {
         id: "home",
-        label: "Go to Projects",
+        label: "Go to Home",
         hint: "Navigate",
-        keywords: "home projects workspace",
-        icon: FolderKanban,
-        show: true,
-        run: () => go("/"),
-      },
-      {
-        id: "launchpad",
-        label: "Go to Launchpad",
-        hint: "Navigate",
-        keywords: "launchpad dashboard home stats",
+        keywords: "home continue research launchpad dashboard",
         icon: Home,
         show: true,
         run: () => go("/home"),
+      },
+      {
+        id: "projects",
+        label: "Go to Projects",
+        hint: "Navigate",
+        keywords: "projects workspace list",
+        icon: FolderKanban,
+        show: true,
+        run: () => go("/projects"),
       },
       {
         id: "library",
@@ -420,43 +468,43 @@ export function CommandPalette() {
         show: true,
         run: () => go("/library"),
       },
-      {
-        id: "projects",
-        label: "Browse all projects",
-        hint: "Navigate",
-        keywords: "projects list",
-        icon: FolderKanban,
-        show: true,
-        run: () => go("/projects"),
-      },
     ];
 
     const list = commands.filter((c) => c.show);
     if (!q) {
+      // Research-first default order (Skiper-style workspace actions)
       const order = [
-        "home",
-        "new-project",
+        "write-lit-review",
+        "import-research",
         "upload",
+        "writing-desk",
+        "writing-evidence",
+        "export-markdown",
+        "import-zotero",
         "search-papers",
         "compare",
-        "citations",
-        "ask",
         "paper-evidence",
         "paper-structure",
-        "paper-graph",
-        "notes",
-        "writing",
+        "citations",
         "library",
         "projects",
-        "launchpad",
+        "home",
+        "new-project",
+        "notes",
+        "ask",
         "settings",
         "memory",
+        "paper-graph",
         "paper-entities",
         "paper-overview",
       ];
       return [...list]
-        .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
-        .slice(0, 10);
+        .sort((a, b) => {
+          const ai = order.indexOf(a.id);
+          const bi = order.indexOf(b.id);
+          return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
+        })
+        .slice(0, 12);
     }
     return list
       .map((c) => ({
@@ -481,13 +529,13 @@ export function CommandPalette() {
       open={open}
       onOpenChange={setOpen}
       title="Command palette"
-      description="Find papers, run commands, navigate Dhund"
+      description="Write, import, export, find papers — researcher workspace"
     >
       <Command shouldFilter={false} className="rounded-xl">
         <CommandInput
           value={query}
           onValueChange={setQuery}
-          placeholder="Search papers, projects, commands…"
+          placeholder="Write review, import, export, find papers…"
         />
         <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
           <span
@@ -499,14 +547,14 @@ export function CommandPalette() {
             {scope.label}
           </span>
           <span className="text-[11px] text-muted-foreground">
-            ↑↓ move · Enter open · Esc close
+            ↑↓ move · Enter run · Esc close
           </span>
         </div>
         <CommandList>
           {showEmpty && <CommandEmpty>No matches.</CommandEmpty>}
 
           {visibleCommands.length > 0 && (
-            <CommandGroup heading="Commands">
+            <CommandGroup heading={q ? "Commands" : "Research"}>
               {visibleCommands.map((c) => {
                 const Icon = c.icon;
                 return (

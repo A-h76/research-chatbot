@@ -10,8 +10,8 @@ import {
   Upload,
   Wand2,
 } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { HomeResearchSkeleton } from "@/components/common/ResearchSkeletons";
 import { Bar } from "@/components/charts/bar";
 import { BarChart } from "@/components/charts/bar-chart";
 import { BarXAxis } from "@/components/charts/bar-x-axis";
@@ -167,14 +167,7 @@ function ProjectRow({
 }
 
 function LaunchpadSkeleton() {
-  return (
-    <div className="space-y-6">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-20 w-full rounded-lg" />
-      <Skeleton className="h-28 w-full rounded-lg" />
-      <Skeleton className="h-40 w-full rounded-lg" />
-    </div>
-  );
+  return <HomeResearchSkeleton />;
 }
 
 /** Launchpad = research activity overview (Projects are home at `/`). */

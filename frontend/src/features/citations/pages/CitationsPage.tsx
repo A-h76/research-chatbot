@@ -187,14 +187,20 @@ export function CitationsPage() {
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}
         title="Delete this citation?"
-        description="This cannot be undone."
-        confirmLabel="Delete"
+        entityName={
+          toDelete
+            ? [toDelete.title, toDelete.authors].filter(Boolean).join(" — ") || null
+            : null
+        }
+        description="This citation will be removed from your library export list."
+        confirmLabel="Delete citation"
+        cancelLabel="Keep"
         destructive
-        onConfirm={() => {
-          if (toDelete) {
-            deleteCitation.mutate(toDelete.id);
-            toast.success("Citation deleted");
-          }
+        onConfirm={async () => {
+          if (!toDelete) return;
+          await deleteCitation.mutateAsync(toDelete.id);
+          toast.success("Citation deleted");
+          setToDelete(null);
         }}
       />
     </PageContainer>

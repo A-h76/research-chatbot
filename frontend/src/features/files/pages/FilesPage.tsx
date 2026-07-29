@@ -3,6 +3,9 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, FileUp, Link2, X } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { EmptyState } from "@/components/common/EmptyState";
+import {
+  LibraryPapersSkeleton,
+} from "@/components/common/ResearchSkeletons";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -353,11 +356,7 @@ export function FilesPage() {
           </div>
         )}
         {isLoading ? (
-          <div className="space-y-0 rounded-lg border border-border bg-card divide-y divide-border overflow-hidden">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-12 animate-pulse bg-muted/40" />
-            ))}
-          </div>
+          <LibraryPapersSkeleton />
         ) : fileItems.length === 0 ? (
           hasFilters ? (
             <EmptyState
@@ -466,14 +465,16 @@ export function FilesPage() {
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}
         title="Delete this paper?"
-        description="It will be removed from your library and can no longer be retrieved."
-        confirmLabel="Delete"
+        entityName={toDelete ? toDelete.title || toDelete.name : null}
+        description="It will be removed from your library and can no longer be opened in research workspaces."
+        consequence="Evidence links and paper chats for this file may become unavailable."
+        confirmLabel="Delete paper"
         destructive
-        onConfirm={() => {
-          if (toDelete) {
-            deleteFile.mutate(toDelete.id);
-            toast.success("Paper deleted");
-          }
+        onConfirm={async () => {
+          if (!toDelete) return;
+          await deleteFile.mutateAsync(toDelete.id);
+          toast.success("Paper deleted");
+          setToDelete(null);
         }}
       />
     </PageContainer>

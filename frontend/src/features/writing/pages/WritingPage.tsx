@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -17,6 +17,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { WritingDeskSkeleton } from "@/components/common/ResearchSkeletons";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { useFiles } from "@/features/files/useFiles";
 import { useNotes } from "@/features/notes/useNotes";
 import { useConversations } from "@/features/chat/hooks/useConversation";
@@ -115,7 +117,11 @@ function DraftTab() {
   const [sectionType, setSectionType] = useState<WritingSectionType>("literature_review");
   const [groundedBaseline, setGroundedBaseline] = useState<string | null>(null);
   const [editsSinceInsert, setEditsSinceInsert] = useState(0);
+  const [confirmDeleteDoc, setConfirmDeleteDoc] = useState(false);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const litReviewBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const handledActionRef = useRef<string | null>(null);
 
   const evidenceExplain = useEvidenceExplain({
     documentId: activeId,
@@ -374,6 +380,61 @@ function DraftTab() {
     });
   }
 
+  /** ⌘K deep-links: ?action=lit-review · ?focus=evidence */
+  useEffect(() => {
+    const action = searchParams.get("action");
+    const focusTarget = searchParams.get("focus");
+
+    if (focusTarget === "evidence") {
+      const next = new URLSearchParams(searchParams);
+      next.delete("focus");
+      setSearchParams(next, { replace: true });
+      window.requestAnimationFrame(() => {
+        document.getElementById("writing-evidence-rail")?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
+      });
+    }
+
+    if (action !== "lit-review") {
+      handledActionRef.current = null;
+      return;
+    }
+    if (docsQuery.isLoading || docsQuery.isFetching) return;
+    if (activeId == null || currentProjectId == null) return;
+    if (activeDoc?.status === "deleted") return;
+    if (handledActionRef.current === "lit-review") return;
+    handledActionRef.current = "lit-review";
+
+    const next = new URLSearchParams(searchParams);
+    next.delete("action");
+    setSearchParams(next, { replace: true });
+
+    const seed = selectedText.trim() || input.trim();
+    if (seed) {
+      grounded.generate({
+        projectId: currentProjectId,
+        documentId: activeId,
+        selectedText,
+        draftFallback: input,
+        sectionType,
+      });
+    } else {
+      litReviewBtnRef.current?.focus();
+      toast.error("Add manuscript notes or a research question, then write the literature review");
+    }
+    // Intentionally keyed on URL + doc readiness, not every keystroke
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    searchParams,
+    activeId,
+    currentProjectId,
+    activeDoc?.status,
+    docsQuery.isLoading,
+    docsQuery.isFetching,
+  ]);
+
   return (
     <div className="space-y-3">
       {currentProjectId == null && (
@@ -381,6 +442,10 @@ function DraftTab() {
           Select a project to open the writing desk. Documents are always project-scoped.
         </div>
       )}
+      {currentProjectId != null && docsQuery.isLoading ? (
+        <WritingDeskSkeleton />
+      ) : (
+        <>
       {isOffline && (
         <div
           role="status"
@@ -468,7 +533,7 @@ function DraftTab() {
               size="sm"
               variant="ghost"
               className="h-8 px-2 text-[11px]"
-              onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "deleted" })}
+              onClick={() => setConfirmDeleteDoc(true)}
             >
               Delete
             </Button>
@@ -508,7 +573,9 @@ function DraftTab() {
 
       <div className="flex flex-wrap items-center gap-2">
         <button
+          ref={litReviewBtnRef}
           type="button"
+          id="write-literature-review"
           disabled={
             grounded.isPending ||
             activeId == null ||
@@ -637,10 +704,17 @@ function DraftTab() {
           )}
 
           {loading ? (
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className={`h-3.5 ${i === 3 ? "w-2/3" : "w-full"}`} />
-              ))}
+            <div
+              role="status"
+              aria-busy="true"
+              aria-label="Applying style transform"
+              className="space-y-2 rounded-lg border border-border p-3"
+            >
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-3.5 w-full" />
+              <Skeleton className="h-3.5 w-[92%]" />
+              <Skeleton className="h-3.5 w-[78%]" />
+              <Skeleton className="h-3.5 w-2/3" />
             </div>
           ) : result ? (
             <div className="rounded-lg border border-border bg-card p-2">
@@ -835,16 +909,36 @@ function DraftTab() {
             </div>
           )}
 
-          <EvidenceInspectorPanel
-            result={evidenceExplain.result}
-            status={evidenceExplain.status}
-            stickyText={selectedText}
-            documentId={activeId}
-            projectId={currentProjectId}
-            onBound={() => setEvidenceRefresh((n) => n + 1)}
-          />
+          <div id="writing-evidence-rail" className="min-h-0">
+            <EvidenceInspectorPanel
+              result={evidenceExplain.result}
+              status={evidenceExplain.status}
+              stickyText={selectedText}
+              documentId={activeId}
+              projectId={currentProjectId}
+              onBound={() => setEvidenceRefresh((n) => n + 1)}
+            />
+          </div>
+          </div>
         </div>
-      </div>
+        </>
+      )}
+
+      <ConfirmDialog
+        open={confirmDeleteDoc}
+        onOpenChange={setConfirmDeleteDoc}
+        title="Delete this draft?"
+        entityName={draftTitle || "Untitled draft"}
+        description="The manuscript moves to Deleted. You can still view it there as read-only."
+        consequence="Export snapshots for this draft remain until you clear browser session data."
+        confirmLabel="Delete draft"
+        cancelLabel="Keep draft"
+        destructive
+        onConfirm={async () => {
+          if (activeDoc == null) return;
+          await updateStatus.mutateAsync({ id: activeDoc.id, status: "deleted" });
+        }}
+      />
     </div>
   );
 }
@@ -1105,7 +1199,27 @@ type Tab = "draft" | "export";
 
 /** Writing desk — Outline | Manuscript | Evidence (UI_UX_VISION_BETA_v1.0). */
 export function WritingPage() {
-  const [tab, setTab] = useState<Tab>("draft");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const [tab, setTab] = useState<Tab>(tabParam === "export" ? "export" : "draft");
+
+  useEffect(() => {
+    const action = searchParams.get("action");
+    const focus = searchParams.get("focus");
+    if (action === "lit-review" || focus === "evidence") {
+      setTab("draft");
+      return;
+    }
+    if (tabParam === "export" || tabParam === "draft") setTab(tabParam);
+  }, [tabParam, searchParams]);
+
+  function selectTab(key: Tab) {
+    setTab(key);
+    const next = new URLSearchParams(searchParams);
+    if (key === "draft") next.delete("tab");
+    else next.set("tab", key);
+    setSearchParams(next, { replace: true });
+  }
 
   return (
     <PageContainer
@@ -1123,7 +1237,7 @@ export function WritingPage() {
           <button
             key={key}
             type="button"
-            onClick={() => setTab(key)}
+            onClick={() => selectTab(key)}
             className={cn(
               "border-b-2 px-3 py-2 text-[13px] font-medium transition-colors",
               tab === key

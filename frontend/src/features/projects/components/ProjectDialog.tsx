@@ -143,8 +143,11 @@ export function ProjectDialog({
           open={confirmDelete}
           onOpenChange={setConfirmDelete}
           title="Delete this research project?"
-          description="Chats and files are kept — they'll just be moved out of the project."
+          entityName={project.name}
+          description="Chats and files are kept — they'll move out of the project."
+          consequence="Project questions, insights, and project-scoped memory for this workspace will be removed."
           confirmLabel="Delete project"
+          cancelLabel="Keep project"
           destructive
           onConfirm={async () => {
             await deleteProject.mutateAsync(project.id);

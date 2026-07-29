@@ -103,8 +103,10 @@ export function DataControlsSection() {
         open={confirmClear}
         onOpenChange={setConfirmClear}
         title="Delete all chats?"
-        description="Every conversation and its attachments will be permanently removed. This can't be undone."
-        confirmLabel="Delete all"
+        description="Every conversation and its attachments will be permanently removed."
+        consequence="This cannot be undone. Papers and projects are not affected."
+        confirmLabel="Delete all chats"
+        cancelLabel="Keep chats"
         destructive
         onConfirm={clearAllChats}
       />

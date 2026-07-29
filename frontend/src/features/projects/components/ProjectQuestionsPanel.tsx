@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Check, Circle, HelpCircle, Pause, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import type { ProjectQuestion, ProjectQuestionStatus } from "@/types/api";
 import {
@@ -90,6 +91,7 @@ export function ProjectQuestionsPanel({ projectId }: { projectId: number }) {
   const updateQ = useUpdateQuestion(projectId);
   const deleteQ = useDeleteQuestion(projectId);
   const [draft, setDraft] = useState("");
+  const [toDelete, setToDelete] = useState<ProjectQuestion | null>(null);
 
   const items = data?.items ?? [];
   const busy = createQ.isPending || updateQ.isPending || deleteQ.isPending;
@@ -163,11 +165,27 @@ export function ProjectQuestionsPanel({ projectId }: { projectId: number }) {
               onStatus={(status) =>
                 updateQ.mutate({ questionId: q.id, body: { status } })
               }
-              onDelete={() => deleteQ.mutate(q.id)}
+              onDelete={() => setToDelete(q)}
             />
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={toDelete != null}
+        onOpenChange={(open) => !open && setToDelete(null)}
+        title="Delete research question?"
+        entityName={toDelete?.text}
+        description="This removes the question from the project agenda."
+        confirmLabel="Delete question"
+        cancelLabel="Keep"
+        destructive
+        onConfirm={async () => {
+          if (!toDelete) return;
+          await deleteQ.mutateAsync(toDelete.id);
+          setToDelete(null);
+        }}
+      />
     </div>
   );
 }

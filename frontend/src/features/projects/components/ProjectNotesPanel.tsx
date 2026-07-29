@@ -127,19 +127,16 @@ export function ProjectNotesPanel({ projectId }: { projectId: number }) {
         open={deleteTarget != null}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="Delete note?"
-        description="This cannot be undone."
-        confirmLabel="Delete"
+        entityName={deleteTarget?.title || deleteTarget?.content?.slice(0, 80) || null}
+        description="This note will be permanently removed from the project."
+        confirmLabel="Delete note"
+        cancelLabel="Keep note"
         destructive
         onConfirm={async () => {
           if (!deleteTarget) return;
-          try {
-            await deleteNote.mutateAsync(deleteTarget.id);
-            toast.success("Note deleted");
-          } catch {
-            toast.error("Could not delete note");
-          } finally {
-            setDeleteTarget(null);
-          }
+          await deleteNote.mutateAsync(deleteTarget.id);
+          toast.success("Note deleted");
+          setDeleteTarget(null);
         }}
       />
     </div>

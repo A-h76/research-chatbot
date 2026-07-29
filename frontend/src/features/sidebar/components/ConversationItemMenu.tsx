@@ -109,11 +109,13 @@ export function ConversationItemMenu({ convo }: { convo: ConversationSummary }) 
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Delete this chat?"
-        description="This can't be undone."
-        confirmLabel="Delete"
+        entityName={convo.title || "Untitled chat"}
+        description="Messages in this conversation will be permanently removed."
+        confirmLabel="Delete chat"
+        cancelLabel="Keep chat"
         destructive
-        onConfirm={() => {
-          deleteConvo.mutate(convo.id);
+        onConfirm={async () => {
+          await deleteConvo.mutateAsync(convo.id);
           toast.success("Chat deleted");
         }}
       />

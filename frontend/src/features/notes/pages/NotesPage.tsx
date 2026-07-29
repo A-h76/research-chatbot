@@ -291,14 +291,16 @@ export function NotesPage() {
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}
         title="Delete this note?"
-        description="This cannot be undone."
-        confirmLabel="Delete"
+        entityName={toDelete?.title || toDelete?.content?.slice(0, 80) || null}
+        description="This note will be permanently removed from the project."
+        confirmLabel="Delete note"
+        cancelLabel="Keep note"
         destructive
-        onConfirm={() => {
-          if (toDelete) {
-            deleteNote.mutate(toDelete.id);
-            toast.success("Note deleted");
-          }
+        onConfirm={async () => {
+          if (!toDelete) return;
+          await deleteNote.mutateAsync(toDelete.id);
+          toast.success("Note deleted");
+          setToDelete(null);
         }}
       />
     </PageContainer>

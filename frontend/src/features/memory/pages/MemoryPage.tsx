@@ -44,13 +44,16 @@ export function MemoryPage() {
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}
         title="Forget this memory?"
+        entityName={toDelete?.fact?.slice(0, 100) || null}
+        description="Dhund will stop using this fact in future research conversations."
         confirmLabel="Forget"
+        cancelLabel="Keep"
         destructive
-        onConfirm={() => {
-          if (toDelete) {
-            deleteMemory.mutate(toDelete.id);
-            toast.success("Memory forgotten");
-          }
+        onConfirm={async () => {
+          if (!toDelete) return;
+          await deleteMemory.mutateAsync(toDelete.id);
+          toast.success("Memory forgotten");
+          setToDelete(null);
         }}
       />
     </PageContainer>

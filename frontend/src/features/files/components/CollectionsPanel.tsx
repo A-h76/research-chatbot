@@ -4,6 +4,7 @@ import { Folder, FolderPlus, Pencil, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/common/Toast";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import { collectionsApi, type LibraryCollection } from "../collectionsApi";
 import { useLibraryCollections } from "../hooks/useLibraryCollections";
@@ -21,6 +22,7 @@ export function CollectionsPanel({
   const [name, setName] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
+  const [toDelete, setToDelete] = useState<LibraryCollection | null>(null);
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: ["library", "collections"] });
 
@@ -115,11 +117,7 @@ export function CollectionsPanel({
             type="button"
             className="hidden rounded p-0.5 text-destructive hover:bg-muted group-hover:inline-flex"
             aria-label="Delete collection"
-            onClick={() => {
-              if (window.confirm(`Remove collection “${c.name}”? Papers stay in your library.`)) {
-                deleteMut.mutate(c.id);
-              }
-            }}
+            onClick={() => setToDelete(c)}
           >
             <Trash2 className="size-3" />
           </button>
@@ -196,6 +194,21 @@ export function CollectionsPanel({
           Folders organise papers without copying them. Zotero imports create collections automatically.
         </p>
       )}
+
+      <ConfirmDialog
+        open={toDelete != null}
+        onOpenChange={(open) => !open && setToDelete(null)}
+        title="Remove collection?"
+        entityName={toDelete?.name}
+        description="Papers stay in your library. Only this folder organisation is removed."
+        confirmLabel="Remove"
+        destructive
+        onConfirm={async () => {
+          if (!toDelete) return;
+          await deleteMut.mutateAsync(toDelete.id);
+          setToDelete(null);
+        }}
+      />
     </aside>
   );
 }
