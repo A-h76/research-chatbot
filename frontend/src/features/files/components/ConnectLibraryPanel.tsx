@@ -224,12 +224,12 @@ export function ConnectLibraryPanel({
 
   return (
     <>
-      <section className="rounded-xl border border-border bg-card/40 p-4">
+      <section id="import" className="scroll-mt-20 rounded-xl border border-border bg-card/40 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold">Import library</h2>
+            <h2 className="text-sm font-semibold">Import research</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Bring your existing research into Dhund — no re-upload one-by-one.
+              Upload PDFs or connect Zotero / Mendeley — trust signals for your workflow.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

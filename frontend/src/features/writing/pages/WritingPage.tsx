@@ -6,7 +6,7 @@ import {
   Wand2, Loader2, Copy, Download, RefreshCw,
   BookOpen, GraduationCap, Minimize2, Maximize2,
   AlignLeft, FileText, MessageSquare, StickyNote, AlertTriangle,
-  Quote, Plus, History,
+  Quote, Plus,
 } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
@@ -23,12 +23,15 @@ import type { WritingAction } from "@/types/api";
 import { trackWritingEvent } from "../utils/telemetry";
 import { EvidenceInspectorPanel } from "@/features/evidence/components/EvidenceInspectorPanel";
 import { useEvidenceExplain } from "@/features/evidence/hooks/useEvidenceExplain";
-import { useGroundedWriting, WRITING_SECTION_OPTIONS, type WritingSectionType } from "@/features/evidence/hooks/useGroundedWriting";
+import { useGroundedWriting, type WritingSectionType } from "@/features/evidence/hooks/useGroundedWriting";
 import { evidenceApi } from "@/features/evidence/api";
 import {
   GroundedDraftVerify,
   persistGroundedBindings,
 } from "@/features/writing/components/GroundedDraftVerify";
+import { ResearchConfidenceStrip } from "@/features/writing/components/ResearchConfidenceStrip";
+import { ResearchProgressStage } from "@/features/writing/components/ResearchProgressStage";
+import { WritingOutlineRail } from "@/features/writing/components/WritingOutlineRail";
 import {
   buildLiteratureReviewMarkdown,
   downloadMarkdownFile,
@@ -346,11 +349,30 @@ function DraftTab() {
     }
   }
 
+  function runGroundedGenerate() {
+    if (activeId == null || currentProjectId == null) {
+      toast.error("Select a project document first");
+      return;
+    }
+    const focus = selectedText.trim() || input.trim();
+    if (!focus) {
+      toast.error("Add manuscript text or select a sentence first");
+      return;
+    }
+    grounded.generate({
+      projectId: currentProjectId,
+      documentId: activeId,
+      selectedText,
+      draftFallback: input,
+      sectionType,
+    });
+  }
+
   return (
     <div className="space-y-3">
       {currentProjectId == null && (
         <div className="rounded-md border border-border bg-card p-3 text-[12px] text-muted-foreground">
-          Select a project to start writing. Documents are always project-scoped.
+          Select a project to open the writing desk. Documents are always project-scoped.
         </div>
       )}
       {isOffline && (
@@ -362,7 +384,8 @@ function DraftTab() {
           You are offline. Changes stay local until the connection returns.
         </div>
       )}
-      <div className="flex items-center gap-2">
+
+      <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1 rounded border border-border p-1">
           {(
             [
@@ -388,7 +411,7 @@ function DraftTab() {
         </div>
         <select
           aria-label="Select writing document"
-          className="h-8 min-w-[220px] rounded-md border border-border bg-card px-2 text-[12px]"
+          className="h-8 min-w-[180px] rounded-md border border-border bg-card px-2 text-[12px]"
           value={activeId ?? ""}
           onChange={(e) => {
             const nextId = Number(e.target.value || 0);
@@ -415,11 +438,44 @@ function DraftTab() {
         >
           <Plus className="size-3.5" /> New draft
         </Button>
+        {activeDoc?.status === "active" && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 px-2 text-[11px]"
+            onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "archived" })}
+          >
+            Archive
+          </Button>
+        )}
+        {activeDoc?.status === "archived" && (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 px-2 text-[11px]"
+              onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "active" })}
+            >
+              Restore
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 px-2 text-[11px]"
+              onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "deleted" })}
+            >
+              Delete
+            </Button>
+          </>
+        )}
+        {activeDoc?.status === "deleted" && (
+          <span className="text-[11px] text-muted-foreground">Deleted drafts are read-only.</span>
+        )}
         <span className="ml-auto text-[11px] text-muted-foreground" role="status" aria-live="polite">
           {saveState === "scheduled"
             ? "Save scheduled"
             : saveState === "saving"
-              ? "Saving..."
+              ? "Saving…"
               : saveState === "conflict"
                 ? "Conflict detected"
                 : saveState === "error"
@@ -429,6 +485,7 @@ function DraftTab() {
                     : "Saved"}
         </span>
       </div>
+
       {saveState === "conflict" && (
         <div
           role="alert"
@@ -437,65 +494,13 @@ function DraftTab() {
           Another version was saved elsewhere. Refresh this document before continuing.
         </div>
       )}
-      {activeDoc && (
-        <div className="flex items-center gap-2 text-[11px]">
-          {activeDoc.status === "active" && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 px-2 text-[11px]"
-              onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "archived" })}
-            >
-              Archive
-            </Button>
-          )}
-          {activeDoc.status === "archived" && (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 px-2 text-[11px]"
-                onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "active" })}
-              >
-                Restore Active
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 px-2 text-[11px]"
-                onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "deleted" })}
-              >
-                Move to Deleted
-              </Button>
-            </>
-          )}
-          {activeDoc.status === "deleted" && (
-            <span className="text-muted-foreground">Deleted documents are read-only in Week 1.</span>
-          )}
-        </div>
-      )}
 
-      {/* Evidence-backed generate (RI) — separate from style transforms */}
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-border pb-3">
-        <span className="mr-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Evidence
-        </span>
-        <label className="sr-only" htmlFor="writing-section-type">
-          Section type
-        </label>
-        <select
-          id="writing-section-type"
-          value={sectionType}
-          onChange={(e) => setSectionType(e.target.value as WritingSectionType)}
-          className="h-8 rounded-md border border-border bg-card px-2 text-[12px] text-foreground"
-          disabled={grounded.isPending}
-        >
-          {WRITING_SECTION_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.experimental ? `${opt.label} (experimental)` : opt.label}
-            </option>
-          ))}
-        </select>
+      <ResearchConfidenceStrip
+        metrics={grounded.last?.metrics}
+        review={grounded.last?.review}
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           disabled={
@@ -504,159 +509,186 @@ function DraftTab() {
             currentProjectId == null ||
             activeDoc?.status === "deleted"
           }
-          title="Research Intelligence: generate from accepted EvidenceObjects only"
+          title="Write this outline section from accepted EvidenceObjects"
           className={cn(
-            "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
+            "inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium transition-colors",
             grounded.isPending
-              ? "border-primary bg-accent-soft text-primary"
-              : "border-border bg-card text-foreground hover:bg-muted/50",
+              ? "bg-primary/90 text-primary-foreground"
+              : "bg-primary text-primary-foreground hover:opacity-90",
+            "disabled:opacity-50",
           )}
-          onClick={() => {
-            if (activeId == null || currentProjectId == null) {
-              toast.error("Select a project document first");
-              return;
-            }
-            const focus = selectedText.trim() || input.trim();
-            if (!focus) {
-              toast.error("Select a sentence or paste draft text first");
-              return;
-            }
-            grounded.generate({
-              projectId: currentProjectId,
-              documentId: activeId,
-              selectedText,
-              draftFallback: input,
-              sectionType,
-            });
-          }}
+          onClick={runGroundedGenerate}
         >
           {grounded.isPending ? (
             <Loader2 className="size-3.5 animate-spin" />
           ) : (
             <FlaskConicalIcon />
           )}
-          Generate from evidence
+          Write literature review
         </button>
-        <span className="text-[11px] text-muted-foreground">
-          Section planner · RI pipeline · blocked if insufficient
+        <span className="text-[12px] text-muted-foreground">
+          Outline → Evidence → Verify → Accept · click [#id] markers to inspect
         </span>
       </div>
 
-      {/* Style-only transforms — not evidence-backed */}
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-border pb-3">
-        <span className="mr-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Style only
-        </span>
-        {ACTIONS.map(({ key, label, icon, desc }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => run(key)}
-            disabled={loading}
-            title={`${desc} (not evidence-backed)`}
-            className={cn(
-              "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
-              loading && activeAction === key
-                ? "border-primary bg-accent-soft text-primary"
-                : "border-border bg-card text-foreground hover:bg-muted/50",
-              loading && activeAction !== key && "opacity-50",
-            )}
-          >
-            {loading && activeAction === key ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <span className="text-muted-foreground">{icon}</span>
-            )}
-            {label}
-          </button>
-        ))}
-        <span className="ml-auto hidden text-[11px] text-muted-foreground sm:inline">
-          Style transforms do not invent citations — they are not Research Intelligence
-        </span>
-      </div>
+      <details className="rounded-md border border-border bg-card/50 px-3 py-2">
+        <summary className="cursor-pointer text-[12px] font-medium text-muted-foreground">
+          Style transforms (not evidence-backed)
+        </summary>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 pb-1">
+          {ACTIONS.map(({ key, label, icon, desc }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => run(key)}
+              disabled={loading}
+              title={`${desc} (not evidence-backed)`}
+              className={cn(
+                "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
+                loading && activeAction === key
+                  ? "border-primary bg-accent-soft text-primary"
+                  : "border-border bg-card text-foreground hover:bg-muted/50",
+                loading && activeAction !== key && "opacity-50",
+              )}
+            >
+              {loading && activeAction === key ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <span className="text-muted-foreground">{icon}</span>
+              )}
+              {label}
+            </button>
+          ))}
+        </div>
+      </details>
 
-      <div className="grid min-h-0 gap-3 lg:grid-cols-[1fr_1fr_220px_280px]">
-        <div className="flex min-h-0 flex-col gap-1.5">
-          <div className="flex items-center justify-between">
+      {/* Writing desk: Outline | Manuscript | Evidence */}
+      <div className="grid min-h-[28rem] gap-3 lg:grid-cols-[220px_minmax(0,1fr)_300px]">
+        <WritingOutlineRail
+          sectionType={sectionType}
+          onSectionTypeChange={setSectionType}
+          versions={versionsQuery.data?.items ?? []}
+          onRestoreVersion={(id) => restoreVersion.mutate(id)}
+        />
+
+        <div className="flex min-h-0 flex-col gap-2">
+          <div className="flex items-center gap-2">
             <input
               value={draftTitle}
               onChange={(e) => setDraftTitle(e.target.value)}
-              className="h-7 w-full rounded border border-border bg-card px-2 text-[12px] font-medium text-foreground"
-              placeholder="Untitled draft"
+              className="h-8 flex-1 rounded-md border border-border bg-background px-2.5 text-[13px] font-medium text-foreground"
+              placeholder="Manuscript title"
             />
-            {input && (
+            {input ? (
               <span className="text-[11px] tabular-nums text-muted-foreground">{input.length}</span>
-            )}
+            ) : null}
           </div>
-          <textarea
-            ref={editorRef}
-            value={input}
-            onChange={(e) => {
-              const next = e.target.value;
-              setInput(next);
-              if (groundedBaseline != null) {
-                // Character delta vs post-insert baseline (quality signal for Lit Review).
-                setEditsSinceInsert(Math.abs(next.length - groundedBaseline.length));
-              }
-            }}
-            onSelect={() => {
-              const el = editorRef.current;
-              if (!el) return;
-              const start = el.selectionStart ?? 0;
-              const end = el.selectionEnd ?? 0;
-              if (end > start) setSelectedText(el.value.slice(start, end));
-            }}
-            onMouseUp={() => {
-              const el = editorRef.current;
-              if (!el) return;
-              const start = el.selectionStart ?? 0;
-              const end = el.selectionEnd ?? 0;
-              if (end > start) setSelectedText(el.value.slice(start, end));
-            }}
-            placeholder="Paste a paragraph, section, or abstract…"
-            rows={16}
-            aria-label="Writing draft editor"
-            disabled={activeDoc?.status === "deleted"}
-            className="min-h-[18rem] w-full flex-1 resize-y rounded-lg border border-border bg-card px-3 py-2.5 text-[13px] leading-relaxed outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 placeholder:text-muted-foreground/60"
-          />
+
+          {grounded.isPending && (
+            <ResearchProgressStage
+              active
+              liveMetric="Organising accepted EvidenceObjects for this section"
+            />
+          )}
+
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-muted/30 p-2 sm:p-3">
+            <textarea
+              ref={editorRef}
+              value={input}
+              onChange={(e) => {
+                const next = e.target.value;
+                setInput(next);
+                if (groundedBaseline != null) {
+                  setEditsSinceInsert(Math.abs(next.length - groundedBaseline.length));
+                }
+              }}
+              onSelect={() => {
+                const el = editorRef.current;
+                if (!el) return;
+                const start = el.selectionStart ?? 0;
+                const end = el.selectionEnd ?? 0;
+                if (end > start) setSelectedText(el.value.slice(start, end));
+              }}
+              onMouseUp={() => {
+                const el = editorRef.current;
+                if (!el) return;
+                const start = el.selectionStart ?? 0;
+                const end = el.selectionEnd ?? 0;
+                if (end > start) setSelectedText(el.value.slice(start, end));
+              }}
+              placeholder="Manuscript — write or paste your literature review. Click Write literature review to draft from evidence."
+              rows={18}
+              aria-label="Manuscript editor"
+              disabled={activeDoc?.status === "deleted"}
+              className="min-h-[22rem] w-full flex-1 resize-y rounded-md border border-zinc-200 bg-white px-6 py-5 text-[14px] leading-7 text-zinc-900 shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-[#141414] dark:text-zinc-100 dark:placeholder:text-zinc-500"
+            />
+          </div>
+
+          {warning && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[12px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {warning}
+            </div>
+          )}
+
+          {loading ? (
+            <div className="space-y-2 rounded-lg border border-border p-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className={`h-3.5 ${i === 3 ? "w-2/3" : "w-full"}`} />
+              ))}
+            </div>
+          ) : result ? (
+            <div className="rounded-lg border border-border bg-card p-2">
+              <div className="mb-1 flex items-center justify-between">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Style output
+                </p>
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1 text-[11px]"
+                    onClick={() => {
+                      setInput(result);
+                      setResult("");
+                      toast.success("Moved to manuscript");
+                    }}
+                  >
+                    <RefreshCw className="size-3" /> Use
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1 text-[11px]"
+                    onClick={() => {
+                      copy(result);
+                      toast.success("Copied");
+                    }}
+                  >
+                    <Copy className="size-3" /> Copy
+                  </Button>
+                </div>
+              </div>
+              <motion.textarea
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                value={result}
+                onChange={(e) => setResult(e.target.value)}
+                rows={8}
+                className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-[13px] leading-relaxed outline-none focus:border-ring"
+              />
+            </div>
+          ) : null}
         </div>
 
-        <div className="flex min-h-0 flex-col gap-1.5">
-          <div className="flex items-center justify-between">
-            <p className="text-[12px] font-medium text-muted-foreground">Output</p>
-            {result && (
-              <div className="flex items-center gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 gap-1 text-[11px]"
-                  onClick={() => {
-                    setInput(result);
-                    setResult("");
-                    toast.success("Moved to draft");
-                  }}
-                >
-                  <RefreshCw className="size-3" /> Use as draft
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 gap-1 text-[11px]"
-                  onClick={() => {
-                    copy(result);
-                    toast.success("Copied");
-                  }}
-                >
-                  <Copy className="size-3" /> Copy
-                </Button>
-              </div>
-            )}
-          </div>
+        <div className="flex min-h-0 flex-col gap-2 overflow-auto">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Evidence &amp; reviewer
+          </p>
 
           {grounded.last && (
             <div
               className={cn(
-                "mb-2 rounded-lg border p-3 text-[12px]",
+                "rounded-lg border p-3 text-[12px]",
                 grounded.last.status === "ok"
                   ? "border-emerald-700/30 bg-emerald-500/5"
                   : "border-amber-700/30 bg-amber-500/5",
@@ -666,7 +698,7 @@ function DraftTab() {
               <div className="mb-1 flex items-center justify-between gap-2">
                 <p className="font-medium text-foreground">
                   {grounded.last.status === "ok"
-                    ? "Grounded draft (EvidenceObjects)"
+                    ? "Grounded draft"
                     : "Blocked — insufficient evidence"}
                 </p>
                 <span className="text-[10px] uppercase text-muted-foreground">
@@ -680,29 +712,9 @@ function DraftTab() {
                 </p>
               ) : (
                 <>
-                  {grounded.last.section_type ? (
-                    <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                      {grounded.last.section_type.replace(/_/g, " ")}
-                      {grounded.last.metrics
-                        ? ` · grounding ${(grounded.last.metrics.grounding_pct * 100).toFixed(0)}% · coverage ${((grounded.last.metrics.citation_coverage ?? 0) * 100).toFixed(0)}% · unsupported ${grounded.last.metrics.unsupported_claims ?? 0}`
-                        : null}
-                      {grounded.last.review
-                        ? ` · research reviewer ${grounded.last.review.status} (${(grounded.last.review.pass_rate * 100).toFixed(0)}%)`
-                        : null}
-                    </p>
-                  ) : null}
                   <GroundedDraftVerify
                     writing={grounded.last}
-                    onRevise={() => {
-                      if (activeId == null || currentProjectId == null) return;
-                      grounded.generate({
-                        projectId: currentProjectId,
-                        documentId: activeId,
-                        selectedText,
-                        draftFallback: input,
-                        sectionType,
-                      });
-                    }}
+                    onRevise={runGroundedGenerate}
                   />
                   {grounded.last.review?.issues?.length ? (
                     <ul className="mt-2 space-y-1 border-t border-border pt-2 text-[11px] text-amber-800 dark:text-amber-200">
@@ -715,16 +727,6 @@ function DraftTab() {
                         ))}
                     </ul>
                   ) : null}
-                  {grounded.last.citations.length > 0 && (
-                    <ul className="mt-2 space-y-1 border-t border-border pt-2 text-[11px] text-muted-foreground">
-                      {grounded.last.citations.map((c) => (
-                        <li key={c.evidence_id}>
-                          #{c.evidence_id}
-                          {c.page != null ? ` · p.${c.page}` : ""} — {c.claim}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                   {grounded.last.warnings?.length ? (
                     <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-200">
                       {grounded.last.warnings.join(" ")}
@@ -733,13 +735,12 @@ function DraftTab() {
                   <p className="mt-2 text-[10px] text-muted-foreground">{grounded.last.disclaimer}</p>
                   {editsSinceInsert > 0 ? (
                     <p className="mt-1 text-[10px] text-muted-foreground">
-                      Char edits since insert: {editsSinceInsert} (quality signal)
+                      Char edits since insert: {editsSinceInsert}
                     </p>
                   ) : null}
                   <div className="mt-2 flex gap-1">
                     <Button
                       size="sm"
-                      variant="outline"
                       className="h-7 text-[11px]"
                       onClick={async () => {
                         if (!grounded.last?.paragraph || activeId == null) return;
@@ -777,18 +778,18 @@ function DraftTab() {
                         });
                         if (persist.failed > 0) {
                           toast.error(
-                            `Inserted draft; ${persist.failed} evidence link(s) failed to save`,
+                            `Accepted draft; ${persist.failed} evidence link(s) failed to save`,
                           );
                         } else {
                           toast.success(
                             persist.saved > 0
-                              ? `Inserted grounded draft · ${persist.saved} evidence link(s) saved`
-                              : "Inserted grounded draft — verify evidence links before export",
+                              ? `Accepted · ${persist.saved} evidence link(s) saved`
+                              : "Accepted into manuscript — verify links before export",
                           );
                         }
                       }}
                     >
-                      Insert into draft
+                      Accept into manuscript
                     </Button>
                     <Button
                       size="sm"
@@ -815,67 +816,15 @@ function DraftTab() {
             </div>
           )}
 
-          {warning && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[12px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {warning}
-            </div>
-          )}
-
-          {loading ? (
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className={`h-3.5 ${i === 5 ? "w-2/3" : "w-full"}`} />
-              ))}
-            </div>
-          ) : result ? (
-            <motion.textarea
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              value={result}
-              onChange={(e) => setResult(e.target.value)}
-              rows={16}
-              className="min-h-[18rem] w-full flex-1 resize-y rounded-lg border border-border bg-card px-3 py-2.5 text-[13px] leading-relaxed outline-none focus:border-ring"
-            />
-          ) : (
-            <div className="flex min-h-[18rem] flex-1 items-center justify-center rounded-lg border border-dashed border-border text-[13px] text-muted-foreground">
-              Run a transform to see output
-            </div>
-          )}
+          <EvidenceInspectorPanel
+            result={evidenceExplain.result}
+            status={evidenceExplain.status}
+            stickyText={selectedText}
+            documentId={activeId}
+            projectId={currentProjectId}
+            onBound={() => setEvidenceRefresh((n) => n + 1)}
+          />
         </div>
-
-        <div className="rounded-lg border border-border bg-card">
-          <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-[12px] font-medium">
-            <History className="size-3.5 text-muted-foreground" />
-            Version history
-          </div>
-          <div className="max-h-[24rem] overflow-auto p-2">
-            {(versionsQuery.data?.items ?? []).map((v) => (
-              <button
-                key={v.id}
-                type="button"
-                onClick={() => restoreVersion.mutate(v.id)}
-                className="mb-1 flex w-full items-center justify-between rounded border border-border px-2 py-1 text-left text-[11px] hover:bg-muted/40"
-              >
-                <span>v{v.version_no} · {v.source}</span>
-                <span className="text-muted-foreground">
-                  {v.created_at ? new Date(v.created_at).toLocaleTimeString() : ""}
-                </span>
-              </button>
-            ))}
-            {!versionsQuery.data?.items?.length && (
-              <p className="px-1 py-2 text-[11px] text-muted-foreground">No versions yet.</p>
-            )}
-          </div>
-        </div>
-
-        <EvidenceInspectorPanel
-          result={evidenceExplain.result}
-          status={evidenceExplain.status}
-          stickyText={selectedText}
-          documentId={activeId}
-          projectId={currentProjectId}
-          onBound={() => setEvidenceRefresh((n) => n + 1)}
-        />
       </div>
     </div>
   );
@@ -1135,12 +1084,16 @@ function ExportTab() {
 
 type Tab = "draft" | "export";
 
-/** D7 T4 — Writing as grounded tool (draft + export), not pastel editor. */
+/** Writing desk — Outline | Manuscript | Evidence (UI_UX_VISION_BETA_v1.0). */
 export function WritingPage() {
   const [tab, setTab] = useState<Tab>("draft");
 
   return (
-    <PageContainer title="Writing" dense>
+    <PageContainer
+      title="Writing"
+      description="Literature review desk — outline, manuscript, and evidence."
+      dense
+    >
       <div className="mb-4 flex items-center gap-1 border-b border-border">
         {(
           [
