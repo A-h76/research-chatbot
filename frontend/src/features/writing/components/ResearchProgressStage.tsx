@@ -15,11 +15,21 @@ export const LIT_REVIEW_STAGES = [
   "Verifying evidence",
 ] as const;
 
+/** Evidence Extraction Pipeline stages (glossary: Extracting evidence). */
+export const EXTRACT_EVIDENCE_STAGES = [
+  "Preparing paper",
+  "Extracting evidence",
+  "Organising candidates",
+  "Ready for review",
+] as const;
+
 type Props = {
   active?: boolean;
   stages?: readonly string[];
   /** Optional live metric while work is in progress */
   liveMetric?: string | null;
+  /** When set, show completion instead of pulsing stages */
+  doneLabel?: string | null;
   className?: string;
 };
 
@@ -27,6 +37,7 @@ export function ResearchProgressStage({
   active = true,
   stages = LIT_REVIEW_STAGES,
   liveMetric = null,
+  doneLabel = null,
   className,
 }: Props) {
   const [index, setIndex] = useState(0);
@@ -44,7 +55,31 @@ export function ResearchProgressStage({
     return () => window.clearInterval(id);
   }, [active, stages.length]);
 
-  if (!active) return null;
+  if (!active && !doneLabel) return null;
+
+  if (doneLabel) {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className={cn(
+          "overflow-hidden rounded-lg border border-emerald-700/30 bg-emerald-500/5 px-4 py-3",
+          className,
+        )}
+      >
+        <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Research progress
+        </p>
+        <div className="flex items-center gap-2.5">
+          <Check
+            className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+            aria-hidden
+          />
+          <p className="text-[14px] font-medium tracking-tight text-foreground">{doneLabel}</p>
+        </div>
+      </div>
+    );
+  }
 
   const current = stages[index] ?? stages[0];
 
@@ -62,7 +97,6 @@ export function ResearchProgressStage({
         Research progress
       </p>
 
-      {/* Current stage — single focus */}
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={current}
@@ -85,7 +119,6 @@ export function ResearchProgressStage({
         </motion.div>
       </AnimatePresence>
 
-      {/* Completed trail — quiet */}
       {index > 0 ? (
         <ul className="mt-2.5 space-y-1 border-t border-border/60 pt-2">
           {stages.slice(0, index).map((label) => (

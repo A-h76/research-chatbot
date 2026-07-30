@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   PanelLeftClose,
@@ -18,11 +19,13 @@ import {
   GitCompare,
   PenLine,
   Upload,
+  Plug,
 } from "lucide-react";
 import { AccountMenu } from "./AccountMenu";
 import { MendeleyIcon, ZoteroIcon } from "./BrandIcons";
 import { useUI } from "@/context/UIContext";
 import { useFiles } from "@/features/files/useFiles";
+import { libraryBridgeApi } from "@/features/files/libraryBridgeApi";
 import { cn } from "@/lib/utils";
 import type { Me } from "@/types/api";
 
@@ -127,12 +130,19 @@ export function SidebarContents({
   const [newOpen, setNewOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(true);
+  const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const { setActiveView, currentProjectId } = useUI();
   const navigate = useNavigate();
   const location = useLocation();
   const path = location.pathname;
   const search = location.search;
   const hash = location.hash;
+
+  const { data: connections } = useQuery({
+    queryKey: ["library-connections"],
+    queryFn: libraryBridgeApi.connections,
+    staleTime: 60_000,
+  });
 
   const isHome = path === "/home";
   const isProjects = path === "/" || path.startsWith("/projects");
@@ -153,6 +163,7 @@ export function SidebarContents({
     path.startsWith("/chat") || path.startsWith("/c/");
   const isPaperChat = path.startsWith("/papers/") && path.includes("/chat");
   const isSettings = path.startsWith("/settings");
+  const isIntegrations = isImportPanel;
   const isMoreActive =
     isGlobalChat ||
     path.startsWith("/search") ||
@@ -161,6 +172,7 @@ export function SidebarContents({
     path.startsWith("/memory");
 
   const libraryExpanded = libraryOpen || isLibrary;
+  const integrationsExpanded = integrationsOpen || isIntegrations;
 
   function go(view: Parameters<typeof setActiveView>[0], next: string) {
     setActiveView(view);
@@ -170,18 +182,22 @@ export function SidebarContents({
 
   function goLibraryImport(provider: "zotero" | "mendeley" | "upload") {
     setLibraryOpen(true);
+    setIntegrationsOpen(true);
     go("library", `/library?provider=${provider}#import`);
   }
+
+  const zoteroConnected = Boolean(connections?.zotero?.connected);
+  const mendeleyConnected = Boolean(connections?.mendeley?.connected);
 
   return (
     <div className="flex h-full flex-col" onClickCapture={onNavigate}>
       <div className="flex items-center gap-2 px-3 pt-3 pb-2">
         <div
-          className="flex size-6 items-center justify-center rounded-md bg-primary text-[11px] font-semibold text-primary-foreground"
+          className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground"
           title="Dhund — Research Operating System"
           aria-hidden
         >
-          D
+          <span className="text-[10px] font-bold leading-none tracking-tight">Dh</span>
         </div>
         <span className="text-[15px] font-semibold tracking-tight">Dhund</span>
         <div className="relative ml-auto">
@@ -343,6 +359,79 @@ export function SidebarContents({
       <div className="mx-3 my-1 border-t border-sidebar-border" />
 
       <nav className="space-y-0.5 px-2 pb-1" aria-label="Workspace">
+        <div>
+          <button
+            type="button"
+            onClick={() => setIntegrationsOpen((o) => !o)}
+            aria-expanded={integrationsExpanded}
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors",
+              isIntegrations
+                ? "bg-sidebar-accent font-medium text-foreground"
+                : "text-sidebar-foreground hover:bg-sidebar-accent/80",
+            )}
+          >
+            <Plug
+              className={cn(
+                "size-4 shrink-0",
+                isIntegrations ? "text-foreground" : "text-muted-foreground",
+              )}
+            />
+            <span className="flex-1 truncate">Integrations</span>
+            <ChevronRight
+              className={cn(
+                "size-3.5 text-muted-foreground transition-transform",
+                integrationsExpanded && "rotate-90",
+              )}
+            />
+          </button>
+          {integrationsExpanded && (
+            <div className="mt-0.5 space-y-0.5 border-l border-sidebar-border ml-4 pl-1.5">
+              <button
+                type="button"
+                onClick={() => goLibraryImport("zotero")}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors",
+                  isZoteroImport
+                    ? "bg-sidebar-accent font-medium text-foreground"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent/80",
+                )}
+              >
+                <ZoteroIcon className="size-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">Zotero</span>
+                <span
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-full",
+                    zoteroConnected ? "bg-emerald-500" : "bg-muted-foreground/40",
+                  )}
+                  title={zoteroConnected ? "Connected" : "Not connected"}
+                  aria-label={zoteroConnected ? "Connected" : "Not connected"}
+                />
+              </button>
+              <button
+                type="button"
+                onClick={() => goLibraryImport("mendeley")}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors",
+                  isMendeleyImport
+                    ? "bg-sidebar-accent font-medium text-foreground"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent/80",
+                )}
+              >
+                <MendeleyIcon className="size-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">Mendeley</span>
+                <span
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-full",
+                    mendeleyConnected ? "bg-emerald-500" : "bg-muted-foreground/40",
+                  )}
+                  title={mendeleyConnected ? "Connected" : "Not connected"}
+                  aria-label={mendeleyConnected ? "Connected" : "Not connected"}
+                />
+              </button>
+            </div>
+          )}
+        </div>
         <NavItem
           icon={<Settings className="size-4" />}
           label="Settings"

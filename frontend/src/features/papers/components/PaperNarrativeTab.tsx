@@ -8,7 +8,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DomainSelector } from "@/features/analysis/components/DomainSelector";
 import { MetadataInput, type MetadataInputValue } from "@/features/analysis/components/MetadataInput";
 import { AnalysisOutput } from "@/features/analysis/components/AnalysisOutput";
+import { ResearchProgressStage } from "@/features/writing/components/ResearchProgressStage";
 import type { PaperAnalysis, UserFile } from "@/types/api";
+
+const PAPER_ANALYSIS_STAGES = [
+  "Reading paper structure",
+  "Extracting key claims",
+  "Writing analysis",
+] as const;
 
 function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
@@ -75,17 +82,20 @@ export function PaperNarrativeTab({
     <section className="space-y-6">
       <div className="flex items-center justify-between">
         <SectionHeader icon={<BarChart3 className="size-4" />} label="Single Paper Analysis" />
-        {generating && (
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loader2 className="size-3 animate-spin" /> Generating analysis…
-          </span>
-        )}
         {analysisDone && !generating && (
           <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 className="size-3" /> Complete
+            <CheckCircle2 className="size-3" /> Analysis ready
           </span>
         )}
       </div>
+
+      {generating ? (
+        <ResearchProgressStage
+          active
+          stages={PAPER_ANALYSIS_STAGES}
+          liveMetric="Single-paper analysis from Research Ready content"
+        />
+      ) : null}
 
       {stillProcessing || notReadyError ? (
         <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
@@ -133,7 +143,11 @@ export function PaperNarrativeTab({
 
           <Button onClick={onAnalyze} disabled={generating} className="gap-2">
             {generating ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-            {generating ? "Analyzing…" : analysisDone ? "Re-analyze Paper" : "Analyze Paper"}
+            {generating
+              ? "Writing analysis…"
+              : analysisDone
+                ? "Re-analyze paper"
+                : "Analyze paper"}
           </Button>
 
           {analyzeError && !notReadyError && (

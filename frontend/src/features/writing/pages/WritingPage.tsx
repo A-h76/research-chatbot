@@ -657,12 +657,17 @@ function DraftTab() {
             ) : null}
           </div>
 
-          {grounded.isPending && (
+          {grounded.isPending ? (
             <ResearchProgressStage
               active
               liveMetric="Organising accepted EvidenceObjects for this section"
             />
-          )}
+          ) : grounded.last?.status === "ok" ? (
+            <ResearchProgressStage
+              active={false}
+              doneLabel="Literature Review Ready"
+            />
+          ) : null}
 
           <div className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/80 bg-[#faf9f7] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] sm:p-5 dark:bg-[#121212]">
             <textarea

@@ -129,7 +129,7 @@ Questions about cookies: ${CONTACT}.`,
     body: `**Dhund** is a private research and writing assistant.
 
 ## What it is
-A ChatGPT-style assistant built for focused research and thesis work — with your own documents, projects, and long-term memory.
+A private Research Operating System for literature review — with your own documents, projects, evidence, and long-term memory.
 
 ## Why it exists
 General chatbots forget your context and can't read your sources. Dhund keeps your projects, remembers durable facts you allow, and answers grounded in the files you upload.

@@ -110,6 +110,7 @@ export function FileCard({
             fileId={file.id}
             readiness={readiness}
             stopPropagation
+            showProgress={false}
             className="hidden sm:inline-flex"
           />
         )}

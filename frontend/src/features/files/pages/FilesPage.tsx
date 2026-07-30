@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, FileUp, Link2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileUp, FolderKanban, Hash, Link2, Search, X } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { EmptyState } from "@/components/common/EmptyState";
 import {
@@ -18,6 +18,7 @@ import { ConnectLibraryPanel } from "../components/ConnectLibraryPanel";
 import { CollectionsPanel } from "../components/CollectionsPanel";
 import { LibraryHealthStrip } from "../components/LibraryHealthStrip";
 import { LibraryDuplicatesPanel } from "../components/LibraryDuplicatesPanel";
+import { MendeleyIcon, ZoteroIcon } from "@/features/sidebar/components/BrandIcons";
 import { useLibraryUpload } from "../hooks/useLibraryUpload";
 import { useDeleteFile, useFiles, useLibraryStats, useLibraryTags } from "../useFiles";
 import { useLibraryFacets } from "../useLibraryFacets";
@@ -380,11 +381,12 @@ export function FilesPage() {
                 Import papers into Dhund, attach PDFs, and wait until they become Research Ready —
                 then write from evidence.
               </p>
-              <div className="mx-auto mt-8 flex max-w-md flex-col gap-3 sm:flex-row sm:justify-center">
+              <div className="mx-auto mt-8 grid max-w-lg gap-2 sm:grid-cols-2">
                 <Button
                   type="button"
-                  className="gap-2"
+                  className="justify-start gap-2"
                   onClick={() => {
+                    void navigate("/library?provider=upload#import");
                     document.getElementById("import")?.scrollIntoView({
                       behavior: "smooth",
                       block: "start",
@@ -397,20 +399,59 @@ export function FilesPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="gap-2"
-                  onClick={() => {
-                    document.getElementById("import")?.scrollIntoView({
-                      behavior: "smooth",
-                      block: "start",
-                    });
-                  }}
+                  className="justify-start gap-2"
+                  onClick={() => void navigate("/library?provider=zotero#import")}
+                >
+                  <ZoteroIcon className="size-4" />
+                  Import from Zotero
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="justify-start gap-2"
+                  onClick={() => void navigate("/library?provider=mendeley#import")}
+                >
+                  <MendeleyIcon className="size-4" />
+                  Import from Mendeley
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="justify-start gap-2"
+                  onClick={() => void navigate("/search?mode=discover&q=10.")}
                 >
                   <Link2 className="size-4" />
-                  Zotero / Mendeley
+                  Import DOI
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="justify-start gap-2"
+                  onClick={() => void navigate("/search?mode=discover&q=PMID")}
+                >
+                  <Hash className="size-4" />
+                  Import PMID
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="justify-start gap-2"
+                  onClick={() => void navigate("/")}
+                >
+                  <FolderKanban className="size-4" />
+                  Browse recent projects
                 </Button>
               </div>
               <p className="mt-5 text-[12px] text-muted-foreground">
-                Or import BibTeX / RIS from the Import research panel above.
+                Or import BibTeX / RIS from the Import research panel above.{" "}
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-foreground underline-offset-2 hover:underline"
+                  onClick={() => void navigate("/search")}
+                >
+                  <Search className="size-3" />
+                  Search OpenAlex
+                </button>
               </p>
             </div>
           )

@@ -16,6 +16,13 @@ import { useUI }         from "@/context/UIContext";
 import { cn }            from "@/lib/utils";
 import type { SearchResult, UserFile } from "@/types/api";
 import { discoverWorks, type OpenAlexWork } from "../discoverApi";
+import { ResearchProgressStage } from "@/features/writing/components/ResearchProgressStage";
+
+const LIBRARY_ASK_STAGES = [
+  "Searching your library",
+  "Organising evidence",
+  "Drafting grounded answer",
+] as const;
 
 interface DiscoverImportResult {
   already_exists: boolean;
@@ -283,7 +290,7 @@ function AskAiPanel({ query, projectId }: { query: string; projectId: number | n
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <Sparkles className="size-4 text-primary" />
-          Ask AI
+          Ask from library
         </div>
         <Button
           size="sm"
@@ -293,9 +300,17 @@ function AskAiPanel({ query, projectId }: { query: string; projectId: number | n
           className="gap-1.5"
         >
           {askAi.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-          {askAi.isPending ? "Thinking…" : "Ask AI"}
+          {askAi.isPending ? "Searching library…" : "Ask from library"}
         </Button>
       </div>
+
+      {askAi.isPending ? (
+        <ResearchProgressStage
+          active
+          stages={LIBRARY_ASK_STAGES}
+          liveMetric="Grounding the answer in papers you already imported"
+        />
+      ) : null}
 
       {askAi.isError && (
         <p className="text-sm text-destructive">
@@ -417,17 +432,21 @@ export function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const inputRef               = useRef<HTMLInputElement>(null);
 
-  const [mode,     setMode]     = useState<SearchMode>("library");
+  const [mode,     setMode]     = useState<SearchMode>(
+    searchParams.get("mode") === "discover" ? "discover" : "library",
+  );
   const [q,        setQ]        = useState(searchParams.get("q") ?? "");
   const [kinds,    setKinds]    = useState<Kind[]>(ALL_KINDS);
   const [submitted, setSubmitted] = useState(false);
 
   const search = useSearch();
 
-  // Auto-run if ?q= was in URL
+  // Auto-run if ?q= was in URL (library mode only — discover uses its own query)
   useEffect(() => {
     const urlQ = searchParams.get("q");
-    if (urlQ && urlQ.length >= 2) {
+    const urlMode = searchParams.get("mode");
+    if (urlMode === "discover") setMode("discover");
+    if (urlQ && urlQ.length >= 2 && urlMode !== "discover") {
       setQ(urlQ);
       search.mutate({ q: urlQ, kinds, project_id: currentProjectId });
       setSubmitted(true);
@@ -570,7 +589,7 @@ export function SearchPage() {
             {isLoading ? (
               <div className="flex items-center gap-3 py-8 text-muted-foreground">
                 <Loader2 className="size-5 animate-spin" />
-                <span className="text-sm">Searching…</span>
+                <span className="text-sm">Searching library…</span>
               </div>
             ) : submitted && results.length === 0 ? (
               <EmptyState
