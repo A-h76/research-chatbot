@@ -26,7 +26,8 @@ Any breaking change requires a new ADR (and usually a contract version bump).
 Additive, backward-compatible fields may ship with fixture updates in the
 same change set.
 
-Canonical freeze doc: `docs/architecture/week2-evidence-layer-platform-contracts.md`.
+Canonical freeze doc: `docs/architecture/week2-evidence-layer-platform-contracts.md`.  
+**Living companion (A-402+):** [`docs/contracts/`](../contracts/README.md) — day-to-day HTTP/DTO freeze (`contracts_version` 1.2.0). See [A-405](../contracts/A-405-documentation-freeze.md).
 
 ## Alternatives considered
 

@@ -16,9 +16,11 @@ log = logging.getLogger(__name__)
 MARKER_RE = re.compile(r"\[#(\d+)\]")
 
 _SYSTEM = (
-    "You are Dhund's grounded literature-review writer. "
+    "You are Dhund's grounded literature-review writer (Writing Intelligence v2). "
     "Write ONLY from the EvidenceObjects provided. "
-    "Do not invent facts, studies, statistics, or citations. "
+    "You may use the structured Research Intelligence context (themes, consensus, "
+    "coverage gaps) only to organize the draft — never invent papers, statistics, "
+    "or citations. "
     "Every factual sentence must end with one or more [#id] markers "
     "using only ids from the provided list (example: [#12][#17]). "
     "Do not use markdown headings. Do not wrap the answer in quotes. "
@@ -79,25 +81,37 @@ def _format_argument(argument: dict[str, Any] | None) -> str:
     theme_bits = [
         f"{t.get('theme')}→{t.get('evidence_ids')}" for t in themes[:6]
     ]
-    consensus = argument.get("consensus") or {}
+    consensus = argument.get("consensus") or argument.get("ri_consensus") or {}
     conflict = argument.get("conflict") or {}
+    gaps = argument.get("research_gaps") or []
+    gap_bits = [
+        f"{g.get('type')}:{str(g.get('statement') or '')[:80]}" for g in gaps[:4]
+    ]
     methods = argument.get("methodology") or []
+    meth_ri = (argument.get("ri_methodology") or {}).get("cards") or []
+    meth_bits = [
+        f"{m.get('kind')}:{m.get('title')}" for m in meth_ri[:4]
+    ] or [
+        f"{m.get('study_type')}→{m.get('evidence_ids')}" for m in methods[:6]
+    ]
     chrono = argument.get("chronology") or []
+    tl = (argument.get("ri_timeline") or {}).get("entries") or []
+    chrono_bits = [
+        f"{e.get('year')}(n={e.get('evidence_count')})" for e in tl[:6]
+    ] or [
+        f"{c.get('evidence_id')}@{c.get('year')}" for c in chrono[:8]
+    ]
     return (
+        f"themes_source: {argument.get('themes_source') or 'unknown'}\n"
         f"themes: {'; '.join(theme_bits) or 'none'}\n"
+        f"research_gaps: {'; '.join(gap_bits) or 'none'}\n"
         f"consensus: label={consensus.get('label')} "
+        f"product={consensus.get('product_label')} "
         f"supporting={consensus.get('supporting_ids')}\n"
         f"conflict: has_conflict={conflict.get('has_conflict')} "
         f"mediators={conflict.get('mediators')}\n"
-        f"methodology: "
-        + ", ".join(
-            f"{m.get('study_type')}→{m.get('evidence_ids')}" for m in methods[:6]
-        )
-        + "\n"
-        f"chronology: "
-        + ", ".join(
-            f"{c.get('evidence_id')}@{c.get('year')}" for c in chrono[:8]
-        )
+        f"methodology: {'; '.join(meth_bits) or 'none'}\n"
+        f"timeline: {'; '.join(chrono_bits) or 'none'}"
     )
 
 

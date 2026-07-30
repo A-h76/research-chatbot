@@ -71,7 +71,7 @@ describe("buildLiteratureReviewMarkdown", () => {
       title: "HbA1c review",
       body: "Benefit shown [#1].",
       writing,
-      writing_version: "1.3.1",
+      writing_version: "2.0.0",
       exported_at: "2026-07-29T12:00:00.000Z",
     });
 

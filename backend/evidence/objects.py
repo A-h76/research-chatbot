@@ -46,11 +46,14 @@ def _iso_ts(value: Any) -> str | None:
 
 def serialize_evidence_object(row: Any, *, relation: str | None = None, file_title: str | None = None) -> dict[str, Any]:
     """Project an ORM/row-like object into the public EvidenceObject DTO."""
+    file_id = getattr(row, "file_id", None)
     dto: dict[str, Any] = {
         "id": getattr(row, "id", None),
         "user_id": getattr(row, "user_id", None),
         "project_id": getattr(row, "project_id", None),
-        "file_id": getattr(row, "file_id", None),
+        "file_id": file_id,
+        # Additive dual-read alias (IDD / EPIC A-205): Paper ≡ file during transition
+        "paper_id": file_id,
         "page": getattr(row, "page", None),
         "char_start": getattr(row, "char_start", None),
         "char_end": getattr(row, "char_end", None),

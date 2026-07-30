@@ -250,7 +250,52 @@ export function GroundedDraftVerify({
     <div className="space-y-3">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
         Verify · hover markers · accept or revise each section
+        {writing.writing_version || writing.mode
+          ? ` · ${writing.mode || "grounded"} ${writing.writing_version || ""}`.trimEnd()
+          : ""}
       </p>
+      {writing.ri_context &&
+      ((writing.ri_context.themes?.length ?? 0) > 0 ||
+        (writing.ri_context.gaps?.length ?? 0) > 0 ||
+        writing.ri_context.consensus?.product_label) ? (
+        <div className="rounded-md border border-border bg-muted/20 px-2.5 py-2 text-[11px] text-muted-foreground">
+          <p className="font-medium text-foreground/80">Research → Writing bridge</p>
+          {writing.ri_context.consensus?.product_label ? (
+            <p>
+              Consensus: {writing.ri_context.consensus.product_label}
+              {writing.ri_context.consensus.label
+                ? ` (${writing.ri_context.consensus.label})`
+                : ""}
+            </p>
+          ) : null}
+          {writing.ri_context.themes?.length ? (
+            <p>
+              Themes:{" "}
+              {writing.ri_context.themes
+                .slice(0, 4)
+                .map((t) => t.label || t.id)
+                .join("; ")}
+            </p>
+          ) : null}
+          {writing.ri_context.gaps?.length ? (
+            <p>
+              Gaps informing draft: {writing.ri_context.gaps.length} (e.g.{" "}
+              {writing.ri_context.gaps[0]?.type})
+            </p>
+          ) : null}
+          {writing.outline?.length ? (
+            <p>
+              Outline: {writing.outline.map((o) => o.title).filter(Boolean).join(" · ")}
+            </p>
+          ) : null}
+          {writing.draft_metadata?.reproducibility_hash ? (
+            <p className="tabular-nums">
+              Draft hash {writing.draft_metadata.reproducibility_hash.slice(0, 12)}… ·{" "}
+              {writing.draft_metadata.prompt_version}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {sections.map((sec) => (
         <SectionVerify
           key={sec.id}

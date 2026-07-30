@@ -157,11 +157,11 @@ GroundedWritingResult {
 
 ---
 
-### 4.4 Reviewer (EXTEND — persist)
+### 4.4 Reviewer (SHIPPED persistence — A-401)
 
-**Current:** `REVIEWER_VERSION` in `backend/evidence/writing/reviewer.py` — in-process.  
+**Current:** Rule-based `REVIEWER_VERSION` in `backend/evidence/writing/reviewer.py`; durable rows in `reviewer_runs` / `reviewer_findings` (migration `0035`).  
 
-**IDD addition (Phase 1–2, non-breaking):**
+**Contract:** [evidence-contract.md](../docs/contracts/evidence-contract.md) §5 + reconstruct APIs.
 
 ```text
 ReviewerResult {
@@ -171,7 +171,8 @@ ReviewerResult {
 }
 ```
 
-**Persistence target (Phase 2):** store snapshot on `document_activity` or new `reviewer_runs` table referencing `document_id` + `writing_version`. Do **not** invent a second review semantics beside `claim_reviews` (those are **evidence** reviews).
+Persisted on grounded writing when `scope.document_id` is set; emits `ReviewCompleted` with optional `reviewer_run_id`.  
+Do **not** invent a second review semantics beside `claim_reviews` (those are **evidence** reviews).
 
 Naming:
 

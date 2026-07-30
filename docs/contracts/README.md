@@ -1,7 +1,7 @@
 # Living Contracts
 
-**Status:** v1.0.0 (proposed until EPIC-0001 Accepted)  
-**Rule:** These directories are the **slowly changing** source of truth for implementation. They derive from the IDD and ADRs.
+**Status:** Frozen — Evidence / RI / Reviewer / Jobs (Track 2 A-401–A-405)  
+**Rule:** These directories (and the freeze files below) are the **slowly changing** source of truth for implementation. They derive from the IDD and ADRs.
 
 ## Hierarchy
 
@@ -29,25 +29,45 @@ Implementation
 | What A/B implement against day-to-day | **`docs/contracts/`** |
 | Code | repo packages |
 
+## Freeze pack (start here)
+
+| Doc | Purpose |
+|-----|---------|
+| [A-405-documentation-freeze.md](./A-405-documentation-freeze.md) | **Checklist + DoD for this freeze** |
+| [RI-v3.0-COMPLETE-FREEZE.md](./RI-v3.0-COMPLETE-FREEZE.md) | **Phase 2 RI complete — feature freeze rules** |
+| [api-contracts.md](./api-contracts.md) | Public Evidence/RI/bindings/reviewer routes + RI envelope |
+| [evidence-contract.md](./evidence-contract.md) | EvidenceObject, citations, stage payloads, ReviewerRun |
+| [error-contract.md](./error-contract.md) | `{ error, detail }` + status matrix |
+| [versioning-policy.md](./versioning-policy.md) | When to bump / ADR / `/api/v2` |
+| [frontend-compatibility.md](./frontend-compatibility.md) | Developer B do/don’t |
+| [job-observability.md](./job-observability.md) | A-404 job status enrichment |
+
 ## Layout
 
 ```text
 docs/contracts/
-├── README.md                          ← you are here
-├── api-contracts/                     ← Developer A
-├── domain-contracts/                  ← Developer A
-├── event-contracts/                   ← Developer A
-└── frontend-contracts/                ← Developer B
+├── README.md
+├── A-405-documentation-freeze.md
+├── api-contracts.md
+├── evidence-contract.md
+├── error-contract.md
+├── versioning-policy.md
+├── frontend-compatibility.md
+├── job-observability.md
+├── api-contracts/
+├── domain-contracts/
+├── event-contracts/
+└── frontend-contracts/
 ```
 
 ## Versioning
 
 - Bump `contracts_version` in this README when any frozen field/route/type changes.
-- Breaking change → ADR + IDD revision + contracts bump + EPIC-0001-style review.
+- Breaking change → ADR + IDD revision + contracts bump + notify Developer B.
 - Additive optional fields → minor bump; clients ignore unknowns.
 
-**Current:** `contracts_version: 1.0.0`
+**Current:** `contracts_version: 1.2.0` (A-403 ranking/metrics; A-404 jobs documented; A-405 freeze)
 
 ## Freeze
 
-After EPIC-0001 exit, surfaces listed in [Definition of Frozen](../epics/EPIC-0001-Architecture-Foundation.md#definition-of-frozen-after-epic-0001-exit) may not change without ADR.
+Surfaces listed in the freeze pack may not change incompatibly without ADR. See [versioning-policy.md](./versioning-policy.md).

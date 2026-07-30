@@ -527,6 +527,17 @@ A researcher can reliably go from:
 
 with verifiable security, provenance, and reproducible outputs.
 
+### Post-foundation milestone (Phase 2 — Research Intelligence) ✅
+
+> Researchers stop thinking of Dhund as an AI writing tool and start thinking of it as **the place where my research lives.**
+
+**RI v3.0 COMPLETE / FROZEN** — see [`docs/contracts/RI-v3.0-COMPLETE-FREEZE.md`](docs/contracts/RI-v3.0-COMPLETE-FREEZE.md).  
+Roadmap: [`docs/roadmap/PHASE-2-RESEARCH-INTELLIGENCE.md`](docs/roadmap/PHASE-2-RESEARCH-INTELLIGENCE.md) (RI-001…RI-009).  
+
+**Next investment:** Phase A — Writing Intelligence MVP + accepted-evidence gate + citation export + single evidence truth path.  
+**Execution roadmap:** [`docs/roadmap/EXECUTION-DUAL-TRACK.md`](docs/roadmap/EXECUTION-DUAL-TRACK.md) (Track 1 Product + UX now; Private Alpha Success Gate before Phase B; Track 2 usage-gated).
+**Do not** schedule KG v2 / Novelty / semantic retrieve until Private Alpha demand; RI remains frozen.
+
 ---
 
 ## 10) Per-Issue Execution Template (required)

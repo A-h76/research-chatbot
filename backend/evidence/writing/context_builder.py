@@ -248,22 +248,30 @@ def build_section_contexts(
     supporting: list[dict[str, Any]],
     consensus: dict[str, Any] | None,
     conflict: dict[str, Any] | None,
+    ri_context: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Allocate supporting objects across plan slots using a structured argument.
 
     Does not invent EvidenceObjects. Empty support → empty contexts (gate handles block).
+    RI-009: optional ``ri_context`` upgrades theme clusters + gap-aware allocation.
     """
     slots = list(plan.get("slots") or [])
     if not slots:
         return []
 
+    from backend.evidence.writing.ri_depth import merge_ri_into_argument
+
     argument = build_structured_argument(
         supporting=supporting, consensus=consensus, conflict=conflict
     )
+    argument = merge_ri_into_argument(argument, ri_context)
     by_id = {int(o["id"]): o for o in supporting if o.get("id") is not None}
     label = (consensus or {}).get("label") or "none"
     mediators = list((conflict or {}).get("mediators") or [])
     has_conflict = bool((conflict or {}).get("has_conflict"))
+    gap_eids: list[int] = []
+    for g in argument.get("research_gaps") or []:
+        gap_eids.extend(int(x) for x in (g.get("evidence_ids") or []) if x is not None)
 
     # First pass: facet-based allocation (may overlap across slots — intentional).
     raw_buckets: list[list[dict[str, Any]]] = []
@@ -274,6 +282,12 @@ def build_section_contexts(
         allocated = _allocate_for_facet(
             facet, supporting=supporting, argument=argument, by_id=by_id
         )
+        # RI-009: gap / undercovered slots prefer gap-linked evidence when available
+        sid = str(slot.get("id") or "").lower()
+        if facet == "conflict" or sid in {"undercovered", "next_questions", "tensions"}:
+            preferred = [by_id[i] for i in gap_eids if i in by_id]
+            if preferred:
+                allocated = preferred + [o for o in allocated if o not in preferred]
         raw_buckets.append(list(allocated))
 
     # Ensure every supporting id appears in at least one slot when possible.

@@ -67,6 +67,44 @@ UPLOAD_QUEUE_LENGTH = Gauge(
     registry=REGISTRY,
 )
 
+UPLOAD_JOBS_COMPLETED_TOTAL = Counter(
+    "upload_jobs_completed_total",
+    "Terminal upload_jobs outcomes",
+    ["job_type", "outcome"],
+    registry=REGISTRY,
+)
+
+UPLOAD_JOB_RETRIES_TOTAL = Counter(
+    "upload_job_retries_total",
+    "Upload job retry schedules (transient failures)",
+    ["job_type"],
+    registry=REGISTRY,
+)
+
+UPLOAD_JOB_DURATION_SECONDS = Histogram(
+    "upload_job_duration_seconds",
+    "Upload job handler duration (started_at → finished_at)",
+    ["job_type", "outcome"],
+    registry=REGISTRY,
+)
+
+
+def record_upload_job_outcome(
+    *,
+    job_type: str,
+    outcome: str,
+    duration_seconds: float | None = None,
+) -> None:
+    """Record terminal or retry outcomes for A-404 job observability."""
+    jt = job_type or "unknown"
+    oc = outcome or "unknown"
+    if oc == "retry":
+        UPLOAD_JOB_RETRIES_TOTAL.labels(job_type=jt).inc()
+        return
+    UPLOAD_JOBS_COMPLETED_TOTAL.labels(job_type=jt, outcome=oc).inc()
+    if duration_seconds is not None and duration_seconds >= 0:
+        UPLOAD_JOB_DURATION_SECONDS.labels(job_type=jt, outcome=oc).observe(duration_seconds)
+
 
 def record_ai_call(model: str, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
     """Single call site for both AI metrics — every instrumented call

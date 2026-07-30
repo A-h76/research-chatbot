@@ -29,7 +29,22 @@ def run_evidence_extraction(
     force: bool = False,
     pipeline_version: str = PIPELINE_VERSION,
     job_id: int | None = None,
+    OutboxEvent: Any | None = None,
 ) -> dict[str, Any]:
+    def _emit_event(*, aggregate_type: str, aggregate_id: int, event_type: str, payload: dict[str, Any]) -> None:
+        if OutboxEvent is None:
+            return
+        db.add(
+            OutboxEvent(
+                aggregate_type=aggregate_type,
+                aggregate_id=int(aggregate_id),
+                event_type=event_type,
+                payload=json.dumps(payload, ensure_ascii=False),
+                status="dispatched",
+                dispatched_at=datetime.now(timezone.utc),
+            )
+        )
+
     uf = db.get(UserFile, int(file_id))
     if not uf or int(uf.user_id) != int(user_id):
         raise EvidenceDomainError(ErrorCode.NOT_FOUND, "file_not_found")
@@ -107,7 +122,24 @@ def run_evidence_extraction(
             "run_id": prior.id,
         }
 
-    if prior and force:
+    queued_run = None
+    if job_id is not None:
+        queued_run = db.execute(
+            select(EvidenceExtractionRun).where(
+                EvidenceExtractionRun.job_id == int(job_id),
+                EvidenceExtractionRun.project_id == project_id,
+                EvidenceExtractionRun.file_id == file_id,
+                EvidenceExtractionRun.pipeline_version == pipeline_version,
+            )
+        ).scalar_one_or_none()
+
+    if queued_run is not None:
+        run = queued_run
+        run.status = "running"
+        run.objects_created = 0
+        run.error_json = "{}"
+        run.finished_at = None
+    elif prior and force:
         run = prior
         run.status = "running"
         run.objects_created = 0
@@ -182,6 +214,18 @@ def run_evidence_extraction(
             source_kg_node_id=cand.source_kg_node_id,
         )
         db.add(row)
+        db.flush()
+        _emit_event(
+            aggregate_type="evidence_object",
+            aggregate_id=row.id,
+            event_type="EvidenceCreated",
+            payload={
+                "evidence_object_id": row.id,
+                "project_id": project_id,
+                "paper_id": file_id,
+                "status": "candidate",
+            },
+        )
         created += 1
 
     run.status = "succeeded"

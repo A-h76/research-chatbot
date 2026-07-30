@@ -482,7 +482,7 @@ switch, not a new idea).
 |---|---|---|---|
 | `ratelimit:{scope}:{key}` | string (counter) | window-based (flask-limiter manages) | Replaces `memory://` — correct under `gunicorn -w 2+` |
 | `lock:{name}` | string, `SET NX PX` | lock-specific (e.g. 30s) | TTL-based mutual exclusion for singleton tasks (e.g. model-list cache refresh) — an alternative to `pg_advisory_lock` for cases where a crashed holder must auto-release rather than hold until its DB connection closes |
-| `job:{id}:status` | hash `{status, progress, updated_at}` | 1h | Fast read target for the frontend's status polling (today's `refetchInterval` hits Postgres directly every few seconds per open tab; this fronts it with a cache, refreshed by the worker each time it updates `upload_jobs`) |
+| `job:{id}:status` | hash with `status`, `progress`, `updated_at`, `user_id`, `job_type`, `attempts`, `last_error`, **`payload_json`** (full A-404 status body) | 1h | Fast read for frontend status polling; Postgres remains source of truth. See [job-observability.md](./contracts/job-observability.md). |
 | `dedupe:upload:{content_hash}` | string (job id) | 5 min | Guards a double-click / double-submit from enqueueing two `import` jobs for the same content before the first has written its row |
 | `models:list:cache` | string (JSON) | 10 min | Same TTL/shape as today's in-process `_model_cache`, moved out of process memory so it's shared across `gunicorn` workers instead of each worker hitting `/v1/models` independently |
 

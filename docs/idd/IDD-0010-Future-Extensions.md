@@ -2,8 +2,9 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Proposed |
+| **Status** | Proposed (product/UI extensions) |
 | **Rule** | Extensions are **additive**. They consume Evidence Objects. They do not break v1 contracts. |
+| **Note** | Consensus/Conflict/Ranking **HTTP APIs are shipped** (A-403). This doc covers product depth beyond the frozen API shapes. |
 
 ---
 
@@ -27,16 +28,16 @@ New capability
 
 | | |
 |--|--|
-| **Today** | `POST /api/evidence/consensus` |
-| **Extend** | Richer aggregate DTO; UI compare chips |
-| **Preserve** | Input remains EvidenceQuery → EvidenceObjects |
+| **Today** | `POST /api/evidence/consensus` + additive `metrics` (A-403) |
+| **Extend** | Richer product Compare UI; optional weighted strategies |
+| **Preserve** | Frozen keys in [evidence-contract.md](../contracts/evidence-contract.md); input remains EvidenceQuery → EvidenceObjects |
 
 ### 2.2 Conflict Engine
 
 | | |
 |--|--|
-| **Today** | `POST /api/evidence/conflict` |
-| **Extend** | Mediator codes catalog; paper-pair UI |
+| **Today** | `POST /api/evidence/conflict` + mediator catalog incl. `timeframe_differs` |
+| **Extend** | Paper-pair UI; richer facet_detail |
 | **Preserve** | No silent resolution without user action |
 
 ### 2.3 Knowledge Graph

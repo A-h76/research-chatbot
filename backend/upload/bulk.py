@@ -22,7 +22,6 @@ other module in auth/, quotas/, and backend/ (see
 backend/upload/routes.py's own docstring for the canonical explanation).
 """
 
-import json
 import logging
 import io
 import os
@@ -32,6 +31,7 @@ from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select
 
 from auth.decorators import jwt_required
+from backend.jobs.outbox import enqueue_upload_job_with_outbox
 from quotas.service import QuotaExceededError
 
 from .validation import (
@@ -164,23 +164,14 @@ def create_bulk_upload_blueprint(
                 db.add(uf)
                 db.flush()  # assigns uf.id
 
-                job = UploadJob(
-                    upload_batch_id=batch.id,
-                    file_id=uf.id,
+                job = enqueue_upload_job_with_outbox(
+                    db,
+                    UploadJob=UploadJob,
+                    OutboxEvent=OutboxEvent,
                     user_id=user_id,
+                    file_id=uf.id,
                     job_type="import",
-                    status="pending",
-                )
-                db.add(job)
-                db.flush()  # assigns job.id
-
-                db.add(
-                    OutboxEvent(
-                        aggregate_type="upload_job",
-                        aggregate_id=job.id,
-                        event_type="job.enqueued",
-                        payload=json.dumps({"file_id": uf.id}),
-                    )
+                    upload_batch_id=batch.id,
                 )
                 jobs_out.append({"job_id": job.id, "file_id": uf.id, "filename": filename})
 

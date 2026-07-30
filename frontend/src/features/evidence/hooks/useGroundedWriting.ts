@@ -19,9 +19,9 @@ export const WRITING_SECTION_OPTIONS: Array<{
   experimental?: boolean;
 }> = [
   { value: "literature_review", label: "Literature review" },
+  { value: "introduction", label: "Background / introduction" },
+  { value: "discussion", label: "Discussion" },
   { value: "support_sentence", label: "Support sentence", experimental: true },
-  { value: "introduction", label: "Introduction", experimental: true },
-  { value: "discussion", label: "Discussion", experimental: true },
   { value: "clinical_summary", label: "Clinical summary", experimental: true },
   { value: "research_gap", label: "Research gap", experimental: true },
   { value: "executive_summary", label: "Executive summary", experimental: true },
@@ -99,6 +99,16 @@ export type GroundedWritingResult = {
   paragraph: string | null;
   sections?: GroundedWritingSection[];
   plan?: { section_type: string; slot_count: number; slots: Array<{ id: string; title: string }> };
+  /** RI-009 theme-aware outline (slot → themes/evidence/papers). */
+  outline?: Array<{
+    slot_id?: string;
+    title?: string;
+    purpose?: string;
+    facet?: string;
+    theme_ids?: string[];
+    evidence_ids?: number[];
+    paper_ids?: number[];
+  }>;
   citations: Array<{
     evidence_id: number;
     file_id?: number;
@@ -113,6 +123,64 @@ export type GroundedWritingResult = {
   supporting_count?: number;
   metrics?: WritingMetrics | null;
   writing_version?: string;
+  /** Reproducible draft provenance. */
+  draft_metadata?: {
+    evidence_ids?: number[];
+    theme_ids?: string[];
+    gap_ids?: string[];
+    paper_ids?: number[];
+    consensus_label?: string;
+    product_label?: string;
+    consensus_version?: string | null;
+    conflict_version?: string | null;
+    writing_version?: string;
+    ri_depth_version?: string;
+    themes_fingerprint?: string;
+    prompt_version?: string;
+    reproducibility_hash?: string;
+  };
+  /** RI-009 — themes/gaps/methods/timeline/consensus depth that informed the draft. */
+  ri_context?: {
+    ri_depth_version?: string;
+    themes?: Array<{
+      id?: string;
+      label?: string;
+      key_terms?: string[];
+      evidence_ids?: number[];
+      size?: number;
+    }>;
+    gaps?: Array<{
+      id?: string;
+      type?: string;
+      statement?: string;
+      suggested_questions?: string[];
+      evidence_ids?: number[];
+    }>;
+    methodology?: {
+      cards?: Array<{ id?: string; kind?: string; title?: string; advice?: string }>;
+      design_counts?: Record<string, number>;
+    };
+    timeline?: {
+      span?: { start_year?: number | null; end_year?: number | null };
+      entries?: Array<{ year?: number; evidence_count?: number }>;
+    };
+    consensus?: {
+      label?: string;
+      product_label?: string;
+      supporting_ids?: number[];
+      contradicting_ids?: number[];
+    };
+    conflict?: {
+      has_conflict?: boolean;
+      mediators?: string[];
+      product_summary?: string | null;
+    };
+    metrics?: {
+      theme_count?: number;
+      gap_count?: number;
+      object_count?: number;
+    };
+  };
 };
 
 function buildWritingQuery(opts: {

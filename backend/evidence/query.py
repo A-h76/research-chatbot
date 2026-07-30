@@ -83,6 +83,11 @@ def normalize_evidence_query(raw: dict[str, Any], *, user_id: int) -> dict[str, 
         raise ValueError("invalid filters.confidence_bands")
 
     strategy = str(raw.get("ranking_strategy") or "default_v0").strip() or "default_v0"
+    # Validate early so search/retrieve/consensus reject unknown strategies (A-403 / A-602).
+    from backend.evidence.ranking import SUPPORTED_STRATEGIES
+
+    if strategy not in SUPPORTED_STRATEGIES:
+        raise ValueError(f"unsupported ranking_strategy: {strategy}")
     try:
         limit = int(raw.get("result_limit", 20))
     except (TypeError, ValueError) as exc:

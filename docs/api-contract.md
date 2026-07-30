@@ -1,4 +1,8 @@
-# API Contract — Architecture
+# API Contract — Architecture (legacy)
+
+> **A-405:** For Evidence / Research Intelligence / Reviewer / job status, use the living freeze pack:  
+> [`docs/contracts/`](./contracts/README.md) (`contracts_version` **1.2.0**) — especially [api-contracts.md](./contracts/api-contracts.md), [evidence-contract.md](./contracts/evidence-contract.md), [error-contract.md](./contracts/error-contract.md), [job-observability.md](./contracts/job-observability.md).  
+> This document remains useful as a **historical design essay** on the hybrid REST surface (chat, uploads, projects). Do not treat it as the Evidence freeze source of truth.
 
 Scope: formalizing the HTTP surface across everything designed so far.
 Design only, same format as the rest of the series.

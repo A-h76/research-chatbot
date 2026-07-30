@@ -2,10 +2,11 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Proposed |
+| **Status** | Active (Evidence/RI sections frozen A-402 → `docs/contracts/`) |
 | **Style** | OpenAPI-oriented REST |
 | **Base URL** | `/api` (app) · `/auth` (identity) |
 | **Legacy aliases** | Documented where live paths differ from ideal names |
+| **contracts_version** | 1.2.0 |
 
 ---
 
@@ -58,12 +59,14 @@ Query: `limit` (1–100, default 50), `offset` (≥0). Some list endpoints use `
 
 ```json
 {
-  "error": "insufficient_evidence",
+  "error": "validation_error",
   "detail": "Human-readable explanation",
   "fields": { "project_id": ["required"] }
 }
 ```
 
+`fields` is optional/reserved. Evidence/RI routes emit `{ error, detail }` today — see [error-contract.md](../contracts/error-contract.md).  
+EvidenceQuery validation uses **HTTP 422** (not 400).
 ---
 
 ## 2. Identity
@@ -175,43 +178,34 @@ Starts OAuth; returns `{ "authorize_url": string }` or redirects.
 
 ## 6. Evidence Platform
 
+> **A-402:** Authoritative shapes → [`docs/contracts/api-contracts.md`](../contracts/api-contracts.md) + [`evidence-contract.md`](../contracts/evidence-contract.md).  
+> Sketches below are aligned to **live** behavior (2026-07-30).
+
 ### GET `/api/projects/{project_id}/evidence`
 
-**Query:** `status?`, `paper_id?` / `file_id?`, `limit`, `offset`  
-**Response:** `{ "items": EvidenceObject[], "total": number }`
+**Query:** `status?`, `file_id?`, `limit` (1–200, default 50), `offset`  
+**Response:** `{ "items": EvidenceObject[], "count": number, "total": number, "limit": number, "offset": number }`
 
 ### GET `/api/evidence/{id}`
 
-**Response:** `EvidenceObject`  
-**Errors:** `404`, `403`
+**Response:** `EvidenceObject` ([evidence-contract](../contracts/evidence-contract.md))  
+**Errors:** `404`
 
 ### POST `/api/projects/{project_id}/evidence/extract`
 
-**Purpose:** Enqueue Evidence extraction for a Research Ready paper.  
-**Request:**
-
-```json
-{ "file_id": 123 }
-```
-
-**Response `202`:**
-
-```json
-{ "job_id": 99, "run_id": 12, "status": "pending" }
-```
-
-**Errors:** `400` not research ready; `403`; `409` already running
+**Request:** `{ "file_id": 123, "force"?: bool, "sync"?: bool }`  
+**Response `202`:** `{ "job_id", "run_id", "status": "pending", "pipeline_version" }`  
+**Also:** `200` succeeded/idempotent/sync; `400` `not_research_ready`; `409` `missing_phase1` \| `already_running`
 
 ### POST `/api/evidence/{id}/reviews`
 
-**Request:** `{ "action": "accept" | "reject" | "edit", "patch"?: object, "note"?: string }`  
-**Response `200`:** updated `EvidenceObject` (edit may return superseding object)
+**Request:** `{ "status": "accepted"|"rejected"|"edited", "reason"?: string, "edited_claim"?: string, "edited_quote"?: string }`  
+**Response `200`:** `{ "ok": true, "evidence": EvidenceObject }`
 
 ### POST `/api/evidence/explain`
 
-**Purpose:** Frozen Inspector explain (ADR).  
-**Request:** `{ "evidence_id": number }` or frozen shape as implemented  
-**Response `200`:** explanation DTO (quote, provenance, supports/contradicts, …)
+**Request:** `{ "document_id", "project_id", "block_id"? | "range_start"+"range_end", "selected_text"? }`  
+**Response `200`:** `{ "status": "ok", "sufficiency", "sentence", "evidence", "chain", "warnings" }`
 
 ---
 
@@ -221,7 +215,7 @@ Starts OAuth; returns `{ "authorize_url": string }` or redirects.
 
 ```json
 {
-  "intent": "literature_review",
+  "intent": "support_sentence",
   "scope": { "project_id": 1, "file_ids": null, "document_id": 10 },
   "filters": {
     "status": ["accepted"],
@@ -230,70 +224,87 @@ Starts OAuth; returns `{ "authorize_url": string }` or redirects.
   "anchors": {},
   "section_type": "literature_review",
   "ranking_strategy": "default_v0",
-  "result_limit": 20
+  "result_limit": 20,
+  "query_text": "optional"
 }
 ```
 
-> `intent` must be one of IDD-0002 constants (e.g. `support_sentence`, `answer_question`, …).  
-> **Forbidden keys:** `prompt`, `model`, `temperature`, `embeddings`, `provider`, `api_key`.
+> `intent` ∈ `support_sentence` \| `answer_question` \| `review_coverage` \| `compare_topic` \| `list_project`.  
+> `literature_review` is a **`section_type`**, not an intent.  
+> **Forbidden keys:** `prompt`, `model`, `temperature`, `embeddings`, `provider`, `api_key`, `vector_index`.
 
 Envelope variants: body may be the query itself **or** `{ "query": { ... } }`.
 
+### Shared RI response envelope
+
+```json
+{
+  "query": {},
+  "objects": [],
+  "total": 0,
+  "truncated": false,
+  "stage": "retrieval",
+  "timing_ms": 12,
+  "versions": { "retrieval": "1.0.0" }
+}
+```
+
+List key is **`objects`** (not `items`). Stage payloads are additive (`consensus`, `conflict`, `reasoning`, `writing`, legacy `*_version` fields).
+
 ### POST `/api/evidence/search` · `/api/evidence/retrieve`
 
-**Purpose:** Retrieval stage.  
-**Response `200`:** `{ "items": EvidenceObject[], "query": EvidenceQuery }`
+**Response `200`:** RI envelope, `stage: "retrieval"`
 
 ### POST `/api/evidence/rank`
 
-**Response `200`:** `{ "items": EvidenceObject[], "strategy": "default_v0" }`
+**Response `200`:** RI envelope + `ranking_strategy`, `ranking_version`
 
 ### POST `/api/evidence/consensus`
 
-**Response `200`:** `{ "aggregate": object, "items": EvidenceObject[] }`
+**Response `200`:** RI envelope + `consensus` object (not `aggregate`)
 
 ### POST `/api/evidence/conflict`
 
-**Response `200`:** `{ "mediators": object[], "items": EvidenceObject[] }`
+**Response `200`:** RI envelope + `conflict` (`has_conflict`, `mediators`, `links`, …)
 
 ### POST `/api/evidence/reason`
 
-**Response `200`:** `{ "reasoning": object, "items": EvidenceObject[] }`
+**Response `200`:** RI envelope + `reasoning`
 
 ### POST `/api/evidence/writing`
 
-**Purpose:** Grounded Writing Intelligence (not freeform chat).  
-**Request:** EvidenceQuery (+ optional draft constraints)  
-**Response `200` — GroundedWritingResult:**
+**Response `200`:** RI envelope with nested **`writing`** (not a flat root GroundedWritingResult):
 
 ```json
 {
-  "status": "ok",
-  "section_type": "literature_review",
-  "paragraph": "...",
-  "citations": [{ "evidence_object_id": 1, "label": "1" }],
-  "metrics": { "grounding_pct": 0.92, "reviewer_pass_rate": 0.8 },
-  "review": {
-    "reviewer_version": "1.1.0",
-    "issues": []
-  },
-  "warnings": [],
-  "disclaimer": "...",
-  "writing_version": "1.3.1"
+  "stage": "writing",
+  "writing_version": "1.3.1",
+  "objects": [],
+  "writing": {
+    "status": "ok",
+    "section_type": "literature_review",
+    "paragraph": "...",
+    "citations": [{ "evidence_id": 1, "file_id": 2, "page": 3, "claim": "...", "quote": "..." }],
+    "metrics": {},
+    "review": { "reviewer_version": "1.1.0", "issues": [] },
+    "warnings": [],
+    "disclaimer": "...",
+    "reviewer_run_id": 42
+  }
 }
 ```
 
-**Blocked:**
+**Blocked** (still HTTP 200): `writing.status = "blocked"`, `writing.blocked_reason` set, `paragraph` null.
 
-```json
-{
-  "status": "blocked",
-  "blocked_reason": "insufficient_evidence",
-  "writing_version": "1.3.1"
-}
-```
+**Status codes:** `200` (including blocked), `422` invalid query, `404`, `429`
 
-**Status codes:** `200` (including blocked), `400` invalid query, `403`, `429`
+### Reviewer persistence
+
+- `GET /api/documents/{id}/reviewer-runs`
+- `GET /api/documents/{id}/reviewer-runs/latest`
+- `GET /api/reviewer-runs/{id}`
+
+See [evidence-contract.md](../contracts/evidence-contract.md) §5.
 
 ---
 
@@ -324,10 +335,16 @@ Envelope variants: body may be the query itself **or** `{ "query": { ... } }`.
 
 ### POST `/api/documents/{id}/evidence-bindings`
 
-**Request:** `{ "evidence_object_id": number, "block_id"?: string, "span"?: object }`  
-**Response `201`:** `Citation` / binding
+**Request:** `{ "evidence_object_id": number, "block_id"?: string, "range_start"?: number, "range_end"?: number, "selected_text"?: string, "relation"?: string }`  
+**Response `201`:** binding DTO (`id`, `document_id`, `evidence_object_id`, `block_id`, `range_start`, `range_end`, `selected_text`, `relation`)
+
+### GET `/api/documents/{id}/evidence-bindings`
+
+**Response:** `{ "items": Binding[], "count": number }`
 
 ### DELETE `/api/evidence-bindings/{id}`
+
+**Response:** `{ "ok": true }`
 
 ---
 
@@ -361,20 +378,44 @@ Use `POST /api/evidence/rank` with `ranking_strategy`. Do not invent client-side
 
 ## 10. Jobs
 
-### GET `/api/jobs/{job_id}` _(or upload job status endpoints)_
+### GET `/api/jobs/{job_id}/status`
 
-**Response:**
+**Auth:** Session  
+**Response `200` (A-404):**
 
 ```json
 {
-  "id": 99,
+  "job_id": 99,
+  "status": "pending",
   "job_type": "evidence_extract",
-  "status": "running",
   "attempts": 1,
-  "error": null,
-  "updated_at": "2026-07-30T10:00:00Z"
+  "last_error": "OpenAI timeout…",
+  "progress": 0,
+  "updated_at": "2026-07-30T10:00:00+00:00",
+  "cached": false,
+  "lifecycle": "retry_wait",
+  "retry": {
+    "attempts": 1,
+    "max_attempts": 5,
+    "run_after": "…",
+    "backoff_seconds": 60,
+    "will_retry": true
+  },
+  "timings": {
+    "created_at": "…",
+    "started_at": "…",
+    "finished_at": "…",
+    "duration_ms": 1200,
+    "queue_wait_ms": 400
+  },
+  "error": { "message": "…", "code": "provider_timeout", "retriable": true },
+  "file_id": 12,
+  "max_attempts": 5
 }
 ```
+
+`status` remains `pending|running|done|failed`. `lifecycle` is additive (`queued|scheduled|retry_wait|running|succeeded|dead_letter`).  
+Clients MUST keep reading `status` / `last_error`; new fields are optional.
 
 Poll ≤ 2s while `pending|running`. Terminal: `done|failed`.
 
@@ -401,11 +442,12 @@ Status + `download_url` when `done`.
 | 201 | Created |
 | 202 | Accepted async |
 | 204 | No content |
-| 400 | Validation / contract break |
+| 400 | Bad request / extract not research ready |
 | 401 | Not authenticated |
-| 403 | Forbidden / not owner / beta |
-| 404 | Missing |
-| 409 | Conflict (autosave, duplicate job) |
+| 403 | Forbidden / beta (Evidence ownership often surfaces as 404) |
+| 404 | Missing / inaccessible |
+| 409 | Conflict (autosave, extract already running, missing phase1) |
+| 422 | Validation (EvidenceQuery, bindings, reviews) |
 | 429 | Rate limited |
 | 500 | Internal |
 | 503 | Dependency unavailable |
@@ -431,4 +473,4 @@ Content-Type: application/json
 }
 ```
 
-Frontend inserts `paragraph`, POSTs bindings, shows `review.issues`, enables Export only if `status=ok` and user acknowledged warnings.
+Frontend inserts `writing.paragraph`, POSTs bindings, shows `writing.review.issues`, enables Export only if `writing.status=ok` and user acknowledged warnings.

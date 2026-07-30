@@ -16,6 +16,10 @@ export type ExtractResult = {
 
 function toastFromResult(data: ExtractResult) {
   const created = data.objects_created ?? data.created ?? data.candidate_count ?? 0;
+  if (data.status === "pending" || data.status === "queued") {
+    toast.success("Evidence Extraction queued");
+    return;
+  }
   if (data.status === "skipped" || data.skipped) {
     const reason = data.reason || "skipped";
     if (reason === "not_research_ready") {
@@ -26,7 +30,11 @@ function toastFromResult(data: ExtractResult) {
       toast.error("Phase 1 analysis is missing — run analysis first");
       return;
     }
-    toast.success(reason === "already_applied" ? "Already extracted (up to date)" : `Skipped: ${reason}`);
+    toast.success(reason === "already_applied" || reason === "idempotent_reuse" ? "Already extracted (up to date)" : `Skipped: ${reason}`);
+    return;
+  }
+  if (data.status === "succeeded" && data.reason === "idempotent_reuse") {
+    toast.success("Already extracted (up to date)");
     return;
   }
   toast.success(

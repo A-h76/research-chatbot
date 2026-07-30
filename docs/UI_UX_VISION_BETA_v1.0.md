@@ -19,6 +19,14 @@ Desired first impression:
 
 > “This is a professional workspace for conducting evidence-backed research.”
 
+### Foundation → Research Intelligence milestone
+
+After platform foundation (Evidence + contracts freeze):
+
+> **Dhund becomes irreplaceable when researchers stop thinking of it as “an AI writing tool” and start thinking of it as “the place where my research lives.”**
+
+Phase 2 ships Research Intelligence (themes, matrix, consensus/contradiction WHY, gaps, graph) — not another architecture rewrite. See [`docs/roadmap/PHASE-2-RESEARCH-INTELLIGENCE.md`](./roadmap/PHASE-2-RESEARCH-INTELLIGENCE.md).
+
 Every UI decision must reinforce that identity.
 
 ---

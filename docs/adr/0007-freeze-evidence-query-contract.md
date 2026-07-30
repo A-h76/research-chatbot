@@ -49,6 +49,10 @@ Retrieval (Sprint 1) implements this contract; it does not redefine it.
 - Ranking strategy is a named version string, not inline weights.
 - Changing the query shape requires a new ADR / contract version.
 
+**Living companion (A-402+):** EvidenceQuery HTTP/DTO details live in  
+[`docs/contracts/api-contracts.md`](../contracts/api-contracts.md) and  
+[`docs/contracts/evidence-contract.md`](../contracts/evidence-contract.md).
+
 ## Cost / Security / Observability / Extensibility
 
 - **Cost:** One retrieval path amortizes work.  

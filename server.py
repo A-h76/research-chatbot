@@ -1123,6 +1123,60 @@ class EvidenceExtractionRun(Base):
     finished_at = Column(DateTime, nullable=True)
 
 
+class ReviewerRun(Base):
+    """Durable Research Reviewer run (A-401 / EPIC-0005 A-503).
+
+    Distinct from ClaimReview (human EvidenceObject accept/reject).
+    Soft Integer FKs — ownership checked in the evidence blueprint.
+    """
+
+    __tablename__ = "reviewer_runs"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    project_id = Column(Integer, nullable=False)
+    document_id = Column(Integer, nullable=False)
+    document_version_no = Column(Integer, default=1)
+    writing_version = Column(String(40), default="")
+    reviewer_version = Column(String(40), nullable=False)
+    binder_version = Column(String(40), default="")
+    status = Column(String(20), nullable=False)
+    pass_rate = Column(Float, default=0.0)
+    sections_checked = Column(Integer, default=0)
+    sections_passed = Column(Integer, default=0)
+    issue_count = Column(Integer, default=0)
+    metrics_json = Column(Text, default="{}")
+    input_snapshot_json = Column(Text, default="{}")
+    model_version_id = Column(Integer, nullable=True)
+    prompt_version_id = Column(Integer, nullable=True)
+    prompt_meta_json = Column(Text, default="{}")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    finished_at = Column(DateTime, nullable=True)
+
+
+class ReviewerFinding(Base):
+    """One finding row belonging to a ReviewerRun (reconstructable history)."""
+
+    __tablename__ = "reviewer_findings"
+    id = Column(Integer, primary_key=True)
+    run_id = Column(Integer, nullable=False)
+    code = Column(String(80), nullable=False)
+    severity = Column(String(20), nullable=False)
+    message = Column(Text, default="")
+    section_id = Column(String(120), nullable=True)
+    block_id = Column(String(120), default="")
+    range_start = Column(Integer, nullable=True)
+    range_end = Column(Integer, nullable=True)
+    selected_text = Column(Text, default="")
+    evidence_ids_json = Column(Text, default="[]")
+    confidence_band = Column(String(20), default="")
+    recommendation = Column(Text, default="")
+    status = Column(String(20), default="open")  # open|accepted|dismissed|fixed
+    resolution_rationale = Column(Text, default="")
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class ProjectQuestion(Base):
     """Research question scoped to a project (Sprint A).
 
@@ -3677,22 +3731,16 @@ def _enqueue_job(db, user_id, file_id, job_type, upload_batch_id=None):
     (import → phase1_analysis → paper_analysis) the same way instead of
     spawning threads. Does not commit: caller folds this into its own
     transaction."""
-    job = UploadJob(
-        upload_batch_id=upload_batch_id,
-        file_id=file_id,
+    from backend.jobs.outbox import enqueue_upload_job_with_outbox
+
+    job = enqueue_upload_job_with_outbox(
+        db,
+        UploadJob=UploadJob,
+        OutboxEvent=OutboxEvent,
         user_id=user_id,
+        file_id=file_id,
         job_type=job_type,
-        status="pending",
-    )
-    db.add(job)
-    db.flush()  # assigns job.id
-    db.add(
-        OutboxEvent(
-            aggregate_type="upload_job",
-            aggregate_id=job.id,
-            event_type="job.enqueued",
-            payload=json.dumps({"file_id": file_id}),
-        )
+        upload_batch_id=upload_batch_id,
     )
     return job.id
 
@@ -3739,26 +3787,35 @@ def _get_redis():
         return None
 
 
-def _set_job_status_cache(job_id, status, progress, updated_at, user_id):
-    """user_id is cached alongside status/progress/updated_at — not part
-    of the spec'd hash shape, but a cache-hit response still has to pass
-    the same ownership check every other route in this app does, and that
-    needs user_id available without a Postgres round-trip (defeating the
-    point of the cache) to check it against."""
+def _set_job_status_cache(job_id, status=None, progress=None, updated_at=None, user_id=None, *, payload=None):
+    """Cache job status hash for GET /api/jobs/<id>/status.
+
+    Preferred path: `_cache_upload_job_status(job)` → `payload=` + `user_id`.
+    Legacy positional `(job_id, status, progress, updated_at, user_id)` still works.
+    """
     r = _get_redis()
     if not r:
         return
     key = f"job:{job_id}:status"
     try:
-        r.hset(
-            key,
-            mapping={
-                "status": status,
-                "progress": progress,
+        from backend.jobs.observability import job_status_cache_mapping
+
+        if payload is not None:
+            if user_id is None:
+                raise ValueError("user_id required when caching job status payload")
+            mapping = job_status_cache_mapping(payload, user_id=int(user_id))
+        else:
+            mapping = {
+                "status": str(status or ""),
+                "progress": str(int(progress or 0)),
                 "updated_at": updated_at.isoformat() if updated_at else "",
-                "user_id": user_id,
-            },
-        )
+                "user_id": str(int(user_id)),
+                "job_type": "",
+                "attempts": "0",
+                "last_error": "",
+                "payload_json": "",
+            }
+        r.hset(key, mapping=mapping)
         r.expire(key, JOB_STATUS_CACHE_TTL_SECONDS)
     except Exception:
         logging.getLogger(__name__).warning("job-status cache write failed", exc_info=True)
@@ -3774,6 +3831,14 @@ def _get_job_status_cache(job_id):
     except Exception:
         logging.getLogger(__name__).warning("job-status cache read failed", exc_info=True)
         return None
+
+
+def _cache_upload_job_status(job):
+    """Write full A-404 status payload into Redis from an UploadJob row."""
+    from backend.jobs.observability import DEFAULT_MAX_ATTEMPTS, serialize_job_status
+
+    payload = serialize_job_status(job, max_attempts=DEFAULT_MAX_ATTEMPTS, cached=False)
+    _set_job_status_cache(job.id, payload=payload, user_id=job.user_id)
 
 
 # Small static per-model price table (USD per 1K tokens) — update by hand
@@ -3966,241 +4031,39 @@ def _process_document(db, uf, path, name, mime, job_id=None, on_processed=None):
             raise  # let the queue worker's own try/except apply retry/backoff
 
 
-@app.route("/api/files", methods=["POST"])
-@login_required
-@limiter.limit("60 per hour")
-def upload_file():
-    """Validate, store, and enqueue — nothing else. Extraction/chunking/
-    embedding happen in the queue worker (same as confirm_upload): this
-    route's only job is to commit an UploadJob + its OutboxEvent in the
-    same transaction as the file row, so a Queue Worker polling
-    upload_jobs/outbox_events can pick the work up. Replaces the old
-    threading.Thread(daemon=True) call — that approach had a real gap
-    this closes: if the process died between committing the file row and
-    starting the thread, the work was silently lost forever. Here, either
-    the whole transaction commits (job + event together) or none of it
-    does — there is no window where a job exists without the event that
-    will get it picked up."""
-    f = request.files.get("file")
-    if not f or not f.filename:
-        return jsonify({"error": "no_file"}), 400
-    name = f.filename
-    try:
-        ext = validate_extension(name, allowed=ALLOWED_EXTENSIONS)
-    except UploadValidationError as e:
-        log_security_event("invalid_mime", code=e.code, filename=name, message=e.message)
-        return jsonify({"error": e.code, "detail": e.message}), 400
+# ── A-302 File Processing: direct upload + job status ─────────────────────
+from backend.upload.processing_routes import create_processing_upload_blueprint
 
-    conversation_id = request.form.get("conversation_id", type=int)
-    project_id = request.form.get("project_id", type=int)
-    batch_id = request.form.get("batch_id", type=int)  # not sent by any UI yet
-    disk_name = uuid.uuid4().hex + ext
-    # Saved locally only long enough to size-check, hash, sniff, and upload —
-    # extraction no longer happens in this request. Removed in the
-    # `finally` below either way.
-    path = os.path.join(UPLOAD_DIR, disk_name)
-    f.save(path)
-    size = os.path.getsize(path)
-    try:
-        _, mime = validate_upload_path(
-            path,
-            name,
-            allowed=ALLOWED_EXTENSIONS,
-            size_bytes=size,
-            max_mb=MAX_FILE_MB,
-        )
-    except UploadValidationError as e:
-        event = "virus_detected" if e.code == "virus_detected" else "invalid_mime"
-        log_security_event(event, code=e.code, filename=name, message=e.message)
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-        return jsonify({"error": e.code, "detail": e.message}), 400
-
-    kind = kind_for_extension(ext)
-
-    checksum = storage.sha256_file(path)
-    uid = session["user_id"]
-
-    db = SessionLocal()
-    try:
-        project_id, project_denied = resolve_owned_project_id(db, Project, project_id, uid)
-        if project_denied:
-            log_security_event(
-                "authz_denied",
-                resource="project",
-                action="upload",
-                user_id=uid,
-                project_id=request.form.get("project_id"),
-            )
-        # Duplicate detection: this exact content already lives in the
-        # user's library — skip the storage upload and the queue entirely
-        # and hand back the existing file instead of paying for either.
-        dup = _find_duplicate_file(db, uid, checksum)
-        if dup:
-            result = _file_to_dict(dup)
-            result["note"] = None
-            result["duplicate"] = True
-            return jsonify(result)
-
-        try:
-            storage.upload(disk_name, path)
-        except Exception:
-            logging.exception("storage upload failed for %s", disk_name)
-            return jsonify({"error": "storage_unavailable"}), 502
-
-        # ---- everything below is one transaction: batch, quota check,
-        # file row, job, outbox event, and the usage counter all commit
-        # together or none of them do. ----
-
-        # One batch per request today — no bulk-upload UI passes batch_id
-        # yet (upload-ux.md's Bulk Upload page is what will start sending
-        # one), so this just groups a single file under its own batch.
-        batch = db.get(UploadBatch, batch_id) if batch_id else None
-        if not batch or batch.user_id != uid:
-            batch = UploadBatch(
-                user_id=uid,
-                project_id=project_id,
-                conversation_id=conversation_id,
-                source="library",
-                file_count=0,
-            )
-            db.add(batch)
-            db.flush()  # assigns batch.id without committing yet
-        batch.file_count = (batch.file_count or 0) + 1
-
-        usage = db.get(StorageUsage, uid)
-        already_used = usage.bytes_used if usage else 0
-        # Same limit QuotaService.check_storage_quota() uses for
-        # /api/documents/upload (per-user override, DEFAULT_STORAGE_LIMIT_BYTES
-        # otherwise) — this used to compare against the standalone
-        # MAX_STORAGE_MB env var instead, which defaults to 5000 MB vs
-        # QuotaService's ~1000 MB default: two routes silently enforcing
-        # different limits, not really "the same limit, two code paths" as
-        # once believed. Checked inline against the same `db` session/
-        # transaction rather than via quota_service.check_storage_quota()
-        # itself — that call opens its own session, which would lose the
-        # atomicity _adjust_storage_usage()'s docstring depends on (this
-        # check rolling back the batch/file inserts together on failure).
-        user_row = db.get(User, uid)
-        limit_bytes = (user_row.storage_limit_bytes if user_row else None) or quota_service.DEFAULT_STORAGE_LIMIT_BYTES
-        if already_used + size > limit_bytes:
-            db.rollback()  # undoes the batch insert/increment above too
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-            return (
-                jsonify(
-                    {
-                        "error": "storage_quota_exceeded",
-                        "detail": f"Storage limit is {limit_bytes // (1024 * 1024)} MB",
-                    }
-                ),
-                403,
-            )
-
-        uf = UserFile(
-            user_id=uid,
-            project_id=project_id,
-            conversation_id=conversation_id,
-            name=name[:300],
-            mime=mime,
-            kind=kind,
-            path=disk_name,
-            size=size,
-            checksum_sha256=checksum,
-        )
-        db.add(uf)
-        db.flush()  # assigns uf.id
-
-        # Images never went through the import pipeline (no extraction/
-        # chunking/embedding applies — they're sent as vision input at
-        # chat time instead), same as the old `if kind == "document":
-        # _process_document(...)` guard. No job, no event, for an image.
-        job_id = None
-        if kind == "document":
-            job = UploadJob(
-                upload_batch_id=batch.id,
-                file_id=uf.id,
-                user_id=uid,
-                job_type="import",
-                status="pending",
-            )
-            db.add(job)
-            db.flush()  # assigns job.id
-            job_id = job.id
-
-            db.add(
-                OutboxEvent(
-                    aggregate_type="upload_job",
-                    aggregate_id=job.id,
-                    event_type="job.enqueued",
-                    payload=json.dumps({"file_id": uf.id}),
-                )
-            )
-
-        _adjust_storage_usage(db, uid, delta_bytes=size, delta_files=1)
-
-        db.commit()
-
-        result = _file_to_dict(uf)
-        result["note"] = None
-        result["job_id"] = job_id
-        return jsonify(result)
-    finally:
-        db.close()
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-
-
-@app.route("/api/jobs/<int:job_id>/status")
-@login_required
-def job_status(job_id):
-    """Frontend status polling. Checks Redis first; on a cache miss, reads
-    upload_jobs (the source of truth) and populates the cache for next
-    time. A cache hit still needs the ownership check every route in this
-    app does — see _set_job_status_cache's note on why user_id rides
-    along in the cached hash instead of triggering a Postgres lookup just
-    for that."""
-    cached = _get_job_status_cache(job_id)
-    if cached:
-        if int(cached.get("user_id", 0)) != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        return jsonify(
-            {
-                "job_id": job_id,
-                "status": cached.get("status"),
-                "progress": int(cached.get("progress") or 0),
-                "updated_at": cached.get("updated_at") or None,
-                "cached": True,
-            }
-        )
-
-    db = SessionLocal()
-    try:
-        job = db.get(UploadJob, job_id)
-        if not job or job.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        # No granular checkpoint/percentage exists yet (that's the Step
-        # Runner's job — processing-pipeline-architecture.md §5, not built)
-        # — 100 once done, 0 otherwise is what's honestly available today.
-        progress = 100 if job.status == "done" else 0
-        _set_job_status_cache(job_id, job.status, progress, job.updated_at, job.user_id)
-        return jsonify(
-            {
-                "job_id": job_id,
-                "status": job.status,
-                "progress": progress,
-                "updated_at": job.updated_at.isoformat() if job.updated_at else None,
-                "cached": False,
-            }
-        )
-    finally:
-        db.close()
+app.register_blueprint(
+    create_processing_upload_blueprint(
+        SessionLocal=SessionLocal,
+        Project=Project,
+        User=User,
+        UserFile=UserFile,
+        UploadBatch=UploadBatch,
+        UploadJob=UploadJob,
+        OutboxEvent=OutboxEvent,
+        StorageUsage=StorageUsage,
+        ALLOWED_EXTENSIONS=ALLOWED_EXTENSIONS,
+        MAX_FILE_MB=MAX_FILE_MB,
+        upload_dir=UPLOAD_DIR,
+        storage=storage,
+        login_required=login_required,
+        limiter=limiter,
+        resolve_owned_project_id=resolve_owned_project_id,
+        log_security_event=log_security_event,
+        find_duplicate_file=lambda *a, **k: _find_duplicate_file(*a, **k),
+        file_to_dict=lambda *a, **k: _file_to_dict(*a, **k),
+        validate_extension=validate_extension,
+        UploadValidationError=UploadValidationError,
+        validate_upload_path=lambda *a, **k: validate_upload_path(*a, **k),
+        kind_for_extension=kind_for_extension,
+        adjust_storage_usage=lambda *a, **k: _adjust_storage_usage(*a, **k),
+        get_job_status_cache=lambda *a, **k: _get_job_status_cache(*a, **k),
+        set_job_status_cache=lambda job: _cache_upload_job_status(job),
+        default_storage_limit_bytes=quota_service.DEFAULT_STORAGE_LIMIT_BYTES,
+    )
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -4220,313 +4083,37 @@ def job_status(job_id):
 # ══════════════════════════════════════════════════════════════════════════
 
 
-@app.route("/api/uploads/presign", methods=["POST"])
-@login_required
-@limiter.limit("60 per hour")
-def presign_upload():
-    data = request.get_json(force=True, silent=True) or {}
-    name = (data.get("filename") or "").strip()
-    mime = data.get("mime") or "application/octet-stream"
-    size = int(data.get("size") or 0)
-    checksum = (data.get("checksum_sha256") or "").strip().lower() or None
-    project_id = data.get("project_id")
-    conversation_id = data.get("conversation_id")
+from backend.upload.presign_routes import create_presign_upload_blueprint
 
-    if not name or size <= 0:
-        return jsonify({"error": "invalid_request"}), 400
-    if size > MAX_UPLOAD_BYTES:
-        return (
-            jsonify({"error": "too_large", "detail": f"Max file size is {MAX_FILE_MB} MB"}),
-            400,
-        )
-    try:
-        ext = validate_extension(name, allowed=ALLOWED_EXTENSIONS)
-        from backend.upload.magic_bytes import CANONICAL_MIME
-
-        mime = CANONICAL_MIME.get(ext, mime)
-    except UploadValidationError as e:
-        log_security_event("invalid_mime", code=e.code, filename=name, message=e.message)
-        return jsonify({"error": e.code, "detail": e.message}), 400
-
-    db = SessionLocal()
-    try:
-        project_id, project_denied = resolve_owned_project_id(
-            db, Project, project_id, session["user_id"]
-        )
-        if project_denied:
-            log_security_event(
-                "authz_denied",
-                resource="project",
-                action="presign",
-                user_id=session["user_id"],
-                project_id=data.get("project_id"),
-            )
-
-        if checksum:
-            dup = _find_duplicate_file(db, session["user_id"], checksum)
-            if dup:
-                # Client already has the bytes we'd need — nothing to
-                # upload at all.
-                return jsonify({"duplicate": True, "file": _file_to_dict(dup)})
-
-        provider = storage.storage_manager.provider
-        key = storage.storage_manager.new_key(os.path.splitext(name.lower())[1])
-        use_multipart = provider.supports_multipart and size > MULTIPART_THRESHOLD_BYTES
-
-        us = UploadSession(
-            user_id=session["user_id"],
-            project_id=project_id,
-            conversation_id=conversation_id,
-            key=key,
-            name=name[:300],
-            mime=mime,
-            size_expected=size,
-            checksum_sha256=checksum,
-            status="pending",
-        )
-        db.add(us)
-        db.commit()
-
-        if use_multipart:
-            upload_id = provider.create_multipart_upload(key, mime)
-            us.upload_id = upload_id
-            db.commit()
-            part_count = math.ceil(size / UPLOAD_PART_BYTES)
-            parts = [
-                {
-                    "part_number": i + 1,
-                    "url": provider.presigned_part_url(key, upload_id, i + 1),
-                }
-                for i in range(part_count)
-            ]
-            return jsonify(
-                {
-                    "mode": "multipart",
-                    "session_id": us.id,
-                    "key": key,
-                    "upload_id": upload_id,
-                    "part_size": UPLOAD_PART_BYTES,
-                    "parts": parts,
-                }
-            )
-
-        put_url = provider.presigned_put_url(key, mime, expires_in=UPLOAD_SESSION_TTL_SECONDS)
-        return jsonify({"mode": "single", "session_id": us.id, "key": key, "put_url": put_url})
-    finally:
-        db.close()
-
-
-@app.route("/api/uploads/multipart/complete", methods=["POST"])
-@login_required
-def complete_multipart_upload_route():
-    data = request.get_json(force=True, silent=True) or {}
-    session_id = data.get("session_id")
-    parts = data.get("parts") or []
-
-    db = SessionLocal()
-    try:
-        us = db.get(UploadSession, session_id)
-        if not us or us.user_id != session["user_id"] or not us.upload_id:
-            return jsonify({"error": "not_found"}), 404
-
-        provider = storage.storage_manager.provider
-        try:
-            provider.complete_multipart_upload(
-                us.key,
-                us.upload_id,
-                [storage.UploadPart(part_number=p["part_number"], etag=p["etag"]) for p in parts],
-            )
-        except Exception:
-            logging.exception("multipart complete failed for session %s", session_id)
-            provider.abort_multipart_upload(us.key, us.upload_id)
-            us.status = "aborted"
-            db.commit()
-            return jsonify({"error": "multipart_complete_failed"}), 502
-
-        us.status = "uploaded"
-        db.commit()
-        return jsonify({"ok": True})
-    finally:
-        db.close()
-
-
-@app.route("/api/uploads/confirm", methods=["POST"])
-@login_required
-@limiter.limit("60 per hour")
-def confirm_upload():
-    """Verify the presigned object, create the file row, and enqueue import.
-
-    Matches ``upload_file()``: no inline extraction/analysis in the request
-    thread. Documents get an ``import`` UploadJob + OutboxEvent; the worker
-    chain is ``import → phase1_analysis → paper_analysis``.
-    """
-    data = request.get_json(force=True, silent=True) or {}
-    session_id = data.get("session_id")
-    content_md5_b64 = data.get("content_md5_b64")
-
-    db = SessionLocal()
-    try:
-        us = db.get(UploadSession, session_id)
-        if not us or us.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        if us.status == "confirmed":
-            return jsonify({"error": "already_confirmed"}), 409
-
-        provider = storage.storage_manager.provider
-        info = provider.head(us.key)
-        if info is None:
-            return jsonify({"error": "object_not_found"}), 400
-        if us.size_expected and info.size != us.size_expected:
-            return jsonify({"error": "size_mismatch"}), 400
-
-        # Whole-file checksum verification only applies to single-part
-        # uploads — a multipart ETag is a hash of the part hashes, not an
-        # MD5 of the object. Multipart corruption is instead caught
-        # per-part, at upload time, by the Content-MD5 each PUT already
-        # carried (R2/S3 reject a part outright if it doesn't match).
-        if content_md5_b64 and not us.upload_id and info.etag:
-            expected_hex = binascii.hexlify(base64.b64decode(content_md5_b64)).decode()
-            if expected_hex != info.etag:
-                provider.delete(us.key)
-                us.status = "aborted"
-                db.commit()
-                return jsonify({"error": "checksum_mismatch"}), 400
-
-        # Re-check dedup at confirm time too: two presigns for the same
-        # content can race ahead of each other between presign and confirm.
-        if us.checksum_sha256:
-            dup = _find_duplicate_file(db, session["user_id"], us.checksum_sha256)
-            if dup:
-                provider.delete(us.key)
-                us.status = "confirmed"
-                db.commit()
-                result = _file_to_dict(dup)
-                result["note"] = None
-                result["duplicate"] = True
-                return jsonify(result)
-
-        lower = us.name.lower()
-        ext = os.path.splitext(lower)[1]
-        try:
-            validate_extension(us.name, allowed=ALLOWED_EXTENSIONS)
-        except UploadValidationError as e:
-            provider.delete(us.key)
-            us.status = "aborted"
-            db.commit()
-            log_security_event("invalid_mime", code=e.code, filename=us.name, message=e.message)
-            return jsonify({"error": e.code, "detail": e.message}), 400
-
-        # Sniff + optional ClamAV on a local copy before we commit the file row.
-        try:
-            with provider.local_copy(us.key, suffix=ext or ".bin") as local_path:
-                _, sniffed_mime = validate_upload_path(
-                    local_path,
-                    us.name,
-                    allowed=ALLOWED_EXTENSIONS,
-                    size_bytes=info.size,
-                    max_mb=MAX_FILE_MB,
-                )
-        except UploadValidationError as e:
-            provider.delete(us.key)
-            us.status = "aborted"
-            db.commit()
-            log_security_event("invalid_mime", code=e.code, filename=us.name, message=e.message)
-            return jsonify({"error": e.code, "detail": e.message}), 400
-        except Exception:
-            logging.exception("upload confirm content validation failed for session %s", session_id)
-            provider.delete(us.key)
-            us.status = "aborted"
-            db.commit()
-            return jsonify({"error": "validation_failed"}), 502
-
-        kind = kind_for_extension(ext)
-        uid = session["user_id"]
-        uf = UserFile(
-            user_id=uid,
-            project_id=us.project_id,
-            conversation_id=us.conversation_id,
-            name=us.name,
-            mime=sniffed_mime,
-            kind=kind,
-            path=us.key,
-            size=info.size,
-            checksum_sha256=us.checksum_sha256,
-        )
-        db.add(uf)
-        db.flush()  # assigns uf.id
-        us.status = "confirmed"
-        _adjust_storage_usage(db, uid, delta_bytes=info.size, delta_files=1)
-
-        job_id = None
-        if kind == "document":
-            batch = UploadBatch(
-                user_id=uid,
-                project_id=us.project_id,
-                conversation_id=us.conversation_id,
-                source="presign",
-                file_count=1,
-            )
-            db.add(batch)
-            db.flush()
-            job_id = _enqueue_job(db, uid, uf.id, "import", upload_batch_id=batch.id)
-
-        db.commit()
-
-        result = _file_to_dict(uf)
-        result["note"] = None
-        result["job_id"] = job_id
-        return jsonify(result)
-    finally:
-        db.close()
-
-
-@app.route("/api/uploads/local-put/<key>", methods=["PUT"])
-def local_upload_put(key):
-    """Only meaningful when LocalProvider is active — gives local/dev
-    deployments the same presigned-URL shape as R2 without a real object
-    store to bypass. Auth is the signed token itself, not the session
-    cookie, matching how a real presigned URL works (no login required to
-    use it, just possession of the URL)."""
-    provider = storage.storage_manager.provider
-    if not hasattr(provider, "verify_token"):
-        return jsonify({"error": "not_supported"}), 404
-    try:
-        payload = provider.verify_token(request.args.get("token", ""), max_age=UPLOAD_SESSION_TTL_SECONDS)
-    except ValueError:
-        return jsonify({"error": "invalid_token"}), 403
-    if payload.get("key") != key:
-        return jsonify({"error": "invalid_token"}), 403
-
-    tmp_path = os.path.join(UPLOAD_DIR, "put_" + uuid.uuid4().hex)
-    try:
-        with open(tmp_path, "wb") as out:
-            shutil.copyfileobj(request.stream, out)
-        provider.upload(key, tmp_path)
-    finally:
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
-    return jsonify({"ok": True})
-
-
-@app.route("/api/uploads/local-get/<key>")
-def local_upload_get(key):
-    provider = storage.storage_manager.provider
-    if not hasattr(provider, "verify_token"):
-        return jsonify({"error": "not_supported"}), 404
-    try:
-        payload = provider.verify_token(request.args.get("token", ""), max_age=300)
-    except ValueError:
-        return jsonify({"error": "invalid_token"}), 403
-    if payload.get("key") != key:
-        return jsonify({"error": "invalid_token"}), 403
-    return send_file(
-        provider.path_for(key),
-        mimetype=payload.get("mime"),
-        download_name=payload.get("name"),
-        as_attachment=True,
+app.register_blueprint(
+    create_presign_upload_blueprint(
+        SessionLocal=SessionLocal,
+        Project=Project,
+        UploadSession=UploadSession,
+        UploadBatch=UploadBatch,
+        UserFile=UserFile,
+        ALLOWED_EXTENSIONS=ALLOWED_EXTENSIONS,
+        MAX_UPLOAD_BYTES=MAX_UPLOAD_BYTES,
+        MAX_FILE_MB=MAX_FILE_MB,
+        MULTIPART_THRESHOLD_BYTES=MULTIPART_THRESHOLD_BYTES,
+        UPLOAD_PART_BYTES=UPLOAD_PART_BYTES,
+        UPLOAD_SESSION_TTL_SECONDS=UPLOAD_SESSION_TTL_SECONDS,
+        storage=storage,
+        login_required=login_required,
+        limiter=limiter,
+        resolve_owned_project_id=resolve_owned_project_id,
+        log_security_event=log_security_event,
+        find_duplicate_file=_find_duplicate_file,
+        file_to_dict=_file_to_dict,
+        validate_extension=validate_extension,
+        UploadValidationError=UploadValidationError,
+        validate_upload_path=lambda *args, **kwargs: validate_upload_path(*args, **kwargs),
+        kind_for_extension=kind_for_extension,
+        adjust_storage_usage=_adjust_storage_usage,
+        enqueue_job=_enqueue_job,
+        upload_dir=UPLOAD_DIR,
     )
+)
 
 
 # ------------------------------------------------------------------ storage maintenance CLI
@@ -4598,1020 +4185,76 @@ def reconcile_storage_cmd(apply):
 # ══════════════════════════════════════════════════════════════════════════
 
 
-@app.route("/api/files", methods=["GET"])
-@login_required
-def list_files():
-    """Knowledge Library listing — SQL-backed search, filters, pagination.
+from backend.library.library_overview_routes import create_library_overview_blueprint
 
-    Query params (all optional):
-      project_id      int     – scope to one project (0 = unassigned)
-      kind            str     – document | image
-      reading_status  str     – unread | reading | read
-      meta_status     str     – done | pending | running | failed
-      tag             str     – repeat for AND tag match
-      q               str     – full-text + field syntax (doi:, author:, title:, year:, venue:, tag:)
-      title, author, doi, year, venue, journal
-      year_from, year_to
-      import_source   str     – zotero | bibtex | ris | discover | upload | import
-      collection_id   int     – papers in this Library collection
-      recent_days     int     – added within N days
-      sort            str     – recent | title | authors | year | reading_status | size
-      order           str     – asc | desc
-      limit           int     – default 50, max 500
-      offset          int
-    """
-    from backend.library.search import params_from_request, search_library
-
-    uid = session["user_id"]
-    params = params_from_request(request.args, uid)
-    if params.collection_id:
-        file_ids = _collection_service.file_ids_in_collection(uid, params.collection_id)
-        if file_ids is None:
-            return jsonify({"error": "collection_not_found"}), 404
-        params.file_ids = file_ids
-    db = SessionLocal()
-    try:
-        total, page = search_library(db, UserFile, params)
-        return jsonify(
-            {
-                "total": total,
-                "offset": params.offset,
-                "limit": params.limit,
-                "items": [_file_to_dict(x) for x in page],
-            }
-        )
-    finally:
-        db.close()
+app.register_blueprint(
+    create_library_overview_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        PaperAnalysis=PaperAnalysis,
+        Conversation=Conversation,
+        Citation=Citation,
+        Project=Project,
+        select_fn=select,
+        login_required=login_required,
+        file_to_dict=_file_to_dict,
+        collection_service=_collection_service,
+    )
+)
 
 
-@app.route("/api/library/tags", methods=["GET"])
-@login_required
-def library_tags():
-    """Return all unique tags the user has applied, with usage counts.
+from backend.library.file_detail_routes import create_file_detail_blueprint
 
-    Optional ?project_id=<id> to scope to one project.
-    Response: [{tag, count}] sorted by count desc.
-    """
-    uid = session["user_id"]
-    project_id_raw = request.args.get("project_id")
-    db = SessionLocal()
-    try:
-        q_stmt = select(UserFile).where(
-            UserFile.user_id == uid,
-            UserFile.tags.isnot(None),
-        )
-        if project_id_raw is not None:
-            try:
-                pid = int(project_id_raw)
-                q_stmt = q_stmt.where(UserFile.project_id == pid if pid else UserFile.project_id.is_(None))
-            except (TypeError, ValueError):
-                pass
-
-        files = db.execute(q_stmt).scalars().all()
-        counts: dict[str, int] = {}
-        for f in files:
-            try:
-                for t in json.loads(f.tags or "[]"):
-                    if t:
-                        counts[t] = counts.get(t, 0) + 1
-            except Exception:
-                pass
-
-        result = sorted(
-            [{"tag": t, "count": c} for t, c in counts.items()],
-            key=lambda x: -x["count"],
-        )
-        return jsonify(result)
-    finally:
-        db.close()
-
-
-@app.route("/api/library/stats", methods=["GET"])
-@login_required
-def library_stats():
-    """Aggregate counts used by the Research Dashboard (Milestone 8).
-
-    Optional ?project_id=<id> to scope to one project.
-
-    Response:
-      total_papers    – documents only
-      total_images    – images only
-      unread          – reading_status = unread
-      reading         – reading_status = reading
-      read            – reading_status = read
-      analysis_done   – PaperAnalysis rows with status = done
-      analysis_pending– rows with status = pending | running
-      top_tags        – [{tag, count}] top 5
-    """
-    uid = session["user_id"]
-    project_id_raw = request.args.get("project_id")
-    db = SessionLocal()
-    try:
-        q_stmt = select(UserFile).where(UserFile.user_id == uid)
-        if project_id_raw is not None:
-            try:
-                pid = int(project_id_raw)
-                q_stmt = q_stmt.where(UserFile.project_id == pid if pid else UserFile.project_id.is_(None))
-            except (TypeError, ValueError):
-                pass
-
-        files = db.execute(q_stmt).scalars().all()
-        docs = [f for f in files if f.kind == "document"]
-        images = [f for f in files if f.kind == "image"]
-
-        rs_counts: dict[str, int] = {"unread": 0, "reading": 0, "read": 0}
-        tag_counts: dict[str, int] = {}
-        for f in docs:
-            rs = f.reading_status or "unread"
-            if rs in rs_counts:
-                rs_counts[rs] += 1
-            try:
-                for t in json.loads(f.tags or "[]"):
-                    if t:
-                        tag_counts[t] = tag_counts.get(t, 0) + 1
-            except Exception:
-                pass
-
-        # Analysis counts — query PaperAnalysis for the relevant file ids
-        doc_ids = [f.id for f in docs]
-        analyses_done = 0
-        analyses_pending = 0
-        if doc_ids:
-            pas = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id.in_(doc_ids))).scalars().all()
-            analyses_done = sum(1 for p in pas if p.status == "done")
-            analyses_pending = sum(1 for p in pas if p.status in ("pending", "running"))
-
-        top_tags = sorted(
-            [{"tag": t, "count": c} for t, c in tag_counts.items()],
-            key=lambda x: -x["count"],
-        )[:5]
-
-        return jsonify(
-            {
-                "total_papers": len(docs),
-                "total_images": len(images),
-                "unread": rs_counts["unread"],
-                "reading": rs_counts["reading"],
-                "read": rs_counts["read"],
-                "analysis_done": analyses_done,
-                "analysis_pending": analyses_pending,
-                "top_tags": top_tags,
-            }
-        )
-    finally:
-        db.close()
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# RESEARCH WORKSPACE — Milestone 8: Dashboard API
-# ══════════════════════════════════════════════════════════════════════════
-
-
-@app.route("/api/dashboard", methods=["GET"])
-@login_required
-def dashboard():
-    """Single-call summary for the Research Dashboard.
-
-    Returns everything the dashboard needs in one request to avoid
-    waterfall fetches on page load.
-
-    Response shape:
-      library         – library stats (total_papers, reading/unread/read counts, top_tags)
-      recent_papers   – last 5 uploaded documents [{id,name,title,authors,year,
-                         reading_status,meta_status,created_at}]
-      current_papers  – papers currently being read (reading_status=reading, limit 5)
-      recent_chats    – last 5 conversations [{id,title,updated_at,file_id}]
-      recent_citations– last 5 citations [{id,title,authors,year}]
-      projects        – [{id,name,emoji,paper_count,chat_count}]
-    """
-    uid = session["user_id"]
-    db = SessionLocal()
-    try:
-        # ── Files ───────────────────────────────────────────────────────────
-        all_files = db.execute(select(UserFile).where(UserFile.user_id == uid)).scalars().all()
-        docs = [f for f in all_files if f.kind == "document"]
-        rs_cnt = {"unread": 0, "reading": 0, "read": 0}
-        tag_cnt: dict[str, int] = {}
-        for f in docs:
-            rs = f.reading_status or "unread"
-            if rs in rs_cnt:
-                rs_cnt[rs] += 1
-            try:
-                for t in json.loads(f.tags or "[]"):
-                    if t:
-                        tag_cnt[t] = tag_cnt.get(t, 0) + 1
-            except Exception:
-                pass
-
-        def _paper_brief(f):
-            return {
-                "id": f.id,
-                "name": f.name,
-                "title": f.title or "",
-                "authors": f.authors or "",
-                "year": f.year or "",
-                "reading_status": f.reading_status or "unread",
-                "meta_status": f.meta_status or "pending",
-                "created_at": f.created_at.isoformat() if f.created_at else None,
-            }
-
-        # Sort by created_at descending for recent papers
-        sorted_docs = sorted(
-            docs,
-            key=lambda f: f.created_at or datetime.min,
-            reverse=True,
-        )
-        recent_papers = [_paper_brief(f) for f in sorted_docs[:5]]
-        current_papers = [_paper_brief(f) for f in sorted_docs if (f.reading_status or "unread") == "reading"][:5]
-
-        top_tags = sorted(
-            [{"tag": t, "count": c} for t, c in tag_cnt.items()],
-            key=lambda x: -x["count"],
-        )[:5]
-
-        analysed = sum(1 for f in docs if (f.meta_status or "") == "done")
-        processing = sum(
-            1 for f in docs if (f.meta_status or "") in ("pending", "running")
-        )
-
-        library = {
-            "total_papers": len(docs),
-            "unread": rs_cnt["unread"],
-            "reading": rs_cnt["reading"],
-            "read": rs_cnt["read"],
-            "analysed": analysed,
-            "processing": processing,
-            "top_tags": top_tags,
-        }
-
-        # ── Conversations ────────────────────────────────────────────────────
-        convos = (
-            db.execute(select(Conversation).where(Conversation.user_id == uid).order_by(Conversation.updated_at.desc()))
-            .scalars()
-            .all()
-        )
-        recent_chats = [
-            {
-                "id": c.id,
-                "title": c.title or "Untitled chat",
-                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
-                "file_id": c.file_id,
-                "project_id": c.project_id,
-            }
-            for c in convos[:5]
-        ]
-
-        # ── Citations ────────────────────────────────────────────────────────
-        cites = (
-            db.execute(select(Citation).where(Citation.user_id == uid).order_by(Citation.created_at.desc()))
-            .scalars()
-            .all()
-        )
-        recent_citations = [{"id": c.id, "title": c.title, "authors": c.authors, "year": c.year} for c in cites[:5]]
-
-        # ── Projects ─────────────────────────────────────────────────────────
-        projects = db.execute(select(Project).where(Project.user_id == uid)).scalars().all()
-        file_proj_cnt = {}
-        for f in docs:
-            if f.project_id:
-                file_proj_cnt[f.project_id] = file_proj_cnt.get(f.project_id, 0) + 1
-        convo_proj_cnt = {}
-        for c in convos:
-            if c.project_id:
-                convo_proj_cnt[c.project_id] = convo_proj_cnt.get(c.project_id, 0) + 1
-
-        projects_out = [
-            {
-                "id": p.id,
-                "name": p.name,
-                "emoji": p.emoji,
-                "paper_count": file_proj_cnt.get(p.id, 0),
-                "chat_count": convo_proj_cnt.get(p.id, 0),
-            }
-            for p in projects
-        ]
-
-        return jsonify(
-            {
-                "library": library,
-                "recent_papers": recent_papers,
-                "current_papers": current_papers,
-                "recent_chats": recent_chats,
-                "recent_citations": recent_citations,
-                "projects": projects_out,
-            }
-        )
-    finally:
-        db.close()
-
-
-@app.route("/api/files/<int:fid>", methods=["GET"])
-@login_required
-def get_file(fid):
-    """Return full metadata for a single file, including analysis status.
-
-    When the paper belongs to a project, includes a nested ``project``
-    brief so the Paper Workspace can show Project → Paper (not Library → Paper).
-    """
-    db = SessionLocal()
-    try:
-        x = db.get(UserFile, fid)
-        if not x or x.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        payload = _file_to_dict(x)
-        if x.project_id:
-            p = db.get(Project, x.project_id)
-            if p and p.user_id == session["user_id"]:
-                payload["project"] = {
-                    "id": p.id,
-                    "name": p.name,
-                    "emoji": p.emoji or "📁",
-                }
-            else:
-                payload["project"] = None
-        else:
-            payload["project"] = None
-        return jsonify(payload)
-    finally:
-        db.close()
-
-
-@app.route("/api/files/<int:fid>", methods=["PATCH"])
-@login_required
-def patch_file(fid):
-    """Update user-editable metadata: title, authors, year, venue, doi,
-    abstract, reading_status, tags.  All fields optional.  Returns the
-    full updated file dict so the frontend can replace its cached value."""
-    data = request.get_json(silent=True) or {}
-    db = SessionLocal()
-    try:
-        x = db.get(UserFile, fid)
-        if not x or x.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-
-        if "title" in data:
-            x.title = str(data["title"])[:500]
-        if "authors" in data:
-            x.authors = str(data["authors"])[:1000]
-        if "year" in data:
-            y = _re_meta.search(r"(19|20)\d{2}", str(data["year"]) or "")
-            x.year = y.group(0) if y else ""
-        if "venue" in data:
-            x.venue = str(data["venue"])[:300]
-        if "doi" in data:
-            x.doi = str(data["doi"])[:200]
-        if "abstract" in data:
-            x.abstract = str(data["abstract"])[:8000]
-        if "reading_status" in data:
-            rs = data["reading_status"]
-            if rs in ("unread", "reading", "read"):
-                x.reading_status = rs
-        if "tags" in data:
-            tags = [str(t)[:80] for t in (data["tags"] or []) if t][:30]
-            x.tags = json.dumps(tags)
-
-        db.commit()
-        return jsonify(_file_to_dict(x))
-    finally:
-        db.close()
-
-
-@app.route("/api/files/<int:fid>/analysis", methods=["GET"])
-@login_required
-def get_analysis(fid):
-    """Return the cached paper analysis for one file.
-
-    Possible status values the frontend should handle:
-      pending  – file was just uploaded; background job not started yet
-      running  – model call in progress
-      done     – analysis ready; 'data' contains the 14 fields
-      failed   – something went wrong; 'error' has details
-      none     – file is not a text document (image, scanned PDF, etc.)
-    """
-    db = SessionLocal()
-    try:
-        uf = db.get(UserFile, fid)
-        if not uf or uf.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-
-        if uf.kind == "image" or uf.text_len == 0:
-            return jsonify(
-                {
-                    "file_id": fid,
-                    "status": "none",
-                    "error": "no text content",
-                    "model": "",
-                    "data": {},
-                    "updated_at": None,
-                }
-            )
-
-        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
-
-        if pa is None:
-            # No record yet — enqueue the worker chain and return pending.
-            # phase1_analysis chains to paper_analysis when done (or immediately
-            # if Phase 1 is already cached for this content_hash).
-            h = uf.content_hash or ""
-            if not h:
-                with storage.local_copy(uf.path) as local_path:
-                    text = extract_text(local_path, uf.mime, uf.name)
-                if text:
-                    h = _sha256(text)
-                    uf.content_hash = h
-            _enqueue_job(db, uf.user_id, fid, "phase1_analysis")
-            db.commit()
-            return jsonify(
-                {
-                    "file_id": fid,
-                    "status": "pending",
-                    "error": "",
-                    "model": "",
-                    "data": {},
-                    "updated_at": None,
-                }
-            )
-
-        return jsonify(_analysis_to_dict(pa))
-    finally:
-        db.close()
-
-
-@app.route("/api/files/<int:fid>/analysis/refresh", methods=["POST"])
-@login_required
-def refresh_analysis(fid):
-    """Force-regenerate the analysis for a file, ignoring the cached version.
-
-    Useful after the user edits a document or when the first run failed.
-    The response immediately returns {status: "running"} while the background
-    job proceeds; the frontend should poll GET /analysis until status=='done'.
-    """
-    db = SessionLocal()
-    try:
-        uf = db.get(UserFile, fid)
-        if not uf or uf.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        if uf.kind == "image" or uf.text_len == 0:
-            return jsonify({"error": "no_text_content"}), 400
-
-        # Wipe the cached hash so the worker doesn't short-circuit
-        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
-        if pa:
-            pa.content_hash = ""
-            pa.status = "pending"
-        else:
-            pa = PaperAnalysis(file_id=fid, user_id=uf.user_id, status="pending")
-            db.add(pa)
-
-        with storage.local_copy(uf.path) as local_path:
-            text = extract_text(local_path, uf.mime, uf.name)
-        h = _sha256(text) if text else ""
-        if h:
-            uf.content_hash = h
-        _enqueue_job(db, uf.user_id, fid, "paper_analysis")
-        db.commit()
-        return jsonify({"ok": True, "status": "running"})
-    finally:
-        db.close()
-
-
-@app.route("/api/files/<int:fid>/raw")
-@login_required
-def file_raw(fid):
-    db = SessionLocal()
-    try:
-        x = db.get(UserFile, fid)
-        if not x or x.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        # Metadata-only Discover stubs have no stored bytes — redirect to
-        # the external OA / DOI link instead of asking storage for a path.
-        if not (x.path or "").strip():
-            external = (getattr(x, "source_url", None) or "").strip()
-            if not external and (x.doi or "").strip():
-                external = f"https://doi.org/{(x.doi or '').strip()}"
-            if external:
-                return redirect(external)
-            return jsonify({"error": "no_file_bytes", "message": "Metadata-only entry — upload a PDF to open locally."}), 404
-        url = storage.presigned_url(x.path, x.name, x.mime or "application/octet-stream")
-        return redirect(url)
-    finally:
-        db.close()
-
-
-@app.route("/api/files/<int:fid>", methods=["DELETE"])
-@login_required
-def delete_file(fid):
-    db = SessionLocal()
-    try:
-        x = db.get(UserFile, fid)
-        if not x or x.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        if (x.path or "").strip():
-            storage.delete(x.path)
-        db.delete(x)
-        _adjust_storage_usage(db, session["user_id"], delta_bytes=-(x.size or 0), delta_files=-1)
-        db.commit()
-        return jsonify({"ok": True})
-    finally:
-        db.close()
+app.register_blueprint(
+    create_file_detail_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        Project=Project,
+        PaperAnalysis=PaperAnalysis,
+        select_fn=select,
+        login_required=login_required,
+        limiter=limiter,
+        storage=storage,
+        extract_text=extract_text,
+        sha256_fn=_sha256,
+        enqueue_job=_enqueue_job,
+        adjust_storage_usage=_adjust_storage_usage,
+        file_to_dict=_file_to_dict,
+        analysis_to_dict=_analysis_to_dict,
+        app_logger=app.logger,
+    )
+)
 
 
 # ── Scholarly provider endpoints ─────────────────────────────────────────────
+from backend.library.discover_routes import create_discover_blueprint
 
-@app.route("/api/discover", methods=["GET"])
-@login_required
-def scholarly_discover():
-    """Search papers via OpenAlex.
+app.register_blueprint(
+    create_discover_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        Project=Project,
+        select_fn=select,
+        login_required=login_required,
+        file_to_dict=_file_to_dict,
+        app_logger=app.logger,
+    )
+)
 
-    GET /api/discover?q=<query>&page=1&per_page=15
-    Returns [{doi, title, authors, year, venue, abstract, citation_count,
-              open_access_url, concepts, source}]
-    Identical search queries are cached 30 min.
-    """
-    from backend.scholarly import provider_enabled
-    from backend.scholarly.openalex import search_works
+from backend.projects.notes_routes import create_notes_blueprint
 
-    if not provider_enabled("openalex"):
-        return jsonify({
-            "error": "discover_disabled",
-            "message": "OpenAlex Discover is temporarily disabled.",
-            "results": [],
-        }), 503
-
-    query = (request.args.get("q") or "").strip()
-    if not query:
-        return jsonify({"error": "q is required"}), 400
-    page = max(1, int(request.args.get("page", 1)))
-    per_page = min(20, max(1, int(request.args.get("per_page", 15))))
-    db = SessionLocal()
-    try:
-        works = search_works(query, page=page, per_page=per_page, db=db)
-        return jsonify({
-            "results": [
-                {
-                    "id": w.id,
-                    "doi": w.doi,
-                    "title": w.title,
-                    "authors": w.authors,
-                    "year": w.year,
-                    "venue": w.venue,
-                    "abstract": w.abstract,
-                    "citation_count": w.citation_count,
-                    "open_access_url": w.open_access_url,
-                    "concepts": w.concepts,
-                    "source": w.source,
-                }
-                for w in works
-            ],
-            "page": page,
-            "per_page": per_page,
-        })
-    except Exception as exc:
-        app.logger.warning("scholarly_discover failed: %s", exc)
-        return jsonify({
-            "error": "discover_unavailable",
-            "message": "Discover is temporarily unavailable.",
-            "results": [],
-        }), 503
-    finally:
-        db.close()
-
-
-@app.route("/api/discover/import", methods=["POST"])
-@login_required
-def scholarly_discover_import():
-    """Add an OpenAlex Discover result to the library as a metadata-only stub.
-
-    No PDF is fetched. Phase 1 / RAG stay unavailable until the user uploads
-    a PDF later. Dedupes by (user_id, doi) when a DOI is present.
-    """
-    from backend.scholarly import provider_enabled
-    from backend.scholarly.crossref import enrich_file_from_doi
-
-    if not provider_enabled("openalex"):
-        return jsonify({
-            "error": "discover_disabled",
-            "message": "OpenAlex Discover is temporarily disabled.",
-        }), 503
-
-    body = request.get_json(silent=True) or {}
-    title = (body.get("title") or "").strip()
-    doi = (body.get("doi") or "").strip().removeprefix("https://doi.org/").removeprefix("http://doi.org/")
-    authors = (body.get("authors") or "").strip()
-    year_raw = body.get("year")
-    year = str(year_raw).strip()[:10] if year_raw not in (None, "") else ""
-    venue = (body.get("venue") or "").strip()
-    abstract = (body.get("abstract") or "").strip()
-    open_access_url = (body.get("open_access_url") or "").strip()
-    openalex_id = (body.get("openalex_id") or body.get("id") or "").strip()
-    project_id = body.get("project_id")
-    # Shared import pipeline entry: discover | related (Semantic Scholar).
-    import_source = (body.get("import_source") or "discover").strip().lower()
-    if import_source not in ("discover", "related", "openalex"):
-        import_source = "discover"
-
-    if not title and not doi:
-        return jsonify({"error": "title_or_doi_required"}), 400
-
-    uid = session["user_id"]
-    db = SessionLocal()
-    try:
-        if project_id is not None:
-            try:
-                project_id = int(project_id)
-            except (TypeError, ValueError):
-                project_id = None
-            if project_id is not None:
-                proj = db.get(Project, project_id)
-                if not proj or proj.user_id != uid:
-                    return jsonify({"error": "project_not_found"}), 404
-
-        if doi:
-            existing = db.execute(
-                select(UserFile).where(
-                    UserFile.user_id == uid,
-                    UserFile.doi == doi,
-                )
-            ).scalars().first()
-            if existing:
-                return jsonify({
-                    "already_exists": True,
-                    "file": _file_to_dict(existing),
-                })
-
-        display_name = (title or f"openalex:{openalex_id}" or "openalex-import")[:300]
-        tags = ["from-related"] if import_source == "related" else ["from-discover"]
-        if openalex_id:
-            # Related imports pass s2:<paperId>; Discover passes OpenAlex ids.
-            if openalex_id.startswith("s2:"):
-                tags.append(openalex_id[:80])
-            else:
-                tags.append(f"openalex:{openalex_id[:80]}")
-
-        uf = UserFile(
-            user_id=uid,
-            project_id=project_id,
-            conversation_id=None,
-            name=display_name,
-            mime="",
-            kind="document",
-            path="",
-            size=0,
-            title=(title or display_name)[:500],
-            authors=authors[:1000],
-            year=year,
-            venue=venue[:300],
-            doi=doi[:200],
-            abstract=abstract[:8000],
-            reading_status="unread",
-            tags=json.dumps(tags),
-            meta_status="done",
-            metadata_source="openalex",
-            source_url=open_access_url[:500],
-            doi_verified=False,
-        )
-        db.add(uf)
-        db.flush()
-
-        # Soft Crossref verify when DOI is known — never blocks import.
-        if doi:
-            try:
-                enrich_file_from_doi(db, uf.id)
-                db.refresh(uf)
-            except Exception as cx_exc:
-                app.logger.warning(
-                    "discover import crossref enrich skipped file_id=%s: %s", uf.id, cx_exc
-                )
-
-        db.commit()
-        return jsonify({
-            "already_exists": False,
-            "file": _file_to_dict(uf),
-        }), 201
-    except Exception as exc:
-        db.rollback()
-        app.logger.warning("scholarly_discover_import failed: %s", exc)
-        return jsonify({"error": "import_failed"}), 500
-    finally:
-        db.close()
-
-@app.route("/api/files/<int:fid>/related", methods=["GET"])
-@login_required
-def scholarly_related(fid):
-    """Return related / citing / recommended papers from Semantic Scholar.
-
-    GET /api/files/<fid>/related
-    Cache: 7 days per file.
-    Returns {related, citing, recommended, cached_at, provider_version} | 503.
-    """
-    from backend.scholarly import provider_enabled
-    from backend.scholarly.semantic_scholar import get_related_papers
-
-    if not provider_enabled("semantic_scholar"):
-        return jsonify({
-            "error": "related_disabled",
-            "message": "Related papers are temporarily disabled.",
-            "related": [], "citing": [], "recommended": [],
-        }), 503
-
-    db = SessionLocal()
-    try:
-        uf = db.get(UserFile, fid)
-        if not uf or uf.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        bundle = get_related_papers(
-            file_id=fid,
-            doi=uf.doi or None,
-            title=uf.title or uf.name or None,
-            db=db,
-        )
-        if bundle is None:
-            return jsonify({
-                "error": "related_unavailable",
-                "message": "Recommendations temporarily unavailable.",
-                "related": [], "citing": [], "recommended": [],
-            }), 503
-
-        def _s2_to_dict(p):
-            return {
-                "paper_id": p.paper_id,
-                "doi": p.doi,
-                "title": p.title,
-                "authors": p.authors,
-                "year": p.year,
-                "venue": p.venue,
-                "abstract": p.abstract,
-                "citation_count": p.citation_count,
-                "open_access_url": p.open_access_url,
-                "source": p.source,
-            }
-
-        return jsonify({
-            "related": [_s2_to_dict(p) for p in bundle.related],
-            "citing": [_s2_to_dict(p) for p in bundle.citing],
-            "recommended": [_s2_to_dict(p) for p in bundle.recommended],
-            "cached_at": bundle.cached_at,
-            "provider_version": bundle.provider_version,
-        })
-    except Exception as exc:
-        app.logger.warning("scholarly_related fid=%s failed: %s", fid, exc)
-        return jsonify({
-            "error": "related_unavailable",
-            "related": [], "citing": [], "recommended": [],
-        }), 503
-    finally:
-        db.close()
-
-
-@app.route("/api/files/<int:fid>/citation", methods=["GET"])
-@login_required
-def scholarly_citation(fid):
-    """Return a verified Crossref citation for a paper.
-
-    GET /api/files/<fid>/citation?style=apa  (apa|ieee|bibtex|mla)
-    Returns {citation, source, verified}
-    """
-    from backend.scholarly.crossref import format_citation
-    style = (request.args.get("style") or "apa").lower()
-    if style not in ("apa", "ieee", "bibtex", "mla"):
-        return jsonify({"error": "unsupported style"}), 400
-    db = SessionLocal()
-    try:
-        uf = db.get(UserFile, fid)
-        if not uf or uf.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        doi = (uf.doi or "").strip()
-        if not doi:
-            return jsonify({
-                "citation": "",
-                "source": "ai",
-                "verified": False,
-                "message": "No DOI — use AI-generated citation.",
-            })
-        result = format_citation(doi, style, db)
-        return jsonify(result)
-    except Exception as exc:
-        app.logger.warning("scholarly_citation fid=%s failed: %s", fid, exc)
-        return jsonify({"citation": "", "source": "ai", "verified": False}), 503
-    finally:
-        db.close()
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# RESEARCH WORKSPACE — Milestone 10: Notes API
-# ══════════════════════════════════════════════════════════════════════════
-
-
-def _note_to_dict(n):
-    """Serialise a Note row to the public API shape."""
-    return {
-        "id": n.id,
-        "title": n.title or "",
-        "content": n.content or "",
-        "project_id": n.project_id,
-        "file_id": n.file_id,
-        "created_at": n.created_at.isoformat() if n.created_at else None,
-        "updated_at": n.updated_at.isoformat() if n.updated_at else None,
-    }
-
-
-@app.route("/api/notes", methods=["GET"])
-@login_required
-def list_notes():
-    """List notes for the current user.
-
-    Query params (all optional):
-      project_id  int   – filter to one project (0 = unassigned)
-      file_id     int   – filter to one paper (paper-level notes)
-      q           str   – substring search in title + content
-      limit       int   – max rows (default 200, max 500)
-      offset      int   – pagination offset
-    """
-    uid = session["user_id"]
-    args = request.args
-
-    project_id_raw = args.get("project_id")
-    file_id_raw = args.get("file_id", type=int)
-    q = args.get("q", "").strip().lower() or None
-    try:
-        limit = max(1, min(500, int(args.get("limit", 200))))
-        offset = max(0, int(args.get("offset", 0)))
-    except (TypeError, ValueError):
-        limit, offset = 200, 0
-
-    db = SessionLocal()
-    try:
-        stmt = select(Note).where(Note.user_id == uid)
-
-        if project_id_raw is not None:
-            try:
-                pid = int(project_id_raw)
-                stmt = stmt.where(Note.project_id == pid if pid else Note.project_id.is_(None))
-            except (TypeError, ValueError):
-                pass
-
-        if file_id_raw is not None:
-            stmt = stmt.where(Note.file_id == file_id_raw)
-
-        notes = db.execute(stmt.order_by(Note.updated_at.desc())).scalars().all()
-
-        # Full-text search (Python side for SQLite portability)
-        if q:
-            notes = [n for n in notes if q in (n.title or "").lower() or q in (n.content or "").lower()]
-
-        total = len(notes)
-        page = notes[offset : offset + limit]
-
-        return jsonify(
-            {
-                "total": total,
-                "offset": offset,
-                "limit": limit,
-                "items": [_note_to_dict(n) for n in page],
-            }
-        )
-    finally:
-        db.close()
-
-
-@app.route("/api/notes", methods=["POST"])
-@login_required
-def create_note():
-    """Create a new note.
-
-    Body:
-      title       str   – note heading (optional, defaults to '')
-      content     str   – note body (required, min 1 char after strip)
-      project_id  int   – scope to a project (nullable)
-      file_id     int   – attach to a paper (nullable)
-    """
-    data = request.get_json(silent=True) or {}
-    uid = session["user_id"]
-
-    content = str(data.get("content") or "").strip()
-    if not content:
-        return (
-            jsonify({"error": "content_required", "detail": "Note content cannot be empty."}),
-            400,
-        )
-
-    title = str(data.get("title") or "")[:300]
-    project_id = data.get("project_id")
-    file_id = data.get("file_id")
-
-    db = SessionLocal()
-    try:
-        # Validate project ownership
-        if project_id:
-            project_id, denied = resolve_owned_project_id(db, Project, project_id, uid)
-            if denied:
-                log_security_event(
-                    "authz_denied",
-                    resource="project",
-                    action="create_note",
-                    user_id=uid,
-                    project_id=data.get("project_id"),
-                )
-
-        # Validate file ownership
-        if file_id:
-            f = db.get(UserFile, file_id)
-            if not f or f.user_id != uid:
-                file_id = None
-            elif not project_id and f.project_id:
-                inherited, inherited_denied = resolve_owned_project_id(
-                    db, Project, f.project_id, uid
-                )
-                if inherited_denied:
-                    log_security_event(
-                        "authz_denied",
-                        resource="project",
-                        action="create_note_inherit",
-                        user_id=uid,
-                        project_id=f.project_id,
-                        file_id=file_id,
-                    )
-                project_id = inherited
-
-        n = Note(
-            user_id=uid,
-            title=title,
-            content=content[:50000],
-            project_id=project_id,
-            file_id=file_id,
-        )
-        db.add(n)
-        db.commit()
-        return jsonify(_note_to_dict(n)), 201
-    finally:
-        db.close()
-
-
-@app.route("/api/notes/<int:nid>", methods=["GET"])
-@login_required
-def get_note(nid):
-    db = SessionLocal()
-    try:
-        n = db.get(Note, nid)
-        if not n or n.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        return jsonify(_note_to_dict(n))
-    finally:
-        db.close()
-
-
-@app.route("/api/notes/<int:nid>", methods=["PATCH"])
-@login_required
-def update_note(nid):
-    """Update title and/or content of a note. Returns the full updated note."""
-    data = request.get_json(silent=True) or {}
-    db = SessionLocal()
-    try:
-        n = db.get(Note, nid)
-        if not n or n.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        if "title" in data:
-            n.title = str(data["title"] or "")[:300]
-        if "content" in data:
-            n.content = str(data["content"] or "")[:50000]
-        # Allow re-scoping
-        if "project_id" in data:
-            pid = data["project_id"]
-            if pid is None:
-                n.project_id = None
-            else:
-                p = db.get(Project, pid)
-                if p and p.user_id == session["user_id"]:
-                    n.project_id = pid
-        if "file_id" in data:
-            fid = data["file_id"]
-            if fid is None:
-                n.file_id = None
-            else:
-                f = db.get(UserFile, fid)
-                if f and f.user_id == session["user_id"]:
-                    n.file_id = fid
-        # Manually bump updated_at (SQLite onupdate doesn't fire on session.commit)
-        n.updated_at = datetime.now(timezone.utc)
-        db.commit()
-        return jsonify(_note_to_dict(n))
-    finally:
-        db.close()
-
-
-@app.route("/api/notes/<int:nid>", methods=["DELETE"])
-@login_required
-def delete_note(nid):
-    db = SessionLocal()
-    try:
-        n = db.get(Note, nid)
-        if not n or n.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        db.delete(n)
-        db.commit()
-        return jsonify({"ok": True})
-    finally:
-        db.close()
+app.register_blueprint(
+    create_notes_blueprint(
+        SessionLocal=SessionLocal,
+        Note=Note,
+        Project=Project,
+        UserFile=UserFile,
+        select_fn=select,
+        login_required=login_required,
+        resolve_owned_project_id=resolve_owned_project_id,
+        log_security_event=log_security_event,
+    )
+)
 
 
 def _doc_hash(content: str) -> str:
@@ -5716,363 +4359,39 @@ def _emit_writing_observability(event_name: str, *, uid: int, doc: WritingDocume
     )
 
 
-@app.route("/api/writing/documents", methods=["GET"])
-@login_required
-def list_writing_documents():
-    uid = session["user_id"]
-    args = request.args
-    project_id_raw = args.get("project_id")
-    include_archived = str(args.get("include_archived") or "").lower() in {"1", "true", "yes"}
-    include_deleted = str(args.get("include_deleted") or "").lower() in {"1", "true", "yes"}
-    try:
-        status_filter = normalize_status_filter(args.get("status"))
-    except WritingDomainError as exc:
-        return jsonify({"error": exc.code, "detail": exc.detail}), 400
-    try:
-        limit = max(1, min(200, int(args.get("limit", 50))))
-    except (TypeError, ValueError):
-        limit = 50
+from backend.writing.api.document_routes import create_writing_document_blueprint
 
-    db = SessionLocal()
-    try:
-        stmt = select(WritingDocument).where(WritingDocument.user_id == uid)
-        if not include_archived:
-            stmt = stmt.where(WritingDocument.status != "archived")
-        if not include_deleted:
-            stmt = stmt.where(WritingDocument.status != "deleted")
-        if project_id_raw is None:
-            return jsonify({"error": "project_id_required", "detail": "project_id is required."}), 400
-        try:
-            pid = int(project_id_raw)
-        except (TypeError, ValueError):
-            return jsonify({"error": "invalid_project_id"}), 400
-        try:
-            require_owned_project(db, Project, user_id=uid, project_id=pid)
-        except WritingDomainError:
-            return jsonify({"error": "not_found"}), 404
-        stmt = stmt.where(WritingDocument.project_id == pid)
-        if status_filter:
-            stmt = stmt.where(WritingDocument.status == status_filter)
-        docs = db.execute(stmt.order_by(WritingDocument.updated_at.desc()).limit(limit)).scalars().all()
-        return jsonify({"items": [_writing_doc_to_dict(d) for d in docs], "count": len(docs)})
-    finally:
-        db.close()
-
-
-@app.route("/api/writing/documents", methods=["POST"])
-@login_required
-@limiter.limit("30 per hour")
-def create_writing_document():
-    uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
-    try:
-        normalized = normalize_document_mutation(
-            str(data.get("title") or "Untitled draft"),
-            str(data.get("content") or ""),
-        )
-    except WritingDomainError as exc:
-        return jsonify({"error": exc.code, "detail": exc.detail}), 400
-    title = normalized.title or "Untitled draft"
-    content = normalized.content
-    editor_kind = normalize_editor_kind(data.get("editor_kind"))
-
-    project_id = data.get("project_id")
-    if project_id is None:
-        return jsonify({"error": "project_id_required", "detail": "Documents must belong to a project."}), 400
-    db = SessionLocal()
-    try:
-        project_id, denied = resolve_owned_project_id(db, Project, project_id, uid)
-        if denied or project_id is None:
-            log_security_event(
-                "authz_denied",
-                resource="project",
-                action="create_writing_document",
-                user_id=uid,
-                project_id=data.get("project_id"),
-            )
-            return jsonify({"error": "forbidden"}), 403
-
-        doc = WritingDocument(
-            user_id=uid,
-            project_id=project_id,
-            title=title,
-            content=content,
-            editor_kind=editor_kind,
-            current_version=1,
-            last_saved_hash=_doc_hash(content),
-            word_count=_word_count(content),
-            status="draft",
-        )
-        db.add(doc)
-        db.flush()
-        _append_document_version(db, uid=uid, doc=doc, source="create")
-        _log_document_activity(db, uid=uid, document_id=doc.id, action="create")
-        db.commit()
-        _emit_writing_observability("DocumentCreated", uid=uid, doc=doc)
-        return jsonify(_writing_doc_to_dict(doc)), 201
-    finally:
-        db.close()
-
-
-@app.route("/api/writing/documents/<int:doc_id>", methods=["GET"])
-@login_required
-def get_writing_document(doc_id):
-    db = SessionLocal()
-    try:
-        try:
-            doc = require_owned_document(
-                db,
-                WritingDocument,
-                user_id=session["user_id"],
-                document_id=doc_id,
-            )
-        except WritingDomainError:
-            return jsonify({"error": "not_found"}), 404
-        doc.last_opened_at = datetime.now(timezone.utc)
-        db.commit()
-        return jsonify(_writing_doc_to_dict(doc))
-    finally:
-        db.close()
-
-
-@app.route("/api/writing/documents/<int:doc_id>", methods=["PATCH"])
-@login_required
-@limiter.limit("120 per hour")
-def update_writing_document(doc_id):
-    uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
-    db = SessionLocal()
-    try:
-        try:
-            doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=doc_id)
-        except WritingDomainError:
-            return jsonify({"error": "not_found"}), 404
-
-        client_version = data.get("current_version")
-        if client_version is not None and int(client_version) != int(doc.current_version or 1):
-            log_security_event(
-                "version_conflict",
-                resource="writing_document",
-                action="update_writing_document",
-                user_id=uid,
-                document_id=doc_id,
-            )
-            return jsonify(build_version_conflict_payload(int(doc.current_version or 1))), 409
-
-        if (doc.status or "") == "deleted" and any(k in data for k in ("title", "content", "editor_kind")):
-            return jsonify({"error": "validation_error", "detail": "deleted_documents_are_read_only"}), 400
-
-        if "title" in data:
-            try:
-                normalized = normalize_document_mutation(str(data.get("title") or ""), doc.content or "")
-            except WritingDomainError as exc:
-                return jsonify({"error": exc.code, "detail": exc.detail}), 400
-            doc.title = normalized.title
-        if "editor_kind" in data:
-            doc.editor_kind = normalize_editor_kind(data.get("editor_kind"))
-        if "status" in data:
-            status = str(data.get("status") or "draft").strip().lower()
-            try:
-                _apply_writing_status_transition(doc, status)
-            except WritingDomainError as exc:
-                return jsonify({"error": exc.code, "detail": exc.detail}), 400
-        if "project_id" in data:
-            raw_pid = data.get("project_id")
-            if raw_pid is None:
-                return jsonify({"error": "project_id_required"}), 400
-            pid, denied = resolve_owned_project_id(db, Project, raw_pid, uid)
-            if denied or pid is None:
-                return jsonify({"error": "forbidden"}), 403
-            doc.project_id = pid
-        if "content" in data:
-            try:
-                normalized = normalize_document_mutation(doc.title or "", str(data.get("content") or ""))
-            except WritingDomainError as exc:
-                return jsonify({"error": exc.code, "detail": exc.detail}), 400
-            next_content = normalized.content
-            next_hash = _doc_hash(next_content)
-            if next_hash != (doc.last_saved_hash or ""):
-                doc.content = next_content
-                doc.last_saved_hash = next_hash
-                doc.word_count = _word_count(next_content)
-                doc.current_version = next_version_number(doc.current_version)
-                _append_document_version(db, uid=uid, doc=doc, source="save")
-                if doc.status == "draft":
-                    _apply_writing_status_transition(doc, "active")
-
-        doc.updated_at = datetime.now(timezone.utc)
-        _log_document_activity(db, uid=uid, document_id=doc.id, action="update")
-        db.commit()
-        _emit_writing_observability("DocumentUpdated", uid=uid, doc=doc)
-        return jsonify(_writing_doc_to_dict(doc))
-    finally:
-        db.close()
-
-
-@app.route("/api/writing/documents/<int:doc_id>/autosave", methods=["POST"])
-@login_required
-@limiter.limit("120 per hour")
-def autosave_writing_document(doc_id):
-    uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
-    db = SessionLocal()
-    try:
-        try:
-            doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=doc_id)
-        except WritingDomainError:
-            return jsonify({"error": "not_found"}), 404
-
-        try:
-            idempotency_key = normalize_idempotency_key(data.get("idempotency_key"))
-        except WritingDomainError as exc:
-            return jsonify({"error": exc.code, "detail": exc.detail}), 400
-
-        if is_idempotent_replay(doc.last_autosave_key, idempotency_key):
-            _emit_writing_observability(
-                "DocumentAutosaveReplay",
-                uid=uid,
-                doc=doc,
-                metadata={"idempotency_key": idempotency_key},
-            )
-            return jsonify(
-                {
-                    "ok": True,
-                    "unchanged": True,
-                    "idempotent_replay": True,
-                    "document": _writing_doc_to_dict(doc),
-                }
-            )
-
-        client_version = data.get("current_version")
-        if client_version is not None and int(client_version) != int(doc.current_version or 1):
-            return jsonify(build_version_conflict_payload(int(doc.current_version or 1))), 409
-
-        if (doc.status or "") == "deleted":
-            return jsonify({"error": "validation_error", "detail": "deleted_documents_are_read_only"}), 400
-
-        try:
-            normalized = normalize_document_mutation(
-                str(data.get("title") or doc.title or ""),
-                str(data.get("content") or ""),
-            )
-        except WritingDomainError as exc:
-            return jsonify({"error": exc.code, "detail": exc.detail}), 400
-        next_content = normalized.content
-        next_title = normalized.title
-        next_hash = _doc_hash(next_content)
-        changed = next_hash != (doc.last_saved_hash or "") or next_title != (doc.title or "")
-        if not changed:
-            return jsonify({"ok": True, "unchanged": True, "document": _writing_doc_to_dict(doc)})
-
-        doc.content = next_content
-        doc.title = next_title
-        doc.last_saved_hash = next_hash
-        doc.last_autosave_key = idempotency_key
-        doc.word_count = _word_count(next_content)
-        doc.current_version = next_version_number(doc.current_version)
-        doc.updated_at = datetime.now(timezone.utc)
-        if doc.status == "draft":
-            _apply_writing_status_transition(doc, "active")
-        _append_document_version(db, uid=uid, doc=doc, source="autosave")
-        _log_document_activity(
-            db,
-            uid=uid,
-            document_id=doc.id,
-            action="autosave",
-            meta={"bytes": len(next_content)},
-        )
-        db.commit()
-        _emit_writing_observability(
-            "DocumentAutosaved",
-            uid=uid,
-            doc=doc,
-            metadata={"idempotency_key": idempotency_key},
-        )
-        return jsonify(
-            {
-                "ok": True,
-                "unchanged": False,
-                "idempotent_replay": False,
-                "document": _writing_doc_to_dict(doc),
-            }
-        )
-    finally:
-        db.close()
-
-
-@app.route("/api/writing/documents/<int:doc_id>/versions", methods=["GET"])
-@login_required
-def list_writing_document_versions(doc_id):
-    uid = session["user_id"]
-    db = SessionLocal()
-    try:
-        try:
-            require_owned_document(db, WritingDocument, user_id=uid, document_id=doc_id)
-        except WritingDomainError:
-            return jsonify({"error": "not_found"}), 404
-        versions = (
-            db.execute(
-                select(WritingDocumentVersion)
-                .where(WritingDocumentVersion.document_id == doc_id, WritingDocumentVersion.user_id == uid)
-                .order_by(WritingDocumentVersion.version_no.desc())
-                .limit(100)
-            )
-            .scalars()
-            .all()
-        )
-        return jsonify({"items": [_writing_doc_version_to_dict(v) for v in versions], "count": len(versions)})
-    finally:
-        db.close()
-
-
-@app.route("/api/writing/documents/<int:doc_id>/restore", methods=["POST"])
-@login_required
-@limiter.limit("30 per hour")
-def restore_writing_document_version(doc_id):
-    uid = session["user_id"]
-    data = request.get_json(silent=True) or {}
-    version_id = data.get("version_id")
-    if not version_id:
-        return jsonify({"error": "version_id_required"}), 400
-
-    db = SessionLocal()
-    try:
-        try:
-            doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=doc_id)
-        except WritingDomainError:
-            return jsonify({"error": "not_found"}), 404
-        if (doc.status or "") == "deleted":
-            return jsonify({"error": "validation_error", "detail": "deleted_documents_cannot_be_restored_in_place"}), 400
-        version = db.get(WritingDocumentVersion, int(version_id))
-        if not version or version.user_id != uid or version.document_id != doc_id:
-            return jsonify({"error": "not_found"}), 404
-
-        doc.title = (version.title or "")[:300]
-        doc.content = (version.content or "")[:200000]
-        doc.last_saved_hash = _doc_hash(doc.content or "")
-        doc.word_count = _word_count(doc.content or "")
-        doc.current_version = next_version_number(doc.current_version)
-        doc.updated_at = datetime.now(timezone.utc)
-        _append_document_version(db, uid=uid, doc=doc, source="restore")
-        _log_document_activity(
-            db,
-            uid=uid,
-            document_id=doc.id,
-            action="restore",
-            meta={"from_version_id": int(version_id)},
-        )
-        db.commit()
-        _emit_writing_observability(
-            "DocumentRestored",
-            uid=uid,
-            doc=doc,
-            metadata={"restored_from_version_id": int(version_id)},
-        )
-        payload = _writing_doc_to_dict(doc)
-        payload["restored_from_version_id"] = int(version_id)
-        return jsonify(payload)
-    finally:
-        db.close()
+app.register_blueprint(
+    create_writing_document_blueprint(
+        SessionLocal=SessionLocal,
+        WritingDocument=WritingDocument,
+        WritingDocumentVersion=WritingDocumentVersion,
+        Project=Project,
+        select_fn=select,
+        login_required=login_required,
+        limiter=limiter,
+        WritingDomainError=WritingDomainError,
+        normalize_status_filter=normalize_status_filter,
+        require_owned_project=require_owned_project,
+        writing_doc_to_dict=_writing_doc_to_dict,
+        normalize_document_mutation=normalize_document_mutation,
+        normalize_editor_kind=normalize_editor_kind,
+        resolve_owned_project_id=resolve_owned_project_id,
+        log_security_event=log_security_event,
+        doc_hash_fn=_doc_hash,
+        word_count_fn=_word_count,
+        append_document_version=_append_document_version,
+        log_document_activity=_log_document_activity,
+        emit_writing_observability=_emit_writing_observability,
+        require_owned_document=require_owned_document,
+        build_version_conflict_payload=build_version_conflict_payload,
+        apply_writing_status_transition=_apply_writing_status_transition,
+        next_version_number=next_version_number,
+        normalize_idempotency_key=normalize_idempotency_key,
+        is_idempotent_replay=is_idempotent_replay,
+        writing_doc_version_to_dict=_writing_doc_version_to_dict,
+    )
+)
 
 
 from backend.analysis_pipeline.persistence import load_analysis_result as _load_analysis_result
@@ -6088,6 +4407,8 @@ app.register_blueprint(
         ClaimReview=ClaimReview,
         WritingSentenceBinding=WritingSentenceBinding,
         EvidenceExtractionRun=EvidenceExtractionRun,
+        ReviewerRun=ReviewerRun,
+        ReviewerFinding=ReviewerFinding,
         AnalysisPipelineResult=AnalysisPipelineResult,
         UploadJob=UploadJob,
         OutboxEvent=OutboxEvent,
@@ -6098,732 +4419,63 @@ app.register_blueprint(
         enqueue_job=_enqueue_job,
         ai_gateway=ai_model_gateway,
         get_model_registry=get_model_registry,
+        PaperAnalysis=PaperAnalysis,
     )
 )
 
 
-# ------------------------------------------------------------------ API: citations
-def bibtex_entry(c):
-    first_author = (c.authors or "anon").split(";")[0].split(",")[0].strip()
-    key = "".join(ch for ch in first_author if ch.isalnum()).lower() + (c.year or "")
-    fields = []
-    if c.authors:
-        fields.append(f"  author = {{{c.authors}}}")
-    if c.title:
-        fields.append(f"  title = {{{c.title}}}")
-    if c.venue:
-        fields.append(f"  journal = {{{c.venue}}}")
-    if c.year:
-        fields.append(f"  year = {{{c.year}}}")
-    if c.doi:
-        fields.append(f"  doi = {{{c.doi}}}")
-    if c.url:
-        fields.append(f"  url = {{{c.url}}}")
-    return "@article{" + (key or "ref") + ",\n" + ",\n".join(fields) + "\n}"
-
-
-def apa_entry(c) -> str:
-    """Format a Citation row as APA 7th edition.
-
-    Pattern: Last, F. M., & Last, F. M. (Year). Title. *Venue*. https://doi.org/DOI
-    """
-    # Build author string: "Last, F." parts joined with ", " and final " & "
-    raw_authors = [a.strip() for a in (c.authors or "").split(";") if a.strip()]
-    if not raw_authors:
-        author_str = "Unknown Author"
-    elif len(raw_authors) == 1:
-        author_str = raw_authors[0]
-    elif len(raw_authors) <= 20:
-        author_str = ", ".join(raw_authors[:-1]) + ", & " + raw_authors[-1]
-    else:
-        # More than 20 authors: first 19, ellipsis, last
-        author_str = ", ".join(raw_authors[:19]) + ", ... " + raw_authors[-1]
-
-    year_part = f"({c.year}). " if c.year else ""
-    title_part = f"{c.title}. " if c.title else ""
-    venue_part = f"*{c.venue}*. " if c.venue else ""
-    doi_part = f"https://doi.org/{c.doi}" if c.doi else (c.url or "")
-
-    return f"{author_str}. {year_part}{title_part}{venue_part}{doi_part}".strip().rstrip(".")
-
-
-def ieee_entry(c) -> str:
-    """Format a Citation row as IEEE style.
-
-    Pattern: [n] F. Last and F. Last, "Title," *Venue*, Year. doi: DOI
-    """
-    raw_authors = [a.strip() for a in (c.authors or "").split(";") if a.strip()]
-
-    def _to_ieee_name(author: str) -> str:
-        """Convert 'Last, First' → 'F. Last'."""
-        parts = [p.strip() for p in author.split(",", 1)]
-        if len(parts) == 2:
-            last, first = parts
-            initials = ". ".join(w[0] for w in first.split() if w) + "."
-            return f"{initials} {last}"
-        return author
-
-    if not raw_authors:
-        author_str = "Unknown"
-    elif len(raw_authors) == 1:
-        author_str = _to_ieee_name(raw_authors[0])
-    elif len(raw_authors) <= 3:
-        names = [_to_ieee_name(a) for a in raw_authors]
-        author_str = " and ".join(names)
-    else:
-        author_str = _to_ieee_name(raw_authors[0]) + " et al."
-
-    title_part = f'"{c.title}," ' if c.title else ""
-    venue_part = f"*{c.venue}*, " if c.venue else ""
-    year_part = f"{c.year}. " if c.year else ""
-    doi_part = f"doi: {c.doi}" if c.doi else (c.url or "")
-
-    return f"{author_str}, {title_part}{venue_part}{year_part}{doi_part}".strip()
-
-
-def format_citation(c, fmt: str = "bibtex") -> str:
-    """Dispatch to the appropriate formatter."""
-    if fmt == "apa":
-        return apa_entry(c)
-    if fmt == "ieee":
-        return ieee_entry(c)
-    return bibtex_entry(c)
-
-
-def _citation_to_dict(c, fmt: str = "bibtex") -> dict:
-    """Unified serialiser for Citation rows."""
-    return {
-        "id": c.id,
-        "authors": c.authors or "",
-        "title": c.title or "",
-        "year": c.year or "",
-        "venue": c.venue or "",
-        "doi": c.doi or "",
-        "url": c.url or "",
-        "notes": c.notes or "",
-        "project_id": c.project_id,
-        "bibtex": bibtex_entry(c),
-        "apa": apa_entry(c),
-        "ieee": ieee_entry(c),
-        "created_at": c.created_at.isoformat() if c.created_at else None,
-    }
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# RESEARCH WORKSPACE — Milestone 13: Citation Manager (APA/IEEE/BibTeX)
-# ══════════════════════════════════════════════════════════════════════════
-
-
-@app.route("/api/citations", methods=["GET"])
-@login_required
-def list_citations():
-    """List citations with optional project_id filter.
-
-    Query params:
-      project_id  int   – scope to one project (0 = unassigned)
-      q           str   – substring search in title/authors/venue
-    """
-    uid = session["user_id"]
-    args = request.args
-    project_id_raw = args.get("project_id")
-    q = args.get("q", "").strip().lower() or None
-
-    db = SessionLocal()
-    try:
-        stmt = select(Citation).where(Citation.user_id == uid)
-        if project_id_raw is not None:
-            try:
-                pid = int(project_id_raw)
-                stmt = stmt.where(Citation.project_id == pid if pid else Citation.project_id.is_(None))
-            except (TypeError, ValueError):
-                pass
-        cits = db.execute(stmt.order_by(Citation.created_at.desc())).scalars().all()
-        if q:
-            cits = [
-                c
-                for c in cits
-                if q in (c.title or "").lower() or q in (c.authors or "").lower() or q in (c.venue or "").lower()
-            ]
-        return jsonify([_citation_to_dict(c) for c in cits])
-    finally:
-        db.close()
-
-
-@app.route("/api/citations", methods=["POST"])
-@login_required
-def create_citation():
-    d = request.get_json(silent=True) or {}
-    uid = session["user_id"]
-    db = SessionLocal()
-    try:
-        # Validate project ownership
-        project_id = d.get("project_id")
-        if project_id:
-            project_id, denied = resolve_owned_project_id(db, Project, project_id, uid)
-            if denied:
-                log_security_event(
-                    "authz_denied",
-                    resource="project",
-                    action="create_citation",
-                    user_id=uid,
-                    project_id=d.get("project_id"),
-                )
-        c = Citation(
-            user_id=uid,
-            project_id=project_id,
-            authors=str(d.get("authors", ""))[:500],
-            title=str(d.get("title", ""))[:500],
-            year=str(d.get("year", ""))[:10],
-            venue=str(d.get("venue", ""))[:300],
-            doi=str(d.get("doi", ""))[:200],
-            url=str(d.get("url", ""))[:600],
-            notes=str(d.get("notes", ""))[:2000],
-        )
-        db.add(c)
-        db.commit()
-        return jsonify(_citation_to_dict(c)), 201
-    finally:
-        db.close()
-
-
-@app.route("/api/citations/<int:cid>", methods=["GET"])
-@login_required
-def get_citation(cid):
-    db = SessionLocal()
-    try:
-        c = db.get(Citation, cid)
-        if not c or c.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        return jsonify(_citation_to_dict(c))
-    finally:
-        db.close()
-
-
-@app.route("/api/citations/<int:cid>/format", methods=["GET"])
-@login_required
-def scholarly_format_citation(cid):
-    """Crossref-verified formatted citation for a citation manager row.
-
-    GET /api/citations/<cid>/format?style=apa  (apa|ieee|bibtex|mla)
-    Returns {citation, source, verified}. Falls back to local AI-style
-    formatting when DOI is missing or Crossref is unavailable.
-    """
-    from backend.scholarly.crossref import format_citation as crossref_format
-
-    style = (request.args.get("style") or "apa").lower()
-    if style not in ("apa", "ieee", "bibtex", "mla"):
-        return jsonify({"error": "unsupported style"}), 400
-
-    db = SessionLocal()
-    try:
-        c = db.get(Citation, cid)
-        if not c or c.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-
-        local = format_citation(c, style if style != "mla" else "apa")
-        doi = (c.doi or "").strip()
-        if not doi:
-            return jsonify({
-                "citation": local,
-                "source": "ai",
-                "verified": False,
-                "message": "No DOI — showing locally formatted citation.",
-            })
-
-        try:
-            result = crossref_format(doi, style, db)
-        except Exception as exc:
-            app.logger.warning("citation format Crossref failed cid=%s: %s", cid, exc)
-            result = None
-
-        if result and result.get("verified") and result.get("citation"):
-            return jsonify(result)
-
-        return jsonify({
-            "citation": local or (result or {}).get("citation") or "",
-            "source": "ai",
-            "verified": False,
-            "message": "Crossref unavailable — showing locally formatted citation.",
-        })
-    finally:
-        db.close()
-
-
-@app.route("/api/citations/<int:cid>", methods=["PATCH"])
-@login_required
-def update_citation(cid):
-    """Edit any field of an existing citation. Returns full updated dict."""
-    d = request.get_json(silent=True) or {}
-    uid = session["user_id"]
-    db = SessionLocal()
-    try:
-        c = db.get(Citation, cid)
-        if not c or c.user_id != uid:
-            return jsonify({"error": "not_found"}), 404
-        for field, maxlen in (
-            ("authors", 500),
-            ("title", 500),
-            ("year", 10),
-            ("venue", 300),
-            ("doi", 200),
-            ("url", 600),
-            ("notes", 2000),
-        ):
-            if field in d:
-                setattr(c, field, str(d[field] or "")[:maxlen])
-        if "project_id" in d:
-            pid = d["project_id"]
-            if pid is None:
-                c.project_id = None
-            else:
-                p = db.get(Project, pid)
-                if p and p.user_id == uid:
-                    c.project_id = pid
-        db.commit()
-        return jsonify(_citation_to_dict(c))
-    finally:
-        db.close()
-
-
-@app.route("/api/citations/<int:cid>", methods=["DELETE"])
-@login_required
-def delete_citation(cid):
-    db = SessionLocal()
-    try:
-        c = db.get(Citation, cid)
-        if not c or c.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        db.delete(c)
-        db.commit()
-        return jsonify({"ok": True})
-    finally:
-        db.close()
-
-
-@app.route("/api/citations/from-paper/<int:fid>", methods=["POST"])
-@login_required
-def citation_from_paper(fid):
-    """Auto-create a citation from a paper's extracted metadata.
-
-    Uses UserFile.title/authors/year/venue/doi to pre-populate the
-    Citation row. Returns the created citation so the frontend can
-    display it immediately. Idempotent: if a citation with the same
-    title already exists for this user, returns the existing one.
-    """
-    uid = session["user_id"]
-    db = SessionLocal()
-    try:
-        uf = db.get(UserFile, fid)
-        if not uf or uf.user_id != uid:
-            return jsonify({"error": "not_found"}), 404
-        if not uf.title:
-            return (
-                jsonify(
-                    {
-                        "error": "no_metadata",
-                        "detail": "This paper has no extracted title yet. " "Wait for metadata extraction to complete.",
-                    }
-                ),
-                400,
-            )
-
-        # Idempotency: don't duplicate if already saved
-        existing = db.execute(
-            select(Citation).where(
-                Citation.user_id == uid,
-                Citation.title == uf.title,
-            )
-        ).scalar_one_or_none()
-        if existing:
-            return jsonify({**_citation_to_dict(existing), "existing": True})
-
-        body = request.get_json(silent=True) or {}
-        raw_project_id = body.get("project_id") if "project_id" in body else uf.project_id
-        project_id, project_denied = resolve_owned_project_id(db, Project, raw_project_id, uid)
-        if project_denied:
-            log_security_event(
-                "authz_denied",
-                resource="project",
-                action="citation_from_paper",
-                user_id=uid,
-                project_id=raw_project_id,
-                file_id=fid,
-            )
-
-        c = Citation(
-            user_id=uid,
-            project_id=project_id,
-            title=uf.title[:500],
-            authors=(uf.authors or "")[:500],
-            year=(uf.year or "")[:10],
-            venue=(uf.venue or "")[:300],
-            doi=(uf.doi or "")[:200],
-            url=(f"https://doi.org/{uf.doi}" if uf.doi else "")[:600],
-            notes="",
-        )
-        db.add(c)
-        db.commit()
-        return jsonify({**_citation_to_dict(c), "existing": False}), 201
-    finally:
-        db.close()
-
-
-@app.route("/api/citations/export")
-@login_required
-def export_citations():
-    """Export citations in BibTeX (default), APA, or IEEE format.
-
-    Query params:
-      format      str   – "bibtex" (default) | "apa" | "ieee"
-      project_id  int   – scope to one project
-    """
-    uid = session["user_id"]
-    fmt = request.args.get("format", "bibtex").lower()
-    project_id_raw = request.args.get("project_id")
-
-    db = SessionLocal()
-    try:
-        stmt = select(Citation).where(Citation.user_id == uid)
-        if project_id_raw is not None:
-            try:
-                pid = int(project_id_raw)
-                stmt = stmt.where(Citation.project_id == pid if pid else Citation.project_id.is_(None))
-            except (TypeError, ValueError):
-                pass
-        cits = db.execute(stmt.order_by(Citation.created_at)).scalars().all()
-
-        if fmt in ("apa", "ieee"):
-            lines = [format_citation(c, fmt) for c in cits]
-            blob = "\n\n".join(lines)
-            mime = "text/plain"
-            fname = f"references-{fmt}.txt"
-        else:
-            blob = "\n\n".join(bibtex_entry(c) for c in cits)
-            mime = "application/x-bibtex"
-            fname = "references.bib"
-
-        return send_file(
-            io.BytesIO(blob.encode("utf-8")),
-            mimetype=mime,
-            as_attachment=True,
-            download_name=fname,
-        )
-    finally:
-        db.close()
-
-
-# ------------------------------------------------------------------ API: projects
-@app.route("/api/projects", methods=["GET"])
-@login_required
-def list_projects():
-    db = SessionLocal()
-    try:
-        projs = (
-            db.execute(select(Project).where(Project.user_id == session["user_id"]).order_by(Project.created_at))
-            .scalars()
-            .all()
-        )
-        return jsonify(
-            [
-                {
-                    "id": p.id,
-                    "name": p.name,
-                    "emoji": p.emoji,
-                    "description": p.description or "",
-                    "instructions": p.instructions or "",
-                }
-                for p in projs
-            ]
-        )
-    finally:
-        db.close()
-
-
-@app.route("/api/projects", methods=["POST"])
-@login_required
-def create_project():
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()[:100]
-    if not name:
-        return jsonify({"error": "name_required"}), 400
-    db = SessionLocal()
-    try:
-        p = Project(
-            user_id=session["user_id"],
-            name=name,
-            emoji=(data.get("emoji") or "📁")[:16],
-            description=(data.get("description") or "")[:2000],
-            instructions=(data.get("instructions") or "")[:4000],
-        )
-        db.add(p)
-        db.commit()
-        return jsonify(
-            {
-                "id": p.id,
-                "name": p.name,
-                "emoji": p.emoji,
-                "description": p.description or "",
-                "instructions": p.instructions,
-            }
-        )
-    finally:
-        db.close()
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# RESEARCH WORKSPACE — Milestone 9: Project detail + scoped stats
-# ══════════════════════════════════════════════════════════════════════════
-
-
-@app.route("/api/projects/<int:pid>", methods=["GET"])
-@login_required
-def get_project(pid):
-    """Project detail with scoped counts (legacy). Prefer GET …/hub for workspace."""
-    detail = project_service.get_detail(pid, session["user_id"])
-    if detail is None:
-        return jsonify({"error": "not_found"}), 404
-    return jsonify(detail)
-
-
-@app.route("/api/projects/<int:pid>", methods=["PATCH"])
-@login_required
-def update_project(pid):
-    data = request.get_json(silent=True) or {}
-    db = SessionLocal()
-    try:
-        p = db.get(Project, pid)
-        if not p or p.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        if "name" in data:
-            p.name = str(data["name"]).strip()[:100] or p.name
-        if "emoji" in data:
-            p.emoji = str(data["emoji"])[:16] or p.emoji
-        if "description" in data:
-            p.description = str(data["description"])[:2000]
-        if "instructions" in data:
-            p.instructions = str(data["instructions"])[:4000]
-        db.commit()
-        return jsonify(
-            {
-                "id": p.id,
-                "name": p.name,
-                "emoji": p.emoji,
-                "description": p.description or "",
-                "instructions": p.instructions or "",
-            }
-        )
-    finally:
-        db.close()
-
-
-@app.route("/api/projects/<int:pid>", methods=["DELETE"])
-@login_required
-def delete_project(pid):
-    db = SessionLocal()
-    try:
-        p = db.get(Project, pid)
-        if not p or p.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        for c in db.execute(select(Conversation).where(Conversation.project_id == pid)).scalars():
-            c.project_id = None
-        for m in db.execute(select(Memory).where(Memory.project_id == pid)).scalars():
-            db.delete(m)
-        db.delete(p)
-        db.commit()
-        return jsonify({"ok": True})
-    finally:
-        db.close()
-
-
-@app.route("/api/conversations", methods=["GET"])
-@login_required
-def list_conversations():
-    db = SessionLocal()
-    try:
-        convos = (
-            db.execute(
-                select(Conversation)
-                .where(Conversation.user_id == session["user_id"])
-                .order_by(Conversation.updated_at.desc())
-            )
-            .scalars()
-            .all()
-        )
-        return jsonify(
-            [
-                {
-                    "id": c.id,
-                    "title": c.title,
-                    "model": c.model,
-                    "project_id": c.project_id,
-                    "file_id": c.file_id,
-                }
-                for c in convos
-            ]
-        )
-    finally:
-        db.close()
-
-
-VALID_REASONING_EFFORTS = ("low", "medium", "high")
-
-
-def apply_conversation_settings(c, data):
-    """Shared temperature/reasoning_effort/memory_enabled handling for
-    create/update — nullable fields reset to provider default when passed
-    explicitly as null."""
-    if "temperature" in data:
-        t = data["temperature"]
-        c.temperature = None if t is None else max(0.0, min(2.0, float(t)))
-    if "reasoning_effort" in data:
-        r = data["reasoning_effort"]
-        c.reasoning_effort = r if r in VALID_REASONING_EFFORTS else None
-    if "memory_enabled" in data:
-        c.memory_enabled = 1 if data["memory_enabled"] else 0
-
-
-def conversation_settings_json(c):
-    return {
-        "temperature": c.temperature,
-        "reasoning_effort": c.reasoning_effort,
-        "memory_enabled": (bool(c.memory_enabled) if c.memory_enabled is not None else True),
-    }
-
-
-@app.route("/api/conversations", methods=["POST"])
-@login_required
-def create_conversation():
-    data = request.get_json(silent=True) or {}
-    model = data.get("model") or DEFAULT_MODEL
-    if model not in get_models():
-        model = DEFAULT_MODEL
-    project_id = data.get("project_id")
-    file_id = data.get("file_id")  # M7: paper chat
-    db = SessionLocal()
-    try:
-        if project_id:
-            project_id, denied = resolve_owned_project_id(
-                db, Project, project_id, session["user_id"]
-            )
-            if denied:
-                log_security_event(
-                    "authz_denied",
-                    resource="project",
-                    action="create_conversation",
-                    user_id=session["user_id"],
-                    project_id=data.get("project_id"),
-                )
-
-        # Validate file ownership; inherit project from the paper if not given
-        paper_title = None
-        if file_id:
-            uf = db.get(UserFile, file_id)
-            if not uf or uf.user_id != session["user_id"]:
-                file_id = None
-            else:
-                paper_title = uf.title or uf.name or None
-                if not project_id and uf.project_id:
-                    inherited, inherited_denied = resolve_owned_project_id(
-                        db, Project, uf.project_id, session["user_id"]
-                    )
-                    if inherited_denied:
-                        log_security_event(
-                            "authz_denied",
-                            resource="project",
-                            action="create_conversation_inherit",
-                            user_id=session["user_id"],
-                            project_id=uf.project_id,
-                            file_id=file_id,
-                        )
-                    project_id = inherited
-
-        c = Conversation(
-            user_id=session["user_id"],
-            model=model,
-            project_id=project_id,
-            file_id=file_id,
-        )
-        # Give paper chats a meaningful title immediately so the sidebar shows
-        # something useful before the first AI turn generates an auto-title.
-        if paper_title and file_id:
-            c.title = f"Chat: {paper_title}"[:200]
-            c.title_generated = 0  # let the first turn overwrite with a better one
-        apply_conversation_settings(c, data)
-        db.add(c)
-        db.commit()
-        return jsonify(
-            {
-                "id": c.id,
-                "title": c.title,
-                "model": c.model,
-                "project_id": c.project_id,
-                "file_id": c.file_id,
-                **conversation_settings_json(c),
-            }
-        )
-    finally:
-        db.close()
-
-
-@app.route("/api/conversations/<int:cid>", methods=["GET"])
-@login_required
-def get_conversation(cid):
-    db = SessionLocal()
-    try:
-        c = db.get(Conversation, cid)
-        if not c or c.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        return jsonify(
-            {
-                "id": c.id,
-                "title": c.title,
-                "model": c.model,
-                "project_id": c.project_id,
-                "file_id": c.file_id,  # M7: paper chat scope
-                **conversation_settings_json(c),
-                "messages": [
-                    {
-                        "id": m.id,
-                        "role": m.role,
-                        "content": m.content,
-                        "sources": json.loads(m.sources) if m.sources else [],
-                        "attachments": (json.loads(m.attachments) if m.attachments else []),
-                    }
-                    for m in c.messages
-                ],
-            }
-        )
-    finally:
-        db.close()
-
-
-@app.route("/api/conversations/<int:cid>", methods=["PATCH"])
-@login_required
-def update_conversation(cid):
-    data = request.get_json(silent=True) or {}
-    db = SessionLocal()
-    try:
-        c = db.get(Conversation, cid)
-        if not c or c.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        if "title" in data:
-            c.title = str(data["title"])[:200]
-            c.title_generated = 1
-        if "model" in data and data["model"] in get_models():
-            c.model = data["model"]
-        apply_conversation_settings(c, data)
-        if "project_id" in data:
-            pid = data["project_id"]
-            if pid is None:
-                c.project_id = None
-            else:
-                p = db.get(Project, pid)
-                if p and p.user_id == session["user_id"]:
-                    c.project_id = pid
-        db.commit()
-        return jsonify({"ok": True})
-    finally:
-        db.close()
+# ── A-304 Metadata: Citation Manager ──────────────────────────────────────
+from backend.library.citation_routes import create_citation_blueprint
+
+app.register_blueprint(
+    create_citation_blueprint(
+        SessionLocal=SessionLocal,
+        Citation=Citation,
+        Project=Project,
+        UserFile=UserFile,
+        select_fn=select,
+        login_required=login_required,
+        resolve_owned_project_id=resolve_owned_project_id,
+        log_security_event=log_security_event,
+        app_logger=app.logger,
+    )
+)
+
+
+# ------------------------------------------------------------------ API: projects (CRUD)
+from backend.projects.crud_routes import create_project_crud_blueprint
+
+app.register_blueprint(
+    create_project_crud_blueprint(
+        SessionLocal=SessionLocal,
+        Project=Project,
+        Conversation=Conversation,
+        Memory=Memory,
+        select_fn=select,
+        login_required=login_required,
+        project_service=project_service,
+    )
+)
+
+
+# ------------------------------------------------------------------ API: conversations (Phase 4)
+from backend.chat.conversation_routes import create_conversation_blueprint
+
+app.register_blueprint(
+    create_conversation_blueprint(
+        SessionLocal=SessionLocal,
+        Conversation=Conversation,
+        Project=Project,
+        UserFile=UserFile,
+        select_fn=select,
+        login_required=login_required,
+        resolve_owned_project_id=resolve_owned_project_id,
+        log_security_event=log_security_event,
+        get_models=lambda force=False: get_models(force=force),
+        default_model=DEFAULT_MODEL,
+        remove_file_row=lambda db, uf: _remove_file_row(db, uf),
+    )
+)
 
 
 def _remove_file_row(db, uf):
@@ -6831,57 +4483,6 @@ def _remove_file_row(db, uf):
     storage.delete(uf.path)
     db.execute(delete(Chunk).where(Chunk.file_id == uf.id))
     db.delete(uf)
-
-
-def _purge_conversation(db, convo):
-    """Delete a conversation, its messages (ORM cascade), and its
-    conversation-only files/embeddings. Files also attached to a project are
-    kept (just detached from the chat)."""
-    for uf in db.execute(select(UserFile).where(UserFile.conversation_id == convo.id)).scalars().all():
-        if uf.project_id:
-            uf.conversation_id = None
-        else:
-            _remove_file_row(db, uf)
-    db.delete(convo)
-
-
-@app.route("/api/conversations/<int:cid>", methods=["DELETE"])
-@login_required
-def delete_conversation(cid):
-    db = SessionLocal()
-    try:
-        c = db.get(Conversation, cid)
-        if not c or c.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        _purge_conversation(db, c)
-        db.commit()
-        return jsonify({"ok": True})
-    finally:
-        db.close()
-
-
-@app.route("/api/conversations/delete", methods=["POST"])
-@login_required
-def bulk_delete_conversations():
-    """Delete several chats at once, or all of them (`{"all": true}`)."""
-    data = request.get_json(silent=True) or {}
-    uid = session["user_id"]
-    db = SessionLocal()
-    try:
-        q = select(Conversation).where(Conversation.user_id == uid)
-        if not data.get("all"):
-            ids = [int(i) for i in (data.get("ids") or [])]
-            if not ids:
-                return jsonify({"error": "no_ids"}), 400
-            q = q.where(Conversation.id.in_(ids))
-        convos = db.execute(q).scalars().all()
-        for c in convos:
-            _purge_conversation(db, c)
-        db.commit()
-        log_security_event("chats_deleted", user=uid, count=len(convos), all=bool(data.get("all")))
-        return jsonify({"ok": True, "deleted": len(convos)})
-    finally:
-        db.close()
 
 
 # ------------------------------------------------------------------ export
@@ -7246,76 +4847,16 @@ def submit_support():
     return jsonify({"ok": True, "ticket": ticket_id})
 
 
-@app.route("/api/memories", methods=["GET"])
-@login_required
-def list_memories():
-    db = SessionLocal()
-    try:
-        mems = (
-            db.execute(select(Memory).where(Memory.user_id == session["user_id"]).order_by(Memory.created_at.desc()))
-            .scalars()
-            .all()
-        )
-        return jsonify(
-            [
-                {
-                    "id": m.id,
-                    "fact": m.fact,
-                    "project_id": m.project_id,
-                    "importance": m.importance,
-                    "created_at": m.created_at.isoformat(),
-                }
-                for m in mems
-            ]
-        )
-    finally:
-        db.close()
+from backend.chat.memory_routes import create_memory_blueprint
 
-
-@app.route("/api/memories/<int:mid>", methods=["PATCH"])
-@login_required
-def update_memory(mid):
-    data = request.get_json(silent=True) or {}
-    db = SessionLocal()
-    try:
-        m = db.get(Memory, mid)
-        if not m or m.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        if "fact" in data:
-            # AI-generated research memories are immutable
-            src = getattr(m, "source", None) or "chat"
-            if src != "manual" and src != "chat":
-                return jsonify({"error": "immutable", "detail": "AI research memories cannot be edited."}), 400
-            m.fact = str(data["fact"])[:1000]
-        if "importance" in data:
-            m.importance = max(1, min(5, int(data["importance"])))
-        db.commit()
-        return jsonify(
-            {
-                "id": m.id,
-                "fact": m.fact,
-                "project_id": m.project_id,
-                "importance": m.importance,
-                "created_at": m.created_at.isoformat(),
-            }
-        )
-    finally:
-        db.close()
-
-
-@app.route("/api/memories/<int:mid>", methods=["DELETE"])
-@login_required
-def delete_memory(mid):
-    db = SessionLocal()
-    try:
-        m = db.get(Memory, mid)
-        if not m or m.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        db.delete(m)
-        db.commit()
-        return jsonify({"ok": True})
-    finally:
-        db.close()
+app.register_blueprint(
+    create_memory_blueprint(
+        SessionLocal=SessionLocal,
+        Memory=Memory,
+        select_fn=select,
+        login_required=login_required,
+    )
+)
 
 
 def sse(event, data):
@@ -7858,1055 +5399,75 @@ def chat():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# RESEARCH WORKSPACE — Milestone 14: Semantic Search
+# RESEARCH WORKSPACE — Milestone 14: Semantic Search (Phase 3)
 # ══════════════════════════════════════════════════════════════════════════
+from backend.search.semantic_routes import create_semantic_search_blueprint
 
-
-def _cosine(a: list, b: list) -> float:
-    """Safe cosine similarity — returns 0.0 on zero-length vectors."""
-    dot = sum(x * y for x, y in zip(a, b))
-    na = sum(x * x for x in a) ** 0.5
-    nb = sum(x * x for x in b) ** 0.5
-    return dot / (na * nb) if na and nb else 0.0
-
-
-def _keyword_score(query: str, text: str) -> float:
-    """Fallback scorer: fraction of query words found in text."""
-    words = query.lower().split()
-    if not words:
-        return 0.0
-    t = text.lower()
-    return sum(1 for w in words if w in t) / len(words)
-
-
-@app.route("/api/search", methods=["POST"])
-@login_required
-@limiter.limit("60 per minute")
-def semantic_search():
-    """Unified semantic search across papers, notes, citations, and chats.
-
-    Body:
-      q           str         – search query (required, 2-500 chars)
-      kinds       list[str]   – ["paper","note","citation","chat"] (default: all)
-      project_id  int|null    – scope to a project (null = global)
-      limit       int         – max results (default 20, max 50)
-
-    Algorithm:
-      1. Embed the query with text-embedding-3-small.
-      2. For each kind:
-           paper    → scan Chunk rows, cosine vs chunk embedding
-           note     → scan Note rows, keyword score (no embeddings stored yet)
-           citation → scan Citation rows, keyword score
-           chat     → scan Message rows (assistant only), keyword score
-      3. Merge, sort by score desc, return top `limit`.
-
-    Each result:
-      kind        "paper"|"note"|"citation"|"chat"
-      ref_id      id in the source table
-      title       display title
-      snippet     up to 300 chars of matching text
-      score       float 0-1
-      url         frontend navigation URL
-      page        int|null   (paper chunks only)
-      section     str|null   (paper chunks only)
-      file_name   str|null   (paper chunks only)
-    """
-    data = request.get_json(silent=True) or {}
-    uid = session["user_id"]
-    q = str(data.get("q") or "").strip()
-    kinds = data.get("kinds") or ["paper", "note", "citation", "chat"]
-    project_id = data.get("project_id")
-    try:
-        limit = max(1, min(50, int(data.get("limit", 20))))
-    except (TypeError, ValueError):
-        limit = 20
-
-    if len(q) < 2:
-        return (
-            jsonify(
-                {
-                    "error": "query_too_short",
-                    "detail": "Query must be at least 2 characters.",
-                }
-            ),
-            400,
-        )
-
-    # Try to embed the query; fall back to keyword-only if embedding fails
-    query_emb = None
-    try:
-        query_emb = embed_texts([q])[0]
-    except Exception:
-        pass
-
-    results = []
-    db = SessionLocal()
-    try:
-        # ── Papers (via Chunk rows) ──────────────────────────────────────────
-        if "paper" in kinds:
-            # Collect file ids visible to this user (optionally scoped to project)
-            file_stmt = select(UserFile).where(
-                UserFile.user_id == uid,
-                UserFile.kind == "document",
-            )
-            if project_id is not None:
-                file_stmt = file_stmt.where(UserFile.project_id == project_id)
-            files = db.execute(file_stmt).scalars().all()
-            file_ids = [f.id for f in files]
-            file_map = {f.id: f for f in files}
-
-            if file_ids:
-                chunks = db.execute(select(Chunk).where(Chunk.file_id.in_(file_ids))).scalars().all()
-                for ch in chunks:
-                    if query_emb and ch.embedding:
-                        try:
-                            emb = json.loads(ch.embedding)
-                            score = _cosine(query_emb, emb)
-                        except Exception:
-                            score = _keyword_score(q, ch.content)
-                    else:
-                        score = _keyword_score(q, ch.content)
-                    if score < 0.15:
-                        continue
-                    uf = file_map.get(ch.file_id)
-                    title = (uf.title or uf.name) if uf else "Paper"
-                    results.append(
-                        {
-                            "kind": "paper",
-                            "ref_id": ch.file_id,
-                            "chunk_id": ch.id,
-                            "title": title,
-                            "snippet": ch.content[:300],
-                            "score": round(score, 4),
-                            "url": f"/papers/{ch.file_id}",
-                            "page": ch.page,
-                            "section": ch.section,
-                            "file_name": uf.name if uf else None,
-                        }
-                    )
-
-        # ── Notes ───────────────────────────────────────────────────────────
-        if "note" in kinds:
-            note_stmt = select(Note).where(Note.user_id == uid)
-            if project_id is not None:
-                note_stmt = note_stmt.where(Note.project_id == project_id)
-            notes = db.execute(note_stmt).scalars().all()
-            for n in notes:
-                text = (n.title or "") + " " + (n.content or "")
-                score = _keyword_score(q, text)
-                if score < 0.20:
-                    continue
-                results.append(
-                    {
-                        "kind": "note",
-                        "ref_id": n.id,
-                        "title": n.title or "Untitled note",
-                        "snippet": (n.content or "")[:300],
-                        "score": round(score, 4),
-                        "url": "/notes",
-                        "page": None,
-                        "section": None,
-                        "file_name": None,
-                    }
-                )
-
-        # ── Citations ────────────────────────────────────────────────────────
-        if "citation" in kinds:
-            cit_stmt = select(Citation).where(Citation.user_id == uid)
-            if project_id is not None:
-                cit_stmt = cit_stmt.where(Citation.project_id == project_id)
-            cits = db.execute(cit_stmt).scalars().all()
-            for c in cits:
-                text = " ".join(filter(None, [c.title, c.authors, c.venue, c.notes]))
-                score = _keyword_score(q, text)
-                if score < 0.20:
-                    continue
-                results.append(
-                    {
-                        "kind": "citation",
-                        "ref_id": c.id,
-                        "title": c.title or "Untitled",
-                        "snippet": f"{c.authors} ({c.year}) — {c.venue}".strip(" —"),
-                        "score": round(score, 4),
-                        "url": "/citations",
-                        "page": None,
-                        "section": None,
-                        "file_name": None,
-                    }
-                )
-
-        # ── Chat messages ────────────────────────────────────────────────────
-        if "chat" in kinds:
-            msg_stmt = (
-                select(Message, Conversation)
-                .join(Conversation, Message.conversation_id == Conversation.id)
-                .where(
-                    Conversation.user_id == uid,
-                    Message.role == "assistant",
-                )
-            )
-            if project_id is not None:
-                msg_stmt = msg_stmt.where(Conversation.project_id == project_id)
-            rows = db.execute(msg_stmt.limit(2000)).all()
-            seen_convos: set[int] = set()  # max 1 result per conversation
-            for msg, convo in rows:
-                if convo.id in seen_convos:
-                    continue
-                score = _keyword_score(q, msg.content or "")
-                if score < 0.25:
-                    continue
-                seen_convos.add(convo.id)
-                results.append(
-                    {
-                        "kind": "chat",
-                        "ref_id": convo.id,
-                        "title": convo.title or "Untitled chat",
-                        "snippet": (msg.content or "")[:300],
-                        "score": round(score, 4),
-                        "url": f"/c/{convo.id}",
-                        "page": None,
-                        "section": None,
-                        "file_name": None,
-                    }
-                )
-
-    finally:
-        db.close()
-
-    # Sort by score desc, then deduplicate paper results by file (keep best chunk)
-    results.sort(key=lambda r: -r["score"])
-    seen_papers: set[int] = set()
-    deduped = []
-    for r in results:
-        if r["kind"] == "paper":
-            if r["ref_id"] in seen_papers:
-                continue
-            seen_papers.add(r["ref_id"])
-        deduped.append(r)
-
-    return jsonify(
-        {
-            "q": q,
-            "total": len(deduped),
-            "results": deduped[:limit],
-        }
+app.register_blueprint(
+    create_semantic_search_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        Chunk=Chunk,
+        Note=Note,
+        Citation=Citation,
+        Message=Message,
+        Conversation=Conversation,
+        select_fn=select,
+        login_required=login_required,
+        limiter=limiter,
+        embed_texts=lambda *a, **k: embed_texts(*a, **k),
     )
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# RESEARCH WORKSPACE — Milestone 11: Multi-Paper Analysis (comparison)
+# RESEARCH WORKSPACE — Multi-Paper Analysis (compare + gaps) — Phase 3
 # ══════════════════════════════════════════════════════════════════════════
-
-_COMPARE_PROMPT = """You are an expert research analyst comparing multiple academic papers.
-
-Given the structured analyses of {n} papers below, produce a JSON object with the following keys. Use null for any section that genuinely cannot be answered from the provided analyses. Never fabricate. Be specific.
-
-Keys:
-  overview         – 2-3 sentence description of what these papers share and how they differ
-  similarities     – array of strings: themes, approaches, or findings common to ALL papers
-  differences      – array of strings: key ways the papers diverge (method, scope, results)
-  common_datasets  – array of dataset names used by 2 or more papers ([] if none)
-  methodologies    – object {{paper_title: one-line methodology summary}} for each paper
-  agreements       – array: claims or conclusions the papers agree on
-  contradictions   – array: claims or findings that conflict across papers
-  research_trends  – array: patterns or directions evident across the set
-  synthesis        – 3-5 sentences: what does reading these papers together reveal?
-
-Papers (as structured analyses):
-{analyses}
-"""
-
-_COMPARE_MAX_ANALYSES_CHARS = 20_000  # generous but bounded
-
-
-def _selection_hash(file_ids: list[int]) -> str:
-    """Stable hash of a sorted file-id set."""
-    key = ",".join(str(i) for i in sorted(set(file_ids)))
-    return _hashlib.sha256(key.encode()).hexdigest()
-
-
-def _derived_to_dict(da: DerivedAnalysis) -> dict:
-    data = {}
-    if da.data:
-        try:
-            data = json.loads(da.data)
-        except Exception:
-            pass
-    return {
-        "id": da.id,
-        "kind": da.kind,
-        "file_ids": json.loads(da.file_ids) if da.file_ids else [],
-        "status": "done" if data else "pending",
-        "data": data,
-        "model": da.model or "",
-        "created_at": da.created_at.isoformat() if da.created_at else None,
-    }
-
-
-def _run_comparison(derived_id: int, analyses_payload: str, file_ids: list[int]) -> None:
-    """Background worker: call the model and store the comparison result."""
-    db = SessionLocal()
-    try:
-        da = db.get(DerivedAnalysis, derived_id)
-        if not da:
-            return
-
-        prompt = _COMPARE_PROMPT.format(
-            n=len(file_ids),
-            analyses=analyses_payload[:_COMPARE_MAX_ANALYSES_CHARS],
-        )
-        raw = responses_text(prompt, json_mode=True)
-        data = json.loads(raw)
-
-        # Normalise array fields
-        for arr_key in (
-            "similarities",
-            "differences",
-            "common_datasets",
-            "agreements",
-            "contradictions",
-            "research_trends",
-        ):
-            v = data.get(arr_key)
-            if not isinstance(v, list):
-                data[arr_key] = [v] if v and isinstance(v, str) else []
-        if not isinstance(data.get("methodologies"), dict):
-            data["methodologies"] = {}
-
-        da = db.get(DerivedAnalysis, derived_id)
-        if not da:
-            return
-        da.data = json.dumps(data, ensure_ascii=False)
-        da.model = UTILITY_MODEL
-        db.commit()
-
-    except Exception as exc:
-        logging.getLogger(__name__).warning("comparison failed for derived_id=%s: %s", derived_id, exc)
-        try:
-            da2 = db.get(DerivedAnalysis, derived_id)
-            if da2:
-                da2.data = json.dumps({"error": str(exc)})
-                da2.model = ""
-                db.commit()
-        except Exception:
-            pass
-    finally:
-        db.close()
-
-
-@app.route("/api/analysis/compare", methods=["POST"])
-@login_required
-@limiter.limit("20 per hour")
-def compare_papers():
-    """Generate (or return cached) a multi-paper comparison.
-
-    Body:
-      file_ids    list[int]   – 2-10 document file IDs to compare
-      project_id  int|null    – optional project scope (informational only)
-      force       bool        – if true, ignore cached result and regenerate
-
-    Flow:
-      1. Validate ownership of every file_id.
-      2. Compute selection_hash and check DerivedAnalysis cache.
-      3. If cache hit and not force → return immediately.
-      4. Collect PaperAnalysis.data for each file (must be status='done').
-         Papers without a completed analysis are skipped with a warning.
-      5. Fire background comparison; return {status:'running', id:<id>}.
-
-    Polling: GET /api/analysis/compare/<id>
-    """
-    data = request.get_json(silent=True) or {}
-    uid = session["user_id"]
-    file_ids = [int(i) for i in (data.get("file_ids") or []) if i]
-    project_id = data.get("project_id")
-    force = bool(data.get("force"))
-
-    if len(file_ids) < 2:
-        return (
-            jsonify({"error": "too_few", "detail": "Select at least 2 papers to compare."}),
-            400,
-        )
-    if len(file_ids) > 10:
-        return (
-            jsonify({"error": "too_many", "detail": "Maximum 10 papers per comparison."}),
-            400,
-        )
-
-    db = SessionLocal()
-    try:
-        # Validate ownership + collect ready analyses
-        valid_ids = []
-        skipped = []
-        paper_blobs = {}  # file_id -> {title, analysis_data}
-
-        for fid in file_ids:
-            uf = db.get(UserFile, fid)
-            if not uf or uf.user_id != uid:
-                skipped.append({"id": fid, "reason": "not_found"})
-                continue
-            pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
-            if not pa or pa.status != "done":
-                skipped.append(
-                    {
-                        "id": fid,
-                        "name": uf.title or uf.name,
-                        "reason": "analysis_not_ready",
-                    }
-                )
-                continue
-            valid_ids.append(fid)
-            paper_blobs[fid] = {
-                "title": uf.title or uf.name,
-                "authors": uf.authors or "",
-                "year": uf.year or "",
-                "analysis": json.loads(pa.data) if pa.data else {},
-            }
-
-        if len(valid_ids) < 2:
-            return (
-                jsonify(
-                    {
-                        "error": "too_few_ready",
-                        "detail": "At least 2 papers need a completed analysis. " "Try again after analysis finishes.",
-                        "skipped": skipped,
-                    }
-                ),
-                400,
-            )
-
-        sel_hash = _selection_hash(valid_ids)
-
-        # Cache check
-        existing = db.execute(
-            select(DerivedAnalysis).where(
-                DerivedAnalysis.user_id == uid,
-                DerivedAnalysis.kind == "compare",
-                DerivedAnalysis.selection_hash == sel_hash,
-            )
-        ).scalar_one_or_none()
-
-        if existing and not force:
-            result = _derived_to_dict(existing)
-            result["skipped"] = skipped
-            return jsonify(result)
-
-        # Build analyses payload for the prompt
-        blobs_text = json.dumps([paper_blobs[fid] for fid in valid_ids], ensure_ascii=False, indent=1)
-
-        # Create or reset the DerivedAnalysis row
-        if existing:
-            existing.data = ""
-            existing.model = ""
-            existing.file_ids = json.dumps(valid_ids)
-            db.commit()
-            da_id = existing.id
-        else:
-            da = DerivedAnalysis(
-                user_id=uid,
-                project_id=project_id,
-                kind="compare",
-                selection_hash=sel_hash,
-                file_ids=json.dumps(valid_ids),
-            )
-            db.add(da)
-            db.commit()
-            da_id = da.id
-
-        # Fire background comparison
-        threading.Thread(
-            target=_run_comparison,
-            args=(da_id, blobs_text, valid_ids),
-            daemon=True,
-        ).start()
-
-        return jsonify(
-            {
-                "id": da_id,
-                "kind": "compare",
-                "status": "running",
-                "file_ids": valid_ids,
-                "skipped": skipped,
-                "data": {},
-            }
-        )
-    finally:
-        db.close()
-
-
-@app.route("/api/analysis/compare/<int:da_id>", methods=["GET"])
-@login_required
-def get_comparison(da_id):
-    """Poll for comparison results. Returns {status:'running'|'done', data:{...}}."""
-    db = SessionLocal()
-    try:
-        da = db.get(DerivedAnalysis, da_id)
-        if not da or da.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        return jsonify(_derived_to_dict(da))
-    finally:
-        db.close()
-
-
-@app.route("/api/analysis/compare/<int:da_id>", methods=["DELETE"])
-@login_required
-def delete_comparison(da_id):
-    """Clear a cached comparison so the next POST will regenerate it."""
-    db = SessionLocal()
-    try:
-        da = db.get(DerivedAnalysis, da_id)
-        if not da or da.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        db.delete(da)
-        db.commit()
-        return jsonify({"ok": True})
-    finally:
-        db.close()
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# RESEARCH WORKSPACE — Milestone 12: Research Gap Finder
-# ══════════════════════════════════════════════════════════════════════════
-
-_GAP_PROMPT = """You are an expert research analyst identifying gaps, open questions, and opportunities across a set of academic papers.
-
-Given the structured analyses of {n} papers, produce a JSON object with the keys below. Base every finding strictly on the provided content — never fabricate gaps, assumptions, or ideas. If you are uncertain, say so rather than inventing something.
-
-IMPORTANT: Label all output explicitly as AI-generated suggestions, not factual claims. This is enforced in the output keys themselves.
-
-Keys:
-  preamble              – 1-2 sentences: what field / subfield these papers cover
-  underexplored_topics  – array of strings: topics the papers acknowledge but do not thoroughly investigate
-  missing_experiments   – array of strings: experiments that would strengthen claims but are absent from these papers
-  open_questions        – array of strings: explicit research questions raised but not resolved across the set
-  methodological_gaps   – array of strings: limitations in methods used that future work should address
-  dataset_gaps          – array of strings: missing data, domains, or populations not studied
-  potential_thesis_ideas– array of strings: concrete thesis/dissertation topics a researcher could pursue based on these gaps
-  future_opportunities  – array of strings: promising research directions emerging from the combined findings
-  disclaimer            – MUST equal exactly: "These are AI-generated suggestions based on the provided paper analyses. They should be treated as starting points for your own critical assessment, not as definitive research conclusions."
-
-Papers (as structured analyses):
-{analyses}
-"""
-
-_GAP_MAX_ANALYSES_CHARS = 20_000
-
-
-def _run_gap_finder(derived_id: int, analyses_payload: str, file_ids: list[int]) -> None:
-    """Background worker: call the model and store gap analysis result."""
-    db = SessionLocal()
-    try:
-        da = db.get(DerivedAnalysis, derived_id)
-        if not da:
-            return
-
-        prompt = _GAP_PROMPT.format(
-            n=len(file_ids),
-            analyses=analyses_payload[:_GAP_MAX_ANALYSES_CHARS],
-        )
-        raw = responses_text(prompt, json_mode=True)
-        data = json.loads(raw)
-
-        # Enforce the disclaimer regardless of what the model returned
-        data["disclaimer"] = (
-            "These are AI-generated suggestions based on the provided paper "
-            "analyses. They should be treated as starting points for your own "
-            "critical assessment, not as definitive research conclusions."
-        )
-
-        # Normalise all array fields
-        for arr_key in (
-            "underexplored_topics",
-            "missing_experiments",
-            "open_questions",
-            "methodological_gaps",
-            "dataset_gaps",
-            "potential_thesis_ideas",
-            "future_opportunities",
-        ):
-            v = data.get(arr_key)
-            if not isinstance(v, list):
-                data[arr_key] = [v] if v and isinstance(v, str) else []
-
-        da = db.get(DerivedAnalysis, derived_id)
-        if not da:
-            return
-        da.data = json.dumps(data, ensure_ascii=False)
-        da.model = UTILITY_MODEL
-        db.commit()
-
-    except Exception as exc:
-        logging.getLogger(__name__).warning("gap finder failed for derived_id=%s: %s", derived_id, exc)
-        try:
-            da2 = db.get(DerivedAnalysis, derived_id)
-            if da2:
-                da2.data = json.dumps({"error": str(exc)})
-                da2.model = ""
-                db.commit()
-        except Exception:
-            pass
-    finally:
-        db.close()
-
-
-@app.route("/api/analysis/gaps", methods=["POST"])
-@login_required
-@limiter.limit("20 per hour")
-def find_gaps():
-    """Identify research gaps across a set of papers (cached by selection).
-
-    Body:
-      file_ids    list[int]   – 2-10 document file IDs (must have completed analyses)
-      project_id  int|null    – optional context (stored but not used in retrieval)
-      force       bool        – if true, ignore cached result and regenerate
-
-    Identical caching semantics to /api/analysis/compare:
-      - selection_hash keyed on sorted file IDs
-      - kind = 'gaps' (separate cache from comparison)
-      - background thread; poll GET /api/analysis/gaps/<id>
-    """
-    data = request.get_json(silent=True) or {}
-    uid = session["user_id"]
-    file_ids = [int(i) for i in (data.get("file_ids") or []) if i]
-    project_id = data.get("project_id")
-    force = bool(data.get("force"))
-
-    if len(file_ids) < 2:
-        return jsonify({"error": "too_few", "detail": "Select at least 2 papers."}), 400
-    if len(file_ids) > 10:
-        return (
-            jsonify({"error": "too_many", "detail": "Maximum 10 papers per gap analysis."}),
-            400,
-        )
-
-    db = SessionLocal()
-    try:
-        valid_ids = []
-        skipped = []
-        paper_blobs = {}
-
-        for fid in file_ids:
-            uf = db.get(UserFile, fid)
-            if not uf or uf.user_id != uid:
-                skipped.append({"id": fid, "reason": "not_found"})
-                continue
-            pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == fid)).scalar_one_or_none()
-            if not pa or pa.status != "done":
-                skipped.append(
-                    {
-                        "id": fid,
-                        "name": uf.title or uf.name,
-                        "reason": "analysis_not_ready",
-                    }
-                )
-                continue
-            valid_ids.append(fid)
-            paper_blobs[fid] = {
-                "title": uf.title or uf.name,
-                "authors": uf.authors or "",
-                "year": uf.year or "",
-                "analysis": json.loads(pa.data) if pa.data else {},
-            }
-
-        if len(valid_ids) < 2:
-            return (
-                jsonify(
-                    {
-                        "error": "too_few_ready",
-                        "detail": "At least 2 papers need a completed analysis.",
-                        "skipped": skipped,
-                    }
-                ),
-                400,
-            )
-
-        sel_hash = _selection_hash(valid_ids)  # same helper as M11
-
-        existing = db.execute(
-            select(DerivedAnalysis).where(
-                DerivedAnalysis.user_id == uid,
-                DerivedAnalysis.kind == "gaps",
-                DerivedAnalysis.selection_hash == sel_hash,
-            )
-        ).scalar_one_or_none()
-
-        if existing and not force:
-            result = _derived_to_dict(existing)
-            result["skipped"] = skipped
-            return jsonify(result)
-
-        blobs_text = json.dumps([paper_blobs[fid] for fid in valid_ids], ensure_ascii=False, indent=1)
-
-        if existing:
-            existing.data = ""
-            existing.model = ""
-            existing.file_ids = json.dumps(valid_ids)
-            db.commit()
-            da_id = existing.id
-        else:
-            da = DerivedAnalysis(
-                user_id=uid,
-                project_id=project_id,
-                kind="gaps",
-                selection_hash=sel_hash,
-                file_ids=json.dumps(valid_ids),
-            )
-            db.add(da)
-            db.commit()
-            da_id = da.id
-
-        threading.Thread(
-            target=_run_gap_finder,
-            args=(da_id, blobs_text, valid_ids),
-            daemon=True,
-        ).start()
-
-        return jsonify(
-            {
-                "id": da_id,
-                "kind": "gaps",
-                "status": "running",
-                "file_ids": valid_ids,
-                "skipped": skipped,
-                "data": {},
-            }
-        )
-    finally:
-        db.close()
-
-
-@app.route("/api/analysis/gaps/<int:da_id>", methods=["GET"])
-@login_required
-def get_gaps(da_id):
-    """Poll for gap analysis results."""
-    db = SessionLocal()
-    try:
-        da = db.get(DerivedAnalysis, da_id)
-        if not da or da.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        return jsonify(_derived_to_dict(da))
-    finally:
-        db.close()
-
-
-@app.route("/api/analysis/gaps/<int:da_id>", methods=["DELETE"])
-@login_required
-def delete_gaps(da_id):
-    """Clear a cached gap analysis."""
-    db = SessionLocal()
-    try:
-        da = db.get(DerivedAnalysis, da_id)
-        if not da or da.user_id != session["user_id"]:
-            return jsonify({"error": "not_found"}), 404
-        db.delete(da)
-        db.commit()
-        return jsonify({"ok": True})
-    finally:
-        db.close()
+from backend.analysis_pipeline.derived_routes import create_derived_analysis_blueprint
+
+app.register_blueprint(
+    create_derived_analysis_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        PaperAnalysis=PaperAnalysis,
+        DerivedAnalysis=DerivedAnalysis,
+        select_fn=select,
+        login_required=login_required,
+        limiter=limiter,
+        responses_text=lambda *a, **k: responses_text(*a, **k),
+        utility_model=UTILITY_MODEL,
+    )
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════
 # RESEARCH WORKSPACE — Milestone 15: AI Writing Assistant + Export Center
 # ══════════════════════════════════════════════════════════════════════════
+from backend.writing.api.assistant_routes import create_writing_assistant_blueprint
 
-WRITING_ACTIONS = {
-    "rewrite_academic": (
-        "Rewrite the following text in a formal, academic style suitable for "
-        "a research paper. Preserve all facts and meaning. "
-        "Do not add citations or data that is not already present."
-    ),
-    "improve_grammar": (
-        "Correct all grammar, punctuation, and spelling errors in the text below. "
-        "Do not change the meaning or add new content."
-    ),
-    "improve_clarity": (
-        "Rewrite the following text to improve clarity and readability while "
-        "keeping the same meaning and academic register."
-    ),
-    "expand": (
-        "Expand the following paragraph with additional explanation and detail. "
-        "Stay strictly within what the original text implies — do not invent "
-        "facts, citations, or experiments."
-    ),
-    "shorten": ("Shorten the following text, removing redundancy and filler while " "preserving the key information."),
-    "generate_abstract": (
-        "Write a concise academic abstract (150-250 words) for the text below. "
-        "Structure: background, objective, method, results, conclusion. "
-        "Do not invent data or claims not present in the text."
-    ),
-    "improve_conclusion": (
-        "Rewrite the following conclusion to be stronger, clearer, and more "
-        "impactful. Do not add claims not supported by the preceding text."
-    ),
-}
-
-
-@app.route("/api/writing", methods=["POST"])
-@login_required
-@limiter.limit("30 per hour")
-def writing_assistant():
-    """AI Writing Assistant — apply a research-focused transformation to text.
-
-    Body:
-      action  str  – one of the WRITING_ACTIONS keys
-      text    str  – the text to transform (max 8 000 chars)
-
-    Returns:
-      result  str  – the transformed text
-      action  str  – echoed back for reference
-      warning str  – non-empty if the assistant had to hedge (e.g. too long)
-    """
-    data = request.get_json(silent=True) or {}
-    action = str(data.get("action") or "").strip()
-    text = str(data.get("text") or "").strip()
-
-    if action not in WRITING_ACTIONS:
-        return (
-            jsonify(
-                {
-                    "error": "invalid_action",
-                    "detail": f"Action must be one of: {', '.join(WRITING_ACTIONS)}",
-                }
-            ),
-            400,
-        )
-
-    if not text:
-        return (
-            jsonify({"error": "text_required", "detail": "text field is required."}),
-            400,
-        )
-
-    MAX_CHARS = 8_000
-    warning = ""
-    if len(text) > MAX_CHARS:
-        text = text[:MAX_CHARS]
-        warning = "Input was truncated to 8 000 characters. " "For longer texts, split into sections."
-
-    instruction = WRITING_ACTIONS[action]
-    prompt = (
-        instruction + "\n\nIMPORTANT: If you are uncertain or lack context to make a requested "
-        "change accurately, say so explicitly rather than inventing content.\n\n" + "Text:\n" + text
+app.register_blueprint(
+    create_writing_assistant_blueprint(
+        login_required=login_required,
+        limiter=limiter,
+        responses_text=responses_text,
     )
-
-    result = responses_text(prompt)
-
-    return jsonify(
-        {
-            "result": result,
-            "action": action,
-            "warning": warning,
-        }
-    )
+)
 
 
 # ── Export Centre ─────────────────────────────────────────────────────────────
+from backend.writing.api.export_routes import create_writing_export_blueprint
 
-
-def _export_as_markdown(content_str: str, title: str = "") -> bytes:
-    header = f"# {title}\n\n" if title else ""
-    return (header + content_str).encode("utf-8")
-
-
-def _export_as_docx(content_str: str, title: str = "") -> bytes:
-    """Create a minimal DOCX from plain text.  Requires python-docx."""
-    try:
-        from io import BytesIO
-
-        import docx as _docx
-
-        doc = _docx.Document()
-        if title:
-            doc.add_heading(title, 0)
-        for para in content_str.split("\n\n"):
-            if para.strip():
-                doc.add_paragraph(para.strip())
-        buf = BytesIO()
-        doc.save(buf)
-        return buf.getvalue()
-    except ImportError:
-        # Fall back to plain text if python-docx unavailable
-        return content_str.encode("utf-8")
-
-
-@app.route("/api/export/notes", methods=["POST"])
-@login_required
-def export_notes():
-    """Export user notes as Markdown, plain text, or DOCX.
-
-    Body:
-      format      str       – "md" | "txt" | "docx" (default "md")
-      project_id  int|null  – scope to a project
-      note_ids    list[int] – export specific notes (null = all)
-    """
-    data = request.get_json(silent=True) or {}
-    uid = session["user_id"]
-    fmt = str(data.get("format") or "md").lower()
-    project_id = data.get("project_id")
-    note_ids = data.get("note_ids")  # list[int] or null
-
-    db = SessionLocal()
-    try:
-        stmt = select(Note).where(Note.user_id == uid)
-        if project_id is not None:
-            stmt = stmt.where(Note.project_id == project_id)
-        if note_ids:
-            stmt = stmt.where(Note.id.in_([int(i) for i in note_ids]))
-        notes = db.execute(stmt.order_by(Note.updated_at.desc())).scalars().all()
-    finally:
-        db.close()
-
-    sections = []
-    for n in notes:
-        if n.title:
-            sections.append(f"## {n.title}\n\n{n.content or ''}")
-        else:
-            sections.append(n.content or "")
-    body = "\n\n---\n\n".join(sections)
-
-    if fmt == "docx":
-        blob = _export_as_docx(body, "Research Notes")
-        mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        fname = "notes.docx"
-    elif fmt == "txt":
-        blob = body.encode("utf-8")
-        mime = "text/plain"
-        fname = "notes.txt"
-    else:
-        blob = _export_as_markdown(body, "Research Notes")
-        mime = "text/markdown"
-        fname = "notes.md"
-
-    return send_file(io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname)
-
-
-@app.route("/api/export/analysis/<int:file_id>", methods=["GET"])
-@login_required
-def export_analysis(file_id):
-    """Export the 14-field paper analysis for one file.
-
-    Query params:
-      format  str  – "md" | "txt" | "docx" (default "md")
-    """
-    uid = session["user_id"]
-    fmt = request.args.get("format", "md").lower()
-
-    db = SessionLocal()
-    try:
-        uf = db.get(UserFile, file_id)
-        if not uf or uf.user_id != uid:
-            return jsonify({"error": "not_found"}), 404
-
-        pa = db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id == file_id)).scalar_one_or_none()
-
-        if not pa or pa.status != "done":
-            return (
-                jsonify(
-                    {
-                        "error": "analysis_not_ready",
-                        "detail": "Analysis not yet complete.",
-                    }
-                ),
-                400,
-            )
-
-        analysis = json.loads(pa.data) if pa.data else {}
-    finally:
-        db.close()
-
-    title = uf.title or uf.name
-    lines = [f"# Paper Analysis: {title}", ""]
-    field_labels = {
-        "executive_summary": "Executive Summary",
-        "abstract_explained": "Abstract Explained",
-        "research_objective": "Research Objective",
-        "problem_statement": "Problem Statement",
-        "methodology": "Methodology",
-        "dataset": "Dataset",
-        "experiments": "Experiments",
-        "results": "Results",
-        "key_contributions": "Key Contributions",
-        "strengths": "Strengths",
-        "limitations": "Limitations",
-        "future_work": "Future Work",
-        "keywords": "Keywords",
-        "important_terms": "Important Terms",
-    }
-    for key, label in field_labels.items():
-        val = analysis.get(key)
-        if not val:
-            continue
-        lines.append(f"## {label}")
-        if isinstance(val, list):
-            for item in val:
-                lines.append(f"- {item}")
-        elif isinstance(val, dict):
-            for term, defn in val.items():
-                lines.append(f"**{term}**: {defn}")
-        else:
-            lines.append(str(val))
-        lines.append("")
-
-    body = "\n".join(lines)
-
-    if fmt == "docx":
-        blob = _export_as_docx(body, f"Analysis: {title}")
-        mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        fname = f"analysis-{file_id}.docx"
-    elif fmt == "txt":
-        blob = body.encode("utf-8")
-        mime = "text/plain"
-        fname = f"analysis-{file_id}.txt"
-    else:
-        blob = body.encode("utf-8")
-        mime = "text/markdown"
-        fname = f"analysis-{file_id}.md"
-
-    return send_file(io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname)
-
-
-@app.route("/api/export/chat/<int:cid>", methods=["GET"])
-@login_required
-def export_chat(cid):
-    """Export a full conversation as Markdown or plain text.
-
-    Query params:
-      format  str  – "md" | "txt" (default "md")
-    """
-    uid = session["user_id"]
-    fmt = request.args.get("format", "md").lower()
-
-    db = SessionLocal()
-    try:
-        convo = db.execute(
-            select(Conversation).where(
-                Conversation.id == cid,
-                Conversation.user_id == uid,
-            )
-        ).scalar_one_or_none()
-        if not convo:
-            return jsonify({"error": "not_found"}), 404
-        messages = list(convo.messages)
-    finally:
-        db.close()
-
-    lines = [f"# {convo.title or 'Conversation'}", ""]
-    for m in messages:
-        role = "**You**" if m.role == "user" else "**Assistant**"
-        lines.append(f"{role}\n\n{m.content or ''}")
-        lines.append("\n---\n")
-
-    body = "\n".join(lines)
-
-    if fmt == "txt":
-        blob = body.encode("utf-8")
-        mime = "text/plain"
-        fname = f"chat-{cid}.txt"
-    else:
-        blob = body.encode("utf-8")
-        mime = "text/markdown"
-        fname = f"chat-{cid}.md"
-
-    return send_file(io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname)
+app.register_blueprint(
+    create_writing_export_blueprint(
+        SessionLocal=SessionLocal,
+        Note=Note,
+        UserFile=UserFile,
+        PaperAnalysis=PaperAnalysis,
+        Conversation=Conversation,
+        select_fn=select,
+        login_required=login_required,
+    )
+)
 
 
 # ------------------------------------------------------------------ SPA (React build) serving

@@ -183,7 +183,15 @@ def test_consensus_aggregates_supporting_contradicting_neutral():
     assert resp.status_code == 200, resp.get_json()
     body = resp.get_json()
     assert body["stage"] == "consensus"
-    assert body["consensus_version"] == "1.0.0"
+    assert body["consensus_version"] == "1.2.0"
+    assert body["consensus"]["product_label"] in {
+        "Agree",
+        "Disagree",
+        "Mixed",
+        "Weak evidence",
+    }
+    assert "metrics" in body["consensus"]
+    assert "support_ratio" in body["consensus"]["metrics"]
     c = body["consensus"]
     assert seeded["support_a"] in c["supporting_ids"]
     assert seeded["contra"] in c["contradicting_ids"]

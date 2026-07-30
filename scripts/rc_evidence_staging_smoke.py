@@ -134,8 +134,37 @@ def main() -> int:
         json={"file_id": file_id},
     )
     print("extract_status", extract.status_code, extract.get_json())
-    assert extract.status_code == 200, extract.get_json()
-    assert extract.get_json().get("status") in {"succeeded", "skipped"}
+    # Prefer async 202; fall back to sync body if already reused.
+    if extract.status_code == 202:
+        job_id = extract.get_json()["job_id"]
+        run_id = extract.get_json()["run_id"]
+        import worker  # noqa: WPS433 — local import keeps script light when unused
+
+        db = server.SessionLocal()
+        try:
+            job = db.get(server.UploadJob, job_id)
+            assert job is not None
+            job.status = "running"
+            job.started_at = datetime.now(timezone.utc)
+            db.commit()
+            worker._handle_evidence_extract(db, job)
+            job = db.get(server.UploadJob, job_id)
+            job.status = "done"
+            job.finished_at = datetime.now(timezone.utc)
+            worker._mark_outbox_dispatched(db, job.id)
+            db.commit()
+            run = db.get(server.EvidenceExtractionRun, run_id)
+            assert run is not None and run.status == "succeeded", getattr(run, "status", None)
+            print("worker_extract_ok", "run_id", run_id, "objects", run.objects_created)
+        finally:
+            db.close()
+    elif extract.status_code == 200:
+        assert extract.get_json().get("status") in {"succeeded", "skipped"}
+        assert extract.get_json().get("reason") == "idempotent_reuse" or extract.get_json().get(
+            "objects_created", 0
+        ) >= 0
+    else:
+        raise AssertionError(f"unexpected extract status: {extract.status_code} {extract.get_json()}")
 
     listed = client.get(f"/api/projects/{project_id}/evidence")
     assert listed.status_code == 200

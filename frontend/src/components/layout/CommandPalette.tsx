@@ -32,6 +32,7 @@ import {
   LayoutList,
   FlaskConical,
   Tags,
+  Table2,
 } from "lucide-react";
 import { useAllFiles } from "@/features/files/useFiles";
 import { useProjects } from "@/features/projects/useProjects";
@@ -339,6 +340,24 @@ export function CommandPalette() {
         hint: "Research",
         keywords: "compare gaps multi paper analysis research",
         icon: GitCompare,
+        show: true,
+        run: () => go("/research/compare"),
+      },
+      {
+        id: "evidence-matrix",
+        label: "Evidence matrix",
+        hint: "Research",
+        keywords: "matrix method dataset findings limitations lit review table export",
+        icon: Table2,
+        show: true,
+        run: () => go("/research/compare"),
+      },
+      {
+        id: "theme-discovery",
+        label: "Theme discovery",
+        hint: "Research",
+        keywords: "themes clusters topic theme discovery literature",
+        icon: Tags,
         show: true,
         run: () => go("/research/compare"),
       },

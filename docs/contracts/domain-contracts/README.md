@@ -24,7 +24,7 @@ Canonical entity names and lifecycle enums. Implementation tables may use legacy
 | WritingDocument | `documents` | |
 | WritingSection | logical sections | |
 | Citation | `writing_sentence_bindings` | |
-| ReviewerFinding | review DTO / future `reviewer_runs` | ≠ claim_reviews |
+| ReviewerFinding | review DTO / `reviewer_findings` (+ `reviewer_runs`) | ≠ claim_reviews |
 | SearchResult | response DTO | |
 | ExportJob | job or sync export | |
 

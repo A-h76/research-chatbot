@@ -78,7 +78,47 @@ def test_apply_consensus_stage_preserves_objects():
     }
     out = apply_consensus_stage(ranked)
     assert out["stage"] == "consensus"
-    assert out["consensus_version"] == "1.0.0"
+    assert out["consensus_version"] == "1.2.0"
     assert [o["id"] for o in out["objects"]] == [10, 11]
     assert out["consensus"]["label"] == "contested"
+    assert out["consensus"]["product_label"] == "Mixed"
     assert out["ranking_strategy"] == "default_v0"
+    m = out["consensus"]["metrics"]
+    assert m["support_ratio"] == 0.5
+    assert m["agreement_score"] == 0.0
+    assert m["polar_count"] == 2
+
+
+def test_product_label_agree_disagree_weak():
+    from backend.evidence.consensus import product_consensus_label
+
+    assert (
+        product_consensus_label(label="strong", supporting=4, contradicting=1, supporting_weight=8.0)
+        == "Agree"
+    )
+    assert (
+        product_consensus_label(label="opposed", supporting=0, contradicting=3, supporting_weight=0.0)
+        == "Disagree"
+    )
+    assert (
+        product_consensus_label(label="moderate", supporting=1, contradicting=0, supporting_weight=1.0)
+        == "Weak evidence"
+    )
+    assert (
+        product_consensus_label(label="none", supporting=0, contradicting=0, supporting_weight=0.0)
+        == "Weak evidence"
+    )
+
+
+def test_consensus_metrics_strong_support():
+    objects = [
+        _obj(1, relation="supports", confidence_band="high"),
+        _obj(2, relation="supports", confidence_band="high"),
+        _obj(3, relation="contradicts", confidence_band="low"),
+    ]
+    out = aggregate_consensus(objects)
+    assert out["label"] == "strong"
+    assert out["metrics"]["support_ratio"] == round(2 / 3, 4)
+    assert out["metrics"]["weighted_supporting"] == 6.0
+    assert out["metrics"]["weighted_contradicting"] == 1.0
+    assert out["metrics"]["weighted_support_ratio"] == round(6 / 7, 4)

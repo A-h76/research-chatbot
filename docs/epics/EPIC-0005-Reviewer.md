@@ -20,7 +20,7 @@ Make the **Research Reviewer** a first-class, trustworthy surface: findings with
 1. Reviewer accordion / panel in Writing  
 2. Stable finding codes + severities  
 3. `reviewer_version` visible  
-4. Optional persistence of review runs  
+4. Persistence of review runs (**shipped A-401 / A-503**)
 5. Export can include review summary  
 
 ---
@@ -31,8 +31,8 @@ Make the **Research Reviewer** a first-class, trustworthy surface: findings with
 |----|--------|-----|
 | A-501 | Freeze ReviewerResult schema + codes list | Documented in IDD appendix or constants file |
 | A-502 | Ensure every grounded ok response includes review | Even if issues=[] |
-| A-503 | Persist reviewer run (document_activity or reviewer_runs) | Migration + API get latest |
-| A-504 | Emit ReviewCompleted event/payload | IDD-0006 |
+| A-503 | Persist reviewer run (`reviewer_runs` + `reviewer_findings`) | **Done** — migration `0035`, ORM, writing path persist, GET latest/list/by-id |
+| A-504 | Emit ReviewCompleted event/payload | **Done** — outbox on persist (`IDD-0006`) |
 | A-505 | Export includes reviewer_version + issue count | Provenance |
 
 ## Tickets — Developer B
@@ -63,5 +63,5 @@ Make the **Research Reviewer** a first-class, trustworthy surface: findings with
 
 - [ ] Users can see and act on findings before export  
 - [ ] Version stamped  
-- [ ] Persistence either shipped or explicitly deferred with date  
+- [x] Persistence shipped (`reviewer_runs` / `reviewer_findings`, reconstruct APIs, `ReviewCompleted`)
 - [ ] Distinct copy: “Research Reviewer” vs “Evidence review”

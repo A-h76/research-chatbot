@@ -103,9 +103,46 @@ def test_apply_writing_stage_envelope():
     }
     out = apply_writing_intelligence_stage(reasoned)
     assert out["stage"] == "writing"
-    assert out["writing_version"] == "1.3.1"
+    assert out["writing_version"] == "2.0.0"
     assert out["writing"]["status"] == "ok"
-    assert out["writing"]["mode"] == "grounded_v0"
+    assert out["writing"]["mode"] == "grounded_v1"
     assert out["writing"]["sections"]
     assert out["writing"]["metrics"] is not None
+    assert out["writing"]["ri_context"] is not None
+    assert "themes" in out["writing"]["ri_context"]
+    assert out["writing"].get("outline") is not None
+    assert out["writing"].get("draft_metadata") is not None
+    assert out["writing"]["draft_metadata"]["reproducibility_hash"]
     assert out["objects"][0]["id"] == 10
+
+
+def test_writing_v2_consumes_themes_and_gaps_for_literature_review():
+    objects = [
+        _obj(1, claim="Cognitive therapy reduces anxiety", supports=["anxiety"]),
+        _obj(2, claim="Cognitive therapy anxiety outcomes", supports=["anxiety"]),
+        _obj(3, claim="Metformin glycemic control", supports=["hba1c"], file_id=2),
+    ]
+    out = build_writing_intelligence(
+        query={
+            "section_type": "literature_review",
+            "query_text": "anxiety treatment",
+            "scope": {"project_id": 1},
+            "anchors": {},
+        },
+        objects=objects,
+        reasoning={"sufficiency": "sufficient", "summary_code": "strong"},
+        consensus={
+            "label": "strong",
+            "product_label": "Agree",
+            "supporting_ids": [1, 2, 3],
+            "contradicting_ids": [],
+        },
+        conflict={"has_conflict": False, "mediators": []},
+    )
+    assert out["status"] == "ok"
+    assert out["mode"] == "grounded_v1"
+    assert out["ri_context"]["metrics"]["object_count"] == 3
+    arg = (out["sections"][0].get("evidence_ids") is not None)
+    assert arg
+    # Theme framing warning when themes slot present
+    assert any("RI depth" in w for w in out["warnings"])

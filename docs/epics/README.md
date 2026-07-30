@@ -1,45 +1,61 @@
 # Dhund Epic Roadmap
 
-**Rule:** Do not start large implementation streams (EPICs 0002–0006) until **EPIC-0001** is complete and **Accepted**.
+**Current chapter:** [Phase 2 — Research Intelligence](../roadmap/PHASE-2-RESEARCH-INTELLIGENCE.md)  
+**Platform freeze:** [A-405](../contracts/A-405-documentation-freeze.md) (`contracts_version` 1.2.0)
 
-## North Star (EPIC-0001)
+## North star
 
-Two developers implement 0002–0006 **in parallel** using only published IDD + [`docs/contracts/`](../contracts/README.md). Implementation talk beyond contract clarification should be unnecessary.
+> Dhund becomes irreplaceable when researchers stop thinking of it as an AI writing tool and start thinking of it as **the place where my research lives.**
+
+## Capability map (organize here, not by FE/BE)
+
+| Capability | Focus now |
+|------------|-----------|
+| Knowledge Acquisition | Maintain |
+| Evidence Intelligence | Harden |
+| **Research Intelligence** | **60% — Phase 2** |
+| Writing Intelligence | 10% — after RI depth |
+| Research Workspace | 20% |
+| Publication Intelligence | Later |
 
 ## Document hierarchy
 
 ```text
 ADRs
-  ? Architecture (Now-Status, EPIC-0001 principles)
+  ? Architecture (Now-Status)
     ? IDD (docs/idd/)
-      ? Contracts (docs/contracts/)  ? living, frozen after 0001
-        ? Implementation
+      ? Contracts (docs/contracts/)  ? frozen for Evidence/RI
+        ? Phase 2 roadmap (capability tickets RI-001…009)
+          ? Implementation
 ```
 
 ## Epic map
 
 | Epic | Title | Gate |
 |------|-------|------|
-| [EPIC-0001](./EPIC-0001-Architecture-Foundation.md) | Architecture Foundation | **Must complete first** |
-| [EPIC-0002](./EPIC-0002-Evidence-Layer.md) | Evidence Layer (granular A-201…A-215) | After 0001 Accepted |
-| [EPIC-0003](./EPIC-0003-Research-Workspace.md) | Research Workspace | After 0001 |
-| [EPIC-0004](./EPIC-0004-Writing-Engine.md) | Writing Engine | After 0001 + usable evidence |
-| [EPIC-0005](./EPIC-0005-Reviewer.md) | Reviewer | After grounded writing |
-| [EPIC-0006](./EPIC-0006-Research-Intelligence.md) | Research Intelligence | After evidence list/search |
+| [EPIC-0001](./EPIC-0001-Architecture-Foundation.md) | Architecture Foundation | Complete for Track-2 start |
+| [EPIC-0002](./EPIC-0002-Evidence-Layer.md) | Evidence Layer | Substrate shipped |
+| [EPIC-0003](./EPIC-0003-Research-Workspace.md) | Research Workspace | 20% allocation |
+| [EPIC-0004](./EPIC-0004-Writing-Engine.md) | Writing Engine | 10% — RI-009 later |
+| [EPIC-0005](./EPIC-0005-Reviewer.md) | Reviewer | Persistence shipped; FE open |
+| [EPIC-0006](./EPIC-0006-Research-Intelligence.md) | **Research Intelligence** | **Active Phase 2** |
 
 ```text
-EPIC-0001 ? Architecture Approved ? only then ? EPIC-0002+
+Foundation (contracts freeze)
+        ?
+Phase 2 — Research Intelligence (RI-001…009)
+        ?
+Writing v2 + Workspace polish (supporting)
 ```
 
-**Developer A priority:** Evidence Layer (**EPIC-0002**, tickets A-201…A-215) ? Evidence APIs/search ? Writing intelligence (**EPIC-0004**, `/api/evidence/writing`) ? Reviewer (**0005**) ? Consensus/RI (**0006**).
-
-Do not rename EPIC-0002 to “Research Intelligence”—that name is reserved for **EPIC-0006**.
+**Developer A priority:** RI-003/004 product APIs ? Matrix ? Themes ? Gaps/KG ? Timeline/Methodology ? Writing v2.  
+**Developer B priority:** Compare/WHY UI, matrix, theme/gap panels, types from contracts.
 
 ## Ownership (summary)
 
 | | Developer A | Developer B |
 |--|:-----------:|:-----------:|
-| DB, APIs, AI, Evidence, Search, DU, KG, Backend tests | ? | |
-| Design system, React, UX, Workspace UI, state, FE tests | | ? |
+| DB, APIs, AI, Evidence, RI engines, Backend tests | ? | |
+| Design system, React, UX, Workspace UI, FE tests | | ? |
 
-Full matrix: [EPIC-0001 § Ownership](./EPIC-0001-Architecture-Foundation.md#ownership-matrix).
+Architecture refactors only when a Phase 2 capability cannot ship without them (ADR).

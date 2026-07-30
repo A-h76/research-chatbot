@@ -46,6 +46,7 @@ from backend.ai.prompts import (
     ensure_default_prompts,
     medical_response_format,
 )
+from backend.jobs.outbox import enqueue_upload_job_with_outbox
 from imports.registry import extract_text
 from quotas.service import QuotaExceededError
 
@@ -190,23 +191,14 @@ def create_documents_blueprint(
             db.add(uf)
             db.flush()  # assigns uf.id
 
-            job = UploadJob(
-                upload_batch_id=batch.id,
-                file_id=uf.id,
+            job = enqueue_upload_job_with_outbox(
+                db,
+                UploadJob=UploadJob,
+                OutboxEvent=OutboxEvent,
                 user_id=user_id,
+                file_id=uf.id,
                 job_type="import",
-                status="pending",
-            )
-            db.add(job)
-            db.flush()  # assigns job.id
-
-            db.add(
-                OutboxEvent(
-                    aggregate_type="upload_job",
-                    aggregate_id=job.id,
-                    event_type="job.enqueued",
-                    payload=json.dumps({"file_id": uf.id}),
-                )
+                upload_batch_id=batch.id,
             )
 
             db.commit()

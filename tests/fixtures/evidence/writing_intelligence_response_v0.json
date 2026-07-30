@@ -25,20 +25,27 @@
   "total": 0,
   "truncated": false,
   "stage": "writing",
-  "writing_version": "1.3.1",
+  "writing_version": "2.0.0",
   "writing": {
     "status": "blocked",
     "blocked_reason": "insufficient_evidence",
-    "mode": "grounded_v0",
+    "mode": "grounded_v1",
+    "writing_version": "2.0.0",
     "section_type": "support_sentence",
     "paragraph": null,
     "sections": [],
     "plan": null,
     "citations": [],
+    "ri_context": {
+      "ri_depth_version": "1.0.0",
+      "themes": [],
+      "gaps": [],
+      "metrics": { "theme_count": 0, "gap_count": 0, "object_count": 0 }
+    },
     "warnings": [
       "Generation blocked: Research Intelligence did not find adequate supporting evidence."
     ],
-    "disclaimer": "Generated from Evidence Layer objects only; verify against source papers. Not a substitute for reading the cited evidence.",
+    "disclaimer": "Generated from Evidence Layer objects only; verify against source papers. Not a substitute for reading the cited evidence. Writing Intelligence v2 consumes project themes, consensus, and coverage gaps but never invents literature.",
     "supporting_count": 0,
     "metrics": {
       "metrics_version": "1.0.0",

@@ -148,7 +148,12 @@ def test_conflict_codes_mediators():
     assert resp.status_code == 200, resp.get_json()
     body = resp.get_json()
     assert body["stage"] == "conflict"
-    assert body["conflict_version"] == "1.0.0"
+    assert body["conflict_version"] == "1.2.0"
+    assert "metrics" in body["conflict"]
+    assert "mediation_coverage" in body["conflict"]["metrics"]
+    assert "mediator_explanations" in body["conflict"]
+    if body["conflict"].get("has_conflict") and body["conflict"].get("links"):
+        assert "why" in body["conflict"]["links"][0]
     cf = body["conflict"]
     assert cf["has_conflict"] is True
     assert seeded["support_id"] in cf["supporting_ids"]

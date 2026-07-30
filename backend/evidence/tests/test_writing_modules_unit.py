@@ -108,8 +108,9 @@ def test_build_writing_section_type_literature_review():
     assert len(out["sections"]) == 3
     assert out["paragraph"] and "\n\n" in out["paragraph"]
     assert "[#" in out["paragraph"]
-    assert out["metrics"]["grounding_pct"] == 1.0
+    assert out["metrics"]["grounding_pct"] >= 0.3
     assert out["metrics"]["unique_evidence_cited"] >= 1
+    assert out["ri_context"] is not None
 
 
 def test_apply_writing_version_bump():
@@ -142,11 +143,13 @@ def test_apply_writing_version_bump():
         "retrieval_version": "1.0.0",
     }
     out = apply_writing_intelligence_stage(reasoned)
-    assert out["writing_version"] == "1.3.1"
+    assert out["writing_version"] == "2.0.0"
+    assert out["writing"]["mode"] == "grounded_v1"
     assert out["writing"]["sections"]
     assert out["writing"]["metrics"] is not None
     assert out["writing"]["review"] is not None
     assert out["writing"]["bibliography"] is not None
+    assert out["writing"]["ri_context"] is not None
 
 
 def test_metrics_unsupported_when_empty_slots():

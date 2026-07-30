@@ -127,8 +127,35 @@ def test_apply_conflict_stage_envelope():
     }
     out = apply_conflict_stage(consensus)
     assert out["stage"] == "conflict"
-    assert out["conflict_version"] == "1.0.0"
+    assert out["conflict_version"] == "1.2.0"
     assert out["conflict"]["has_conflict"] is True
     assert "method_differs" in out["conflict"]["mediators"]
     assert out["consensus"]["label"] == "contested"
     assert [o["id"] for o in out["objects"]] == [10, 11]
+    assert out["conflict"]["metrics"]["mediated_pair_count"] >= 1
+    assert out["conflict"]["links"][0]["why"]
+    assert out["conflict"]["mediator_explanations"]
+    assert out["conflict"]["product_summary"]
+
+
+def test_timeframe_differs_mediator():
+    a = _obj(1, claim="12 weeks follow-up showed benefit", supports=["benefit"])
+    b = _obj(2, claim="5 year follow-up showed harm", contradicts=["benefit"])
+    assert "timeframe_differs" in detect_mediators(a, b)
+
+
+def test_statistics_differs_and_why_cards():
+    a = _obj(1, claim="OR 1.2 with p < 0.05", relation="supports", supports=["x"])
+    b = _obj(
+        2,
+        claim="Hazard ratio 0.8 intention to treat",
+        relation="contradicts",
+        contradicts=["x"],
+    )
+    mediators = detect_mediators(a, b)
+    assert "statistics_differs" in mediators
+    from backend.evidence.conflict import explain_link_why
+
+    why, _detail = explain_link_why(a, b, mediators)
+    assert any(card["code"] == "statistics_differs" for card in why)
+    assert any("Statistics" in card["title"] for card in why)

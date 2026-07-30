@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Proposed |
+| **Status** | Active (catalog aligned with living event contracts) |
 | **Transport today** | Postgres `outbox_events` + `upload_jobs` status (no mandatory Kafka) |
 | **Future** | Same payloads may fan-out to webhook/bus without changing shape |
 
@@ -87,10 +87,12 @@ Events enable Frontend polling, worker chaining, and future projections **withou
 
 | | |
 |--|--|
-| **Payload** | `{ document_id, reviewer_version, issue_count, metrics }` |
-| **Producer** | Reviewer module (same request or async run) |
+| **Payload** | `{ document_id, reviewer_version, issue_count, metrics, status?, reviewer_run_id? }` |
+| **Producer** | Reviewer persistence on grounded writing (when `document_id` scoped) |
 | **Consumer** | Reviewer accordion; export gate |
-| **Retry** | If async job—standard job backoff |
+| **Retry** | Request-scoped persist; outbox record for downstream |
+
+`reviewer_run_id` is present when a durable `reviewer_runs` row was written (A-401).
 
 ### ExportFinished
 
