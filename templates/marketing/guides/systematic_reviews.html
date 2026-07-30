@@ -1,0 +1,32 @@
+{% extends "landing_base.html" %}
+{% block title %}Best practices for systematic reviews — Dhund Research{% endblock %}
+{% block description %}Protocol, inclusion criteria, extraction, and bias — habits that transfer into Dhund’s research workflow.{% endblock %}
+{% block content %}
+<article class="wrap-narrow page">
+  <p class="eyebrow reveal"><a href="{{ url_for('marketing_research') }}" style="color:var(--teal)">Research</a> · Guide</p>
+  <header class="page-hero reveal" style="padding-top:0.5rem">
+    <h1>Best practices for systematic reviews</h1>
+    <p class="support">Protocol before prose.</p>
+  </header>
+  <div class="prose reveal">
+    <p>Systematic reviews trade speed for reproducibility. The habits below transfer whether you use PRISMA-style reporting or a structured narrative review.</p>
+    <h2>Protocol first</h2>
+    <p>Register or write down the question, databases, dates, and inclusion criteria before screening. Changing rules mid-stream invites bias.</p>
+    <h2>Dual screening when stakes are high</h2>
+    <p>Two reviewers (or a documented single-reviewer process with audit) reduce missed inclusions and silent exclusions.</p>
+    <h2>Structured extraction</h2>
+    <p>Extract the same fields from every study: design, sample, measures, outcomes, limitations. Dhund’s Evidence step is designed for this discipline.</p>
+    <h2>Bias and confidence</h2>
+    <p>Note risk of bias and strength of evidence explicitly. Verification is not optional decoration — it is how you avoid overselling thin literatures.</p>
+    <h2>Report the trail</h2>
+    <p>Others should reconstruct how you got from search to claim. Export with citations and evidence links is part of that trail.</p>
+  </div>
+  <div class="cta-band reveal" style="margin-top:2.5rem">
+    <div>
+      <strong style="display:block;margin-bottom:0.35rem">Run a disciplined review</strong>
+      <p>Join the closed beta if this is your workflow.</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('marketing_early_access') }}">Early Access</a>
+  </div>
+</article>
+{% endblock %}

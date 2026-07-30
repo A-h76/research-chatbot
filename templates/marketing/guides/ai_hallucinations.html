@@ -1,0 +1,32 @@
+{% extends "landing_base.html" %}
+{% block title %}Why AI hallucinates in research — Dhund Research{% endblock %}
+{% block description %}Fluent prose is not a verified citation. How evidence binding and review reduce invention in research writing.{% endblock %}
+{% block content %}
+<article class="wrap-narrow page">
+  <p class="eyebrow reveal"><a href="{{ url_for('marketing_research') }}" style="color:var(--teal)">Research</a> · Guide</p>
+  <header class="page-hero reveal" style="padding-top:0.5rem">
+    <h1>Why AI hallucinates in research</h1>
+    <p class="support">Fluency is not verification.</p>
+  </header>
+  <div class="prose reveal">
+    <p>Language models optimise for plausible continuation. Research requires accountable continuation — sentences that survive citation checks.</p>
+    <h2>Where invention sneaks in</h2>
+    <ul>
+      <li>Fabricated references that look real</li>
+      <li>Correct-sounding methods attributed to the wrong paper</li>
+      <li>Overconfident synthesis when evidence is thin</li>
+    </ul>
+    <h2>What reduces risk</h2>
+    <p>Constrain generation to evidence you imported and accepted. Surface grounding metrics. Force a human review step before export. That is Dhund’s bias: evidence binding over open-ended chat.</p>
+    <h2>What does not fix it</h2>
+    <p>Longer prompts alone. A prettier chat UI. “Trust the model.” Hallucination risk drops when the system refuses to write beyond your corpus and makes gaps visible.</p>
+  </div>
+  <div class="cta-band reveal" style="margin-top:2.5rem">
+    <div>
+      <strong style="display:block;margin-bottom:0.35rem">Workflow over vibes</strong>
+      <p>See Import → Verify → Export.</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('marketing_how_it_works') }}">How it Works</a>
+  </div>
+</article>
+{% endblock %}

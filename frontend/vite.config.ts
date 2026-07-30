@@ -23,6 +23,11 @@ export default defineConfig({
       '/logout': BACKEND,
       '/static': BACKEND,
       '/robots.txt': BACKEND,
+      '/product': BACKEND,
+      '/how-it-works': BACKEND,
+      '/research': BACKEND,
+      '/early-access': BACKEND,
+      '/pricing': BACKEND,
     },
   },
   test: {

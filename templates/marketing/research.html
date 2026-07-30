@@ -1,0 +1,36 @@
+{% extends "landing_base.html" %}
+{% block title %}Research — Dhund{% endblock %}
+{% block description %}Guides on literature reviews, evidence-backed writing, AI hallucinations in research, and systematic review practices.{% endblock %}
+{% block content %}
+<div class="wrap page">
+  <header class="page-hero reveal">
+    <p class="eyebrow">Research</p>
+    <h1>Guides for serious researchers</h1>
+    <p class="support">Credibility over placeholder blog posts.</p>
+    <p class="lead">Short primers that reinforce how Dhund thinks about evidence, writing, and review quality.</p>
+  </header>
+
+  <div class="cards reveal">
+    <a class="card" href="{{ url_for('marketing_guide_literature_review') }}">
+      <div class="card-icon">LR</div>
+      <h3>How to perform a literature review</h3>
+      <p>Scope, search, screen, synthesise — and where a Research OS fits without replacing judgment.</p>
+    </a>
+    <a class="card" href="{{ url_for('marketing_guide_evidence_backed_writing') }}">
+      <div class="card-icon">EW</div>
+      <h3>What is evidence-backed writing?</h3>
+      <p>Why every claim should resolve to an accepted source — and what “grounded” means in Dhund.</p>
+    </a>
+    <a class="card" href="{{ url_for('marketing_guide_ai_hallucinations') }}">
+      <div class="card-icon">AH</div>
+      <h3>Why AI hallucinates in research</h3>
+      <p>Fluent prose ≠ verified citation. How evidence binding and review reduce invention.</p>
+    </a>
+    <a class="card" href="{{ url_for('marketing_guide_systematic_reviews') }}">
+      <div class="card-icon">SR</div>
+      <h3>Best practices for systematic reviews</h3>
+      <p>Protocol, inclusion criteria, extraction, and bias — habits that transfer into Dhund’s workflow.</p>
+    </a>
+  </div>
+</div>
+{% endblock %}

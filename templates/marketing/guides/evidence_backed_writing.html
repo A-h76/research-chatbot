@@ -1,0 +1,33 @@
+{% extends "landing_base.html" %}
+{% block title %}What is evidence-backed writing? — Dhund Research{% endblock %}
+{% block description %}Evidence-backed writing means every claim resolves to an accepted source — not fluent AI prose.{% endblock %}
+{% block content %}
+<article class="wrap-narrow page">
+  <p class="eyebrow reveal"><a href="{{ url_for('marketing_research') }}" style="color:var(--teal)">Research</a> · Guide</p>
+  <header class="page-hero reveal" style="padding-top:0.5rem">
+    <h1>What is evidence-backed writing?</h1>
+    <p class="support">Claims that resolve to sources you accepted.</p>
+  </header>
+  <div class="prose reveal">
+    <p>Evidence-backed writing is draft text where each material claim can be traced to a source the author inspected and endorsed — not merely to a model’s memory.</p>
+    <h2>Grounded vs generated</h2>
+    <p>“Generated” means the model produced prose. “Grounded” means the prose is bound to EvidenceObjects from your Research Ready papers. Only the second is defensible in a thesis committee.</p>
+    <h2>The binding loop</h2>
+    <ul>
+      <li>Extract candidate evidence from papers</li>
+      <li>Accept or reject each candidate</li>
+      <li>Write with citations linked to accepted evidence</li>
+      <li>Verify confidence and revise weak claims</li>
+    </ul>
+    <h2>What it is not</h2>
+    <p>It is not “paste a prompt and receive a chapter.” It is a Research OS workflow: Library → Evidence → Writing → Verification → Export.</p>
+  </div>
+  <div class="cta-band reveal" style="margin-top:2.5rem">
+    <div>
+      <strong style="display:block;margin-bottom:0.35rem">See the product outcomes</strong>
+      <p>How Dhund stages Library through Export.</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('marketing_product') }}">Product</a>
+  </div>
+</article>
+{% endblock %}

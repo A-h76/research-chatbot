@@ -1445,12 +1445,86 @@ def login_page():
 
     return render_template(
         "login.html",
+        active="signin",
         oauth_ready=bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
         closed_beta=CLOSED_BETA,
         error=request.args.get("error"),
         verified=request.args.get("verified") == "1",
         app_base_url=APP_BASE_URL,
     )
+
+
+def _marketing_ctx(active: str, **extra):
+    return {"active": active, "closed_beta": CLOSED_BETA, **extra}
+
+
+def _serve_spa_index():
+    dist = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
+    index_path = os.path.join(dist, "index.html")
+    if not os.path.exists(index_path):
+        return ("Frontend build not found — run `npm run build` in frontend/.", 501)
+    return send_from_directory(dist, "index.html")
+
+
+@app.route("/")
+def root():
+    """Logged-out visitors see the marketing home; signed-in users get the SPA."""
+    if "user_id" in session:
+        return _serve_spa_index()
+    return render_template("marketing/home.html", **_marketing_ctx("home"))
+
+
+@app.route("/product")
+def marketing_product():
+    return render_template("marketing/product.html", **_marketing_ctx("product"))
+
+
+@app.route("/how-it-works")
+def marketing_how_it_works():
+    return render_template("marketing/how_it_works.html", **_marketing_ctx("how"))
+
+
+@app.route("/research")
+def marketing_research():
+    return render_template("marketing/research.html", **_marketing_ctx("research"))
+
+
+@app.route("/research/literature-review")
+def marketing_guide_literature_review():
+    return render_template(
+        "marketing/guides/literature_review.html", **_marketing_ctx("research")
+    )
+
+
+@app.route("/research/evidence-backed-writing")
+def marketing_guide_evidence_backed_writing():
+    return render_template(
+        "marketing/guides/evidence_backed_writing.html", **_marketing_ctx("research")
+    )
+
+
+@app.route("/research/ai-hallucinations")
+def marketing_guide_ai_hallucinations():
+    return render_template(
+        "marketing/guides/ai_hallucinations.html", **_marketing_ctx("research")
+    )
+
+
+@app.route("/research/systematic-reviews")
+def marketing_guide_systematic_reviews():
+    return render_template(
+        "marketing/guides/systematic_reviews.html", **_marketing_ctx("research")
+    )
+
+
+@app.route("/early-access")
+def marketing_early_access():
+    return render_template("marketing/early_access.html", **_marketing_ctx("access"))
+
+
+@app.route("/pricing")
+def marketing_pricing():
+    return render_template("marketing/pricing.html", **_marketing_ctx("pricing"))
 
 
 def _oauth_redirect_uri() -> str:
@@ -1500,7 +1574,9 @@ def auth_callback():
         return (
             render_template(
                 "login.html",
+                active="signin",
                 oauth_ready=True,
+                closed_beta=CLOSED_BETA,
                 error="Could not read your Google account email.",
             ),
             403,
@@ -1512,7 +1588,9 @@ def auth_callback():
         return (
             render_template(
                 "login.html",
+                active="signin",
                 oauth_ready=True,
+                closed_beta=CLOSED_BETA,
                 error="Access denied — this account is not invited to the closed beta.",
             ),
             403,
@@ -8841,17 +8919,24 @@ def spa_assets(filename):
     return send_from_directory(os.path.join(FRONTEND_DIST, "assets"), filename, max_age=31536000)
 
 
-@app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def spa(path):
     # Real API/auth/static routes are matched by their explicit rules first;
     # this catch-all only fires for unmatched paths (client-side routes). The
     # guard turns a stray /api/... typo into a 404 instead of the SPA shell.
+    # Marketing pages and /login are registered as explicit routes above.
     if path.startswith(("api/", "auth/", "static/", "assets/")) or path in (
         "login",
         "logout",
         "robots.txt",
+        "product",
+        "how-it-works",
+        "research",
+        "early-access",
+        "pricing",
     ):
+        abort(404)
+    if path.startswith("research/"):
         abort(404)
     # Serve real Vite public/ files (e.g. /brand/*.svg) before falling back
     # to the SPA shell — otherwise browsers get index.html and show broken icons.

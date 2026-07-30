@@ -1,0 +1,67 @@
+{% extends "landing_base.html" %}
+{% block title %}Product — Dhund{% endblock %}
+{% block description %}Library, Evidence, Writing, Verification, and Export — the Dhund research workflow by outcomes.{% endblock %}
+{% block content %}
+<div class="wrap page">
+  <header class="page-hero reveal">
+    <p class="eyebrow">Product</p>
+    <h1>Outcomes across the research workflow</h1>
+    <p class="support">Not four features — one pipeline.</p>
+    <p class="lead">Dhund is organised around what researchers need to finish: a defensible manuscript grounded in sources they control.</p>
+  </header>
+
+  <div class="pipeline-strip reveal" style="margin-bottom:2rem" aria-label="Outcome pipeline">
+    <span class="step">Library</span><span class="arrow">↓</span>
+    <span class="step">Evidence</span><span class="arrow">↓</span>
+    <span class="step">Writing</span><span class="arrow">↓</span>
+    <span class="step">Verification</span><span class="arrow">↓</span>
+    <span class="step">Export</span>
+  </div>
+
+  <div class="flow-vertical reveal">
+    <div class="flow-v-step">
+      <div class="flow-v-rail"><span class="flow-v-dot"></span><span class="flow-v-line"></span></div>
+      <div class="flow-v-body">
+        <h3>Library</h3>
+        <p>Import PDFs, connect Zotero or Mendeley, and organise papers into projects until they are Research Ready. Your corpus — not a chat upload.</p>
+      </div>
+    </div>
+    <div class="flow-v-step">
+      <div class="flow-v-rail"><span class="flow-v-dot"></span><span class="flow-v-line"></span></div>
+      <div class="flow-v-body">
+        <h3>Evidence</h3>
+        <p>Extract methods, datasets, metrics, and findings into reviewable EvidenceObjects. Accept what you trust; reject what you do not.</p>
+      </div>
+    </div>
+    <div class="flow-v-step">
+      <div class="flow-v-rail"><span class="flow-v-dot"></span><span class="flow-v-line"></span></div>
+      <div class="flow-v-body">
+        <h3>Writing</h3>
+        <p>Draft literature review sections with citations bound to accepted evidence — Outline, Manuscript, and Evidence side by side.</p>
+      </div>
+    </div>
+    <div class="flow-v-step">
+      <div class="flow-v-rail"><span class="flow-v-dot"></span><span class="flow-v-line"></span></div>
+      <div class="flow-v-body">
+        <h3>Verification</h3>
+        <p>Research Confidence and reviewer checks surface weak or unsupported claims before you ship the draft.</p>
+      </div>
+    </div>
+    <div class="flow-v-step">
+      <div class="flow-v-rail"><span class="flow-v-dot"></span></div>
+      <div class="flow-v-body">
+        <h3>Export</h3>
+        <p>Leave with a manuscript you can defend — citations and evidence trail intact, not a disposable AI essay.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="cta-band reveal">
+    <div>
+      <strong style="display:block;margin-bottom:0.35rem">See how the workflow runs end to end</strong>
+      <p>A visual walkthrough of Import → Export.</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('marketing_how_it_works') }}">How it Works</a>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "landing_base.html" %}
+{% block title %}How it Works — Dhund{% endblock %}
+{% block description %}Import PDFs, organise research, extract evidence, write, verify claims, and export — the Dhund workflow.{% endblock %}
+{% block content %}
+<div class="wrap page">
+  <header class="page-hero reveal">
+    <p class="eyebrow">How it Works</p>
+    <h1>The workflow, not the pitch</h1>
+    <p class="support">Understand Dhund in one glance.</p>
+    <p class="lead">Visitors should see how they’ll use the platform before they read a word about models or features.</p>
+  </header>
+
+  <div class="flow reveal" style="margin-bottom:2.5rem" aria-label="Workflow steps">
+    <div class="flow-step"><strong>Import PDFs</strong><span>Upload or library sync</span></div>
+    <div class="flow-step"><strong>Organise Research</strong><span>Projects &amp; collections</span></div>
+    <div class="flow-step"><strong>Extract Evidence</strong><span>Findings &amp; methods</span></div>
+    <div class="flow-step"><strong>Write</strong><span>Grounded draft</span></div>
+    <div class="flow-step"><strong>Verify Claims</strong><span>Confidence &amp; review</span></div>
+    <div class="flow-step"><strong>Export</strong><span>Manuscript ready</span></div>
+  </div>
+
+  <div class="flow-vertical reveal">
+    <div class="flow-v-step">
+      <div class="flow-v-rail"><span class="flow-v-dot"></span><span class="flow-v-line"></span></div>
+      <div class="flow-v-body">
+        <h3>1 · Import PDFs</h3>
+        <p>Bring papers in via upload, Zotero, Mendeley, DOI, or PMID. Dhund stores them in your Library.</p>
+      </div>
+    </div>
+    <div class="flow-v-step">
+      <div class="flow-v-rail"><span class="flow-v-dot"></span><span class="flow-v-line"></span></div>
+      <div class="flow-v-body">
+        <h3>2 · Organise Research</h3>
+        <p>Assign papers to projects and collections. Wait for Research Ready before extraction.</p>
+      </div>
+    </div>
+    <div class="flow-v-step">
+      <div class="flow-v-rail"><span class="flow-v-dot"></span><span class="flow-v-line"></span></div>
+      <div class="flow-v-body">
+        <h3>3 · Extract Evidence</h3>
+        <p>Run Evidence Extraction to create candidate EvidenceObjects — methods, datasets, metrics, findings — then accept what stands.</p>
+      </div>
+    </div>
+    <div class="flow-v-step">
+      <div class="flow-v-rail"><span class="flow-v-dot"></span><span class="flow-v-line"></span></div>
+      <div class="flow-v-body">
+        <h3>4 · Write</h3>
+        <p>Generate literature review sections in the Writing workspace. Citations link to evidence you already accepted.</p>
+      </div>
+    </div>
+    <div class="flow-v-step">
+      <div class="flow-v-rail"><span class="flow-v-dot"></span><span class="flow-v-line"></span></div>
+      <div class="flow-v-body">
+        <h3>5 · Verify Claims</h3>
+        <p>Inspect Research Confidence and reviewer issues. Revise until claims are supportable.</p>
+      </div>
+    </div>
+    <div class="flow-v-step">
+      <div class="flow-v-rail"><span class="flow-v-dot"></span></div>
+      <div class="flow-v-body">
+        <h3>6 · Export</h3>
+        <p>Export when the draft is ready for supervisors, journals, or your thesis chapter.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="cta-band reveal">
+    <div>
+      <strong style="display:block;margin-bottom:0.35rem">Want the outcome view?</strong>
+      <p>See Library → Evidence → Writing → Verification → Export in depth.</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('marketing_product') }}">Product</a>
+  </div>
+</div>
+{% endblock %}

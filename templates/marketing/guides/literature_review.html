@@ -1,0 +1,34 @@
+{% extends "landing_base.html" %}
+{% block title %}How to perform a literature review — Dhund Research{% endblock %}
+{% block description %}Scope, search, screen, and synthesise literature — and where a Research OS fits without replacing judgment.{% endblock %}
+{% block content %}
+<article class="wrap-narrow page">
+  <p class="eyebrow reveal"><a href="{{ url_for('marketing_research') }}" style="color:var(--teal)">Research</a> · Guide</p>
+  <header class="page-hero reveal" style="padding-top:0.5rem">
+    <h1>How to perform a literature review</h1>
+    <p class="support">Judgment first. Tools second.</p>
+  </header>
+  <div class="prose reveal">
+    <p>A literature review is not a stack of summaries. It is a structured answer to a research question, built from what the field already knows — and what it still debates.</p>
+    <h2>1. Scope the question</h2>
+    <p>Write a precise question (population, intervention/phenomenon, comparison, outcome — or the equivalent in your discipline). Vague questions produce vague reviews.</p>
+    <h2>2. Search systematically</h2>
+    <p>Use databases appropriate to your field, keep a reproducible search string, and record inclusion/exclusion criteria before you screen.</p>
+    <h2>3. Screen and organise</h2>
+    <p>Import candidates into a library (Zotero, Mendeley, or Dhund). Tag why papers stay or leave. Organisation is part of the method, not housekeeping.</p>
+    <h2>4. Extract what matters</h2>
+    <p>Pull methods, datasets, metrics, and findings — not vibes. Evidence objects you can cite later beat highlights you cannot find again.</p>
+    <h2>5. Synthesise, then write</h2>
+    <p>Group by theme, method, or chronology. Write claims only when you can point to sources. Tools like Dhund accelerate extraction and drafting; they do not decide what is true.</p>
+    <h2>Where Dhund fits</h2>
+    <p>Import → Organise → Extract Evidence → Write → Verify → Export. You remain responsible for inclusion criteria, interpretation, and final wording.</p>
+  </div>
+  <div class="cta-band reveal" style="margin-top:2.5rem">
+    <div>
+      <strong style="display:block;margin-bottom:0.35rem">Practice the workflow</strong>
+      <p>Request early access to run literature review in Dhund.</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('marketing_early_access') }}">Early Access</a>
+  </div>
+</article>
+{% endblock %}

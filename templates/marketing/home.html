@@ -1,0 +1,82 @@
+{% extends "landing_base.html" %}
+{% block title %}Dhund — Research Operating System{% endblock %}
+{% block description %}Research with evidence. Write with confidence. Build trustworthy research—from evidence to publication.{% endblock %}
+{% block content %}
+<section class="wrap hero-grid">
+  <div>
+    <p class="eyebrow">Research Operating System</p>
+    <h1>Research with evidence. Write with confidence.</h1>
+    <p class="support" style="font-family:var(--serif);font-style:italic;font-size:clamp(1.2rem,2vw,1.55rem);color:var(--muted);margin-bottom:1rem">
+      Evidence first. Then write.
+    </p>
+    <p style="color:var(--muted);font-size:1.02rem;max-width:38ch;margin-bottom:1.5rem">
+      Build trustworthy research—from evidence to publication.
+      Dhund links every claim to sources you imported, reviewed, and accepted.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="{{ url_for('marketing_early_access') }}">Request Early Access</a>
+      <a class="btn btn-ghost" href="{{ url_for('marketing_how_it_works') }}">See the workflow</a>
+    </div>
+    <div class="pipeline-strip" aria-label="Research workflow">
+      <span class="step">Library</span><span class="arrow" aria-hidden="true">↓</span>
+      <span class="step">Evidence</span><span class="arrow" aria-hidden="true">↓</span>
+      <span class="step">Notes</span><span class="arrow" aria-hidden="true">↓</span>
+      <span class="step">Writing</span><span class="arrow" aria-hidden="true">↓</span>
+      <span class="step">Verification</span><span class="arrow" aria-hidden="true">↓</span>
+      <span class="step">Export</span>
+    </div>
+  </div>
+  <aside class="mock reveal" aria-label="Product preview">
+    <p class="mock-kicker">Project</p>
+    <p class="mock-title">AI Phishing Detection</p>
+    <ul class="mock-list">
+      <li><span class="tick">✓</span><span>18 papers imported</span></li>
+      <li><span class="tick">✓</span><span>7 datasets compared</span></li>
+      <li><span class="tick">✓</span><span>12 key findings extracted</span></li>
+      <li><span class="tick">✓</span><span>Claim supported by 6 papers · 92% citation confidence</span></li>
+    </ul>
+  </aside>
+</section>
+
+<section class="wrap block">
+  <div class="section-head reveal">
+    <h2>A system for research — not a prompt box</h2>
+    <p class="serif">Marketing shows the workflow. The app helps you run it.</p>
+  </div>
+  <div class="cards reveal">
+    <a class="card" href="{{ url_for('marketing_product') }}">
+      <div class="card-icon">01</div>
+      <h3>Product</h3>
+      <p>Library → Evidence → Writing → Verification → Export — outcomes at each stage.</p>
+    </a>
+    <a class="card" href="{{ url_for('marketing_how_it_works') }}">
+      <div class="card-icon">02</div>
+      <h3>How it Works</h3>
+      <p>Import, organise, extract, write, verify, export — understand Dhund without reading paragraphs.</p>
+    </a>
+    <a class="card" href="{{ url_for('marketing_research') }}">
+      <div class="card-icon">03</div>
+      <h3>Research</h3>
+      <p>Guides on literature reviews, evidence-backed writing, and why AI hallucinates in research.</p>
+    </a>
+    <a class="card" href="{{ url_for('marketing_early_access') }}">
+      <div class="card-icon">04</div>
+      <h3>Early Access</h3>
+      <p>Closed beta for MSc students, PhD researchers, supervisors, and labs.</p>
+    </a>
+  </div>
+</section>
+
+<section class="wrap block">
+  <div class="cta-band reveal">
+    <div>
+      <strong style="display:block;font-size:1.15rem;margin-bottom:0.35rem">Ready to work from evidence?</strong>
+      <p>Request early access, or sign in if you already have an invite.</p>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:0.6rem">
+      <a class="btn btn-primary" href="{{ url_for('marketing_early_access') }}">Request Early Access</a>
+      <a class="btn btn-ghost" href="{{ url_for('login_page') }}" style="border-color:rgba(255,255,255,0.35);color:#fff;background:transparent">Sign In</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
