@@ -1,6 +1,6 @@
 # Week 1.1 Sustained Load Report
 
-Generated: `2026-07-28T10:44:20.832560+00:00`
+Generated: `2026-07-30T08:59:01.210925+00:00`
 Scope: Writing Studio Shell API (`/api/writing/documents*`)
 Environment: Flask test client (local SQLite via root conftest)
 
@@ -15,27 +15,27 @@ Environment: Flask test client (local SQLite via root conftest)
 ### Burst autosave (n=40)
 
 - Notes: Sequential content-changing autosaves on one document; version advanced each save.
-- Stats: `{"error_count": 0, "max_ms": 29.18, "mean_ms": 12.51, "n": 40, "p50_ms": 11.98, "p95_ms": 15.03}`
+- Stats: `{"error_count": 0, "max_ms": 11.68, "mean_ms": 8.81, "n": 40, "p50_ms": 8.85, "p95_ms": 10.34}`
 
 ### Cohort list p95
 
 - Notes: 25× list documents
-- Stats: `{"error_count": 0, "max_ms": 10.23, "mean_ms": 5.39, "n": 25, "p50_ms": 4.61, "p95_ms": 9.11}`
+- Stats: `{"error_count": 0, "max_ms": 4.0, "mean_ms": 3.45, "n": 25, "p50_ms": 3.42, "p95_ms": 3.83}`
 
 ### Cohort open p95
 
 - Notes: 25× open document
-- Stats: `{"error_count": 0, "max_ms": 13.33, "mean_ms": 9.85, "n": 25, "p50_ms": 9.72, "p95_ms": 12.1}`
+- Stats: `{"error_count": 0, "max_ms": 9.02, "mean_ms": 7.01, "n": 25, "p50_ms": 6.96, "p95_ms": 8.28}`
 
 ### Cohort autosave p95
 
 - Notes: 25× autosave after list/open
-- Stats: `{"error_count": 0, "max_ms": 21.19, "mean_ms": 12.55, "n": 25, "p50_ms": 12.16, "p95_ms": 17.33}`
+- Stats: `{"error_count": 0, "max_ms": 10.37, "mean_ms": 9.07, "n": 25, "p50_ms": 9.17, "p95_ms": 10.02}`
 
 ### Conflict storm (stale version ×20)
 
 - Notes: All requests must return 409 version_conflict after head advances.
-- Stats: `{"conflict_count": 20, "error_count": 0, "max_ms": 10.0, "mean_ms": 7.38, "n": 20, "p50_ms": 7.49, "p95_ms": 9.19}`
+- Stats: `{"conflict_count": 20, "error_count": 0, "max_ms": 10.5, "mean_ms": 6.56, "n": 20, "p50_ms": 6.08, "p95_ms": 10.13}`
 
 ## Bottleneck notes
 

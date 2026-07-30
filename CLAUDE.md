@@ -94,6 +94,7 @@ Binding architecture principles for this repo — read it before any structural 
 
 ## Other docs worth checking before large changes
 - `docs/database-design.md` — schema/table reference.
-- `docs/api-contract.md` — API surface.
+- `docs/contracts/` — **living API freeze** (Evidence/RI/jobs; start here for A-402+)
+- `docs/api-contract.md` — legacy hybrid-API design essay (superseded for Evidence by contracts/)
 - `docs/upload-architecture.md`, `docs/processing-pipeline-architecture.md` — upload/job pipeline detail beyond the summary above.
 - `docs/testing-guide.md` — tiered manual test plan (self-checks → SQLite app boot → full Postgres+Redis+worker pipeline), including the exact migration bootstrap sequence and other known gaps.

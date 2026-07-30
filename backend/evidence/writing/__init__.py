@@ -10,6 +10,12 @@ from .export_markdown import build_literature_review_markdown, compute_export_tr
 from .metrics import compute_writing_metrics
 from .planner import SECTION_TYPES, plan_sections
 from .reviewer import review_grounded_draft
+from .ri_depth import (
+    build_draft_metadata,
+    build_ri_writing_context,
+    build_theme_outline,
+    merge_ri_into_argument,
+)
 from .section_generator import generate_sections
 
 __all__ = [
@@ -17,6 +23,10 @@ __all__ = [
     "plan_sections",
     "build_section_contexts",
     "build_structured_argument",
+    "build_ri_writing_context",
+    "build_theme_outline",
+    "build_draft_metadata",
+    "merge_ri_into_argument",
     "generate_sections",
     "bind_citations_to_sections",
     "flatten_bindings",

@@ -11,6 +11,7 @@ export type ReasonEnvelope = {
   };
   consensus?: {
     label?: string;
+    product_label?: string;
     supporting?: number;
     contradicting?: number;
     neutral?: number;
@@ -18,6 +19,26 @@ export type ReasonEnvelope = {
   conflict?: {
     has_conflict?: boolean;
     mediators?: string[];
+    mediator_explanations?: Array<{ code: string; title: string; why: string }>;
+    links?: Array<{
+      a_id: number;
+      b_id: number;
+      mediators?: string[];
+      why?: Array<{
+        code: string;
+        title: string;
+        why: string;
+        supporting_signals?: string[];
+        contradicting_signals?: string[];
+      }>;
+      unexplained?: boolean;
+    }>;
+    metrics?: {
+      mediated_pair_count?: number;
+      unexplained_pair_count?: number;
+      mediation_coverage?: number | null;
+    };
+    product_summary?: string | null;
   };
 };
 

@@ -2,7 +2,8 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Proposed |
+| **Status** | Active |
+| **Parent** | [versioning-policy.md](../contracts/versioning-policy.md) (`contracts_version` 1.2.0) |
 
 ---
 
@@ -27,6 +28,7 @@
 - Unversioned `/api/*` = **API v1**.
 - Additive JSON fields are **non-breaking**.
 - Frontend MUST ignore unknown fields.
+- Evidence/RI freeze pack: `docs/contracts/` (`contracts_version` **1.2.0**). See [versioning-policy.md](../contracts/versioning-policy.md) and [A-405 freeze](../contracts/A-405-documentation-freeze.md).
 
 ### Future breaking changes
 

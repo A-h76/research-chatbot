@@ -22,12 +22,14 @@ from backend.evidence.writing.planner import plan_sections
 from backend.evidence.writing.reviewer import review_grounded_draft
 from backend.evidence.writing.section_generator import generate_sections
 
-WRITING_VERSION = "1.3.1"
-WRITING_MODE = "grounded_v0"
+WRITING_VERSION = "2.0.0"
+WRITING_MODE = "grounded_v1"
 
 DISCLAIMER = (
     "Generated from Evidence Layer objects only; verify against source papers. "
-    "Not a substitute for reading the cited evidence."
+    "Not a substitute for reading the cited evidence. "
+    "Writing Intelligence v2 consumes project themes, consensus, and coverage gaps "
+    "but never invents literature."
 )
 
 _BLOCK_INSUFFICIENT = "insufficient_evidence"
@@ -89,7 +91,6 @@ def compose_grounded_paragraph(
     **_: Any,
 ) -> tuple[str, list[dict[str, Any]], list[str]]:
     """Heuristic assemble paragraph + ``[#id]`` markers from EvidenceObjects only."""
-    del context  # unused in heuristic path; accepted for composer signature parity
     warnings: list[str] = []
     citations: list[dict[str, Any]] = []
     sentences: list[str] = []
@@ -97,6 +98,9 @@ def compose_grounded_paragraph(
     selected_text = ((query.get("anchors") or {}).get("selected_text") or "").strip()
     query_text = (query.get("query_text") or "").strip()
     focus = selected_text or query_text
+    ctx = context or {}
+    argument = ctx.get("structured_argument") if isinstance(ctx.get("structured_argument"), dict) else {}
+    slot_id = str(ctx.get("slot_id") or "").lower()
 
     chosen = supporting[:max_claims]
     if len(supporting) > max_claims:
@@ -127,9 +131,37 @@ def compose_grounded_paragraph(
     if not sentences:
         return "", [], ["No usable claim/quote text on supporting EvidenceObjects."]
 
+    # RI-009: gap / theme framing from structured argument (still Evidence-only body)
+    lead = ""
+    if slot_id in {"themes", "overview", "covered"} and (argument.get("theme_clusters") or []):
+        labels = [
+            str(t.get("theme") or "")
+            for t in (argument.get("theme_clusters") or [])[:3]
+            if t.get("theme")
+        ]
+        if labels:
+            lead = f"Major themes in the evidence include {'; '.join(labels)}."
+            warnings.append("Theme framing from RI-001 clusters.")
+    if slot_id in {"undercovered", "next_questions", "tensions"} and (
+        argument.get("research_gaps") or []
+    ):
+        gap0 = (argument.get("research_gaps") or [])[0]
+        stmt = (gap0.get("statement") or "").strip()
+        if stmt:
+            lead = f"Coverage note: {stmt[:280]}"
+            warnings.append("Gap framing from RI-006 (evidence-anchored).")
+        qs = list(gap0.get("suggested_questions") or [])[:1]
+        if qs and slot_id == "next_questions":
+            lead = (lead + " " if lead else "") + f"Open question suggested by coverage: {qs[0][:200]}"
+
+    # Anchor framing to first citation id so reviewer stays Evidence-first
+    if lead and citations:
+        lead = f"{lead.rstrip()} [#{int(citations[0]['evidence_id'])}] "
+
     if focus:
-        # Attach focus to the first marked sentence (avoid an unmarked lead sentence).
-        sentences[0] = f"Regarding “{focus[:240]}”: {sentences[0]}"
+        sentences[0] = f"Regarding “{focus[:240]}”: {lead}{sentences[0]}"
+    elif lead:
+        sentences[0] = f"{lead}{sentences[0]}"
     else:
         sentences[0] = f"Based on stored evidence, {sentences[0]}"
 
@@ -142,9 +174,10 @@ def compose_grounded_paragraph(
             "dosage_differs": "dosage",
             "method_differs": "method",
             "outcome_differs": "outcome",
+            "timeframe_differs": "timeframe",
+            "statistics_differs": "statistics",
         }
         pretty = [labels.get(m, m) for m in mediators]
-        # Conflict note cites the same markers already present (no new ids).
         marker_tail = " ".join(
             f"[#{int(c['evidence_id'])}]" for c in citations if c.get("evidence_id") is not None
         )
@@ -172,8 +205,17 @@ def build_writing_intelligence(
     consensus: dict[str, Any] | None,
     conflict: dict[str, Any] | None,
     composer: Callable[..., tuple[str, list[dict[str, Any]], list[str]]] | None = None,
+    consensus_version: str | None = None,
+    conflict_version: str | None = None,
+    used_gateway: bool = False,
 ) -> dict[str, Any]:
-    """Generation step — Planner → Context → Section Generator after gates pass."""
+    """Research → Writing bridge: RI context → outline → grounded sections → reviewer."""
+    from backend.evidence.writing.ri_depth import (
+        build_draft_metadata,
+        build_ri_writing_context,
+        build_theme_outline,
+    )
+
     supporting = _supporting_objects(objects, consensus)
     status, blocked_reason = decide_generation_gate(
         reasoning=reasoning, consensus=consensus, supporting=supporting
@@ -184,15 +226,25 @@ def build_writing_intelligence(
         ((query.get("anchors") or {}).get("selected_text") or "").strip()
         or (query.get("query_text") or "").strip()
     )
+    project_id = (query.get("scope") or {}).get("project_id")
+
+    ri_context = build_ri_writing_context(
+        project_id=int(project_id) if project_id is not None else None,
+        objects=objects,
+        consensus=consensus,
+        conflict=conflict,
+    )
 
     payload: dict[str, Any] = {
         "status": status,
         "blocked_reason": blocked_reason,
         "mode": WRITING_MODE,
+        "writing_version": WRITING_VERSION,
         "section_type": section_type or "support_sentence",
         "paragraph": None,
         "sections": [],
         "plan": None,
+        "outline": [],
         "citations": [],
         "bibliography": [],
         "review": None,
@@ -200,6 +252,8 @@ def build_writing_intelligence(
         "disclaimer": DISCLAIMER,
         "supporting_count": len(supporting),
         "metrics": None,
+        "ri_context": ri_context,
+        "draft_metadata": None,
     }
 
     if status == "blocked":
@@ -209,18 +263,37 @@ def build_writing_intelligence(
         payload["metrics"] = compute_writing_metrics(
             sections=[], supporting_count=len(supporting), citations=[]
         )
+        payload["draft_metadata"] = build_draft_metadata(
+            writing_version=WRITING_VERSION,
+            ri_context=ri_context,
+            citations=[],
+            sections=[],
+            consensus=consensus,
+            conflict=conflict,
+            consensus_version=consensus_version,
+            conflict_version=conflict_version,
+            used_gateway=used_gateway,
+        )
         return payload
 
     fn = composer or compose_grounded_paragraph
-    plan = plan_sections(section_type=section_type or "support_sentence", topic=topic)
+    plan = plan_sections(
+        section_type=section_type or "support_sentence",
+        topic=topic,
+        themes=list(ri_context.get("themes") or []),
+    )
     contexts = build_section_contexts(
         plan=plan,
         supporting=supporting,
         consensus=consensus,
         conflict=conflict,
+        ri_context=ri_context,
     )
+    outline = build_theme_outline(plan=plan, contexts=contexts, ri_context=ri_context)
     sections = generate_sections(contexts=contexts, conflict=conflict, composer=fn)
     sections = bind_citations_to_sections(sections=sections, objects=objects)
+    payload["outline"] = outline
+    payload["plan"] = plan
 
     ok_sections = [s for s in sections if s.get("status") == "ok" and s.get("paragraph")]
     if not ok_sections:
@@ -242,6 +315,17 @@ def build_writing_intelligence(
             supporting_count=len(supporting),
             citations=[],
             review=payload["review"],
+        )
+        payload["draft_metadata"] = build_draft_metadata(
+            writing_version=WRITING_VERSION,
+            ri_context=ri_context,
+            citations=[],
+            sections=sections,
+            consensus=consensus,
+            conflict=conflict,
+            consensus_version=consensus_version,
+            conflict_version=conflict_version,
+            used_gateway=used_gateway,
         )
         return payload
 
@@ -267,6 +351,14 @@ def build_writing_intelligence(
     summary = (reasoning or {}).get("summary_code") or ""
     if summary in {"contested", "contested_with_mediators"}:
         warnings.append("Consensus is contested; treat the draft as provisional.")
+    if ri_context.get("themes"):
+        warnings.append(
+            f"RI depth: {len(ri_context['themes'])} theme(s) informed section allocation."
+        )
+    if ri_context.get("gaps"):
+        warnings.append(
+            f"RI depth: {len(ri_context['gaps'])} coverage gap(s) available for gap/tension slots."
+        )
     if review.get("status") == "fail":
         warnings.append("Reviewer failed: one or more sections lack EvidenceObject bindings.")
     for issue in review.get("issues") or []:
@@ -276,6 +368,7 @@ def build_writing_intelligence(
     payload["paragraph"] = paragraph
     payload["sections"] = sections
     payload["plan"] = plan
+    payload["outline"] = outline
     payload["citations"] = citations
     payload["bibliography"] = bibliography
     payload["review"] = review
@@ -285,6 +378,17 @@ def build_writing_intelligence(
         supporting_count=len(supporting),
         citations=citations,
         review=review,
+    )
+    payload["draft_metadata"] = build_draft_metadata(
+        writing_version=WRITING_VERSION,
+        ri_context=ri_context,
+        citations=citations,
+        sections=sections,
+        consensus=consensus,
+        conflict=conflict,
+        consensus_version=consensus_version,
+        conflict_version=conflict_version,
+        used_gateway=used_gateway,
     )
     return payload
 
@@ -302,6 +406,9 @@ def apply_writing_intelligence_stage(
         consensus=reasoning_result.get("consensus"),
         conflict=reasoning_result.get("conflict"),
         composer=composer,
+        consensus_version=reasoning_result.get("consensus_version"),
+        conflict_version=reasoning_result.get("conflict_version"),
+        used_gateway=composer is not None,
     )
     return {
         "query": reasoning_result.get("query") or {},

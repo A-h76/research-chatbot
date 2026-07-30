@@ -29,7 +29,7 @@
 | `EvidenceCreated` | evidence_object | FE evidence |
 | `EvidenceUpdated` | evidence_object | Inspector, writing rail |
 | `WritingGenerated` | document | Writing UI |
-| `ReviewCompleted` | document | Reviewer UI, export |
+| `ReviewCompleted` | document | Reviewer UI, export — payload includes `reviewer_run_id` when persisted (A-401) |
 | `ExportFinished` | export_job | Export UI |
 | `BindingCreated` / `BindingDeleted` | binding | Export, metrics |
 

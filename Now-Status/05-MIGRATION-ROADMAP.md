@@ -3,6 +3,9 @@
 **Goal:** Minimise refactoring, maximise long-term scalability.  
 **Principle:** Extend interfaces (`Importer`, `StorageProvider`/`StorageBackend` façade, `HANDLERS`, Evidence APIs) — no rewrites without ADR.
 
+> **Naming note (2026-07-30):** Product **Phase 2** is now [Research Intelligence](../docs/roadmap/PHASE-2-RESEARCH-INTELLIGENCE.md) (capability tickets RI-001…009).  
+> Phases below are the older *architecture consolidation* sequence. Prefer product Phase 2 for planning; only pull architecture items when an RI capability needs them.
+
 ---
 
 ## Phase 1 — No breaking changes (now → near-term)
@@ -12,8 +15,8 @@
 | Work item | Action | Outcome |
 |-----------|--------|---------|
 | Publish this Now-Status pack | Docs only | Shared truth for eng/product |
-| Refresh `docs/api-contract.md` Evidence/RI/Writing sections | Docs | Stop silent drift |
-| Refresh `docs/database-design.md` for evidence/writing/library | Docs | Onboarding |
+| Refresh Evidence/RI contracts | Docs | **Done (A-402/A-405)** — SoT is `docs/contracts/` (`contracts_version` 1.2.0); legacy `docs/api-contract.md` banners there |
+| Refresh `docs/database-design.md` for evidence/writing/library | Docs | Onboarding (+ A-404 Redis note) |
 | Align Phase 2 roadmap status with shipped writing/reviewer | Docs | Kill plan/code skew |
 | Route SPA authenticated `fetch` through `apiClient` | Frontend | Consistent 401 |
 | Add writing + evidence keys to `queryKeys.ts` | Frontend | Cache coherence |
@@ -27,9 +30,10 @@
 
 ---
 
-## Phase 2 — Extensions (evolutionary)
+## Phase 2 — Extensions (evolutionary) — *architecture track*
 
-**Objective:** Reduce dual stacks and harden trust — still additive to clients.
+**Objective:** Reduce dual stacks and harden trust — still additive to clients.  
+**Defer** large items unless blocked on shipping [Research Intelligence](../docs/roadmap/PHASE-2-RESEARCH-INTELLIGENCE.md).
 
 | Work item | Action | Notes |
 |-----------|--------|-------|
@@ -37,7 +41,7 @@
 | `LibraryUploadService` façade | **MERGE** | Session + JWT routes call one service |
 | Storage façade over `storage/` + `backend/storage/` | **MERGE** | One interface, adapters remain |
 | Unified retrieval service | **MERGE** | Session search + JWT search/RAG share core |
-| Persist `ReviewerResult` snapshots | **EXTEND** | `document_activity` or `reviewer_runs` |
+| Persist `ReviewerResult` snapshots | **DONE (A-401)** | `reviewer_runs` / `reviewer_findings` + reconstruct APIs |
 | Expand `PromptExecution` / cost coverage to chat SSE | **EXTEND** | Constitution §5 |
 | Project-level evidence graph view | **EXTEND** | Derived from EvidenceObjects — no new graph DB |
 | Deprecate or populate `search_index` | **DEPRECATE**/decide | ADR if remove |

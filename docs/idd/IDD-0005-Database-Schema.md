@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Proposed |
+| **Status** | Active (Evidence / writing / reviewer / jobs — A-405) |
 | **ORM** | SQLAlchemy 2.x + raw SQL migrations (`migrations/NNNN_*.sql`) |
 | **Not used** | Prisma, Drizzle |
 
@@ -30,6 +30,8 @@ This is a **contract-level** schema: names, keys, relationships, indexes. Exact 
 | Evidence review | `claim_reviews` |
 | Citation binding | `writing_sentence_bindings` |
 | Extraction run | `evidence_extraction_runs` |
+| ReviewerRun | `reviewer_runs` |
+| ReviewerFinding | `reviewer_findings` |
 | WritingDocument | `documents` |
 | Document version | `document_versions` |
 | Document activity | `document_activity` |
@@ -58,6 +60,8 @@ erDiagram
   evidence_objects ||--o{ writing_sentence_bindings : cited_in
   documents ||--o{ document_versions : versions
   documents ||--o{ writing_sentence_bindings : binds
+  documents ||--o{ reviewer_runs : reviewed
+  reviewer_runs ||--o{ reviewer_findings : findings
   users ||--o{ upload_jobs : owns
   upload_jobs ||--o| outbox_events : logical
 ```
@@ -117,14 +121,22 @@ erDiagram
 ### 4.8 `document_versions` / `document_activity`
 
 - Version history append-only
-- Activity may store reviewer snapshots (Phase 2 extension)
+- Activity is document UX telemetry — **not** the durable Reviewer store (see §4.8b)
+
+### 4.8b `reviewer_runs` / `reviewer_findings` (A-401 / A-503)
+
+- Migration: `migrations/0035_reviewer_persistence.sql`
+- Soft Integer ownership FKs; TEXT JSON for metrics / input_snapshot / evidence_ids
+- Reconstruct: `GET /api/documents/{id}/reviewer-runs/latest`, `GET /api/reviewer-runs/{id}`
+- Distinct from `claim_reviews` (human EvidenceObject accept/reject)
 
 ### 4.9 `upload_jobs`
 
 - PK: `id`
-- Columns: `job_type`, `status`, `attempts`, `run_after`, `payload`/refs, timestamps
+- Columns: `job_type`, `status` (`pending|running|done|failed`), `attempts`, `run_after`, `last_error`, `started_at`, `finished_at`, refs, timestamps
 - Indexes: poll index `(status, run_after)` for `SKIP LOCKED`
 - No hard FK required to outbox; correlation via aggregate id
+- **A-404:** API exposes additive `lifecycle` / `retry` / `timings` / `error` derived from these columns — see [job-observability.md](../contracts/job-observability.md). No new required columns for that enrichment.
 
 ### 4.10 `outbox_events`
 
@@ -150,6 +162,8 @@ erDiagram
 | `documents` | `(project_id, status)` | Writing list |
 | `upload_jobs` | `(status, run_after)` | Worker |
 | `writing_sentence_bindings` | `(document_id)` | Export |
+| `reviewer_runs` | `(document_id, created_at DESC)` | Latest review |
+| `reviewer_findings` | `(run_id)` | Reconstruct |
 
 ---
 
@@ -157,12 +171,12 @@ erDiagram
 
 | Table | When | Purpose |
 |-------|------|---------|
-| `reviewer_runs` | Phase 2 | Durable ReviewerResult |
 | `export_jobs` | Phase 2–3 | If export becomes always async |
 | `paper_sections` / `paper_figures` | Phase 3 | Normalize DU outputs |
 | Normalized `authors` | Phase 3 | ORCID graph |
 
-Adding these MUST NOT change EvidenceObject meaning.
+`reviewer_runs` / `reviewer_findings` shipped — see §4.8b.  
+Adding future tables MUST NOT change EvidenceObject meaning.
 
 ---
 

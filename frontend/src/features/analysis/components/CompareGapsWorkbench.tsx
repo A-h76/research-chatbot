@@ -31,6 +31,8 @@ import { useClipboard } from "@/hooks/useClipboard";
 import { toast } from "@/components/common/Toast";
 import { cn } from "@/lib/utils";
 import type { ComparisonData, GapFinderData, UserFile } from "@/types/api";
+import { ConsensusConflictStrip } from "@/features/evidence/components/ConsensusConflictStrip";
+import { useProjectConsensusConflict } from "@/features/evidence/hooks/useProjectConsensusConflict";
 
 function PaperRow({
   file,
@@ -367,6 +369,12 @@ export function CompareGapsWorkbench({
   const findGaps = useFindGaps();
   const { data: gapsResult, isLoading: gapsLoading } = useGapResult(gapsId);
 
+  const riCompare = useProjectConsensusConflict({
+    projectId,
+    fileIds: selected,
+    enabled: activeTab === "compare" && selected.length >= 2 && projectId != null,
+  });
+
   const filtered = useMemo(() => {
     const q = searchQ.trim().toLowerCase();
     if (!q) return files;
@@ -506,6 +514,14 @@ export function CompareGapsWorkbench({
           ? "Similarities, differences, contradictions, synthesis — 2–10 analysed papers."
           : "Underexplored topics, open questions, thesis ideas — 2–10 analysed papers."}
       </p>
+
+      {activeTab === "compare" && selected.length >= 2 ? (
+        <ConsensusConflictStrip
+          status={riCompare.status}
+          consensus={riCompare.consensus}
+          conflict={riCompare.conflict}
+        />
+      ) : null}
 
       {files.length === 0 ? (
         <EmptyState

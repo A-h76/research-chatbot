@@ -2,9 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Proposed |
+| **Status** | Active (Evidence + ReviewerRun; A-405) |
 | **Depends on** | [IDD-0001](./IDD-0001-System-Architecture.md) |
 | **Consumers** | A (schema/APIs), B (types/UI models) |
+| **DTO freeze** | [docs/contracts/evidence-contract.md](../contracts/evidence-contract.md) |
 
 ---
 
@@ -16,6 +17,7 @@
 | **Evidence Object** | Canonical research knowledge unit extracted from a Paper. |
 | **Claim** | Propositional content **within** an Evidence Object (not a separate root aggregate). |
 | **Writing Document** | Manuscript under edit (`documents`). |
+| **ReviewerRun** | Durable Research Reviewer execution (`reviewer_runs`); findings in `reviewer_findings`. ≠ claim_reviews. |
 | **Research Ready** | Paper processing gate allowing Evidence extraction. |
 
 ---

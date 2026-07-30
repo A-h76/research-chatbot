@@ -11,15 +11,16 @@ Vision sources: `docs/UI_UX_VISION_BETA_v1.0.md`, ADRs 0001–0007, Phase 2 writ
 | **Document Understanding** | ✅ | Phase 1.1 + importers + chunks/embeddings | Version stamps on all analysis rows incomplete |
 | **Evidence Layer** | ✅ | Tables + extract + review + explain + bindings (ADR-0003/0005) | Inspector polish; docs lag |
 | **Writing** | 🟡 | Shell + grounded `/api/evidence/writing` + UI desk | Not all section types battle-tested; classic transform still parallel |
-| **Reviewer** | 🟡 | `backend/evidence/writing/reviewer.py` in grounded path | Not durable; roadmap still marks 2.5 “later” |
-| **Consensus** | 🟡 | `POST /api/evidence/consensus` | Product UI thin vs API |
+| **Reviewer** | 🟢 | Durable `reviewer_runs` / `reviewer_findings` + GET reconstruct APIs (A-401) | FE accordion / export gate still open (EPIC-0005 B-*) |
+| **Ranking** | 🟢 | Strategy registry + `ranking_diagnostics` (A-403) | Product UI strategy picker optional |
+| **Consensus** | 🟢 | API + additive `metrics` (A-403) | Product Compare UI thin |
 | **Knowledge Graph** | 🟡 | Phase 1.7 per-document; UI paper graph tab | No project-level research graph product |
 | **Research Assistant** | 🟡 | Project research presets + Ask-from-library + chat | Correctly demoted; not Evidence-first everywhere |
 | **Export** | 🟡 | Markdown/export snapshot from grounded writing | Journal toolkit / DOCX / BibTeX packs incomplete |
 | **Authentication** | ✅ | Google, magic link, JWT, closed beta, password ops | — |
 | **Search** | 🟡 | Library semantic search + OpenAlex discover | Dual endpoints; SearchIndex unused |
 | **Retrieval** | 🟡 | Chunk RAG + Evidence retrieve stage | No pgvector; scale limit |
-| **Ranking** | 🟡 | `ranking_strategy` on EvidenceQuery + rank API | Strategy quality metrics sparse |
+| **Jobs** | 🟢 | Status + lifecycle/retry/timings (A-404) | Fine-grained progress still binary |
 
 ---
 

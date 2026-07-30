@@ -1,7 +1,7 @@
 """Project workspace HTTP routes.
 
 Hub + questions + research (Sprint B) + memory (Sprint C).
-Project CRUD remains on server.py until a later slice migrates those routes.
+Project CRUD lives in create_project_crud_blueprint (crud_routes.py).
 """
 
 from __future__ import annotations

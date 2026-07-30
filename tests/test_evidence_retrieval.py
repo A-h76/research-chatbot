@@ -145,11 +145,16 @@ def test_search_returns_matching_accepted_objects():
     assert resp.status_code == 200, resp.get_json()
     body = resp.get_json()
     assert body["stage"] == "retrieval"
+    assert "timing_ms" in body and isinstance(body["timing_ms"], int) and body["timing_ms"] >= 0
+    assert body["versions"]["retrieval"] == body["retrieval_version"] == "1.0.0"
+    assert "query" in body and "objects" in body and "total" in body and "truncated" in body
     ids = [o["id"] for o in body["objects"]]
     assert seeded["hit_id"] in ids
     assert seeded["cand_id"] not in ids  # candidate filtered out
     assert body["objects"][0]["id"] == seeded["hit_id"]  # binding + match preference
     assert body["query"]["scope"]["user_id"] == 7001
+    # Dual-read alias: paper_id ≡ file_id
+    assert body["objects"][0]["paper_id"] == body["objects"][0]["file_id"]
 
 
 def test_retrieve_alias_and_rejects_model_knobs():
@@ -193,3 +198,41 @@ def test_search_cross_user_project_hidden():
         },
     )
     assert resp.status_code == 404
+
+
+def test_search_rejects_document_from_other_project_same_user():
+    first = _seed(7005)
+    db = server.SessionLocal()
+    try:
+        other_project = server.Project(user_id=7005, name="Other-7005", emoji="O")
+        db.add(other_project)
+        db.flush()
+        other_doc = server.WritingDocument(
+            user_id=7005,
+            project_id=other_project.id,
+            title="Other Draft",
+            content="Other project content.",
+            status="active",
+            current_version=1,
+            last_saved_hash="h2",
+        )
+        db.add(other_doc)
+        db.commit()
+        other_document_id = other_doc.id
+    finally:
+        db.close()
+    client = _client()
+    _login(client, 7005)
+    resp = client.post(
+        "/api/evidence/search",
+        json={
+            "intent": "support_sentence",
+            "scope": {
+                "project_id": first["project_id"],
+                "document_id": other_document_id,
+            },
+            "filters": {"status": ["accepted"]},
+        },
+    )
+    assert resp.status_code == 404
+    assert resp.get_json().get("detail") == "document_not_in_project"

@@ -32,7 +32,7 @@ import server
 # above — safe here since worker.py is its own standalone process, never
 # imported back by server.py itself.
 from backend.ai import AIGateway, ModelRegistry, PromptRegistry
-from observability import configure_logging, correlation_id_var, start_worker_metrics_server
+from observability import configure_logging, correlation_id_var, record_upload_job_outcome, start_worker_metrics_server
 from server import (
     AnalysisPipelineResult,
     OutboxEvent,
@@ -445,6 +445,7 @@ def _handle_evidence_extract(db, job):
         load_analysis_result=load_analysis_result,
         force=force,
         job_id=job.id,
+        OutboxEvent=OutboxEvent,
     )
 
 
@@ -479,9 +480,16 @@ def _sync_status_cache(job):
     """Push the job's current status to Redis (database-design.md §5's
     job:{id}:status key, 1h TTL) — server._set_job_status_cache() is a
     no-op if Redis isn't configured/reachable, so this is safe to call
-    unconditionally at every status transition."""
-    progress = 100 if job.status == "done" else 0
-    server._set_job_status_cache(job.id, job.status, progress, job.updated_at, job.user_id)
+    unconditionally at every status transition.
+
+    A-404: write the full observability payload so cache hits retain
+    job_type / attempts / last_error / retry / timings.
+    """
+    try:
+        server._cache_upload_job_status(job)
+    except AttributeError:
+        progress = 100 if job.status == "done" else 0
+        server._set_job_status_cache(job.id, job.status, progress, job.updated_at, job.user_id)
 
 
 # --------------------------------------------------------------- poll loop
@@ -547,6 +555,7 @@ def run_job(job_id):
             _mark_outbox_dispatched(db, job.id)
             db.commit()
             _sync_status_cache(job)
+            _record_job_metrics(job, outcome="done")
             log.info("job %s (%s) done", job.id, job.job_type)
 
         except Exception as exc:
@@ -587,8 +596,34 @@ def run_job(job_id):
                 )
             db.commit()
             _sync_status_cache(job)
+            _record_job_metrics(
+                job, outcome="failed" if job.status == "failed" else "retry"
+            )
     finally:
         db.close()
+
+
+def _record_job_metrics(job, *, outcome: str) -> None:
+    duration = None
+    if job.started_at and job.finished_at:
+        try:
+            start = job.started_at
+            end = job.finished_at
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=timezone.utc)
+            duration = max(0.0, (end - start).total_seconds())
+        except Exception:
+            duration = None
+    try:
+        record_upload_job_outcome(
+            job_type=job.job_type or "unknown",
+            outcome=outcome,
+            duration_seconds=duration if outcome in {"done", "failed"} else None,
+        )
+    except Exception:
+        log.warning("job metrics record failed", exc_info=True)
 
 
 def _heartbeat():

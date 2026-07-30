@@ -1,8 +1,9 @@
 """GET /api/documents/search and POST /api/rag — Bearer-JWT-authenticated
-counterparts to server.py's existing session-based POST /api/search,
-same relationship as /api/documents/upload has to /api/files: an
-additional flow, not a replacement (see backend/upload/routes.py's own
-docstring for the precedent this follows).
+counterparts to the session-based POST /api/search (now in
+backend/search/semantic_routes.py), same relationship as
+/api/documents/upload has to /api/files: an additional flow, not a
+replacement (see backend/upload/routes.py's own docstring for the
+precedent this follows).
 
 Deliberately does NOT duplicate /api/search's actual search logic or
 introduce a second search "engine": both routes here search the exact
@@ -33,7 +34,6 @@ re-executes the whole file under a second module identity and recurses.
 """
 
 import json
-import math
 import time
 
 from flask import Blueprint, g, jsonify, request
@@ -42,53 +42,11 @@ from sqlalchemy import select
 from auth.decorators import jwt_required
 from backend.ai import ModelError, ModelRegistry
 from backend.ai.prompts import ensure_default_prompts
+from backend.search.shared import search_user_document_chunks
 
 # Cap query size at the HTTP edge (Phase 2 / F4.1 / F10.4).
 MAX_SEARCH_QUERY_CHARS = 2_000
 MAX_RAG_QUERY_CHARS = 8_000
-
-
-def _cosine(a, b):
-    dot = sum(x * y for x, y in zip(a, b))
-    na = math.sqrt(sum(x * x for x in a)) or 1e-9
-    nb = math.sqrt(sum(x * x for x in b)) or 1e-9
-    return dot / (na * nb)
-
-
-def _search_chunks(
-    db, UserFile, Chunk, user_id, query_embedding, *, file_id=None, project_id=None, limit=20, min_score=0.15
-):
-    """Real vector similarity, not keyword fallback — unlike /api/search,
-    which also falls back to keyword scoring for chunks with no stored
-    embedding. That fallback isn't reproduced here: this endpoint's whole
-    point is "vector similarity search against stored embeddings," so a
-    chunk without one is skipped rather than scored a different way."""
-    file_stmt = select(UserFile).where(UserFile.user_id == user_id, UserFile.kind == "document")
-    if file_id is not None:
-        file_stmt = file_stmt.where(UserFile.id == file_id)
-    if project_id is not None:
-        file_stmt = file_stmt.where(UserFile.project_id == project_id)
-    file_map = {f.id: f for f in db.execute(file_stmt).scalars().all()}
-    if not file_map:
-        return []
-
-    chunks = db.execute(select(Chunk).where(Chunk.file_id.in_(file_map.keys()))).scalars().all()
-
-    scored = []
-    for ch in chunks:
-        if not ch.embedding:
-            continue
-        try:
-            emb = json.loads(ch.embedding)
-        except (ValueError, TypeError):
-            continue
-        score = _cosine(query_embedding, emb)
-        if score < min_score:
-            continue
-        scored.append((score, ch, file_map.get(ch.file_id)))
-
-    scored.sort(key=lambda x: -x[0])
-    return scored[:limit]
 
 
 def create_search_blueprint(
@@ -153,15 +111,18 @@ def create_search_blueprint(
             except ModelError as exc:
                 return jsonify({"error": "embedding_failed", "message": str(exc)}), 502
 
-            results = _search_chunks(
+            results = search_user_document_chunks(
                 db,
-                UserFile,
-                Chunk,
-                user_id,
-                query_embedding,
+                UserFile=UserFile,
+                Chunk=Chunk,
+                select=select,
+                user_id=user_id,
+                query_embedding=query_embedding,
+                query_text=q,
                 file_id=file_id,
                 project_id=project_id,
                 limit=limit,
+                allow_keyword_fallback=False,
             )
             return jsonify(
                 {
@@ -237,15 +198,18 @@ def create_search_blueprint(
             except ModelError as exc:
                 return jsonify({"error": "embedding_failed", "message": str(exc)}), 502
 
-            results = _search_chunks(
+            results = search_user_document_chunks(
                 db,
-                UserFile,
-                Chunk,
-                user_id,
-                query_embedding,
+                UserFile=UserFile,
+                Chunk=Chunk,
+                select=select,
+                user_id=user_id,
+                query_embedding=query_embedding,
+                query_text=query,
                 file_id=file_id,
                 project_id=project_id,
                 limit=top_k,
+                allow_keyword_fallback=False,
             )
             if not results:
                 return (

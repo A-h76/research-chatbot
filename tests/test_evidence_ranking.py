@@ -127,7 +127,8 @@ def test_rank_orders_strongest_first():
     body = resp.get_json()
     assert body["stage"] == "ranking"
     assert body["ranking_strategy"] == "default_v0"
-    assert body["ranking_version"] == "1.0.0"
+    assert body["ranking_version"] == "1.1.0"
+    assert "ranking_diagnostics" in body
     ids = [o["id"] for o in body["objects"]]
     assert seeded["strong_id"] in ids
     assert seeded["weak_id"] in ids
@@ -160,6 +161,27 @@ def test_rank_rejects_model_knobs_and_unknown_strategy():
         },
     )
     assert unknown.status_code == 422
+
+
+def test_rank_quality_first_strategy_api():
+    seeded = _seed(7104)
+    client = _client()
+    _login(client, 7104)
+    resp = client.post(
+        "/api/evidence/rank",
+        json={
+            "intent": "list_project",
+            "scope": {"project_id": seeded["project_id"]},
+            "filters": {"status": ["accepted", "candidate"], "require_page_anchor": True},
+            "ranking_strategy": "quality_first_v1",
+            "result_limit": 20,
+        },
+    )
+    assert resp.status_code == 200, resp.get_json()
+    body = resp.get_json()
+    assert body["ranking_strategy"] == "quality_first_v1"
+    assert body["ranking_diagnostics"]["strategy"] == "quality_first_v1"
+    assert seeded["strong_id"] in {o["id"] for o in body["objects"]}
 
 
 def test_rank_preserves_object_ids_from_retrieval():

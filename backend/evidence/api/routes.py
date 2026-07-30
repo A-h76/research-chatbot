@@ -3,14 +3,29 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 from flask import Blueprint, jsonify, request, session
+from sqlalchemy import func
 
 from backend.evidence.api.errors import ErrorCode, EvidenceDomainError
 from backend.evidence.bindings import validate_binding_payload
+from backend.evidence.envelope import stamp_ri_envelope
 from backend.evidence.inspector import assemble_explain_response
+from backend.evidence.matrix import (
+        build_evidence_matrix,
+        matrix_to_csv,
+        matrix_to_markdown,
+    )
+from backend.evidence.themes import discover_themes, themes_to_markdown
+from backend.evidence.graph import build_project_graph
+from backend.evidence.gaps import discover_gaps, gaps_to_markdown
+from backend.evidence.timeline import build_timeline, timeline_to_markdown
+from backend.evidence.methodology import build_methodology_advice, methodology_to_markdown
+from backend.evidence.consensus import aggregate_consensus
+from backend.evidence.conflict import analyze_conflicts
 from backend.evidence.objects import serialize_evidence_object
 from backend.evidence.conflict import apply_conflict_stage
 from backend.evidence.consensus import apply_consensus_stage
@@ -19,6 +34,11 @@ from backend.evidence.ranking import apply_ranking_stage
 from backend.evidence.reasoning import apply_reasoning_stage
 from backend.evidence.retrieval import retrieve_evidence_objects
 from backend.evidence.writing_intelligence import apply_writing_intelligence_stage
+from backend.evidence.writing.citation_binder import BINDER_VERSION
+from backend.evidence.writing.reviewer_persistence import (
+    persist_reviewer_run,
+    serialize_run,
+)
 from backend.evidence.reviews import next_object_status_after_review, validate_review_payload
 from backend.evidence.services.extract_service import PIPELINE_VERSION, run_evidence_extraction
 from backend.evidence.services.logging import log_evidence_metric
@@ -40,6 +60,8 @@ def create_evidence_blueprint(
     ClaimReview: Any,
     WritingSentenceBinding: Any,
     EvidenceExtractionRun: Any,
+    ReviewerRun: Any,
+    ReviewerFinding: Any,
     AnalysisPipelineResult: Any,
     UploadJob: Any,
     OutboxEvent: Any,
@@ -51,6 +73,7 @@ def create_evidence_blueprint(
     ai_gateway: Any = None,
     get_model_registry: Callable | None = None,
     writing_quality_mode: str = "balanced",
+    PaperAnalysis: Any = None,
 ) -> Blueprint:
     bp = Blueprint("evidence", __name__)
 
@@ -67,6 +90,31 @@ def create_evidence_blueprint(
         }
         return jsonify({"error": exc.code, "detail": exc.detail}), code_map.get(exc.code, status)
 
+    def _emit_contract_event(
+        db,
+        *,
+        aggregate_type: str,
+        aggregate_id: int,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Write contract-level event as already-dispatched outbox record."""
+        db.add(
+            OutboxEvent(
+                aggregate_type=aggregate_type,
+                aggregate_id=int(aggregate_id),
+                event_type=event_type,
+                payload=json.dumps(payload, ensure_ascii=False),
+                status="dispatched",
+                dispatched_at=datetime.now(timezone.utc),
+            )
+        )
+
+    def _json_ri(result: dict[str, Any], *, started: float):
+        """Stamp shared RI envelope fields (timing_ms, versions) then jsonify."""
+        timing_ms = (time.perf_counter() - started) * 1000.0
+        return jsonify(stamp_ri_envelope(result, timing_ms=timing_ms))
+
     @bp.get("/api/projects/<int:project_id>/evidence")
     @login_required
     def list_evidence(project_id: int):
@@ -74,19 +122,702 @@ def create_evidence_blueprint(
         db = SessionLocal()
         try:
             require_owned_project(db, Project, user_id=uid, project_id=project_id)
-            stmt = select(EvidenceObject).where(
+            filters = [
                 EvidenceObject.user_id == uid,
                 EvidenceObject.project_id == project_id,
                 EvidenceObject.status != "superseded",
-            )
+            ]
             file_id = request.args.get("file_id")
             status = request.args.get("status")
+            try:
+                limit = int(request.args.get("limit") or 50)
+            except ValueError:
+                return jsonify({"error": ErrorCode.VALIDATION, "detail": "limit must be an integer"}), 422
+            try:
+                offset = int(request.args.get("offset") or 0)
+            except ValueError:
+                return jsonify({"error": ErrorCode.VALIDATION, "detail": "offset must be an integer"}), 422
+            limit = max(1, min(200, limit))
+            offset = max(0, offset)
             if file_id:
-                stmt = stmt.where(EvidenceObject.file_id == int(file_id))
+                filters.append(EvidenceObject.file_id == int(file_id))
             if status:
-                stmt = stmt.where(EvidenceObject.status == status)
-            rows = db.execute(stmt.order_by(EvidenceObject.updated_at.desc()).limit(200)).scalars().all()
-            return jsonify({"items": [serialize_evidence_object(r) for r in rows], "count": len(rows)})
+                filters.append(EvidenceObject.status == status)
+            rows = (
+                db.execute(
+                    select(EvidenceObject)
+                    .where(*filters)
+                    .order_by(EvidenceObject.updated_at.desc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+                .scalars()
+                .all()
+            )
+            total = int(
+                db.execute(select(func.count()).select_from(EvidenceObject).where(*filters)).scalar_one()
+            )
+            return jsonify(
+                {
+                    "items": [serialize_evidence_object(r) for r in rows],
+                    "count": len(rows),
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                }
+            )
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.get("/api/projects/<int:project_id>/evidence/matrix")
+    @login_required
+    def evidence_matrix(project_id: int):
+        """RI-002 — Evidence Matrix (Paper × Method × Dataset × Findings × Limitations)."""
+        from flask import Response
+
+        uid = _uid()
+        fmt = (request.args.get("format") or "json").strip().lower()
+        if fmt not in {"json", "markdown", "md", "csv"}:
+            return (
+                jsonify(
+                    {
+                        "error": ErrorCode.VALIDATION,
+                        "detail": "format must be json, markdown, or csv",
+                    }
+                ),
+                422,
+            )
+        if fmt == "md":
+            fmt = "markdown"
+
+        file_ids_raw = (request.args.get("file_ids") or "").strip()
+        status_filter = (request.args.get("status") or "").strip()
+        db = SessionLocal()
+        try:
+            require_owned_project(db, Project, user_id=uid, project_id=project_id)
+            file_q = select(UserFile).where(
+                UserFile.user_id == uid,
+                UserFile.project_id == project_id,
+            )
+            if file_ids_raw:
+                try:
+                    wanted = [int(x) for x in file_ids_raw.split(",") if x.strip()]
+                except ValueError:
+                    return (
+                        jsonify(
+                            {
+                                "error": ErrorCode.VALIDATION,
+                                "detail": "file_ids must be comma-separated integers",
+                            }
+                        ),
+                        422,
+                    )
+                if not wanted:
+                    return (
+                        jsonify(
+                            {
+                                "error": ErrorCode.VALIDATION,
+                                "detail": "file_ids must include at least one id",
+                            }
+                        ),
+                        422,
+                    )
+                file_q = file_q.where(UserFile.id.in_(wanted))
+            files = list(db.execute(file_q.order_by(UserFile.id.asc())).scalars().all())
+
+            ev_filters = [
+                EvidenceObject.user_id == uid,
+                EvidenceObject.project_id == project_id,
+                EvidenceObject.status != "superseded",
+            ]
+            if status_filter:
+                allowed = {s.strip() for s in status_filter.split(",") if s.strip()}
+                if not allowed.issubset({"candidate", "accepted", "rejected"}):
+                    return (
+                        jsonify(
+                            {
+                                "error": ErrorCode.VALIDATION,
+                                "detail": "status filter invalid",
+                            }
+                        ),
+                        422,
+                    )
+                ev_filters.append(EvidenceObject.status.in_(sorted(allowed)))
+            else:
+                ev_filters.append(EvidenceObject.status.in_(["candidate", "accepted"]))
+
+            if files:
+                fids = [int(f.id) for f in files]
+                ev_filters.append(EvidenceObject.file_id.in_(fids))
+                evidence_rows = list(
+                    db.execute(select(EvidenceObject).where(*ev_filters)).scalars().all()
+                )
+            else:
+                evidence_rows = []
+
+            evidence_by_file: dict[int, list] = {int(f.id): [] for f in files}
+            for row in evidence_rows:
+                fid = int(row.file_id)
+                if fid in evidence_by_file:
+                    evidence_by_file[fid].append(serialize_evidence_object(row))
+
+            analysis_by_file: dict[int, dict] = {}
+            if PaperAnalysis is not None and files:
+                fids = [int(f.id) for f in files]
+                pa_rows = list(
+                    db.execute(
+                        select(PaperAnalysis).where(PaperAnalysis.file_id.in_(fids))
+                    )
+                    .scalars()
+                    .all()
+                )
+                for pa in pa_rows:
+                    raw = getattr(pa, "data", None) or "{}"
+                    try:
+                        data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+                    except Exception:
+                        data = {}
+                    if isinstance(data, dict):
+                        analysis_by_file[int(pa.file_id)] = data
+
+            papers = [
+                {
+                    "id": int(f.id),
+                    "file_id": int(f.id),
+                    "title": getattr(f, "title", None) or getattr(f, "name", "") or "",
+                    "name": getattr(f, "name", "") or "",
+                    "year": getattr(f, "year", None) or "",
+                    "authors": getattr(f, "authors", None) or "",
+                }
+                for f in files
+            ]
+            matrix = build_evidence_matrix(
+                project_id=project_id,
+                papers=papers,
+                evidence_by_file=evidence_by_file,
+                analysis_by_file=analysis_by_file,
+            )
+
+            if fmt == "markdown":
+                body = matrix_to_markdown(matrix)
+                return Response(
+                    body,
+                    mimetype="text/markdown; charset=utf-8",
+                    headers={
+                        "Content-Disposition": (
+                            f'attachment; filename="evidence-matrix-p{project_id}.md"'
+                        )
+                    },
+                )
+            if fmt == "csv":
+                body = matrix_to_csv(matrix)
+                return Response(
+                    body,
+                    mimetype="text/csv; charset=utf-8",
+                    headers={
+                        "Content-Disposition": (
+                            f'attachment; filename="evidence-matrix-p{project_id}.csv"'
+                        )
+                    },
+                )
+            return jsonify(matrix)
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.get("/api/projects/<int:project_id>/evidence/themes")
+    @login_required
+    def evidence_themes(project_id: int):
+        """RI-001 — Theme Discovery (deterministic, reconstructable)."""
+        from flask import Response
+
+        uid = _uid()
+        fmt = (request.args.get("format") or "json").strip().lower()
+        if fmt not in {"json", "markdown", "md"}:
+            return (
+                jsonify(
+                    {
+                        "error": ErrorCode.VALIDATION,
+                        "detail": "format must be json or markdown",
+                    }
+                ),
+                422,
+            )
+        if fmt == "md":
+            fmt = "markdown"
+
+        def _float_arg(name: str, default: float) -> tuple[float | None, Any]:
+            raw = request.args.get(name)
+            if raw is None or raw == "":
+                return default, None
+            try:
+                return float(raw), None
+            except ValueError:
+                return None, (
+                    jsonify(
+                        {
+                            "error": ErrorCode.VALIDATION,
+                            "detail": f"{name} must be a number",
+                        }
+                    ),
+                    422,
+                )
+
+        def _int_arg(name: str, default: int) -> tuple[int | None, Any]:
+            raw = request.args.get(name)
+            if raw is None or raw == "":
+                return default, None
+            try:
+                return int(raw), None
+            except ValueError:
+                return None, (
+                    jsonify(
+                        {
+                            "error": ErrorCode.VALIDATION,
+                            "detail": f"{name} must be an integer",
+                        }
+                    ),
+                    422,
+                )
+
+        threshold, err = _float_arg("similarity_threshold", 0.22)
+        if err:
+            return err
+        min_size, err = _int_arg("min_cluster_size", 2)
+        if err:
+            return err
+        max_themes, err = _int_arg("max_themes", 12)
+        if err:
+            return err
+        assert threshold is not None and min_size is not None and max_themes is not None
+        if not (0.05 <= threshold <= 0.95):
+            return (
+                jsonify(
+                    {
+                        "error": ErrorCode.VALIDATION,
+                        "detail": "similarity_threshold must be between 0.05 and 0.95",
+                    }
+                ),
+                422,
+            )
+        if min_size < 1 or min_size > 20:
+            return (
+                jsonify(
+                    {
+                        "error": ErrorCode.VALIDATION,
+                        "detail": "min_cluster_size must be 1–20",
+                    }
+                ),
+                422,
+            )
+        if max_themes < 1 or max_themes > 40:
+            return (
+                jsonify(
+                    {
+                        "error": ErrorCode.VALIDATION,
+                        "detail": "max_themes must be 1–40",
+                    }
+                ),
+                422,
+            )
+
+        status_filter = (request.args.get("status") or "").strip()
+        file_ids_raw = (request.args.get("file_ids") or "").strip()
+        db = SessionLocal()
+        try:
+            require_owned_project(db, Project, user_id=uid, project_id=project_id)
+            ev_filters = [
+                EvidenceObject.user_id == uid,
+                EvidenceObject.project_id == project_id,
+                EvidenceObject.status != "superseded",
+            ]
+            if status_filter:
+                allowed = {s.strip() for s in status_filter.split(",") if s.strip()}
+                if not allowed.issubset({"candidate", "accepted", "rejected"}):
+                    return (
+                        jsonify(
+                            {
+                                "error": ErrorCode.VALIDATION,
+                                "detail": "status filter invalid",
+                            }
+                        ),
+                        422,
+                    )
+                ev_filters.append(EvidenceObject.status.in_(sorted(allowed)))
+            else:
+                ev_filters.append(EvidenceObject.status.in_(["candidate", "accepted"]))
+
+            if file_ids_raw:
+                try:
+                    wanted = [int(x) for x in file_ids_raw.split(",") if x.strip()]
+                except ValueError:
+                    return (
+                        jsonify(
+                            {
+                                "error": ErrorCode.VALIDATION,
+                                "detail": "file_ids must be comma-separated integers",
+                            }
+                        ),
+                        422,
+                    )
+                if wanted:
+                    ev_filters.append(EvidenceObject.file_id.in_(wanted))
+
+            rows = list(
+                db.execute(
+                    select(EvidenceObject)
+                    .where(*ev_filters)
+                    .order_by(EvidenceObject.id.asc())
+                    .limit(2000)
+                )
+                .scalars()
+                .all()
+            )
+            objects = [serialize_evidence_object(r) for r in rows]
+            payload = discover_themes(
+                objects,
+                project_id=project_id,
+                similarity_threshold=threshold,
+                min_cluster_size=min_size,
+                max_themes=max_themes,
+            )
+            if fmt == "markdown":
+                body = themes_to_markdown(payload)
+                return Response(
+                    body,
+                    mimetype="text/markdown; charset=utf-8",
+                    headers={
+                        "Content-Disposition": (
+                            f'attachment; filename="evidence-themes-p{project_id}.md"'
+                        )
+                    },
+                )
+            return jsonify(payload)
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    def _load_project_corpus(db, *, uid: int, project_id: int, file_ids_raw: str, status_filter: str):
+        """Shared loader for matrix/themes/graph/gaps project GETs."""
+        require_owned_project(db, Project, user_id=uid, project_id=project_id)
+        file_q = select(UserFile).where(
+            UserFile.user_id == uid,
+            UserFile.project_id == project_id,
+        )
+        wanted: list[int] | None = None
+        if file_ids_raw:
+            try:
+                wanted = [int(x) for x in file_ids_raw.split(",") if x.strip()]
+            except ValueError as exc:
+                raise EvidenceDomainError(
+                    ErrorCode.VALIDATION, "file_ids must be comma-separated integers"
+                ) from exc
+            if not wanted:
+                raise EvidenceDomainError(ErrorCode.VALIDATION, "file_ids must include at least one id")
+            file_q = file_q.where(UserFile.id.in_(wanted))
+        files = list(db.execute(file_q.order_by(UserFile.id.asc())).scalars().all())
+
+        ev_filters = [
+            EvidenceObject.user_id == uid,
+            EvidenceObject.project_id == project_id,
+            EvidenceObject.status != "superseded",
+        ]
+        if status_filter:
+            allowed = {s.strip() for s in status_filter.split(",") if s.strip()}
+            if not allowed.issubset({"candidate", "accepted", "rejected"}):
+                raise EvidenceDomainError(ErrorCode.VALIDATION, "status filter invalid")
+            ev_filters.append(EvidenceObject.status.in_(sorted(allowed)))
+        else:
+            ev_filters.append(EvidenceObject.status.in_(["candidate", "accepted"]))
+        if files:
+            fids = [int(f.id) for f in files]
+            ev_filters.append(EvidenceObject.file_id.in_(fids))
+            evidence_rows = list(
+                db.execute(
+                    select(EvidenceObject).where(*ev_filters).order_by(EvidenceObject.id.asc()).limit(2000)
+                )
+                .scalars()
+                .all()
+            )
+        else:
+            evidence_rows = []
+
+        objects = [serialize_evidence_object(r) for r in evidence_rows]
+        papers = [
+            {
+                "id": int(f.id),
+                "file_id": int(f.id),
+                "title": getattr(f, "title", None) or getattr(f, "name", "") or "",
+                "name": getattr(f, "name", "") or "",
+                "year": getattr(f, "year", None) or "",
+                "authors": getattr(f, "authors", None) or "",
+            }
+            for f in files
+        ]
+        analysis_by_file: dict[int, dict] = {}
+        if PaperAnalysis is not None and files:
+            fids = [int(f.id) for f in files]
+            pa_rows = list(
+                db.execute(select(PaperAnalysis).where(PaperAnalysis.file_id.in_(fids))).scalars().all()
+            )
+            for pa in pa_rows:
+                raw = getattr(pa, "data", None) or "{}"
+                try:
+                    data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+                except Exception:
+                    data = {}
+                if isinstance(data, dict):
+                    analysis_by_file[int(pa.file_id)] = data
+        return papers, objects, analysis_by_file
+
+    @bp.get("/api/projects/<int:project_id>/evidence/graph")
+    @login_required
+    def evidence_graph(project_id: int):
+        """RI-005 — Project knowledge graph over Evidence (+ themes)."""
+        uid = _uid()
+        file_ids_raw = (request.args.get("file_ids") or "").strip()
+        status_filter = (request.args.get("status") or "").strip()
+        include_conflict = (request.args.get("include_conflict") or "1").strip() not in {
+            "0",
+            "false",
+            "no",
+        }
+        db = SessionLocal()
+        try:
+            papers, objects, _analysis = _load_project_corpus(
+                db,
+                uid=uid,
+                project_id=project_id,
+                file_ids_raw=file_ids_raw,
+                status_filter=status_filter,
+            )
+            themes = discover_themes(objects, project_id=project_id)
+            conflict_links = []
+            if include_conflict and objects:
+                conflict = analyze_conflicts(objects)
+                conflict_links = list(conflict.get("links") or [])
+            payload = build_project_graph(
+                project_id=project_id,
+                papers=papers,
+                evidence_objects=objects,
+                themes_payload=themes,
+                conflict_links=conflict_links,
+            )
+            return jsonify(payload)
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.get("/api/projects/<int:project_id>/evidence/gaps")
+    @login_required
+    def evidence_gaps(project_id: int):
+        """RI-006 — Research gaps from themes + matrix (+ consensus/conflict)."""
+        from flask import Response
+
+        uid = _uid()
+        fmt = (request.args.get("format") or "json").strip().lower()
+        if fmt not in {"json", "markdown", "md"}:
+            return (
+                jsonify(
+                    {
+                        "error": ErrorCode.VALIDATION,
+                        "detail": "format must be json or markdown",
+                    }
+                ),
+                422,
+            )
+        if fmt == "md":
+            fmt = "markdown"
+        file_ids_raw = (request.args.get("file_ids") or "").strip()
+        status_filter = (request.args.get("status") or "").strip()
+        db = SessionLocal()
+        try:
+            papers, objects, analysis_by_file = _load_project_corpus(
+                db,
+                uid=uid,
+                project_id=project_id,
+                file_ids_raw=file_ids_raw,
+                status_filter=status_filter,
+            )
+            themes = discover_themes(objects, project_id=project_id)
+            evidence_by_file: dict[int, list] = {int(p["file_id"]): [] for p in papers}
+            for o in objects:
+                if o.get("file_id") is None:
+                    continue
+                fid = int(o["file_id"])
+                evidence_by_file.setdefault(fid, []).append(o)
+            matrix = build_evidence_matrix(
+                project_id=project_id,
+                papers=papers,
+                evidence_by_file=evidence_by_file,
+                analysis_by_file=analysis_by_file,
+            )
+            consensus = aggregate_consensus(objects) if objects else None
+            conflict = analyze_conflicts(objects) if objects else None
+            payload = discover_gaps(
+                project_id=project_id,
+                papers=papers,
+                evidence_objects=objects,
+                analysis_by_file=analysis_by_file,
+                themes_payload=themes,
+                matrix_payload=matrix,
+                consensus_payload=consensus,
+                conflict_payload=conflict,
+            )
+            if fmt == "markdown":
+                body = gaps_to_markdown(payload)
+                return Response(
+                    body,
+                    mimetype="text/markdown; charset=utf-8",
+                    headers={
+                        "Content-Disposition": (
+                            f'attachment; filename="evidence-gaps-p{project_id}.md"'
+                        )
+                    },
+                )
+            return jsonify(payload)
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.get("/api/projects/<int:project_id>/evidence/timeline")
+    @login_required
+    def evidence_timeline(project_id: int):
+        """RI-007 — Research timeline by year with paper/evidence/theme anchors."""
+        from flask import Response
+
+        uid = _uid()
+        fmt = (request.args.get("format") or "json").strip().lower()
+        if fmt not in {"json", "markdown", "md"}:
+            return (
+                jsonify(
+                    {
+                        "error": ErrorCode.VALIDATION,
+                        "detail": "format must be json or markdown",
+                    }
+                ),
+                422,
+            )
+        if fmt == "md":
+            fmt = "markdown"
+        file_ids_raw = (request.args.get("file_ids") or "").strip()
+        status_filter = (request.args.get("status") or "").strip()
+        db = SessionLocal()
+        try:
+            papers, objects, _analysis = _load_project_corpus(
+                db,
+                uid=uid,
+                project_id=project_id,
+                file_ids_raw=file_ids_raw,
+                status_filter=status_filter,
+            )
+            themes = discover_themes(objects, project_id=project_id)
+            payload = build_timeline(
+                project_id=project_id,
+                papers=papers,
+                evidence_objects=objects,
+                themes_payload=themes,
+            )
+            if fmt == "markdown":
+                body = timeline_to_markdown(payload)
+                return Response(
+                    body,
+                    mimetype="text/markdown; charset=utf-8",
+                    headers={
+                        "Content-Disposition": (
+                            f'attachment; filename="evidence-timeline-p{project_id}.md"'
+                        )
+                    },
+                )
+            return jsonify(payload)
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.get("/api/projects/<int:project_id>/evidence/methodology")
+    @login_required
+    def evidence_methodology(project_id: int):
+        """RI-008 — Methodology advisory cards grounded in Evidence."""
+        from flask import Response
+
+        uid = _uid()
+        fmt = (request.args.get("format") or "json").strip().lower()
+        if fmt not in {"json", "markdown", "md"}:
+            return (
+                jsonify(
+                    {
+                        "error": ErrorCode.VALIDATION,
+                        "detail": "format must be json or markdown",
+                    }
+                ),
+                422,
+            )
+        if fmt == "md":
+            fmt = "markdown"
+        file_ids_raw = (request.args.get("file_ids") or "").strip()
+        status_filter = (request.args.get("status") or "").strip()
+        db = SessionLocal()
+        try:
+            papers, objects, analysis_by_file = _load_project_corpus(
+                db,
+                uid=uid,
+                project_id=project_id,
+                file_ids_raw=file_ids_raw,
+                status_filter=status_filter,
+            )
+            themes = discover_themes(objects, project_id=project_id)
+            evidence_by_file: dict[int, list] = {int(p["file_id"]): [] for p in papers}
+            for o in objects:
+                if o.get("file_id") is None:
+                    continue
+                evidence_by_file.setdefault(int(o["file_id"]), []).append(o)
+            matrix = build_evidence_matrix(
+                project_id=project_id,
+                papers=papers,
+                evidence_by_file=evidence_by_file,
+                analysis_by_file=analysis_by_file,
+            )
+            consensus = aggregate_consensus(objects) if objects else None
+            conflict = analyze_conflicts(objects) if objects else None
+            gaps = discover_gaps(
+                project_id=project_id,
+                papers=papers,
+                evidence_objects=objects,
+                analysis_by_file=analysis_by_file,
+                themes_payload=themes,
+                matrix_payload=matrix,
+                consensus_payload=consensus,
+                conflict_payload=conflict,
+            )
+            payload = build_methodology_advice(
+                project_id=project_id,
+                papers=papers,
+                evidence_objects=objects,
+                analysis_by_file=analysis_by_file,
+                themes_payload=themes,
+                matrix_payload=matrix,
+                gaps_payload=gaps,
+                consensus_payload=consensus,
+            )
+            if fmt == "markdown":
+                body = methodology_to_markdown(payload)
+                return Response(
+                    body,
+                    mimetype="text/markdown; charset=utf-8",
+                    headers={
+                        "Content-Disposition": (
+                            f'attachment; filename="evidence-methodology-p{project_id}.md"'
+                        )
+                    },
+                )
+            return jsonify(payload)
         except EvidenceDomainError as exc:
             return _err(exc)
         finally:
@@ -154,8 +885,27 @@ def create_evidence_blueprint(
                 )
                 row.status = "superseded"
                 db.add(new_row)
+                db.flush()
+                _emit_contract_event(
+                    db,
+                    aggregate_type="evidence_object",
+                    aggregate_id=new_row.id,
+                    event_type="EvidenceUpdated",
+                    payload={
+                        "evidence_object_id": new_row.id,
+                        "status": "accepted",
+                        "supersedes_id": row.id,
+                    },
+                )
             else:
                 row.status = next_object_status_after_review(payload["status"])
+                _emit_contract_event(
+                    db,
+                    aggregate_type="evidence_object",
+                    aggregate_id=row.id,
+                    event_type="EvidenceUpdated",
+                    payload={"evidence_object_id": row.id, "status": row.status},
+                )
             row.updated_at = datetime.now(timezone.utc)
             db.commit()
             log_evidence_metric("review", user_id=uid, evidence_id=evidence_id, status=payload["status"])
@@ -195,6 +945,18 @@ def create_evidence_blueprint(
                 created_by="user",
             )
             db.add(binding)
+            db.flush()
+            _emit_contract_event(
+                db,
+                aggregate_type="binding",
+                aggregate_id=binding.id,
+                event_type="BindingCreated",
+                payload={
+                    "binding_id": binding.id,
+                    "document_id": doc.id,
+                    "evidence_object_id": ev.id,
+                },
+            )
             db.commit()
             return jsonify({"id": binding.id, "document_id": doc.id, **payload}), 201
         except ValueError as exc:
@@ -251,6 +1013,17 @@ def create_evidence_blueprint(
             row = db.get(WritingSentenceBinding, binding_id)
             if not row or int(row.user_id) != uid:
                 raise EvidenceDomainError(ErrorCode.NOT_FOUND, "binding_not_found")
+            _emit_contract_event(
+                db,
+                aggregate_type="binding",
+                aggregate_id=row.id,
+                event_type="BindingDeleted",
+                payload={
+                    "binding_id": row.id,
+                    "document_id": row.document_id,
+                    "evidence_object_id": row.evidence_object_id,
+                },
+            )
             db.delete(row)
             db.commit()
             return jsonify({"ok": True})
@@ -263,61 +1036,254 @@ def create_evidence_blueprint(
     @login_required
     @limiter.limit("30 per hour")
     def enqueue_extract(project_id: int):
+        """Enqueue Evidence Extraction (async). Returns 202 + job_id/run_id.
+
+        Preflight gates (no job created):
+          - 400 not_research_ready
+          - 409 missing_phase1
+          - 409 already_running
+
+        Body `sync: true` keeps the legacy synchronous path (tests / no-worker).
+        """
+        from backend.evidence.provenance import compute_input_content_hash
+        from backend.library.readiness import research_readiness
+
         uid = _uid()
         data = request.get_json(silent=True) or {}
         file_id = data.get("file_id")
         force = bool(data.get("force"))
+        sync = bool(data.get("sync"))
         if not file_id:
             return jsonify({"error": ErrorCode.VALIDATION, "detail": "file_id required"}), 422
         db = SessionLocal()
         try:
             require_owned_project(db, Project, user_id=uid, project_id=project_id)
-            require_owned_file(db, UserFile, user_id=uid, file_id=int(file_id), project_id=project_id)
-            # Synchronous extract for MVP reliability in tests; also enqueue for worker chain
-            result = run_evidence_extraction(
-                db,
+            uf = require_owned_file(
+                db, UserFile, user_id=uid, file_id=int(file_id), project_id=project_id
+            )
+
+            readiness = research_readiness(uf)
+            if readiness != "research_ready":
+                run = EvidenceExtractionRun(
+                    user_id=uid,
+                    project_id=project_id,
+                    file_id=int(file_id),
+                    pipeline_version=PIPELINE_VERSION,
+                    input_content_hash="not_ready",
+                    status="skipped",
+                    objects_created=0,
+                    error_json=json.dumps(
+                        {"reason": "not_research_ready", "readiness": readiness}
+                    ),
+                    finished_at=datetime.now(timezone.utc),
+                )
+                db.add(run)
+                db.commit()
+                return (
+                    jsonify(
+                        {
+                            "error": "not_research_ready",
+                            "detail": "Paper must be Research Ready before Evidence Extraction.",
+                            "status": "skipped",
+                            "reason": "not_research_ready",
+                            "objects_created": 0,
+                            "run_id": run.id,
+                            "job_id": None,
+                            "pipeline_version": PIPELINE_VERSION,
+                        }
+                    ),
+                    400,
+                )
+
+            analysis = load_analysis_result(db, AnalysisPipelineResult, int(file_id))
+            if not analysis or not analysis.phase_results:
+                run = EvidenceExtractionRun(
+                    user_id=uid,
+                    project_id=project_id,
+                    file_id=int(file_id),
+                    pipeline_version=PIPELINE_VERSION,
+                    input_content_hash="missing_phase1",
+                    status="skipped",
+                    objects_created=0,
+                    error_json=json.dumps({"reason": "missing_phase1"}),
+                    finished_at=datetime.now(timezone.utc),
+                )
+                db.add(run)
+                db.commit()
+                return (
+                    jsonify(
+                        {
+                            "error": "missing_phase1",
+                            "detail": "Document understanding is not complete yet.",
+                            "status": "skipped",
+                            "reason": "missing_phase1",
+                            "objects_created": 0,
+                            "run_id": run.id,
+                            "job_id": None,
+                            "pipeline_version": PIPELINE_VERSION,
+                        }
+                    ),
+                    409,
+                )
+
+            # Legacy sync path (explicit, or when no queue wire-up).
+            if sync or enqueue_job is None:
+                result = run_evidence_extraction(
+                    db,
+                    user_id=uid,
+                    project_id=project_id,
+                    file_id=int(file_id),
+                    UserFile=UserFile,
+                    AnalysisPipelineResult=AnalysisPipelineResult,
+                    EvidenceObject=EvidenceObject,
+                    EvidenceExtractionRun=EvidenceExtractionRun,
+                    load_analysis_result=load_analysis_result,
+                    force=force,
+                    pipeline_version=PIPELINE_VERSION,
+                    OutboxEvent=OutboxEvent,
+                )
+                return jsonify({**result, "job_id": None, "pipeline_version": PIPELINE_VERSION})
+
+            file_fp = analysis.content_hash or getattr(uf, "content_hash", "") or f"file:{file_id}"
+            input_hash = compute_input_content_hash(
+                file_fingerprint=file_fp,
+                document_understanding_version=str(
+                    (analysis.phase_results.get("document_understanding") or {}).get(
+                        "pipeline_version"
+                    )
+                    or ""
+                ),
+                evidence_grading_version=str(
+                    (analysis.phase_results.get("evidence_grading") or {}).get("pipeline_version")
+                    or ""
+                ),
+                knowledge_graph_version=str(
+                    (analysis.phase_results.get("knowledge_graph") or {}).get("pipeline_version")
+                    or (analysis.phase_results.get("knowledge_graph") or {}).get("version")
+                    or ""
+                ),
+                extraction_prompt_version="phase_projector.v1",
+                pipeline_version=PIPELINE_VERSION,
+            )
+
+            if not force:
+                prior = db.execute(
+                    select(EvidenceExtractionRun).where(
+                        EvidenceExtractionRun.project_id == project_id,
+                        EvidenceExtractionRun.file_id == int(file_id),
+                        EvidenceExtractionRun.pipeline_version == PIPELINE_VERSION,
+                        EvidenceExtractionRun.input_content_hash == input_hash,
+                        EvidenceExtractionRun.status == "succeeded",
+                    )
+                ).scalar_one_or_none()
+                if prior:
+                    return jsonify(
+                        {
+                            "status": "succeeded",
+                            "reason": "idempotent_reuse",
+                            "objects_created": prior.objects_created or 0,
+                            "run_id": prior.id,
+                            "job_id": prior.job_id,
+                            "pipeline_version": PIPELINE_VERSION,
+                        }
+                    )
+
+                active = db.execute(
+                    select(UploadJob)
+                    .where(
+                        UploadJob.user_id == uid,
+                        UploadJob.file_id == int(file_id),
+                        UploadJob.job_type == "evidence_extract",
+                        UploadJob.status.in_(("pending", "running")),
+                    )
+                    .order_by(UploadJob.id.desc())
+                    .limit(1)
+                ).scalar_one_or_none()
+                if active:
+                    return (
+                        jsonify(
+                            {
+                                "error": "already_running",
+                                "detail": "Evidence Extraction is already queued or running for this paper.",
+                                "status": active.status,
+                                "job_id": active.id,
+                                "pipeline_version": PIPELINE_VERSION,
+                            }
+                        ),
+                        409,
+                    )
+
+            run = EvidenceExtractionRun(
                 user_id=uid,
                 project_id=project_id,
                 file_id=int(file_id),
-                UserFile=UserFile,
-                AnalysisPipelineResult=AnalysisPipelineResult,
-                EvidenceObject=EvidenceObject,
-                EvidenceExtractionRun=EvidenceExtractionRun,
-                load_analysis_result=load_analysis_result,
-                force=force,
+                pipeline_version=PIPELINE_VERSION,
+                input_content_hash=input_hash,
+                status="queued",
+                objects_created=0,
+            )
+            db.add(run)
+            db.flush()
+
+            job = UploadJob(
+                file_id=int(file_id),
+                user_id=uid,
+                job_type="evidence_extract",
+                status="pending",
+            )
+            db.add(job)
+            db.flush()
+            run.job_id = job.id
+            db.add(
+                OutboxEvent(
+                    aggregate_type="upload_job",
+                    aggregate_id=job.id,
+                    event_type="job.enqueued",
+                    payload=json.dumps(
+                        {
+                            "file_id": int(file_id),
+                            "project_id": project_id,
+                            "force": force,
+                            "pipeline_version": PIPELINE_VERSION,
+                            "already_applied": False,
+                            "run_id": run.id,
+                        }
+                    ),
+                )
+            )
+            _emit_contract_event(
+                db,
+                aggregate_type="evidence_extraction_run",
+                aggregate_id=run.id,
+                event_type="EvidenceExtractionStarted",
+                payload={
+                    "run_id": run.id,
+                    "project_id": project_id,
+                    "paper_id": int(file_id),
+                    "job_id": job.id,
+                },
+            )
+            db.commit()
+            log_evidence_metric(
+                "extraction_enqueued",
+                user_id=uid,
+                project_id=project_id,
+                file_id=int(file_id),
+                job_id=job.id,
+                run_id=run.id,
                 pipeline_version=PIPELINE_VERSION,
             )
-            job_id = None
-            if enqueue_job is not None:
-                job = UploadJob(
-                    file_id=int(file_id),
-                    user_id=uid,
-                    job_type="evidence_extract",
-                    status="pending",
-                )
-                db.add(job)
-                db.flush()
-                db.add(
-                    OutboxEvent(
-                        aggregate_type="upload_job",
-                        aggregate_id=job.id,
-                        event_type="job.enqueued",
-                        payload=json.dumps(
-                            {
-                                "file_id": int(file_id),
-                                "project_id": project_id,
-                                "force": force,
-                                "pipeline_version": PIPELINE_VERSION,
-                                # Mark already applied so worker can no-op unless force
-                                "already_applied": True,
-                                "run_id": result.get("run_id"),
-                            }
-                        ),
-                    )
-                )
-                db.commit()
-                job_id = job.id
-            return jsonify({**result, "job_id": job_id, "pipeline_version": PIPELINE_VERSION})
+            return (
+                jsonify(
+                    {
+                        "job_id": job.id,
+                        "run_id": run.id,
+                        "status": "pending",
+                        "pipeline_version": PIPELINE_VERSION,
+                    }
+                ),
+                202,
+            )
         except EvidenceDomainError as exc:
             return _err(exc)
         finally:
@@ -417,20 +1383,27 @@ def create_evidence_blueprint(
         finally:
             db.close()
 
+    def _normalize_and_authorize_query(db, *, user_id: int, data: dict[str, Any]) -> tuple[dict[str, Any], int | None]:
+        """Shared EvidenceQuery parse + scope ownership checks for RI routes."""
+        raw = data.get("query") if isinstance(data.get("query"), dict) else data
+        query = normalize_evidence_query(raw, user_id=user_id)
+        project_id = int(query["scope"]["project_id"])
+        require_owned_project(db, Project, user_id=user_id, project_id=project_id)
+        doc_id = query["scope"].get("document_id")
+        if doc_id is not None:
+            doc = require_owned_document(db, WritingDocument, user_id=user_id, document_id=int(doc_id))
+            if int(doc.project_id) != project_id:
+                raise EvidenceDomainError(ErrorCode.NOT_FOUND, "document_not_in_project")
+            return query, int(doc_id)
+        return query, None
+
     def _run_retrieval():
         uid = _uid()
         data = request.get_json(silent=True) or {}
-        # Allow either bare EvidenceQuery or { "query": { ... } }
-        raw = data.get("query") if isinstance(data.get("query"), dict) else data
+        started = time.perf_counter()
         db = SessionLocal()
         try:
-            query = normalize_evidence_query(raw, user_id=uid)
-            require_owned_project(db, Project, user_id=uid, project_id=query["scope"]["project_id"])
-            doc_id = query["scope"].get("document_id")
-            if doc_id is not None:
-                doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=int(doc_id))
-                if int(doc.project_id) != int(query["scope"]["project_id"]):
-                    raise EvidenceDomainError(ErrorCode.NOT_FOUND, "document_not_in_project")
+            query, _doc_id = _normalize_and_authorize_query(db, user_id=uid, data=data)
             result = retrieve_evidence_objects(
                 db,
                 query=query,
@@ -446,7 +1419,7 @@ def create_evidence_blueprint(
                 total=result.get("total"),
                 returned=len(result.get("objects") or []),
             )
-            return jsonify(result)
+            return _json_ri(result, started=started)
         except ValueError as exc:
             return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
         except EvidenceDomainError as exc:
@@ -472,16 +1445,10 @@ def create_evidence_blueprint(
         """Ranking stage: EvidenceQuery → Retrieval → reorder EvidenceObjects."""
         uid = _uid()
         data = request.get_json(silent=True) or {}
-        raw = data.get("query") if isinstance(data.get("query"), dict) else data
+        started = time.perf_counter()
         db = SessionLocal()
         try:
-            query = normalize_evidence_query(raw, user_id=uid)
-            require_owned_project(db, Project, user_id=uid, project_id=query["scope"]["project_id"])
-            doc_id = query["scope"].get("document_id")
-            if doc_id is not None:
-                doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=int(doc_id))
-                if int(doc.project_id) != int(query["scope"]["project_id"]):
-                    raise EvidenceDomainError(ErrorCode.NOT_FOUND, "document_not_in_project")
+            query, _doc_id = _normalize_and_authorize_query(db, user_id=uid, data=data)
             retrieved = retrieve_evidence_objects(
                 db,
                 query=query,
@@ -499,7 +1466,7 @@ def create_evidence_blueprint(
                 total=result.get("total"),
                 returned=len(result.get("objects") or []),
             )
-            return jsonify(result)
+            return _json_ri(result, started=started)
         except ValueError as exc:
             return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
         except EvidenceDomainError as exc:
@@ -533,16 +1500,10 @@ def create_evidence_blueprint(
         """Consensus stage: EvidenceQuery → Retrieval → Ranking → aggregate."""
         uid = _uid()
         data = request.get_json(silent=True) or {}
-        raw = data.get("query") if isinstance(data.get("query"), dict) else data
+        started = time.perf_counter()
         db = SessionLocal()
         try:
-            query = normalize_evidence_query(raw, user_id=uid)
-            require_owned_project(db, Project, user_id=uid, project_id=query["scope"]["project_id"])
-            doc_id = query["scope"].get("document_id")
-            if doc_id is not None:
-                doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=int(doc_id))
-                if int(doc.project_id) != int(query["scope"]["project_id"]):
-                    raise EvidenceDomainError(ErrorCode.NOT_FOUND, "document_not_in_project")
+            query, doc_id = _normalize_and_authorize_query(db, user_id=uid, data=data)
             retrieved = retrieve_evidence_objects(
                 db,
                 query=query,
@@ -567,7 +1528,7 @@ def create_evidence_blueprint(
                 supporting=(result.get("consensus") or {}).get("supporting"),
                 contradicting=(result.get("consensus") or {}).get("contradicting"),
             )
-            return jsonify(result)
+            return _json_ri(result, started=started)
         except ValueError as exc:
             return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
         except EvidenceDomainError as exc:
@@ -586,16 +1547,10 @@ def create_evidence_blueprint(
         """Conflict stage: EvidenceQuery → … → Consensus → coded mediators."""
         uid = _uid()
         data = request.get_json(silent=True) or {}
-        raw = data.get("query") if isinstance(data.get("query"), dict) else data
+        started = time.perf_counter()
         db = SessionLocal()
         try:
-            query = normalize_evidence_query(raw, user_id=uid)
-            require_owned_project(db, Project, user_id=uid, project_id=query["scope"]["project_id"])
-            doc_id = query["scope"].get("document_id")
-            if doc_id is not None:
-                doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=int(doc_id))
-                if int(doc.project_id) != int(query["scope"]["project_id"]):
-                    raise EvidenceDomainError(ErrorCode.NOT_FOUND, "document_not_in_project")
+            query, doc_id = _normalize_and_authorize_query(db, user_id=uid, data=data)
             retrieved = retrieve_evidence_objects(
                 db,
                 query=query,
@@ -621,7 +1576,7 @@ def create_evidence_blueprint(
                 mediators=len((result.get("conflict") or {}).get("mediators") or []),
                 pair_count=(result.get("conflict") or {}).get("pair_count"),
             )
-            return jsonify(result)
+            return _json_ri(result, started=started)
         except ValueError as exc:
             return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
         except EvidenceDomainError as exc:
@@ -640,16 +1595,10 @@ def create_evidence_blueprint(
         """Reasoning stage: full pipeline through Conflict, then structured chain."""
         uid = _uid()
         data = request.get_json(silent=True) or {}
-        raw = data.get("query") if isinstance(data.get("query"), dict) else data
+        started = time.perf_counter()
         db = SessionLocal()
         try:
-            query = normalize_evidence_query(raw, user_id=uid)
-            require_owned_project(db, Project, user_id=uid, project_id=query["scope"]["project_id"])
-            doc_id = query["scope"].get("document_id")
-            if doc_id is not None:
-                doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=int(doc_id))
-                if int(doc.project_id) != int(query["scope"]["project_id"]):
-                    raise EvidenceDomainError(ErrorCode.NOT_FOUND, "document_not_in_project")
+            query, doc_id = _normalize_and_authorize_query(db, user_id=uid, data=data)
             retrieved = retrieve_evidence_objects(
                 db,
                 query=query,
@@ -676,7 +1625,7 @@ def create_evidence_blueprint(
                 sufficiency=(result.get("reasoning") or {}).get("sufficiency"),
                 steps=len((result.get("reasoning") or {}).get("steps") or []),
             )
-            return jsonify(result)
+            return _json_ri(result, started=started)
         except ValueError as exc:
             return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
         except EvidenceDomainError as exc:
@@ -692,19 +1641,13 @@ def create_evidence_blueprint(
         return _run_reasoning()
 
     def _run_writing_intelligence():
-        """Writing Intelligence: full RI pipeline, generation last (grounded_v0)."""
+        """Writing Intelligence: full RI pipeline, generation last (grounded_v1 / RI-009)."""
         uid = _uid()
         data = request.get_json(silent=True) or {}
-        raw = data.get("query") if isinstance(data.get("query"), dict) else data
+        started = time.perf_counter()
         db = SessionLocal()
         try:
-            query = normalize_evidence_query(raw, user_id=uid)
-            require_owned_project(db, Project, user_id=uid, project_id=query["scope"]["project_id"])
-            doc_id = query["scope"].get("document_id")
-            if doc_id is not None:
-                doc = require_owned_document(db, WritingDocument, user_id=uid, document_id=int(doc_id))
-                if int(doc.project_id) != int(query["scope"]["project_id"]):
-                    raise EvidenceDomainError(ErrorCode.NOT_FOUND, "document_not_in_project")
+            query, doc_id = _normalize_and_authorize_query(db, user_id=uid, data=data)
             retrieved = retrieve_evidence_objects(
                 db,
                 query=query,
@@ -740,16 +1683,60 @@ def create_evidence_blueprint(
                     task=task,
                 )
             result = apply_writing_intelligence_stage(reasoned, composer=composer)
+            writing = result.get("writing") or {}
+            review = writing.get("review")
+            # Persist when scoped to a document so history is reconstructable (A-401 / A-503).
+            if doc_id is not None and isinstance(review, dict):
+                doc = require_owned_document(
+                    db, WritingDocument, user_id=uid, document_id=int(doc_id)
+                )
+                run = persist_reviewer_run(
+                    db,
+                    ReviewerRun=ReviewerRun,
+                    ReviewerFinding=ReviewerFinding,
+                    user_id=uid,
+                    project_id=int(query["scope"]["project_id"]),
+                    document_id=int(doc_id),
+                    document_version_no=int(doc.current_version or 1),
+                    writing_version=str(writing.get("writing_version") or ""),
+                    review=review,
+                    sections=list(writing.get("sections") or []),
+                    consensus=result.get("consensus"),
+                    conflict=result.get("conflict"),
+                    supporting_count=writing.get("supporting_count"),
+                    binder_version=BINDER_VERSION,
+                    prompt_meta={
+                        "reviewer_kind": "rule_based",
+                        "writing_quality_mode": writing_quality_mode,
+                    },
+                )
+                _emit_contract_event(
+                    db,
+                    aggregate_type="document",
+                    aggregate_id=int(doc_id),
+                    event_type="ReviewCompleted",
+                    payload={
+                        "document_id": int(doc_id),
+                        "reviewer_run_id": int(run.id),
+                        "reviewer_version": review.get("reviewer_version"),
+                        "issue_count": int(review.get("issue_count") or 0),
+                        "metrics": review.get("metrics") or {},
+                        "status": review.get("status"),
+                    },
+                )
+                db.commit()
+                writing["reviewer_run_id"] = int(run.id)
+                result["writing"] = writing
             log_evidence_metric(
                 "writing_intelligence",
                 user_id=uid,
                 project_id=query["scope"]["project_id"],
                 intent=query["intent"],
-                status=(result.get("writing") or {}).get("status"),
-                blocked_reason=(result.get("writing") or {}).get("blocked_reason"),
-                citations=len((result.get("writing") or {}).get("citations") or []),
+                status=writing.get("status"),
+                blocked_reason=writing.get("blocked_reason"),
+                citations=len(writing.get("citations") or []),
             )
-            return jsonify(result)
+            return _json_ri(result, started=started)
         except ValueError as exc:
             return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
         except EvidenceDomainError as exc:
@@ -763,5 +1750,111 @@ def create_evidence_blueprint(
     def evidence_writing():
         """Writing Intelligence: grounded generation after RI pipeline (Sprint 6)."""
         return _run_writing_intelligence()
+
+    def _load_run_with_findings(db, *, run_id: int, user_id: int):
+        run = db.execute(select(ReviewerRun).where(ReviewerRun.id == int(run_id))).scalar_one_or_none()
+        if run is None or int(run.user_id) != int(user_id):
+            raise EvidenceDomainError(ErrorCode.NOT_FOUND, "reviewer_run_not_found")
+        require_owned_document(db, WritingDocument, user_id=user_id, document_id=int(run.document_id))
+        findings = (
+            db.execute(
+                select(ReviewerFinding)
+                .where(ReviewerFinding.run_id == int(run.id))
+                .order_by(ReviewerFinding.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        return run, findings
+
+    @bp.get("/api/documents/<int:document_id>/reviewer-runs")
+    @login_required
+    def list_reviewer_runs(document_id: int):
+        """List durable reviewer runs for a writing document (newest first)."""
+        uid = _uid()
+        db = SessionLocal()
+        try:
+            require_owned_document(db, WritingDocument, user_id=uid, document_id=document_id)
+            try:
+                limit = int(request.args.get("limit") or 20)
+            except ValueError:
+                return jsonify({"error": ErrorCode.VALIDATION, "detail": "limit must be an integer"}), 422
+            limit = max(1, min(100, limit))
+            rows = (
+                db.execute(
+                    select(ReviewerRun)
+                    .where(
+                        ReviewerRun.document_id == int(document_id),
+                        ReviewerRun.user_id == uid,
+                    )
+                    .order_by(ReviewerRun.created_at.desc(), ReviewerRun.id.desc())
+                    .limit(limit)
+                )
+                .scalars()
+                .all()
+            )
+            return jsonify(
+                {
+                    "document_id": int(document_id),
+                    "items": [serialize_run(r) for r in rows],
+                    "count": len(rows),
+                }
+            )
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.get("/api/documents/<int:document_id>/reviewer-runs/latest")
+    @login_required
+    def latest_reviewer_run(document_id: int):
+        """Return the newest reconstructable reviewer run for a document."""
+        uid = _uid()
+        db = SessionLocal()
+        try:
+            require_owned_document(db, WritingDocument, user_id=uid, document_id=document_id)
+            run = (
+                db.execute(
+                    select(ReviewerRun)
+                    .where(
+                        ReviewerRun.document_id == int(document_id),
+                        ReviewerRun.user_id == uid,
+                    )
+                    .order_by(ReviewerRun.created_at.desc(), ReviewerRun.id.desc())
+                    .limit(1)
+                )
+                .scalars()
+                .first()
+            )
+            if run is None:
+                raise EvidenceDomainError(ErrorCode.NOT_FOUND, "reviewer_run_not_found")
+            findings = (
+                db.execute(
+                    select(ReviewerFinding)
+                    .where(ReviewerFinding.run_id == int(run.id))
+                    .order_by(ReviewerFinding.id.asc())
+                )
+                .scalars()
+                .all()
+            )
+            return jsonify(serialize_run(run, findings=findings))
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.get("/api/reviewer-runs/<int:run_id>")
+    @login_required
+    def get_reviewer_run(run_id: int):
+        """Reconstruct a historical review by run id (findings + input snapshot)."""
+        uid = _uid()
+        db = SessionLocal()
+        try:
+            run, findings = _load_run_with_findings(db, run_id=run_id, user_id=uid)
+            return jsonify(serialize_run(run, findings=findings))
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
 
     return bp

@@ -132,6 +132,13 @@ _SECTION_SLOTS: dict[str, list[dict[str, str]]] = {
 
 def normalize_section_type(raw: str | None) -> str:
     value = (raw or "").strip().lower() or "support_sentence"
+    # Product aliases (RI-009 outline surfaces)
+    aliases = {
+        "related_work": "literature_review",
+        "background": "introduction",
+        "lit_review": "literature_review",
+    }
+    value = aliases.get(value, value)
     if value not in SECTION_TYPES:
         raise ValueError(f"invalid section_type: {value}")
     return value
@@ -141,14 +148,33 @@ def plan_sections(
     *,
     section_type: str,
     topic: str = "",
+    themes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Return an ordered section plan for the Writing stage."""
+    """Return an ordered section plan for the Writing stage.
+
+    When RI themes are provided, enrich the themes/overview slot purpose so the
+    outline is theme-aware without inventing new section engines.
+    """
     st = normalize_section_type(section_type)
     slots = [dict(s) for s in _SECTION_SLOTS[st]]
+    theme_labels = [
+        str(t.get("label") or t.get("id") or "")
+        for t in (themes or [])[:4]
+        if (t.get("label") or t.get("id"))
+    ]
+    if theme_labels:
+        for slot in slots:
+            sid = str(slot.get("id") or "")
+            if sid in {"themes", "overview", "covered", "supporting_points"}:
+                slot["purpose"] = (
+                    f"{slot.get('purpose') or ''} "
+                    f"Organize around project themes: {'; '.join(theme_labels)}."
+                ).strip()
     return {
         "section_type": st,
         "topic": (topic or "")[:500],
         "slots": slots,
         "slot_count": len(slots),
-        "planner_version": "1.0.0",
+        "theme_labels": theme_labels,
+        "planner_version": "1.1.0",
     }
