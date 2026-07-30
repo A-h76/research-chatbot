@@ -6,34 +6,36 @@ from typing import Any
 
 
 # Plan → monthly token + cost limits (USD). Extends QuotaService free defaults.
+# max_active_research: concurrent in-flight project-research jobs per user.
+# Closed beta targets ~5 researchers online together; keep per-user headroom.
 PLAN_LIMITS: dict[str, dict[str, Any]] = {
     "free": {
         "monthly_token_limit": 100_000,
         "monthly_cost_limit": 3.0,
         "max_projects": 5,
         "max_research_day": 5,
-        "max_active_research": 2,
+        "max_active_research": 5,
     },
     "beta": {
         "monthly_token_limit": 1_000_000,
         "monthly_cost_limit": 20.0,
         "max_projects": 50,
         "max_research_day": 50,
-        "max_active_research": 2,
+        "max_active_research": 5,
     },
     "student": {
         "monthly_token_limit": 10_000_000,
         "monthly_cost_limit": 20.0,
         "max_projects": 100,
         "max_research_day": 50,
-        "max_active_research": 2,
+        "max_active_research": 5,
     },
     "pro": {
         "monthly_token_limit": 50_000_000,
         "monthly_cost_limit": 100.0,
         "max_projects": 500,
         "max_research_day": 200,
-        "max_active_research": 4,
+        "max_active_research": 8,
     },
 }
 

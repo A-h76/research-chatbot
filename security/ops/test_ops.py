@@ -178,7 +178,8 @@ def test_estimates():
 
 
 def test_plan_limits_have_active_research_cap():
-    assert PLAN_LIMITS["beta"]["max_active_research"] == 2
+    assert PLAN_LIMITS["beta"]["max_active_research"] == 5
+    assert PLAN_LIMITS["pro"]["max_active_research"] >= 5
 
 
 def test_password_user_needs_verification():

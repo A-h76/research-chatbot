@@ -500,7 +500,13 @@ def get_models(force=False):
 
 # ------------------------------------------------------------------ database
 Base = declarative_base()
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    # Closed-beta target: several researchers online together.
+    pool_size=int(os.environ.get("DB_POOL_SIZE", "10")),
+    max_overflow=int(os.environ.get("DB_MAX_OVERFLOW", "20")),
+)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
@@ -1523,12 +1529,31 @@ def login_page():
             db.close()
     # ─────────────────────────────────────────────────────────────────────────
 
+    # Map stable error codes from OAuth/magic-link redirects to user copy.
+    # Raw ?error= strings that already look like sentences are shown as-is.
+    _LOGIN_ERRORS = {
+        "not_invited": "Access denied — this account is not invited to the closed beta.",
+        "oauth_email": "Could not read your Google account email.",
+        "oauth_failed": "Google sign-in failed or expired. Please try again.",
+        "oauth_busy": "Sign-in is temporarily busy. Wait a moment and try again.",
+        "login_failed": "Sign-in failed. Please try again.",
+    }
+    raw_error = request.args.get("error")
+    if raw_error and raw_error in _LOGIN_ERRORS:
+        error_msg = _LOGIN_ERRORS[raw_error]
+    elif raw_error and len(raw_error) > 24 and " " in raw_error:
+        error_msg = raw_error  # legacy full-sentence query params
+    elif raw_error:
+        error_msg = _LOGIN_ERRORS.get("login_failed")
+    else:
+        error_msg = None
+
     return render_template(
         "login.html",
         active="signin",
         oauth_ready=bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
         closed_beta=CLOSED_BETA,
-        error=request.args.get("error"),
+        error=error_msg,
         verified=request.args.get("verified") == "1",
         app_base_url=APP_BASE_URL,
     )
@@ -1639,48 +1664,54 @@ def _oauth_redirect_uri() -> str:
 
 
 @app.route("/auth/google")
-@limiter.limit("5 per minute")
+@limiter.limit("30 per minute")
 def auth_google():
     return google.authorize_redirect(_oauth_redirect_uri())
 
 
 @app.route("/auth/callback")
-@limiter.limit("20 per minute")
+@limiter.limit("60 per minute")
 def auth_callback():
-    token = google.authorize_access_token()
+    """Google OAuth callback.
+
+    Always redirect away from /auth/callback after handling. Leaving the
+    user on this URL with a one-time ?code=… makes mobile refresh / retry
+    hit authorize_access_token again → uncaught Internal Server Error.
+    """
+    try:
+        token = google.authorize_access_token()
+    except Exception:
+        logging.getLogger(__name__).exception("OAuth token exchange failed")
+        return redirect(url_for("login_page", error="oauth_failed"))
+
     info = token.get("userinfo") or {}
     email = (info.get("email") or "").lower()
     if not email:
-        return (
-            render_template(
-                "login.html",
-                active="signin",
-                oauth_ready=True,
-                closed_beta=CLOSED_BETA,
-                error="Could not read your Google account email.",
-            ),
-            403,
-        )
-    ok, reason = _signup_allowed(email)
+        return redirect(url_for("login_page", error="oauth_email"))
+
+    try:
+        ok, reason = _signup_allowed(email)
+    except Exception:
+        logging.getLogger(__name__).exception("signup gate failed for oauth")
+        return redirect(url_for("login_page", error="login_failed"))
+
     if not ok:
-        log_security_event("oauth_denied", email=email, reason=reason)
-        _ops_events.record("oauth_denied", email=email, reason=reason, ip=request.remote_addr or "")
-        return (
-            render_template(
-                "login.html",
-                active="signin",
-                oauth_ready=True,
-                closed_beta=CLOSED_BETA,
-                error="Access denied — this account is not invited to the closed beta.",
-            ),
-            403,
-        )
+        try:
+            log_security_event("oauth_denied", email=email, reason=reason)
+            _ops_events.record(
+                "oauth_denied", email=email, reason=reason, ip=request.remote_addr or ""
+            )
+        except Exception:
+            logging.getLogger(__name__).exception("oauth_denied logging failed")
+        return redirect(url_for("login_page", error="not_invited"))
+
     db = SessionLocal()
     try:
         user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
         if not user:
             user = User(email=email, auth_provider="google")
             db.add(user)
+            db.flush()  # need user.id before invite_accepted / JWT
         user.name = info.get("name") or email
         user.picture = info.get("picture") or ""
         # Google email is verified by the provider
@@ -1701,6 +1732,13 @@ def auth_callback():
         session["jwt"] = {"access": access, "refresh": refresh}
         mark_session_login(session)
         _record_user_login(user.id)
+    except Exception:
+        logging.getLogger(__name__).exception("OAuth user upsert failed")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return redirect(url_for("login_page", error="login_failed"))
     finally:
         db.close()
     return redirect("/")
@@ -2928,7 +2966,7 @@ project_research_service = create_project_research_service(
     ai_gate=ai_gate,
     cost_ledger=_cost_ledger,
     events=_ops_events,
-    max_active_research=2,
+    max_active_research=int(os.environ.get("MAX_ACTIVE_RESEARCH", "5")),
 )
 app.register_blueprint(
     create_projects_blueprint(

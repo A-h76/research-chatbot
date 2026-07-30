@@ -130,7 +130,7 @@ class ProjectResearchService:
     ai_gate: Any | None = None
     cost_ledger: Any | None = None
     events: Any | None = None
-    max_active_research: int = 2
+    max_active_research: int = 5
     _spawn_background: Callable[[Any, tuple], None] = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -800,7 +800,7 @@ def create_project_research_service(
     ai_gate=None,
     cost_ledger=None,
     events=None,
-    max_active_research: int = 2,
+    max_active_research: int = 5,
 ) -> ProjectResearchService:
     return ProjectResearchService(
         SessionLocal=SessionLocal,
