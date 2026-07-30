@@ -1,19 +1,19 @@
 # Dhund Epic Roadmap
 
-**Rule:** Do not start large implementation streams (EPICs 0002‚Äì0006) until **EPIC-0001** is complete and reviewed.
+**Rule:** Do not start large implementation streams (EPICs 0002ñ0006) until **EPIC-0001** is complete and **Accepted**.
 
 ## North Star (EPIC-0001)
 
-Two developers implement 0002‚Äì0006 **in parallel** using only published IDD + [`docs/contracts/`](../contracts/README.md). Implementation talk beyond contract clarification should be unnecessary.
+Two developers implement 0002ñ0006 **in parallel** using only published IDD + [`docs/contracts/`](../contracts/README.md). Implementation talk beyond contract clarification should be unnecessary.
 
 ## Document hierarchy
 
 ```text
 ADRs
-  ‚Üí Architecture (Now-Status, EPIC-0001 principles)
-    ‚Üí IDD (docs/idd/)
-      ‚Üí Contracts (docs/contracts/)  ‚Üê living, frozen after 0001
-        ‚Üí Implementation
+  ? Architecture (Now-Status, EPIC-0001 principles)
+    ? IDD (docs/idd/)
+      ? Contracts (docs/contracts/)  ? living, frozen after 0001
+        ? Implementation
 ```
 
 ## Epic map
@@ -21,21 +21,25 @@ ADRs
 | Epic | Title | Gate |
 |------|-------|------|
 | [EPIC-0001](./EPIC-0001-Architecture-Foundation.md) | Architecture Foundation | **Must complete first** |
-| [EPIC-0002](./EPIC-0002-Evidence-Layer.md) | Evidence Layer | After 0001 |
+| [EPIC-0002](./EPIC-0002-Evidence-Layer.md) | Evidence Layer (granular A-201ÖA-215) | After 0001 Accepted |
 | [EPIC-0003](./EPIC-0003-Research-Workspace.md) | Research Workspace | After 0001 |
 | [EPIC-0004](./EPIC-0004-Writing-Engine.md) | Writing Engine | After 0001 + usable evidence |
 | [EPIC-0005](./EPIC-0005-Reviewer.md) | Reviewer | After grounded writing |
 | [EPIC-0006](./EPIC-0006-Research-Intelligence.md) | Research Intelligence | After evidence list/search |
 
 ```text
-EPIC-0001 ‚Üí Architecture Approved ‚Üí only then ‚Üí EPIC-0002+
+EPIC-0001 ? Architecture Approved ? only then ? EPIC-0002+
 ```
+
+**Developer A priority:** Evidence Layer (**EPIC-0002**, tickets A-201ÖA-215) ? Evidence APIs/search ? Writing intelligence (**EPIC-0004**, `/api/evidence/writing`) ? Reviewer (**0005**) ? Consensus/RI (**0006**).
+
+Do not rename EPIC-0002 to ìResearch Intelligenceîóthat name is reserved for **EPIC-0006**.
 
 ## Ownership (summary)
 
 | | Developer A | Developer B |
 |--|:-----------:|:-----------:|
-| DB, APIs, AI, Evidence, Search, DU, KG, Backend tests | ‚úÖ | |
-| Design system, React, UX, Workspace UI, state, FE tests | | ‚úÖ |
+| DB, APIs, AI, Evidence, Search, DU, KG, Backend tests | ? | |
+| Design system, React, UX, Workspace UI, state, FE tests | | ? |
 
-Full matrix: [EPIC-0001 ¬ß Ownership](./EPIC-0001-Architecture-Foundation.md#ownership-matrix).
+Full matrix: [EPIC-0001 ß Ownership](./EPIC-0001-Architecture-Foundation.md#ownership-matrix).
