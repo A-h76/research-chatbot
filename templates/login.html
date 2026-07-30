@@ -1,114 +1,1025 @@
-{% extends "landing_base.html" %}
-{% block title %}Sign in — Dhund{% endblock %}
-{% block description %}Sign in to your Dhund research workspace.{% endblock %}
-{% block content %}
-<div class="auth-shell wrap">
-  <div class="panel auth-card reveal">
-    <div class="brand-mark" style="margin:0 auto 1rem" aria-hidden="true">Dh</div>
-    <h1 style="font-size:1.45rem;letter-spacing:-0.02em;margin-bottom:0.35rem">Sign in</h1>
-    {% if closed_beta %}
-    <p class="sub">Closed beta — invite-only research workspace</p>
-    {% else %}
-    <p class="sub">Continue to your research workspace</p>
-    {% endif %}
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dhund — Research Operating System</title>
+<meta name="description" content="Evidence first, then write. Dhund is a Research Operating System for evidence-backed literature review — from library to export.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.remove('no-js');document.documentElement.classList.add('js');</script>
+<style>
+  :root {
+    --ink: #14201f;
+    --muted: #5a6b69;
+    --line: rgba(15, 110, 106, 0.14);
+    --teal: #0F6E6A;
+    --teal-deep: #0a524f;
+    --teal-soft: #e6f3f2;
+    --bg: #F7F8FA;
+    --paper: #ffffff;
+    --ok: #1f6b4a;
+    --danger: #9b2c2c;
+    --radius: 16px;
+    --shadow: 0 22px 60px rgba(20, 32, 31, 0.09);
+    --shadow-soft: 0 12px 36px rgba(20, 32, 31, 0.06);
+    --font: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font);
+    color: var(--ink);
+    background:
+      radial-gradient(1100px 560px at 8% -8%, rgba(15, 110, 106, 0.11), transparent 55%),
+      radial-gradient(900px 480px at 92% 4%, rgba(70, 100, 130, 0.07), transparent 50%),
+      radial-gradient(700px 400px at 50% 100%, rgba(15, 110, 106, 0.05), transparent 55%),
+      var(--bg);
+    min-height: 100vh;
+    line-height: 1.55;
+  }
+  a { color: inherit; text-decoration: none; }
+  button, input { font: inherit; }
+  .wrap { width: min(1120px, calc(100% - 2.5rem)); margin-inline: auto; }
 
-    {% if error %}
-    <div class="err">{{ error }}</div>
-    {% endif %}
+  /* Floating pill nav */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    padding: 1rem 0 0.5rem;
+  }
+  .pill-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.45rem 0.5rem 0.45rem 0.85rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(14px);
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    font-size: 1.02rem;
+  }
+  .brand-mark {
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 0.45rem;
+    background: var(--teal);
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+  .pill-links {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+  }
+  .pill-links a {
+    padding: 0.45rem 0.85rem;
+    border-radius: 999px;
+    font-size: 0.84rem;
+    font-weight: 500;
+    color: var(--muted);
+    transition: background .18s ease, color .18s ease;
+  }
+  .pill-links a:hover { background: var(--teal-soft); color: var(--teal-deep); }
+  .pill-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.55rem 1.05rem;
+    border-radius: 999px;
+    background: var(--teal);
+    color: #fff;
+    font-size: 0.84rem;
+    font-weight: 600;
+    box-shadow: 0 8px 22px rgba(15, 110, 106, 0.22);
+    transition: background .18s ease, transform .18s ease;
+  }
+  .pill-cta:hover { background: var(--teal-deep); transform: scale(1.03); }
 
-    {% if verified %}
-    <div class="ok">Email verified — you can sign in now.</div>
-    {% endif %}
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border: none;
+    border-radius: 999px;
+    padding: 0.9rem 1.4rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform .18s ease, background .18s ease, box-shadow .18s ease;
+  }
+  .btn-primary {
+    background: var(--teal);
+    color: #fff;
+    box-shadow: 0 10px 28px rgba(15, 110, 106, 0.24);
+  }
+  .btn-primary:hover { background: var(--teal-deep); transform: scale(1.03); }
+  .btn-ghost {
+    background: #fff;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .btn-ghost:hover { background: #fff; transform: scale(1.03); box-shadow: var(--shadow-soft); }
 
-    {% if closed_beta %}
-    <div class="beta-note">
-      Access is limited to invited researchers. Sign in with the email on your invite.
-      Need access? <a href="{{ url_for('marketing_early_access') }}">Request Early Access</a>.
+  /* Hero */
+  .hero {
+    padding: 2.75rem 0 3.25rem;
+    max-width: 44rem;
+  }
+  .eyebrow {
+    display: inline-flex;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 1rem;
+  }
+  .hero h1 {
+    font-size: clamp(2.6rem, 6vw, 4.1rem);
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+    font-weight: 700;
+    margin-bottom: 1.1rem;
+  }
+  .hero h1 .serif-accent {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .hero-lead {
+    color: var(--muted);
+    font-size: 1.08rem;
+    max-width: 42ch;
+    margin-bottom: 1.75rem;
+  }
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  /* Product split */
+  .product {
+    padding: 1rem 0 3.5rem;
+  }
+  .product-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.05fr;
+    gap: 2.75rem;
+    align-items: center;
+  }
+  .section-kicker {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 0.65rem;
+  }
+  .section-title {
+    font-size: clamp(1.55rem, 2.8vw, 2.15rem);
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    margin-bottom: 0.55rem;
+  }
+  .section-support {
+    font-family: var(--serif);
+    font-style: italic;
+    color: var(--muted);
+    font-size: 1.15rem;
+    margin-bottom: 1.75rem;
+  }
+  .cap-list {
+    list-style: none;
+    display: grid;
+    gap: 1rem;
+  }
+  .cap-item {
+    display: grid;
+    grid-template-columns: 2.4rem 1fr;
+    gap: 0.85rem;
+    align-items: start;
+  }
+  .cap-num {
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 0.7rem;
+    background: var(--teal-soft);
+    color: var(--teal-deep);
+    display: grid;
+    place-items: center;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+  .cap-item h3 {
+    font-size: 1.02rem;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.2rem;
+  }
+  .cap-item p {
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  /* Workspace mockup */
+  .mock {
+    border-radius: 22px;
+    background: linear-gradient(165deg, #fff 0%, #f3f8f7 100%);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    padding: 1rem;
+    transform: translateY(0);
+  }
+  .mock-chrome {
+    display: flex;
+    gap: 0.45rem;
+    margin-bottom: 0.85rem;
+    padding: 0 0.2rem;
+  }
+  .mock-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: rgba(15, 110, 106, 0.2);
+  }
+  .mock-body {
+    display: grid;
+    grid-template-columns: 7rem 1fr 8.5rem;
+    gap: 0.65rem;
+    min-height: 280px;
+  }
+  .mock-outline,
+  .mock-manuscript,
+  .mock-rail {
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0.75rem;
+  }
+  .mock-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.55rem;
+  }
+  .mock-outline ul {
+    list-style: none;
+    display: grid;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .mock-outline li.is-active {
+    color: var(--teal-deep);
+    font-weight: 600;
+  }
+  .mock-manuscript h4 {
+    font-size: 0.88rem;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.55rem;
+  }
+  .mock-manuscript p {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-bottom: 0.55rem;
+    line-height: 1.5;
+  }
+  .cite {
+    display: inline-block;
+    background: var(--teal-soft);
+    color: var(--teal-deep);
+    font-weight: 700;
+    font-size: 0.72rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 0.35rem;
+  }
+  .mock-rail .ev-card {
+    border: 1px solid rgba(15, 110, 106, 0.18);
+    background: var(--teal-soft);
+    border-radius: 10px;
+    padding: 0.55rem 0.6rem;
+    margin-bottom: 0.45rem;
+  }
+  .mock-rail .ev-card strong {
+    display: block;
+    font-size: 0.72rem;
+    margin-bottom: 0.2rem;
+  }
+  .mock-rail .ev-card span {
+    font-size: 0.68rem;
+    color: var(--muted);
+  }
+  .mock-float {
+    margin-top: 0.75rem;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .mock-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.75rem;
+    border-radius: 999px;
+    background: #fff;
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-soft);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--teal-deep);
+  }
+
+  /* How it works */
+  .how {
+    padding: 2.5rem 0 3.5rem;
+  }
+  .how-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.65rem;
+  }
+  .how-step {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 1.1rem 0.95rem;
+    box-shadow: var(--shadow-soft);
+  }
+  .how-step .n {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--teal);
+    letter-spacing: 0.04em;
+    margin-bottom: 0.45rem;
+  }
+  .how-step strong {
+    display: block;
+    font-size: 0.95rem;
+    letter-spacing: -0.015em;
+    margin-bottom: 0.3rem;
+  }
+  .how-step p {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  /* FAQ */
+  .faq {
+    padding: 1rem 0 3.5rem;
+  }
+  .faq-grid {
+    display: grid;
+    gap: 0.75rem;
+    max-width: 720px;
+  }
+  details.faq-item {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 1rem 1.15rem;
+  }
+  details.faq-item summary {
+    cursor: pointer;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    list-style: none;
+  }
+  details.faq-item summary::-webkit-details-marker { display: none; }
+  details.faq-item summary::after {
+    content: "+";
+    float: right;
+    color: var(--teal);
+    font-weight: 700;
+  }
+  details.faq-item[open] summary::after { content: "–"; }
+  details.faq-item p {
+    margin-top: 0.65rem;
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  /* Auth */
+  .signin {
+    padding: 1rem 0 4rem;
+  }
+  .signin-layout {
+    display: grid;
+    grid-template-columns: 0.9fr 1.1fr;
+    gap: 2rem;
+    align-items: start;
+  }
+  .signin-copy h2 {
+    font-size: clamp(1.55rem, 2.6vw, 2rem);
+    letter-spacing: -0.03em;
+    margin-bottom: 0.55rem;
+  }
+  .signin-copy p {
+    color: var(--muted);
+    max-width: 34ch;
+    margin-bottom: 1rem;
+  }
+  .auth-card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 1.6rem 1.5rem;
+    box-shadow: var(--shadow);
+    text-align: center;
+  }
+  .auth-card h2 {
+    font-size: 1.35rem;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.35rem;
+  }
+  .auth-card .sub {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin-bottom: 1.1rem;
+  }
+  .beta-note {
+    background: var(--teal-soft);
+    border: 1px solid rgba(15, 110, 106, 0.2);
+    color: var(--teal-deep);
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
+    margin-bottom: 1rem;
+    font-size: 0.88rem;
+    text-align: left;
+  }
+  .beta-note a {
+    color: var(--teal-deep);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .err {
+    background: #fdf2f2;
+    border: 1px solid #f0c4c4;
+    color: var(--danger);
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
+    margin-bottom: 1rem;
+    font-size: 0.88rem;
+    text-align: left;
+  }
+  .ok {
+    background: #eef8f2;
+    border: 1px solid #c6e6d3;
+    color: var(--ok);
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
+    margin-bottom: 1rem;
+    font-size: 0.88rem;
+    text-align: left;
+  }
+  .gbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+    background: #fff;
+    color: #1f1f1f;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0.85rem 1.1rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    width: 100%;
+    justify-content: center;
+    transition: background .15s, transform .18s;
+  }
+  .gbtn:hover { background: #f7faf9; transform: scale(1.01); }
+  .gbtn svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .or {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0;
+    color: #8a9a97;
+    font-size: 0.78rem;
+  }
+  .or::before, .or::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+  }
+  .field { margin-bottom: 0.85rem; text-align: left; }
+  .field label {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 0.35rem;
+  }
+  .field input {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: #fbfcfc;
+    border-radius: 10px;
+    padding: 0.75rem 0.85rem;
+    color: var(--ink);
+  }
+  .field input:focus {
+    outline: 2px solid rgba(15, 110, 106, 0.25);
+    border-color: var(--teal);
+  }
+  .magic-btn {
+    width: 100%;
+    border: none;
+    border-radius: 10px;
+    padding: 0.8rem 1rem;
+    background: var(--teal);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, transform .18s, opacity .15s;
+  }
+  .magic-btn:hover { background: var(--teal-deep); transform: scale(1.02); }
+  .magic-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+  .setup-box {
+    background: #f4f8f7;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 1rem 1.1rem;
+    text-align: left;
+  }
+  .setup-box h3 { font-size: 0.95rem; margin-bottom: 0.75rem; }
+  .step {
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-start;
+    margin-bottom: 0.65rem;
+    font-size: 0.86rem;
+    color: var(--muted);
+  }
+  .step-num {
+    flex-shrink: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 50%;
+    background: var(--teal-soft);
+    color: var(--teal-deep);
+    display: grid;
+    place-items: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    margin-top: 0.1rem;
+  }
+  code {
+    background: #eef3f1;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 0.05rem 0.35rem;
+    font-family: ui-monospace, monospace;
+    font-size: 0.78rem;
+    color: var(--teal-deep);
+  }
+  .dev-btn {
+    display: block;
+    width: 100%;
+    padding: 0.75rem;
+    background: transparent;
+    border: 1px dashed rgba(15, 110, 106, 0.35);
+    border-radius: 12px;
+    color: var(--muted);
+    font-size: 0.88rem;
+    text-align: center;
+  }
+  .dev-btn:hover { border-color: var(--teal); color: var(--teal-deep); }
+
+  footer {
+    padding: 2rem 0 2.75rem;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.86rem;
+  }
+  .footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+  }
+  .footer-links {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .footer-links a:hover { color: var(--teal-deep); }
+
+  .reveal { opacity: 1; transform: none; transition: opacity .45s ease, transform .45s ease; }
+  html.js:not(.reduce-motion) .js-animate .reveal:not(.in) {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  html.js:not(.reduce-motion) .js-animate .reveal.in {
+    opacity: 1;
+    transform: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn:hover, .pill-cta:hover { transform: none; }
+    .reveal { transition: none !important; opacity: 1 !important; transform: none !important; }
+  }
+
+  @media (max-width: 960px) {
+    .pill-links { display: none; }
+    .product-grid, .signin-layout { grid-template-columns: 1fr; }
+    .mock-body { grid-template-columns: 1fr; }
+    .mock-outline { display: none; }
+    .how-strip { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 640px) {
+    .wrap { width: min(100% - 1.5rem, 1120px); }
+    .how-strip { grid-template-columns: 1fr; }
+    .hero { padding-top: 1.75rem; }
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap">
+      <div class="pill-nav">
+        <a class="brand" href="#top" aria-label="Dhund home">
+          <span class="brand-mark" aria-hidden="true">D</span>
+          Dhund
+        </a>
+        <nav class="pill-links" aria-label="Primary">
+          <a href="#how">How it works</a>
+          <a href="#faq">FAQ</a>
+          <a href="#signin">Sign in</a>
+        </nav>
+        <a class="pill-cta" href="#signin">Sign in</a>
+      </div>
     </div>
-    {% endif %}
+  </header>
 
-    {% if oauth_ready %}
-      <a class="gbtn" href="/auth/google">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-        </svg>
-        Continue with Google
-      </a>
+  <main id="top">
+    <section class="wrap hero reveal">
+      <p class="eyebrow">Research Operating System</p>
+      <h1>
+        Evidence first,<br>
+        <span class="serif-accent">then write.</span>
+      </h1>
+      <p class="hero-lead">
+        Build trustworthy literature reviews inside Dhund — from papers you import,
+        through accepted evidence, to a grounded draft and export.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#signin">
+          {% if closed_beta %}Sign in to closed beta{% else %}Sign in{% endif %}
+        </a>
+        <a class="btn btn-ghost" href="#product">See the workspace</a>
+      </div>
+    </section>
 
-      <div class="or">or</div>
+    <section class="wrap product" id="product">
+      <div class="product-grid">
+        <div class="reveal">
+          <p class="section-kicker">What Dhund does</p>
+          <h2 class="section-title">A system for research — not a prompt box</h2>
+          <p class="section-support">Every claim should point back to evidence you accepted.</p>
+          <ol class="cap-list">
+            <li class="cap-item">
+              <span class="cap-num">01</span>
+              <div>
+                <h3>Library of your papers</h3>
+                <p>Import PDFs and keep projects organised around the review you’re actually writing.</p>
+              </div>
+            </li>
+            <li class="cap-item">
+              <span class="cap-num">02</span>
+              <div>
+                <h3>Evidence you review</h3>
+                <p>Extracted claims become candidates. Accept, reject, or mark important — decisions stick.</p>
+              </div>
+            </li>
+            <li class="cap-item">
+              <span class="cap-num">03</span>
+              <div>
+                <h3>Writing desk</h3>
+                <p>Generate grounded drafts from accepted evidence, revise in place, and keep citations bound.</p>
+              </div>
+            </li>
+            <li class="cap-item">
+              <span class="cap-num">04</span>
+              <div>
+                <h3>Verify <span class="cite">[#id]</span> → Export</h3>
+                <p>Inspect bindings, then export Markdown and BibTeX for the manuscript path you’re on.</p>
+              </div>
+            </li>
+          </ol>
+        </div>
 
-      <form id="magic-form" onsubmit="return sendMagicLink(event)" style="text-align:left">
-        <div class="field">
-          <label for="magic-email">Email me a sign-in link</label>
-          <input id="magic-email" type="email" name="email" placeholder="you@university.edu" required autocomplete="email">
+        <aside class="mock reveal" aria-label="Dhund workspace preview">
+          <div class="mock-chrome" aria-hidden="true">
+            <span class="mock-dot"></span>
+            <span class="mock-dot"></span>
+            <span class="mock-dot"></span>
+          </div>
+          <div class="mock-body">
+            <div class="mock-outline">
+              <p class="mock-label">Outline</p>
+              <ul>
+                <li>Introduction</li>
+                <li class="is-active">Related work</li>
+                <li>Methods</li>
+                <li>Discussion</li>
+              </ul>
+            </div>
+            <div class="mock-manuscript">
+              <p class="mock-label">Manuscript</p>
+              <h4>Related work</h4>
+              <p>
+                Prior detection systems overfit to lexical cues and underperform on adversarial phishing
+                <span class="cite">[#12]</span>. Cross-paper review shows stronger gains when models fuse
+                URL structure with message intent.
+              </p>
+              <p>
+                Accepted evidence from six papers supports this claim; opposing results stay visible for revision.
+              </p>
+            </div>
+            <div class="mock-rail">
+              <p class="mock-label">Evidence</p>
+              <div class="ev-card">
+                <strong>Accepted · [#12]</strong>
+                <span>Supports claim · page 4</span>
+              </div>
+              <div class="ev-card">
+                <strong>Candidate</strong>
+                <span>Needs review before draft</span>
+              </div>
+            </div>
+          </div>
+          <div class="mock-float">
+            <span class="mock-badge">Library → Evidence → Writing → Export</span>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="wrap how" id="how">
+      <div class="reveal" style="margin-bottom:1.5rem">
+        <p class="section-kicker">How Dhund works</p>
+        <h2 class="section-title">One evidence-first path</h2>
+        <p class="section-support">No second reasoning pipeline. Papers to export, in product.</p>
+      </div>
+      <div class="how-strip reveal">
+        <div class="how-step">
+          <div class="n">01</div>
+          <strong>Import</strong>
+          <p>Add papers to a project library.</p>
         </div>
-        <button type="submit" class="magic-btn" id="magic-btn">Send magic link</button>
-        <p id="magic-msg" style="margin-top:0.65rem;font-size:0.82rem;color:var(--muted);display:none"></p>
-      </form>
-    {% else %}
-      <div class="setup-box">
-        <h3>Google OAuth not configured</h3>
-        <div class="step">
-          <span class="step-num">1</span>
-          <span>Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener" style="color:var(--teal-deep)">Google Cloud Console</a> → Create OAuth 2.0 credentials</span>
+        <div class="how-step">
+          <div class="n">02</div>
+          <strong>Extract</strong>
+          <p>Claims become reviewable evidence.</p>
         </div>
-        <div class="step">
-          <span class="step-num">2</span>
-          <span>Set Authorized redirect URI to <code>http://localhost:5000/auth/callback</code></span>
+        <div class="how-step">
+          <div class="n">03</div>
+          <strong>Decide</strong>
+          <p>Accept or reject — permanently remembered.</p>
         </div>
-        <div class="step">
-          <span class="step-num">3</span>
-          <span>Add <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> to <code>.env</code></span>
+        <div class="how-step">
+          <div class="n">04</div>
+          <strong>Draft</strong>
+          <p>Write from accepted evidence only.</p>
         </div>
-        <div class="step">
-          <span class="step-num">4</span>
-          <span>Restart the Flask server</span>
+        <div class="how-step">
+          <div class="n">05</div>
+          <strong>Export</strong>
+          <p>Markdown + citations for your paper.</p>
         </div>
       </div>
-      <div class="or">or for local development</div>
-      <a class="dev-btn" href="/login?dev=1"
-         onclick="fetch('/api/dev-login',{method:'POST'}).then(function(r){if(r.ok)window.location.href='/';}).catch(function(){});return false;">
-        Skip login (dev mode only)
-      </a>
-      <p style="margin-top:0.65rem;font-size:0.75rem;color:#8a9a97">
-        Add <code>DEV_AUTO_LOGIN=1</code> to <code>.env</code> to enable permanently.
-      </p>
-    {% endif %}
-  </div>
-</div>
-{% endblock %}
-{% block scripts %}
-<script>
-  async function sendMagicLink(e) {
-    e.preventDefault();
-    var btn = document.getElementById('magic-btn');
-    var msg = document.getElementById('magic-msg');
-    var email = document.getElementById('magic-email').value.trim();
-    btn.disabled = true;
-    msg.style.display = 'none';
-    try {
-      var res = await fetch('/auth/magic-link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email })
-      });
-      var data = await res.json().catch(function () { return {}; });
-      msg.style.display = 'block';
-      msg.style.color = res.ok ? 'var(--ok)' : 'var(--danger)';
-      msg.textContent = data.detail || (res.ok
-        ? 'If that email is allowed, check your inbox for a sign-in link.'
-        : 'Could not send link. Try again.');
-    } catch (err) {
-      msg.style.display = 'block';
-      msg.style.color = 'var(--danger)';
-      msg.textContent = 'Network error — try again.';
-    } finally {
-      btn.disabled = false;
+    </section>
+
+    <section class="wrap faq" id="faq">
+      <div class="reveal" style="margin-bottom:1.5rem">
+        <p class="section-kicker">FAQ</p>
+        <h2 class="section-title">Research and trust</h2>
+        <p class="section-support">What matters before you invite Dhund into a literature review.</p>
+      </div>
+      <div class="faq-grid reveal">
+        <details class="faq-item">
+          <summary>Is Dhund another “write my thesis” chatbot?</summary>
+          <p>
+            No. Dhund is a Research Operating System. The point is not one prompt → eighty pages.
+            It’s keeping your library, evidence decisions, and grounded writing in one place so drafts stay tied to sources you accepted.
+          </p>
+        </details>
+        <details class="faq-item">
+          <summary>Where do citations come from?</summary>
+          <p>
+            From papers you import and evidence you accept. Bindings connect manuscript spans to evidence objects,
+            then back to paper metadata for export — including BibTeX when bibliography data is available.
+          </p>
+        </details>
+        <details class="faq-item">
+          <summary>Can AI invent sources I didn’t upload?</summary>
+          <p>
+            Writing is gated on accepted evidence from your project. Candidates don’t silently enter drafts.
+            You still review and revise — Dhund doesn’t replace scholarly judgment.
+          </p>
+        </details>
+        <details class="faq-item">
+          <summary>Who is closed beta for?</summary>
+          <p>
+            Invite-only for researchers running real literature reviews — MSc/PhD students, supervisors, and labs.
+            {% if closed_beta %}
+            Need access? <a href="{{ url_for('marketing_early_access') }}" style="color:var(--teal-deep);text-decoration:underline;text-underline-offset:2px">Request Early Access</a>.
+            {% else %}
+            You can sign in below if your account is enabled.
+            {% endif %}
+          </p>
+        </details>
+      </div>
+    </section>
+
+    <section class="wrap signin" id="signin">
+      <div class="signin-layout">
+        <div class="signin-copy reveal">
+          <p class="section-kicker">Sign in</p>
+          <h2>Continue to your research workspace</h2>
+          <p>
+            {% if closed_beta %}
+            Closed beta is invite-only. Use the email on your invite.
+            {% else %}
+            Sign in to open projects, evidence, and the writing desk.
+            {% endif %}
+          </p>
+          {% if closed_beta %}
+          <p style="font-size:0.9rem">
+            Need an invite?
+            <a href="{{ url_for('marketing_early_access') }}" style="color:var(--teal-deep);font-weight:600;text-decoration:underline;text-underline-offset:2px">Request Early Access</a>.
+          </p>
+          {% endif %}
+        </div>
+
+        <div class="auth-card reveal">
+          <span class="brand-mark" style="margin:0 auto 1rem" aria-hidden="true">D</span>
+          <h2>Sign in</h2>
+          {% if closed_beta %}
+          <p class="sub">Closed beta — invite-only research workspace</p>
+          {% else %}
+          <p class="sub">Continue to your research workspace</p>
+          {% endif %}
+
+          {% if error %}
+          <div class="err">{{ error }}</div>
+          {% endif %}
+
+          {% if verified %}
+          <div class="ok">Email verified — you can sign in now.</div>
+          {% endif %}
+
+          {% if closed_beta %}
+          <div class="beta-note">
+            Access is limited to invited researchers. Sign in with the email on your invite.
+            Need access? <a href="{{ url_for('marketing_early_access') }}">Request Early Access</a>.
+          </div>
+          {% endif %}
+
+          {% if oauth_ready %}
+            <a class="gbtn" href="/auth/google">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              Continue with Google
+            </a>
+
+            <div class="or">or</div>
+
+            <form id="magic-form" onsubmit="return sendMagicLink(event)" style="text-align:left">
+              <div class="field">
+                <label for="magic-email">Email me a sign-in link</label>
+                <input id="magic-email" type="email" name="email" placeholder="you@university.edu" required autocomplete="email">
+              </div>
+              <button type="submit" class="magic-btn" id="magic-btn">Send magic link</button>
+              <p id="magic-msg" style="margin-top:0.65rem;font-size:0.82rem;color:var(--muted);display:none"></p>
+            </form>
+          {% else %}
+            <div class="setup-box">
+              <h3>Google OAuth not configured</h3>
+              <div class="step">
+                <span class="step-num">1</span>
+                <span>Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener" style="color:var(--teal-deep)">Google Cloud Console</a> → Create OAuth 2.0 credentials</span>
+              </div>
+              <div class="step">
+                <span class="step-num">2</span>
+                <span>Set Authorized redirect URI to <code>http://localhost:5000/auth/callback</code></span>
+              </div>
+              <div class="step">
+                <span class="step-num">3</span>
+                <span>Add <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> to <code>.env</code></span>
+              </div>
+              <div class="step">
+                <span class="step-num">4</span>
+                <span>Restart the Flask server</span>
+              </div>
+            </div>
+            <div class="or">or for local development</div>
+            <a class="dev-btn" href="/login?dev=1"
+               onclick="fetch('/api/dev-login',{method:'POST'}).then(function(r){if(r.ok)window.location.href='/';}).catch(function(){});return false;">
+              Skip login (dev mode only)
+            </a>
+            <p style="margin-top:0.65rem;font-size:0.75rem;color:#8a9a97">
+              Add <code>DEV_AUTO_LOGIN=1</code> to <code>.env</code> to enable permanently.
+            </p>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner">
+      <p>© Dhund · Research Operating System</p>
+      <div class="footer-links">
+        <a href="{{ url_for('marketing_product') }}">Product</a>
+        <a href="{{ url_for('marketing_how_it_works') }}">How it Works</a>
+        <a href="{{ url_for('marketing_early_access') }}">Early Access</a>
+        <a href="#signin">Sign In</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduce) document.documentElement.classList.add('reduce-motion');
+
+      var nodes = document.querySelectorAll('.reveal');
+      if (!reduce && 'IntersectionObserver' in window && nodes.length) {
+        document.body.classList.add('js-animate');
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) {
+            if (e.isIntersecting) e.target.classList.add('in');
+          });
+        }, { threshold: 0.12, rootMargin: '0px 0px -32px 0px' });
+        nodes.forEach(function (el) { io.observe(el); });
+        if (location.hash) {
+          var target = document.querySelector(location.hash);
+          if (target) {
+            target.classList.add('in');
+            target.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('in'); });
+          }
+        }
+      } else {
+        nodes.forEach(function (el) { el.classList.add('in'); });
+      }
+    })();
+
+    async function sendMagicLink(e) {
+      e.preventDefault();
+      var btn = document.getElementById('magic-btn');
+      var msg = document.getElementById('magic-msg');
+      var email = document.getElementById('magic-email').value.trim();
+      btn.disabled = true;
+      msg.style.display = 'none';
+      try {
+        var res = await fetch('/auth/magic-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email })
+        });
+        var data = await res.json().catch(function () { return {}; });
+        msg.style.display = 'block';
+        msg.style.color = res.ok ? 'var(--ok)' : 'var(--danger)';
+        msg.textContent = data.detail || (res.ok
+          ? 'If that email is allowed, check your inbox for a sign-in link.'
+          : 'Could not send link. Try again.');
+      } catch (err) {
+        msg.style.display = 'block';
+        msg.style.color = 'var(--danger)';
+        msg.textContent = 'Network error — try again.';
+      } finally {
+        btn.disabled = false;
+      }
+      return false;
     }
-    return false;
-  }
-</script>
-{% endblock %}
+  </script>
+</body>
+</html>
