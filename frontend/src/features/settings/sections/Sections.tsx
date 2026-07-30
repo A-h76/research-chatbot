@@ -34,7 +34,6 @@ function Row({ label, description, children }: { label: string; description?: st
 
 export function AppearanceSection() {
   const { theme, setTheme } = useTheme();
-  const { defaultSearchMode, setDefaultSearchMode } = useUI();
   return (
     <div>
       <Row label="Theme" description="Choose light or dark appearance.">
@@ -47,11 +46,23 @@ export function AppearanceSection() {
           ]}
         />
       </Row>
+    </div>
+  );
+}
+
+/** Chat assistant defaults — under Advanced in Settings nav. */
+export function ChatDefaultsSection() {
+  const { defaultSearchMode, setDefaultSearchMode } = useUI();
+  return (
+    <div>
       <Row label="Default web-search mode" description="Applied to new chats.">
         <Segmented<SearchMode>
           value={defaultSearchMode}
           onChange={setDefaultSearchMode}
-          options={SEARCH_MODES.map((m) => ({ value: m.value, label: m.value === "on" ? "Always" : m.value === "auto" ? "Auto" : "Off" }))}
+          options={SEARCH_MODES.map((m) => ({
+            value: m.value,
+            label: m.value === "on" ? "Always" : m.value === "auto" ? "Auto" : "Off",
+          }))}
         />
       </Row>
     </div>
@@ -184,11 +195,11 @@ export function AboutSection() {
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-border bg-muted/40 p-5 text-sm text-muted-foreground">
-        <p className="text-base font-semibold text-foreground">✦ Dhund</p>
-        <p className="mt-1">A private assistant for research &amp; thesis writing. Version 1.0.</p>
+        <p className="text-base font-semibold text-foreground">Dhund</p>
+        <p className="mt-1">Research Operating System — evidence-backed literature review. Closed beta.</p>
         <p className="mt-3">
-          Features: streaming replies, live model list, projects, selective memory, web search with sources,
-          document RAG, vision, and a citation manager with BibTeX export.
+          Core path: Library → Evidence decisions → Grounded writing → Verify citations → Export.
+          Chat, memory, and RAG support the workflow; they are not the product.
         </p>
       </div>
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">

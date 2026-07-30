@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { useEvidenceReason } from "../hooks/useEvidenceReason";
 import { ConsensusConflictStrip } from "./ConsensusConflictStrip";
 import { DecisionActivityFeed } from "./DecisionActivityFeed";
 import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
+import { loadResearchPrefs } from "@/features/settings/lib/researchPrefs";
 import type { EvidenceObjectDTO, ExplainResponse, Sufficiency } from "../types";
 
 const SUFFICIENCY_COPY: Record<Sufficiency, string> = {
@@ -49,6 +51,7 @@ export function EvidenceInspectorPanel({
   projectId?: number | null;
   onBound?: () => void;
 }) {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const sufficiency = result?.sufficiency ?? "insufficient";
   const ri = useEvidenceReason({
@@ -103,6 +106,13 @@ export function EvidenceInspectorPanel({
         },
       );
       onBound?.();
+      if (
+        vars.status === "accepted" &&
+        projectId != null &&
+        loadResearchPrefs().openWritingAfterAccept
+      ) {
+        navigate(`/writing?project=${projectId}`);
+      }
     },
     onError: () => toast.error("Could not save decision"),
   });

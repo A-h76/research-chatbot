@@ -20,6 +20,7 @@ import { EvidenceGapsPanel } from "@/features/evidence/components/EvidenceGapsPa
 import { EvidenceTimelinePanel } from "@/features/evidence/components/EvidenceTimelinePanel";
 import { EvidenceMethodologyPanel } from "@/features/evidence/components/EvidenceMethodologyPanel";
 import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
+import { loadResearchPrefs } from "@/features/settings/lib/researchPrefs";
 import { cn } from "@/lib/utils";
 
 /** Phase A.5: Evidence RI tabs are primary; LLM narrative compare is advanced. */
@@ -62,6 +63,7 @@ export function MultiPaperAnalysisPage() {
   const { currentProjectId } = useUI();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTabState] = useState<Tab>(() => parseTab(searchParams.get("tab")));
+  const showAiCompare = loadResearchPrefs().showAiCompare;
   const { data: allFilesRaw } = useAllFiles();
   const allFiles = useMemo(
     () => (allFilesRaw ?? []).filter((f) => f.kind === "document" && f.meta_status === "done"),
@@ -69,8 +71,16 @@ export function MultiPaperAnalysisPage() {
   );
 
   useEffect(() => {
-    setTabState(parseTab(searchParams.get("tab")));
-  }, [searchParams]);
+    const next = parseTab(searchParams.get("tab"));
+    if (next === "compare" && !showAiCompare) {
+      setTabState("matrix");
+      const params = new URLSearchParams(searchParams);
+      params.delete("tab");
+      setSearchParams(params, { replace: true });
+      return;
+    }
+    setTabState(next);
+  }, [searchParams, showAiCompare, setSearchParams]);
 
   function setTab(next: Tab) {
     setTabState(next);
@@ -84,23 +94,30 @@ export function MultiPaperAnalysisPage() {
     });
   }
 
+  const tabs = (
+    [
+      { key: "matrix" as const, label: "Matrix", icon: Table2 },
+      { key: "themes" as const, label: "Themes", icon: Tags },
+      { key: "gaps" as const, label: "Gaps", icon: SearchX },
+      { key: "graph" as const, label: "Graph", icon: Network },
+      { key: "timeline" as const, label: "Timeline", icon: History },
+      { key: "methodology" as const, label: "Methods", icon: FlaskConical },
+      ...(showAiCompare
+        ? [{ key: "compare" as const, label: "AI Compare", icon: GitCompare }]
+        : []),
+    ] as const
+  );
+
   return (
     <PageContainer title={TITLES[tab]} maxWidth="6xl" dense>
       <p className="mb-2 text-[11px] text-muted-foreground">
-        Structured analysis uses Evidence Objects. Narrative AI compare is optional and secondary.
+        Structured analysis uses Evidence Objects.
+        {showAiCompare
+          ? " Narrative AI compare is optional and secondary."
+          : " Enable AI Compare under Settings → Research defaults if needed."}
       </p>
       <div className="mb-3 flex flex-wrap items-center gap-0.5 rounded-md border border-border p-0.5 w-fit">
-        {(
-          [
-            { key: "matrix" as const, label: "Matrix", icon: Table2 },
-            { key: "themes" as const, label: "Themes", icon: Tags },
-            { key: "gaps" as const, label: "Gaps", icon: SearchX },
-            { key: "graph" as const, label: "Graph", icon: Network },
-            { key: "timeline" as const, label: "Timeline", icon: History },
-            { key: "methodology" as const, label: "Methods", icon: FlaskConical },
-            { key: "compare" as const, label: "AI Compare", icon: GitCompare },
-          ] as const
-        ).map(({ key, label, icon: Icon }) => (
+        {tabs.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             type="button"

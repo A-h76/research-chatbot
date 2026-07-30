@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import type { WritingAction } from "@/types/api";
 import { trackWritingEvent } from "../utils/telemetry";
 import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
+import { loadResearchPrefs } from "@/features/settings/lib/researchPrefs";
 import { EvidenceInspectorPanel } from "@/features/evidence/components/EvidenceInspectorPanel";
 import { useEvidenceExplain } from "@/features/evidence/hooks/useEvidenceExplain";
 import { useGroundedWriting, type WritingSectionType, type GroundedWritingSection } from "@/features/evidence/hooks/useGroundedWriting";
@@ -1028,28 +1029,32 @@ function ExportTab() {
     downloadMarkdownFile(`${base}-${doc.id}.md`, md);
 
     const bib = buildBibtexFromWriting(snap?.writing ?? null);
-    if (bib.trim()) {
+    const wantBib = loadResearchPrefs().exportBundle === "md_bib";
+    const wroteBib = wantBib && Boolean(bib.trim());
+    if (wroteBib) {
       downloadTextFile(`${base}-${doc.id}.bib`, bib, "application/x-bibtex;charset=utf-8");
     }
 
     trackWritingEvent("grounded_export", {
       document_id: doc.id,
       has_evidence_appendix: Boolean(snap?.writing),
-      has_bibtex: Boolean(bib.trim()),
+      has_bibtex: wroteBib,
     });
     trackWorkflowEvent("export_completed", {
       projectId: currentProjectId,
       meta: {
         document_id: doc.id,
-        has_bibtex: Boolean(bib.trim()),
-        format: "markdown_bibtex",
+        has_bibtex: wroteBib,
+        format: wroteBib ? "markdown_bibtex" : "markdown",
       },
     });
     toast.success(
       snap?.writing
-        ? bib.trim()
+        ? wroteBib
           ? "Exported Markdown + BibTeX (evidence → paper → citation)"
-          : "Exported Markdown with evidence appendix + bibliography"
+          : wantBib
+            ? "Exported Markdown with appendix (no BibTeX metadata yet)"
+            : "Exported Markdown"
         : "Exported Markdown (no evidence snapshot — regenerate to include appendix)",
     );
   }
@@ -1137,7 +1142,12 @@ function ExportTab() {
                     ? `Markdown + BibTeX · evidence → paper → citation`
                     : "Markdown · generate from evidence to attach appendix"
                 }
-                formats={[{ label: ".md", fmt: "md" }]}
+                formats={[
+                  {
+                    label: loadResearchPrefs().exportBundle === "md_bib" ? ".md + .bib" : ".md",
+                    fmt: "md",
+                  },
+                ]}
                 onExport={() => exportLitReviewDoc(doc)}
               />
             );
