@@ -1666,7 +1666,19 @@ def _oauth_redirect_uri() -> str:
 @app.route("/auth/google")
 @limiter.limit("30 per minute")
 def auth_google():
+    # Mobile browsers (esp. Chrome/Android) drop non-permanent session cookies
+    # across the Google redirect more often than desktop. Make the cookie
+    # persistent before Authlib stores OAuth state in the session.
+    session.permanent = True
+    session["_oauth_flow"] = "google"
     return google.authorize_redirect(_oauth_redirect_uri())
+
+
+@app.route("/auth/")
+@app.route("/auth")
+def auth_root_redirect():
+    """Avoid bare /auth/ dead-ends (mobile truncates / bookmarks)."""
+    return redirect(url_for("login_page"))
 
 
 @app.route("/auth/callback")
