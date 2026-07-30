@@ -16,6 +16,7 @@ import {
   StickyNote,
   HelpCircle,
   Sparkles,
+  PenLine,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -151,7 +152,13 @@ function InsightRow({ insight }: { insight: ProjectHubInsight }) {
   );
 }
 
-function GettingStartedChecklist({ onTab }: { onTab: (t: ProjectTab) => void }) {
+function GettingStartedChecklist({
+  onTab,
+  onWriteDraft,
+}: {
+  onTab: (t: ProjectTab) => void;
+  onWriteDraft: () => void;
+}) {
   const steps = [
     {
       title: "Add papers to this project",
@@ -166,10 +173,10 @@ function GettingStartedChecklist({ onTab }: { onTab: (t: ProjectTab) => void }) 
       label: null,
     },
     {
-      title: "Ask a research question",
-      detail: "Run cross-paper research — findings promote to Memory.",
-      action: () => onTab("research"),
-      label: "Open Research",
+      title: "Write an evidence-grounded draft",
+      detail: "Review evidence on the Writing desk, generate a draft, revise, and save.",
+      action: onWriteDraft,
+      label: "Open Writing",
     },
   ];
 
@@ -209,10 +216,14 @@ function OverviewTab({
   hub,
   onOpenPaper,
   onTab,
+  onWriteDraft,
+  onReviewEvidence,
 }: {
   hub: ProjectHub;
   onOpenPaper: (id: number) => void;
   onTab: (t: ProjectTab) => void;
+  onWriteDraft: () => void;
+  onReviewEvidence: () => void;
 }) {
   const {
     project,
@@ -232,7 +243,26 @@ function OverviewTab({
 
   return (
     <div className="space-y-8">
-      {stats.papers === 0 && <GettingStartedChecklist onTab={onTab} />}
+      {stats.papers === 0 && (
+        <GettingStartedChecklist onTab={onTab} onWriteDraft={onWriteDraft} />
+      )}
+
+      {stats.papers > 0 && (
+        <section className="rounded-xl border border-primary/25 bg-accent-soft/40 p-4">
+          <h2 className="text-sm font-semibold">Literature review workflow</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Project → Evidence → Draft → Revise → Save — without leaving Dhund.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button size="sm" className="gap-1.5" onClick={onWriteDraft}>
+              <PenLine className="size-3.5" /> Write draft
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={onReviewEvidence}>
+              <CheckCircle2 className="size-3.5" /> Review evidence
+            </Button>
+          </div>
+        </section>
+      )}
 
       <div className="flex flex-wrap gap-4">
         <StatBadge icon={<FileText className="size-4" />} value={stats.papers} label="papers" />
@@ -434,6 +464,24 @@ export function ProjectDetailPage() {
     setTab("research");
   }
 
+  function openWriting(opts?: { focus?: "evidence"; action?: "lit-review" }) {
+    if (!id) return;
+    setCurrentProjectId(id);
+    const params = new URLSearchParams();
+    if (opts?.focus) params.set("focus", opts.focus);
+    if (opts?.action) params.set("action", opts.action);
+    const qs = params.toString();
+    navigate(qs ? `/writing?${qs}` : "/writing");
+  }
+
+  function openWriteDraft() {
+    openWriting({ action: "lit-review" });
+  }
+
+  function openReviewEvidence() {
+    openWriting({ focus: "evidence" });
+  }
+
   if (isLoading) {
     return (
       <div className="scrollbar-thin h-full overflow-y-auto">
@@ -549,6 +597,9 @@ export function ProjectDetailPage() {
             <Button variant="outline" onClick={openCompare} className="gap-2">
               <GitCompare className="size-4" /> Research
             </Button>
+            <Button variant="outline" onClick={openWriteDraft} className="gap-2">
+              <PenLine className="size-4" /> Write draft
+            </Button>
           </div>
         </motion.div>
 
@@ -577,7 +628,13 @@ export function ProjectDetailPage() {
         <Separator className="!mt-0" />
 
         {activeTab === "overview" && (
-          <OverviewTab hub={hub} onOpenPaper={openPaper} onTab={setTab} />
+          <OverviewTab
+            hub={hub}
+            onOpenPaper={openPaper}
+            onTab={setTab}
+            onWriteDraft={openWriteDraft}
+            onReviewEvidence={openReviewEvidence}
+          />
         )}
 
         {activeTab === "papers" && id != null && (

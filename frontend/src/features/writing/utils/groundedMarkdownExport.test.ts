@@ -80,9 +80,46 @@ describe("buildLiteratureReviewMarkdown", () => {
     expect(md).toContain("## Evidence appendix");
     expect(md).toContain("### Evidence #1");
     expect(md).toContain("## Bibliography");
-    expect(md).toContain("1. [#1] Drug X helps, page 4");
+    expect(md).toContain("1. [#1] Drug X helps (p. 4)");
     expect(md).toContain("## Generation metadata");
     expect(md).toContain("evidence_traceability_100: yes");
     expect(computeExportTraceability(writing).meets_100).toBe(true);
+  });
+
+  it("builds BibTeX from paper metadata on bindings", async () => {
+    const { buildBibtexFromWriting } = await import("./groundedMarkdownExport");
+    const bib = buildBibtexFromWriting({
+      status: "ok",
+      mode: "grounded_v1",
+      writing_version: "2.0.0",
+      section_type: "literature_review",
+      paragraph: "x [#1]",
+      citations: [],
+      bibliography: [
+        {
+          evidence_id: 1,
+          file_id: 9,
+          page: 3,
+          claim: "A claim",
+          quote: "q",
+          paper_title: "Transformers Are Great",
+          authors: "Smith, A.; Jones, B.",
+          year: "2020",
+          venue: "Nature",
+          doi: "10.1000/xyz",
+        },
+      ],
+      sections: [],
+      review: null,
+      metrics: null,
+      warnings: [],
+      disclaimer: "",
+      supporting_count: 1,
+      blocked_reason: null,
+    } as GroundedWritingResult);
+    expect(bib).toContain("@article{");
+    expect(bib).toContain("Transformers Are Great");
+    expect(bib).toContain("10.1000/xyz");
+    expect(bib).toContain("Dhund evidence #1");
   });
 });

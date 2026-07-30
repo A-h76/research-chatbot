@@ -18,6 +18,7 @@ import { DashboardPage }            from "@/features/dashboard/DashboardPage";
 import { MultiPaperAnalysisPage }   from "@/features/analysis/pages/MultiPaperAnalysisPage";
 import { SearchPage }               from "@/features/search/pages/SearchPage";
 import { WritingWorkspacePage }     from "@/features/writing/pages/WritingWorkspacePage";
+import { ProjectWritingRedirect }   from "@/features/writing/pages/ProjectWritingRedirect";
 
 export const router = createBrowserRouter([
   { path: "/privacy",  element: <LegalPage slug="privacy" />, errorElement: <RouteErrorFallback /> },
@@ -37,6 +38,10 @@ export const router = createBrowserRouter([
       { path: "c/:conversationId",                     element: <ChatPage /> },
       { path: "projects",                              element: <ProjectsPage /> },
       { path: "projects/:projectId",                   element: <ProjectDetailPage /> },
+      {
+        path: "projects/:projectId/writing",
+        element: <ProjectWritingRedirect />,
+      },
       // Library — canonical /library; /files kept as alias
       { path: "library",                               element: <FilesPage /> },
       { path: "files",                                 element: <RedirectPreserveSearch to="/library" /> },

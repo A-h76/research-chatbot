@@ -29,9 +29,10 @@ import { toast } from "@/components/common/Toast";
 import { cn } from "@/lib/utils";
 import type { WritingAction } from "@/types/api";
 import { trackWritingEvent } from "../utils/telemetry";
+import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
 import { EvidenceInspectorPanel } from "@/features/evidence/components/EvidenceInspectorPanel";
 import { useEvidenceExplain } from "@/features/evidence/hooks/useEvidenceExplain";
-import { useGroundedWriting, type WritingSectionType } from "@/features/evidence/hooks/useGroundedWriting";
+import { useGroundedWriting, type WritingSectionType, type GroundedWritingSection } from "@/features/evidence/hooks/useGroundedWriting";
 import { evidenceApi } from "@/features/evidence/api";
 import {
   GroundedDraftVerify,
@@ -41,8 +42,10 @@ import { ResearchConfidenceStrip } from "@/features/writing/components/ResearchC
 import { ResearchProgressStage } from "@/features/writing/components/ResearchProgressStage";
 import { WritingOutlineRail } from "@/features/writing/components/WritingOutlineRail";
 import {
+  buildBibtexFromWriting,
   buildLiteratureReviewMarkdown,
   downloadMarkdownFile,
+  downloadTextFile,
   loadGroundedExportSnapshot,
   saveGroundedExportSnapshot,
 } from "@/features/writing/utils/groundedMarkdownExport";
@@ -377,6 +380,76 @@ function DraftTab() {
       selectedText,
       draftFallback: input,
       sectionType,
+    });
+  }
+
+  /** Phase A.1: Accept must merge into manuscript, persist bindings, and save immediately. */
+  async function acceptGroundedIntoManuscript(opts?: {
+    paragraph?: string;
+    sectionIds?: string[];
+  }) {
+    if (!grounded.last || activeId == null || activeDoc == null) return;
+    const nextPara = (opts?.paragraph || grounded.last.paragraph || "").trim();
+    if (!nextPara) {
+      toast.error("Nothing to accept into the manuscript");
+      return;
+    }
+    const merged = input.trim() ? `${input.trim()}\n\n${nextPara}` : nextPara;
+    setInput(merged);
+    setGroundedBaseline(merged);
+    setEditsSinceInsert(0);
+
+    const persist = await persistGroundedBindings({
+      documentId: activeId,
+      writing: grounded.last,
+      sectionIds: opts?.sectionIds,
+      createBinding: evidenceApi.createBinding,
+    });
+    saveGroundedExportSnapshot({
+      documentId: activeId,
+      title: draftTitle || "Literature review",
+      body: merged,
+      writing: grounded.last,
+      writing_version: grounded.last.writing_version,
+      savedAt: new Date().toISOString(),
+    });
+    trackWritingEvent("grounded_insert", {
+      section_type: grounded.last.section_type || "literature_review",
+      grounding_pct: grounded.last.metrics?.grounding_pct,
+      reviewer_pass_rate: grounded.last.metrics?.reviewer_pass_rate,
+      citation_count: grounded.last.citations.length,
+      bindings_saved: persist.saved,
+      bindings_failed: persist.failed,
+      section_ids: opts?.sectionIds?.join(",") || "all",
+    });
+
+    setSaveState("saving");
+    trackWritingEvent("autosave_attempted", { documentId: activeId, version });
+    autosave.mutate({
+      id: activeId,
+      title: draftTitle.trim() || "Untitled draft",
+      content: merged,
+      currentVersion: version,
+      idempotencyKey: buildAutosaveKey(activeId, version, draftTitle, merged),
+    });
+
+    if (persist.failed > 0) {
+      toast.error(`Accepted draft; ${persist.failed} evidence link(s) failed to save`);
+    } else {
+      toast.success(
+        persist.saved > 0
+          ? `Accepted · ${persist.saved} evidence link(s) saved`
+          : "Accepted into manuscript — verify links before export",
+      );
+    }
+  }
+
+  async function acceptGroundedSection(section: GroundedWritingSection) {
+    const para = (section.paragraph || "").trim();
+    if (!para) return;
+    await acceptGroundedIntoManuscript({
+      paragraph: para,
+      sectionIds: [section.id],
     });
   }
 
@@ -800,6 +873,7 @@ function DraftTab() {
                   <GroundedDraftVerify
                     writing={grounded.last}
                     onRevise={runGroundedGenerate}
+                    onAcceptSection={acceptGroundedSection}
                   />
                   {grounded.last.review?.issues?.length ? (
                     <Accordion className="mt-2 border-t border-border pt-1">
@@ -840,52 +914,7 @@ function DraftTab() {
                     <Button
                       size="sm"
                       className="h-7 text-[11px]"
-                      onClick={async () => {
-                        if (!grounded.last?.paragraph || activeId == null) return;
-                        const nextPara = grounded.last.paragraph;
-                        setInput((prev) => {
-                          const merged = prev.trim()
-                            ? `${prev.trim()}\n\n${nextPara}`
-                            : nextPara;
-                          setGroundedBaseline(merged);
-                          return merged;
-                        });
-                        setEditsSinceInsert(0);
-                        const persist = await persistGroundedBindings({
-                          documentId: activeId,
-                          writing: grounded.last,
-                          createBinding: evidenceApi.createBinding,
-                        });
-                        saveGroundedExportSnapshot({
-                          documentId: activeId,
-                          title: draftTitle || "Literature review",
-                          body: input.trim()
-                            ? `${input.trim()}\n\n${nextPara}`
-                            : nextPara,
-                          writing: grounded.last,
-                          writing_version: grounded.last.writing_version,
-                          savedAt: new Date().toISOString(),
-                        });
-                        trackWritingEvent("grounded_insert", {
-                          section_type: grounded.last.section_type || "literature_review",
-                          grounding_pct: grounded.last.metrics?.grounding_pct,
-                          reviewer_pass_rate: grounded.last.metrics?.reviewer_pass_rate,
-                          citation_count: grounded.last.citations.length,
-                          bindings_saved: persist.saved,
-                          bindings_failed: persist.failed,
-                        });
-                        if (persist.failed > 0) {
-                          toast.error(
-                            `Accepted draft; ${persist.failed} evidence link(s) failed to save`,
-                          );
-                        } else {
-                          toast.success(
-                            persist.saved > 0
-                              ? `Accepted · ${persist.saved} evidence link(s) saved`
-                              : "Accepted into manuscript — verify links before export",
-                          );
-                        }
-                      }}
+                      onClick={() => void acceptGroundedIntoManuscript()}
                     >
                       Accept into manuscript
                     </Button>
@@ -995,14 +1024,32 @@ function ExportTab() {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "")
       .slice(0, 60);
-    downloadMarkdownFile(`${safe || "literature-review"}-${doc.id}.md`, md);
+    const base = safe || "literature-review";
+    downloadMarkdownFile(`${base}-${doc.id}.md`, md);
+
+    const bib = buildBibtexFromWriting(snap?.writing ?? null);
+    if (bib.trim()) {
+      downloadTextFile(`${base}-${doc.id}.bib`, bib, "application/x-bibtex;charset=utf-8");
+    }
+
     trackWritingEvent("grounded_export", {
       document_id: doc.id,
       has_evidence_appendix: Boolean(snap?.writing),
+      has_bibtex: Boolean(bib.trim()),
+    });
+    trackWorkflowEvent("export_completed", {
+      projectId: currentProjectId,
+      meta: {
+        document_id: doc.id,
+        has_bibtex: Boolean(bib.trim()),
+        format: "markdown_bibtex",
+      },
     });
     toast.success(
       snap?.writing
-        ? "Exported Markdown with evidence appendix + bibliography"
+        ? bib.trim()
+          ? "Exported Markdown + BibTeX (evidence → paper → citation)"
+          : "Exported Markdown with evidence appendix + bibliography"
         : "Exported Markdown (no evidence snapshot — regenerate to include appendix)",
     );
   }
@@ -1087,7 +1134,7 @@ function ExportTab() {
                 title={doc.title || "Untitled draft"}
                 subtitle={
                   snap?.writing
-                    ? `Markdown · appendix + bibliography · traceability ready`
+                    ? `Markdown + BibTeX · evidence → paper → citation`
                     : "Markdown · generate from evidence to attach appendix"
                 }
                 formats={[{ label: ".md", fmt: "md" }]}

@@ -162,9 +162,28 @@ export function buildLiteratureReviewMarkdown(opts: {
     lines.push("_Empty bibliography._", "");
   } else {
     bindings.forEach((b, i) => {
-      const claim = (b.claim || "").trim() || "(no claim text)";
-      const pageBit = b.page != null ? `, page ${b.page}` : "";
-      lines.push(`${i + 1}. [#${b.evidence_id}] ${claim}${pageBit}`);
+      const title = (b.paper_title || "").trim();
+      const authors = (b.authors || "").trim();
+      const year = (b.year || "").trim();
+      const venue = (b.venue || "").trim();
+      const doi = (b.doi || "").trim();
+      const claim = (b.claim || "").trim();
+      const pageBit = b.page != null ? ` (p. ${b.page})` : "";
+      if (title || authors) {
+        const bits = [
+          authors || null,
+          year ? `(${year})` : null,
+          title || null,
+          venue || null,
+          doi ? `https://doi.org/${doi}` : null,
+          `[#${b.evidence_id}]${pageBit}`,
+        ].filter(Boolean);
+        lines.push(`${i + 1}. ${bits.join(". ")}`);
+      } else {
+        lines.push(
+          `${i + 1}. [#${b.evidence_id}] ${claim || "(no claim text)"}${pageBit}`,
+        );
+      }
     });
     lines.push("");
   }
@@ -191,12 +210,61 @@ export function buildLiteratureReviewMarkdown(opts: {
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
-export function downloadMarkdownFile(filename: string, markdown: string): void {
-  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+/** Phase A.4: BibTeX from Evidence → Paper metadata (never invent literature). */
+export function buildBibtexFromWriting(writing: GroundedWritingResult | null | undefined): string {
+  const bindings = writing ? bindingsFromWriting(writing) : [];
+  if (!bindings.length) return "";
+
+  const seenFiles = new Set<number>();
+  const entries: string[] = [];
+
+  for (const b of bindings) {
+    const fid = b.file_id != null ? Number(b.file_id) : null;
+    if (fid != null) {
+      if (seenFiles.has(fid)) continue;
+      seenFiles.add(fid);
+    }
+    const authors = (b.authors || "").trim() || "Unknown";
+    const title = (b.paper_title || "").trim() || `Evidence ${b.evidence_id}`;
+    const year = (b.year || "").trim() || "nd";
+    const venue = (b.venue || "").trim();
+    const doi = (b.doi || "").trim();
+    const firstAuthor = authors.split(";")[0]?.split(",")[0]?.trim() || "anon";
+    const keyBase = firstAuthor.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() || "ref";
+    const key = `${keyBase}${year === "nd" ? "" : year}_e${b.evidence_id}`;
+
+    const fields: string[] = [
+      `  author = {${authors.replace(/;/g, " and ")}}`,
+      `  title = {${title}}`,
+      `  year = {${year}}`,
+    ];
+    if (venue) fields.push(`  journal = {${venue}}`);
+    if (doi) fields.push(`  doi = {${doi}}`);
+    fields.push(`  note = {Dhund evidence #${b.evidence_id}}`);
+    entries.push(`@article{${key},\n${fields.join(",\n")}\n}`);
+  }
+
+  return `${entries.join("\n\n")}\n`;
+}
+
+export function downloadTextFile(
+  filename: string,
+  content: string,
+  mime = "text/plain;charset=utf-8",
+): void {
+  const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename.endsWith(".md") ? filename : `${filename}.md`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export function downloadMarkdownFile(filename: string, markdown: string): void {
+  downloadTextFile(
+    filename.endsWith(".md") ? filename : `${filename}.md`,
+    markdown,
+    "text/markdown;charset=utf-8",
+  );
 }

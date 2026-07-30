@@ -1,6 +1,19 @@
 import { api } from "@/lib/apiClient";
 import type { ExplainResponse, EvidenceObjectDTO } from "./types";
 
+export type ResearchDecisionDTO = {
+  id: number;
+  project_id: number;
+  evidence_id: number;
+  type: string;
+  label: string;
+  reason: string;
+  reason_code?: string;
+  user_id: number;
+  timestamp: string | null;
+  claim_preview: string;
+};
+
 export const evidenceApi = {
   explain: (body: {
     document_id: number;
@@ -183,8 +196,31 @@ export const evidenceApi = {
     },
   ) => api.post(`/api/documents/${documentId}/evidence-bindings`, body),
 
-  review: (evidenceId: number, body: { status: string; reason?: string }) =>
-    api.post(`/api/evidence/${evidenceId}/reviews`, body),
+  review: (
+    evidenceId: number,
+    body: { status: string; reason?: string; reason_code?: string },
+  ) => api.post(`/api/evidence/${evidenceId}/reviews`, body),
+
+  listDecisions: (projectId: number, limit = 40) =>
+    api.get<{
+      items: ResearchDecisionDTO[];
+      labels: Record<string, string>;
+      reason_presets: Record<string, string[]>;
+    }>(`/api/projects/${projectId}/research-decisions?limit=${limit}`),
+
+  createDecision: (
+    projectId: number,
+    body: {
+      type: string;
+      evidence_id: number;
+      reason?: string;
+      reason_code?: string;
+    },
+  ) =>
+    api.post<{ ok: boolean; decision: ResearchDecisionDTO }>(
+      `/api/projects/${projectId}/research-decisions`,
+      body,
+    ),
 
   extract: (projectId: number, fileId: number, force = false) =>
     api.post(`/api/projects/${projectId}/evidence/extract`, { file_id: fileId, force }),

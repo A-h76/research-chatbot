@@ -344,17 +344,19 @@ function GapResults({
 
 type ActiveTab = "compare" | "gaps";
 
-/** Shared compare/gaps workbench — used on /research/compare and in project workspace. */
+/** Shared LLM narrative compare/gaps — demoted under Evidence RI (Phase A.5). */
 export function CompareGapsWorkbench({
   files,
   projectId,
   emptyTitle = "No analysed papers yet",
   emptyDescription = "Upload papers and wait for analysis before comparing.",
+  onOpenEvidenceTab,
 }: {
   files: UserFile[];
   projectId: number | null;
   emptyTitle?: string;
   emptyDescription?: string;
+  onOpenEvidenceTab?: (tab: "matrix" | "themes" | "gaps") => void;
 }) {
   const { copy } = useClipboard();
   const [activeTab, setActiveTab] = useState<ActiveTab>("compare");
@@ -439,6 +441,37 @@ export function CompareGapsWorkbench({
 
   return (
     <div className="space-y-3">
+      <div className="rounded-md border border-amber-700/25 bg-amber-500/5 px-3 py-2 text-[12px] text-muted-foreground">
+        <p className="font-medium text-foreground">Narrative AI compare is secondary</p>
+        <p className="mt-0.5">
+          Prefer Evidence Matrix, Themes, and Gaps for a single evidence-grounded truth path.
+        </p>
+        {onOpenEvidenceTab ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              className="rounded border border-border px-2 py-0.5 text-[11px] text-foreground hover:bg-muted"
+              onClick={() => onOpenEvidenceTab("matrix")}
+            >
+              Open Matrix
+            </button>
+            <button
+              type="button"
+              className="rounded border border-border px-2 py-0.5 text-[11px] text-foreground hover:bg-muted"
+              onClick={() => onOpenEvidenceTab("themes")}
+            >
+              Open Themes
+            </button>
+            <button
+              type="button"
+              className="rounded border border-border px-2 py-0.5 text-[11px] text-foreground hover:bg-muted"
+              onClick={() => onOpenEvidenceTab("gaps")}
+            >
+              Open Evidence Gaps
+            </button>
+          </div>
+        ) : null}
+      </div>
       <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
         <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
           {(

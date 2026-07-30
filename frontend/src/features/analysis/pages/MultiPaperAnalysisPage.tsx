@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   FlaskConical,
   GitCompare,
@@ -18,49 +19,86 @@ import { EvidenceGraphPanel } from "@/features/evidence/components/EvidenceGraph
 import { EvidenceGapsPanel } from "@/features/evidence/components/EvidenceGapsPanel";
 import { EvidenceTimelinePanel } from "@/features/evidence/components/EvidenceTimelinePanel";
 import { EvidenceMethodologyPanel } from "@/features/evidence/components/EvidenceMethodologyPanel";
+import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
 import { cn } from "@/lib/utils";
 
+/** Phase A.5: Evidence RI tabs are primary; LLM narrative compare is advanced. */
 type Tab =
-  | "compare"
   | "matrix"
   | "themes"
   | "gaps"
   | "graph"
   | "timeline"
-  | "methodology";
+  | "methodology"
+  | "compare";
+
+const TAB_KEYS: Tab[] = [
+  "matrix",
+  "themes",
+  "gaps",
+  "graph",
+  "timeline",
+  "methodology",
+  "compare",
+];
 
 const TITLES: Record<Tab, string> = {
-  compare: "Compare & Gaps",
   matrix: "Evidence Matrix",
   themes: "Theme Discovery",
   gaps: "Research Gaps",
   graph: "Knowledge Graph",
   timeline: "Research Timeline",
   methodology: "Methodology",
+  compare: "Narrative compare (AI)",
 };
 
-/** Research Intelligence workbench — Compare + RI surfaces. */
+function parseTab(raw: string | null): Tab {
+  if (raw && (TAB_KEYS as string[]).includes(raw)) return raw as Tab;
+  return "matrix";
+}
+
+/** Research Intelligence workbench — Evidence-first single truth path (Phase A.5). */
 export function MultiPaperAnalysisPage() {
   const { currentProjectId } = useUI();
-  const [tab, setTab] = useState<Tab>("compare");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTabState] = useState<Tab>(() => parseTab(searchParams.get("tab")));
   const { data: allFilesRaw } = useAllFiles();
   const allFiles = useMemo(
     () => (allFilesRaw ?? []).filter((f) => f.kind === "document" && f.meta_status === "done"),
     [allFilesRaw],
   );
 
+  useEffect(() => {
+    setTabState(parseTab(searchParams.get("tab")));
+  }, [searchParams]);
+
+  function setTab(next: Tab) {
+    setTabState(next);
+    const params = new URLSearchParams(searchParams);
+    if (next === "matrix") params.delete("tab");
+    else params.set("tab", next);
+    setSearchParams(params, { replace: true });
+    trackWorkflowEvent("analysis_view_opened", {
+      projectId: currentProjectId,
+      meta: { tab: next },
+    });
+  }
+
   return (
     <PageContainer title={TITLES[tab]} maxWidth="6xl" dense>
+      <p className="mb-2 text-[11px] text-muted-foreground">
+        Structured analysis uses Evidence Objects. Narrative AI compare is optional and secondary.
+      </p>
       <div className="mb-3 flex flex-wrap items-center gap-0.5 rounded-md border border-border p-0.5 w-fit">
         {(
           [
-            { key: "compare" as const, label: "Compare", icon: GitCompare },
             { key: "matrix" as const, label: "Matrix", icon: Table2 },
             { key: "themes" as const, label: "Themes", icon: Tags },
             { key: "gaps" as const, label: "Gaps", icon: SearchX },
             { key: "graph" as const, label: "Graph", icon: Network },
             { key: "timeline" as const, label: "Timeline", icon: History },
             { key: "methodology" as const, label: "Methods", icon: FlaskConical },
+            { key: "compare" as const, label: "AI Compare", icon: GitCompare },
           ] as const
         ).map(({ key, label, icon: Icon }) => (
           <button
@@ -79,9 +117,7 @@ export function MultiPaperAnalysisPage() {
         ))}
       </div>
 
-      {tab === "compare" ? (
-        <CompareGapsWorkbench files={allFiles} projectId={currentProjectId} />
-      ) : tab === "matrix" ? (
+      {tab === "matrix" ? (
         <EvidenceMatrixPanel projectId={currentProjectId} />
       ) : tab === "themes" ? (
         <EvidenceThemesPanel projectId={currentProjectId} />
@@ -91,8 +127,14 @@ export function MultiPaperAnalysisPage() {
         <EvidenceGraphPanel projectId={currentProjectId} />
       ) : tab === "timeline" ? (
         <EvidenceTimelinePanel projectId={currentProjectId} />
-      ) : (
+      ) : tab === "methodology" ? (
         <EvidenceMethodologyPanel projectId={currentProjectId} />
+      ) : (
+        <CompareGapsWorkbench
+          files={allFiles}
+          projectId={currentProjectId}
+          onOpenEvidenceTab={setTab}
+        />
       )}
     </PageContainer>
   );

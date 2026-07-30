@@ -341,7 +341,7 @@ export function CommandPalette() {
         keywords: "compare gaps multi paper analysis research",
         icon: GitCompare,
         show: true,
-        run: () => go("/research/compare"),
+        run: () => go("/research/compare?tab=compare"),
       },
       {
         id: "evidence-matrix",
@@ -350,7 +350,7 @@ export function CommandPalette() {
         keywords: "matrix method dataset findings limitations lit review table export",
         icon: Table2,
         show: true,
-        run: () => go("/research/compare"),
+        run: () => go("/research/compare?tab=matrix"),
       },
       {
         id: "theme-discovery",
@@ -359,7 +359,7 @@ export function CommandPalette() {
         keywords: "themes clusters topic theme discovery literature",
         icon: Tags,
         show: true,
-        run: () => go("/research/compare"),
+        run: () => go("/research/compare?tab=themes"),
       },
       {
         id: "citations",

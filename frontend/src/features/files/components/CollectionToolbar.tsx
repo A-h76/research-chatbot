@@ -65,7 +65,7 @@ export function CollectionToolbar({
         variant="outline"
         size="sm"
         className="h-8 gap-1.5 text-[12px]"
-        onClick={() => navigate("/research/compare")}
+        onClick={() => navigate("/research/compare?tab=matrix")}
       >
         <GitCompare className="size-3.5" />
         Compare

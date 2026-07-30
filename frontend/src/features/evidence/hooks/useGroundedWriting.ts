@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "@/components/common/Toast";
 import { ApiError } from "@/lib/apiClient";
 import { evidenceApi } from "../api";
+import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
 
 export type WritingSectionType =
   | "support_sentence"
@@ -35,6 +36,11 @@ export type GroundedWritingBinding = {
   quote: string;
   confidence_band?: string;
   study_type?: string;
+  paper_title?: string;
+  authors?: string;
+  year?: string;
+  venue?: string;
+  doi?: string;
 };
 
 export type GroundedWritingSection = {
@@ -199,7 +205,8 @@ function buildWritingQuery(opts: {
       document_id: opts.documentId,
     },
     filters: {
-      status: ["accepted", "candidate"],
+      // Phase A.3: draft context = accepted evidence only
+      status: ["accepted"],
       require_page_anchor: true,
     },
     ranking_strategy: "default_v0",
@@ -222,6 +229,7 @@ function hashText(text: string): string {
 
 export function useGroundedWriting() {
   const [last, setLast] = useState<GroundedWritingResult | null>(null);
+  const generateCountRef = useRef(0);
 
   const mutation = useMutation({
     mutationFn: async (opts: {
@@ -240,10 +248,36 @@ export function useGroundedWriting() {
       return {
         ...(writing as GroundedWritingResult),
         writing_version: raw.writing_version,
+        _projectId: opts.projectId,
+        _documentId: opts.documentId,
       };
     },
     onSuccess: (writing) => {
       setLast(writing);
+      generateCountRef.current += 1;
+      const projectId = (writing as { _projectId?: number })._projectId;
+      const documentId = (writing as { _documentId?: number })._documentId;
+      trackWorkflowEvent(
+        generateCountRef.current > 1 ? "draft_regenerated" : "draft_generated",
+        {
+          projectId,
+          meta: {
+            status: writing.status,
+            section_type: writing.section_type,
+            document_id: documentId,
+            citation_count: writing.citations?.length ?? 0,
+          },
+        },
+      );
+      if (writing.review) {
+        trackWorkflowEvent("reviewer_opened", {
+          projectId,
+          meta: {
+            status: writing.review.status,
+            issue_count: writing.review.issue_count,
+          },
+        });
+      }
       if (writing.status === "blocked") {
         toast.error(
           writing.blocked_reason === "opposed_evidence"

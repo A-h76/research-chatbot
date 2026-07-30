@@ -217,6 +217,13 @@ def build_writing_intelligence(
     )
 
     supporting = _supporting_objects(objects, consensus)
+    # Phase A.3: never draft from candidate/rejected EvidenceObjects
+    def _is_accepted(o: dict[str, Any]) -> bool:
+        st = str(o.get("status") or "accepted").strip().lower()
+        return st == "accepted"
+
+    supporting = [o for o in supporting if _is_accepted(o)]
+    objects = [o for o in objects if _is_accepted(o)]
     status, blocked_reason = decide_generation_gate(
         reasoning=reasoning, consensus=consensus, supporting=supporting
     )

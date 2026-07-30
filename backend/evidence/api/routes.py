@@ -39,6 +39,13 @@ from backend.evidence.writing.reviewer_persistence import (
     persist_reviewer_run,
     serialize_run,
 )
+from backend.evidence.decisions import (
+    DECISION_LABELS,
+    REASON_PRESETS,
+    decision_type_from_review_status,
+    serialize_decision,
+    validate_decision_payload,
+)
 from backend.evidence.reviews import next_object_status_after_review, validate_review_payload
 from backend.evidence.services.extract_service import PIPELINE_VERSION, run_evidence_extraction
 from backend.evidence.services.logging import log_evidence_metric
@@ -58,6 +65,7 @@ def create_evidence_blueprint(
     WritingDocument: Any,
     EvidenceObject: Any,
     ClaimReview: Any,
+    ResearchDecision: Any,
     WritingSentenceBinding: Any,
     EvidenceExtractionRun: Any,
     ReviewerRun: Any,
@@ -74,6 +82,7 @@ def create_evidence_blueprint(
     get_model_registry: Callable | None = None,
     writing_quality_mode: str = "balanced",
     PaperAnalysis: Any = None,
+    WorkflowEvent: Any = None,
 ) -> Blueprint:
     bp = Blueprint("evidence", __name__)
 
@@ -857,6 +866,17 @@ def create_evidence_blueprint(
                 reviewed_at=datetime.now(timezone.utc),
             )
             db.add(review)
+            # Phase A.2: every review is also a persistent Research Decision
+            decision = ResearchDecision(
+                user_id=uid,
+                project_id=row.project_id,
+                evidence_object_id=row.id,
+                decision_type=decision_type_from_review_status(payload["status"]),
+                reason=payload["reason"],
+                reason_code=(data.get("reason_code") or "")[:120],
+                created_at=datetime.now(timezone.utc),
+            )
+            db.add(decision)
             if payload["status"] == "edited":
                 # Append-only: supersede with edited content
                 new_row = EvidenceObject(
@@ -907,9 +927,155 @@ def create_evidence_blueprint(
                     payload={"evidence_object_id": row.id, "status": row.status},
                 )
             row.updated_at = datetime.now(timezone.utc)
+            if WorkflowEvent is not None:
+                from backend.workflow.routes import persist_workflow_event
+
+                persist_workflow_event(
+                    db,
+                    WorkflowEvent=WorkflowEvent,
+                    user_id=uid,
+                    project_id=int(row.project_id),
+                    event=(
+                        "evidence_accepted"
+                        if payload["status"] == "accepted"
+                        else "evidence_rejected"
+                        if payload["status"] == "rejected"
+                        else "decision_recorded"
+                    ),
+                    meta={"evidence_id": evidence_id, "review_status": payload["status"]},
+                )
             db.commit()
             log_evidence_metric("review", user_id=uid, evidence_id=evidence_id, status=payload["status"])
             return jsonify({"ok": True, "evidence": serialize_evidence_object(row if payload["status"] != "edited" else new_row)})
+        except ValueError as exc:
+            return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.get("/api/projects/<int:project_id>/research-decisions")
+    @login_required
+    @limiter.limit("120 per hour")
+    def list_research_decisions(project_id: int):
+        """Activity feed of researcher decisions (Phase A.2). Quiet accumulation — not a dashboard."""
+        uid = _uid()
+        limit = min(max(int(request.args.get("limit") or 40), 1), 100)
+        db = SessionLocal()
+        try:
+            require_owned_project(db, Project, user_id=uid, project_id=project_id)
+            rows = (
+                db.execute(
+                    select(ResearchDecision)
+                    .where(
+                        ResearchDecision.user_id == uid,
+                        ResearchDecision.project_id == project_id,
+                    )
+                    .order_by(ResearchDecision.created_at.desc())
+                    .limit(limit)
+                )
+                .scalars()
+                .all()
+            )
+            eids = [int(r.evidence_object_id) for r in rows]
+            claim_by_id: dict[int, str] = {}
+            if eids:
+                eos = (
+                    db.execute(select(EvidenceObject).where(EvidenceObject.id.in_(eids)))
+                    .scalars()
+                    .all()
+                )
+                for eo in eos:
+                    claim_by_id[int(eo.id)] = (eo.claim or eo.quote or "")[:240]
+            items = [
+                serialize_decision(
+                    r,
+                    claim_preview=claim_by_id.get(int(r.evidence_object_id), ""),
+                )
+                for r in rows
+            ]
+            return jsonify(
+                {
+                    "items": items,
+                    "labels": DECISION_LABELS,
+                    "reason_presets": REASON_PRESETS,
+                }
+            )
+        except EvidenceDomainError as exc:
+            return _err(exc)
+        finally:
+            db.close()
+
+    @bp.post("/api/projects/<int:project_id>/research-decisions")
+    @login_required
+    @limiter.limit("120 per hour")
+    def create_research_decision(project_id: int):
+        """Record IMPORTANT / Needs Review / Contradiction without requiring EO status flip."""
+        uid = _uid()
+        data = request.get_json(silent=True) or {}
+        db = SessionLocal()
+        try:
+            require_owned_project(db, Project, user_id=uid, project_id=project_id)
+            payload = validate_decision_payload(data)
+            ev = require_owned_evidence(
+                db, EvidenceObject, user_id=uid, evidence_id=payload["evidence_id"]
+            )
+            if int(ev.project_id) != int(project_id):
+                raise EvidenceDomainError(ErrorCode.NOT_FOUND, "evidence_not_in_project")
+
+            # ACCEPT/REJECT also update EvidenceObject status (same as reviews)
+            if payload["type"] == "ACCEPT":
+                ev.status = "accepted"
+                ev.updated_at = datetime.now(timezone.utc)
+            elif payload["type"] == "REJECT":
+                ev.status = "rejected"
+                ev.updated_at = datetime.now(timezone.utc)
+
+            decision = ResearchDecision(
+                user_id=uid,
+                project_id=project_id,
+                evidence_object_id=ev.id,
+                decision_type=payload["type"],
+                reason=payload["reason"],
+                reason_code=payload.get("reason_code") or "",
+                created_at=datetime.now(timezone.utc),
+            )
+            db.add(decision)
+            if payload["type"] in ("ACCEPT", "REJECT"):
+                db.add(
+                    ClaimReview(
+                        evidence_object_id=ev.id,
+                        user_id=uid,
+                        project_id=project_id,
+                        status="accepted" if payload["type"] == "ACCEPT" else "rejected",
+                        reason=payload["reason"],
+                        reviewed_at=datetime.now(timezone.utc),
+                    )
+                )
+                _emit_contract_event(
+                    db,
+                    aggregate_type="evidence_object",
+                    aggregate_id=ev.id,
+                    event_type="EvidenceUpdated",
+                    payload={"evidence_object_id": ev.id, "status": ev.status},
+                )
+            db.commit()
+            log_evidence_metric(
+                "research_decision",
+                user_id=uid,
+                evidence_id=ev.id,
+                status=payload["type"],
+            )
+            return jsonify(
+                {
+                    "ok": True,
+                    "decision": serialize_decision(
+                        decision,
+                        claim_preview=(ev.claim or ev.quote or "")[:240],
+                    ),
+                    "evidence": serialize_evidence_object(ev),
+                }
+            ), 201
         except ValueError as exc:
             return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422
         except EvidenceDomainError as exc:
@@ -1640,6 +1806,66 @@ def create_evidence_blueprint(
         """Reasoning stage: structured chain from prior RI stages (no generation)."""
         return _run_reasoning()
 
+    def _enrich_writing_bibliography(db, *, uid: int, writing: dict[str, Any]) -> dict[str, Any]:
+        """Attach paper bibliographic fields onto bibliography/citation rows (Phase A.4)."""
+        if not isinstance(writing, dict):
+            return writing
+        rows = list(writing.get("bibliography") or []) + list(writing.get("citations") or [])
+        file_ids = {
+            int(r["file_id"])
+            for r in rows
+            if r.get("file_id") is not None
+        }
+        if not file_ids:
+            return writing
+        files = (
+            db.execute(
+                select(UserFile).where(
+                    UserFile.user_id == uid,
+                    UserFile.id.in_(sorted(file_ids)),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        meta_by_id = {
+            int(f.id): {
+                "paper_title": (f.title or f.name or "")[:500],
+                "authors": (getattr(f, "authors", None) or "")[:500],
+                "year": (getattr(f, "year", None) or "")[:20],
+                "venue": (getattr(f, "venue", None) or "")[:300],
+                "doi": (getattr(f, "doi", None) or "")[:200],
+            }
+            for f in files
+        }
+
+        def _enrich(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            out: list[dict[str, Any]] = []
+            for item in items:
+                enriched = dict(item)
+                fid = item.get("file_id")
+                if fid is not None and int(fid) in meta_by_id:
+                    enriched.update(meta_by_id[int(fid)])
+                out.append(enriched)
+            return out
+
+        writing = dict(writing)
+        if writing.get("bibliography"):
+            writing["bibliography"] = _enrich(list(writing["bibliography"]))
+        if writing.get("citations"):
+            writing["citations"] = _enrich(list(writing["citations"]))
+        sections = []
+        for sec in list(writing.get("sections") or []):
+            s = dict(sec)
+            if s.get("bindings"):
+                s["bindings"] = _enrich(list(s["bindings"]))
+            if s.get("citations"):
+                s["citations"] = _enrich(list(s["citations"]))
+            sections.append(s)
+        if sections:
+            writing["sections"] = sections
+        return writing
+
     def _run_writing_intelligence():
         """Writing Intelligence: full RI pipeline, generation last (grounded_v1 / RI-009)."""
         uid = _uid()
@@ -1648,6 +1874,10 @@ def create_evidence_blueprint(
         db = SessionLocal()
         try:
             query, doc_id = _normalize_and_authorize_query(db, user_id=uid, data=data)
+            # Phase A.3: Writing drafts must never silently use candidate evidence.
+            filters = dict(query.get("filters") or {})
+            filters["status"] = ["accepted"]
+            query = {**query, "filters": filters}
             retrieved = retrieve_evidence_objects(
                 db,
                 query=query,
@@ -1684,6 +1914,9 @@ def create_evidence_blueprint(
                 )
             result = apply_writing_intelligence_stage(reasoned, composer=composer)
             writing = result.get("writing") or {}
+            # Phase A.4: enrich bibliography with real paper metadata for citation export
+            writing = _enrich_writing_bibliography(db, uid=uid, writing=writing)
+            result["writing"] = writing
             review = writing.get("review")
             # Persist when scoped to a document so history is reconstructable (A-401 / A-503).
             if doc_id is not None and isinstance(review, dict):
@@ -1736,6 +1969,22 @@ def create_evidence_blueprint(
                 blocked_reason=writing.get("blocked_reason"),
                 citations=len(writing.get("citations") or []),
             )
+            if WorkflowEvent is not None and writing.get("status") == "ok":
+                from backend.workflow.routes import persist_workflow_event
+
+                persist_workflow_event(
+                    db,
+                    WorkflowEvent=WorkflowEvent,
+                    user_id=uid,
+                    project_id=int(query["scope"]["project_id"]),
+                    event="draft_generated",
+                    meta={
+                        "section_type": writing.get("section_type"),
+                        "citations": len(writing.get("citations") or []),
+                        "document_id": int(doc_id) if doc_id is not None else None,
+                    },
+                )
+                db.commit()
             return _json_ri(result, started=started)
         except ValueError as exc:
             return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422

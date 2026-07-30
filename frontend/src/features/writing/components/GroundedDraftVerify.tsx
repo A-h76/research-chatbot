@@ -220,24 +220,27 @@ function SectionVerify({
 export function GroundedDraftVerify({
   writing,
   onRevise,
-  onAcceptAll,
+  onAcceptSection,
 }: {
   writing: GroundedWritingResult;
   onRevise: () => void;
-  onAcceptAll?: (sectionIds: string[]) => void;
+  /** Persist section into manuscript (Phase A.1 — Accept must save, not only toggle UI). */
+  onAcceptSection?: (section: GroundedWritingSection) => void | Promise<void>;
 }) {
   const sections = (writing.sections || []).filter((s) => s.status === "ok" && s.paragraph);
   const [accepted, setAccepted] = useState<Set<string>>(new Set());
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const issues = writing.review?.issues || [];
 
-  const toggleAccept = (id: string) => {
-    setAccepted((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      onAcceptAll?.(Array.from(next));
-      return next;
-    });
+  const handleAccept = async (section: GroundedWritingSection) => {
+    if (accepted.has(section.id)) return;
+    setPendingId(section.id);
+    try {
+      await onAcceptSection?.(section);
+      setAccepted((prev) => new Set(prev).add(section.id));
+    } finally {
+      setPendingId(null);
+    }
   };
 
   if (!sections.length) {
@@ -302,10 +305,13 @@ export function GroundedDraftVerify({
           section={sec}
           issues={issues}
           accepted={accepted.has(sec.id)}
-          onAccept={() => toggleAccept(sec.id)}
+          onAccept={() => void handleAccept(sec)}
           onRevise={onRevise}
         />
       ))}
+      {pendingId ? (
+        <p className="text-[10px] text-muted-foreground">Saving accepted section…</p>
+      ) : null}
     </div>
   );
 }
@@ -314,6 +320,8 @@ export function GroundedDraftVerify({
 export async function persistGroundedBindings(opts: {
   documentId: number;
   writing: GroundedWritingResult;
+  /** When set, only bind these section ids (single-section Accept). */
+  sectionIds?: string[];
   createBinding: (
     documentId: number,
     body: {
@@ -324,7 +332,11 @@ export async function persistGroundedBindings(opts: {
     },
   ) => Promise<unknown>;
 }): Promise<{ saved: number; failed: number }> {
-  const sections = (opts.writing.sections || []).filter((s) => s.status === "ok");
+  let sections = (opts.writing.sections || []).filter((s) => s.status === "ok");
+  if (opts.sectionIds?.length) {
+    const allow = new Set(opts.sectionIds);
+    sections = sections.filter((s) => allow.has(s.id));
+  }
   let saved = 0;
   let failed = 0;
   const seen = new Set<string>();

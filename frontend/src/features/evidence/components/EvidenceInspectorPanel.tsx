@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,8 @@ import { toast } from "@/components/common/Toast";
 import { evidenceApi } from "../api";
 import { useEvidenceReason } from "../hooks/useEvidenceReason";
 import { ConsensusConflictStrip } from "./ConsensusConflictStrip";
+import { DecisionActivityFeed } from "./DecisionActivityFeed";
+import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
 import type { EvidenceObjectDTO, ExplainResponse, Sufficiency } from "../types";
 
 const SUFFICIENCY_COPY: Record<Sufficiency, string> = {
@@ -13,6 +16,23 @@ const SUFFICIENCY_COPY: Record<Sufficiency, string> = {
   weak: "Only unreviewed or weak evidence",
   insufficient: "Insufficient evidence for this sentence",
 };
+
+const ACCEPT_REASONS = [
+  "High quality methodology",
+  "Supports hypothesis",
+  "Key finding",
+  "Use in discussion",
+  "Use in introduction",
+  "Other",
+] as const;
+
+const REJECT_REASONS = [
+  "Not relevant",
+  "Weak methodology",
+  "Small sample / low quality",
+  "Duplicate claim",
+  "Other",
+] as const;
 
 export function EvidenceInspectorPanel({
   result,
@@ -61,14 +81,44 @@ export function EvidenceInspectorPanel({
   });
 
   const review = useMutation({
-    mutationFn: (payload: { id: number; status: "accepted" | "rejected" }) =>
-      evidenceApi.review(payload.id, { status: payload.status }),
+    mutationFn: (payload: {
+      id: number;
+      status: "accepted" | "rejected";
+      reason?: string;
+    }) =>
+      evidenceApi.review(payload.id, {
+        status: payload.status,
+        reason: payload.reason,
+        reason_code: payload.reason,
+      }),
     onSuccess: (_data, vars) => {
-      toast.success(vars.status === "accepted" ? "Evidence accepted" : "Evidence rejected");
+      toast.success(vars.status === "accepted" ? "Accepted" : "Rejected");
       qc.invalidateQueries({ queryKey: ["evidence", "library", projectId] });
+      qc.invalidateQueries({ queryKey: ["research-decisions", projectId] });
+      trackWorkflowEvent(
+        vars.status === "accepted" ? "evidence_accepted" : "evidence_rejected",
+        {
+          projectId,
+          meta: { evidence_id: vars.id, has_reason: Boolean(vars.reason) },
+        },
+      );
       onBound?.();
     },
-    onError: () => toast.error("Review failed"),
+    onError: () => toast.error("Could not save decision"),
+  });
+
+  const markImportant = useMutation({
+    mutationFn: (payload: { id: number; reason?: string }) =>
+      evidenceApi.createDecision(projectId as number, {
+        type: "IMPORTANT",
+        evidence_id: payload.id,
+        reason: payload.reason || "Key finding",
+      }),
+    onSuccess: () => {
+      toast.success("Marked important");
+      qc.invalidateQueries({ queryKey: ["research-decisions", projectId] });
+    },
+    onError: () => toast.error("Could not save decision"),
   });
 
   const candidates = (libraryQuery.data?.items ?? []).filter((e) => e.status === "candidate");
@@ -159,21 +209,29 @@ export function EvidenceInspectorPanel({
         <p className="text-[10px] text-muted-foreground">Could not load RI reason stage.</p>
       ) : null}
 
+      <DecisionActivityFeed projectId={projectId} />
+
       {result?.evidence?.length ? (
         <ul className="flex flex-col gap-2">
           {result.evidence.map((ev) => (
             <EvidenceObjectCard
               key={ev.id}
               evidence={ev}
+              busy={review.isPending || markImportant.isPending}
               onAccept={
                 ev.status === "candidate"
-                  ? () => review.mutate({ id: ev.id, status: "accepted" })
+                  ? (reason) =>
+                      review.mutate({ id: ev.id, status: "accepted", reason })
                   : undefined
               }
               onReject={
                 ev.status === "candidate"
-                  ? () => review.mutate({ id: ev.id, status: "rejected" })
+                  ? (reason) =>
+                      review.mutate({ id: ev.id, status: "rejected", reason })
                   : undefined
+              }
+              onImportant={() =>
+                markImportant.mutate({ id: ev.id, reason: "Key finding" })
               }
             />
           ))}
@@ -236,13 +294,21 @@ export function EvidenceInspectorPanel({
 
 function EvidenceObjectCard({
   evidence,
+  busy,
   onAccept,
   onReject,
+  onImportant,
 }: {
   evidence: EvidenceObjectDTO;
-  onAccept?: () => void;
-  onReject?: () => void;
+  busy?: boolean;
+  onAccept?: (reason?: string) => void;
+  onReject?: (reason?: string) => void;
+  onImportant?: () => void;
 }) {
+  const [whyMode, setWhyMode] = useState<"accept" | "reject" | null>(null);
+  const [reason, setReason] = useState("");
+  const presets = whyMode === "reject" ? REJECT_REASONS : ACCEPT_REASONS;
+
   return (
     <li className="rounded-md border border-border bg-card p-2.5 text-[12px]">
       <div className="mb-1 flex flex-wrap items-center gap-1.5">
@@ -265,20 +331,93 @@ function EvidenceObjectCard({
         {evidence.page != null ? ` · p. ${evidence.page}` : ""}
         {evidence.study_type ? ` · ${evidence.study_type}` : ""}
       </p>
-      {(onAccept || onReject) && (
-        <div className="mt-2 flex gap-1">
+      {(onAccept || onReject || onImportant) && (
+        <div className="mt-2 flex flex-wrap gap-1">
           {onAccept && (
-            <Button size="sm" variant="outline" className="h-6 px-1.5 text-[10px]" onClick={onAccept}>
-              Accept
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-1.5 text-[10px]"
+              disabled={busy}
+              onClick={() => setWhyMode(whyMode === "accept" ? null : "accept")}
+            >
+              ✓ Accept
             </Button>
           )}
           {onReject && (
-            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={onReject}>
-              Reject
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-1.5 text-[10px]"
+              disabled={busy}
+              onClick={() => setWhyMode(whyMode === "reject" ? null : "reject")}
+            >
+              ✗ Reject
+            </Button>
+          )}
+          {onImportant && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-1.5 text-[10px]"
+              disabled={busy}
+              onClick={onImportant}
+            >
+              ★ Important
             </Button>
           )}
         </div>
       )}
+      {whyMode ? (
+        <div className="mt-2 space-y-1.5 rounded border border-border bg-muted/30 p-2">
+          <p className="text-[10px] font-medium text-muted-foreground">
+            Why? <span className="font-normal">(optional)</span>
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {presets.map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={cn(
+                  "rounded border px-1.5 py-0.5 text-[10px]",
+                  reason === p
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setReason(p === "Other" ? "" : p)}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              disabled={busy}
+              onClick={() => {
+                if (whyMode === "accept") onAccept?.(reason || undefined);
+                else onReject?.(reason || undefined);
+                setWhyMode(null);
+                setReason("");
+              }}
+            >
+              Confirm {whyMode === "accept" ? "Accept" : "Reject"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-[10px]"
+              onClick={() => {
+                setWhyMode(null);
+                setReason("");
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </li>
   );
 }

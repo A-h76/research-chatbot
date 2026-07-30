@@ -58,7 +58,9 @@ Deepens the platform after learning from users. No hard schedule until alpha evi
 ## Phases
 
 ```text
-Phase A (ship)
+Phase A
+  Engineering Complete
+  Awaiting Product Validation
       ↓
 Private Alpha
       ↓
@@ -71,19 +73,62 @@ Phases C–E (usage-gated platform)
 
 | Phase | Goal | Primary KPI | Commitment |
 |-------|------|-------------|------------|
-| **A** | Writing Intelligence MVP + accepted evidence workflow + citation export + single evidence truth path | Researchers can produce an evidence-grounded draft | **APPROVED — ship now** |
+| **A** | First end-to-end researcher workflow (not “build Writing alone”) | Unassisted path: upload → accept evidence (as decisions) → grounded draft → revise → export | **Engineering Complete — awaiting Private Alpha validation** |
 | **Alpha** | Private Alpha + Product Success Gate | Exit criteria below met | **Required before Phase B** |
 | **B** | End-to-end product hardening from alpha feedback | Literature review completes in-product without help (DoD below) | Only after Success Gate |
 | **C** | Research Memory + writing continuity | Returning projects retain useful context | Gated on multi-draft usage |
 | **D** | KG v2 + structured entities (methods, datasets, topics) | Richer exploration if demand justifies | ADR + researcher demand quotes |
 | **E** | Novelty + semantic retrieval | Only if validated by alpha feedback | Do not schedule early |
 
-### Phase A deliverables (exact)
+### Phase A — complete the first end-to-end researcher workflow
 
-1. Writing Intelligence MVP (generate → bind → revise → export)
-2. Accepted-evidence gate (drafts require accepted EvidenceObjects)
-3. Citation / bibliography export from bindings
-4. Single evidence-based truth path (Evidence RI is primary for Compare/Gaps; no dual LLM PaperAnalysis root)
+**Framing:** Do not think of Phase A as “building Writing.” Think of it as making this sentence true:
+
+> A researcher can go from uploaded papers to an evidence-backed draft and export entirely within Dhund.
+
+**Single truth path (required):**
+
+```text
+Papers → Evidence Objects → Accepted Evidence (decisions) → Analysis → Writing → Reviewer → Export
+```
+
+No second reasoning pipeline (no parallel LLM PaperAnalysis compare/gaps as primary).
+
+#### Deliverables (implementation order — do not reorder)
+
+1. **Writing MVP loop** (highest priority) — Project → Evidence → Generate Draft → Revise → Save (prove the workflow first; gate may be temporary initially)
+2. **Research Decision model** — persist every interaction as project memory:
+   - `id`, `project_id`, `evidence_id`, `type` (`ACCEPT` | `REJECT` | `IMPORTANT` | `OPEN_QUESTION` | `SUPPORT` | `CONTRADICT`), `timestamp`, `reason` (optional), `user_id`
+   - Principle: decisions become permanent research memory
+3. **Accepted-evidence gate** — draft context = accepted evidence only (candidates never silently influence drafts)
+4. **Citation export** — Paragraph → Evidence → Paper → Citation → Export
+5. **Single truth path** — retire parallel LLM PaperAnalysis compare/gaps as primary; one Evidence → Decisions → Analysis → Writing → Export chain
+6. **Instrumentation** — ship with Phase A (not after): project created, papers uploaded, evidence extracted, accept/reject, draft generated/regenerated, reviewer opened, export completed, workflow abandoned
+
+#### Phase A Definition of Done (refuse to close until all pass)
+
+- Researcher creates a project
+- Uploads papers
+- Reviews extracted evidence
+- Accepts/rejects evidence (as Research Decisions)
+- Generates an evidence-grounded draft
+- Revises the draft
+- Exports with citations
+- Completes the workflow without developer assistance
+- Instrumentation captures the key workflow events
+
+**Phase A status (2026-07-30):**
+
+```text
+Phase A
+  Engineering Complete
+  Awaiting Product Validation
+```
+
+Deliverables 1–6 are implemented in code. Phase A itself is **not** closed until an unassisted researcher path succeeds and Private Alpha + Success Gate pass. Do not start Phase B from this commit alone.
+
+**Scope lock:** No new RI capabilities, KG expansion, or novelty until Private Alpha validates the need.  
+**Not doing:** Decision Dashboard, Decision Analytics, Decision Graph — decisions accumulate quietly.
 
 ---
 

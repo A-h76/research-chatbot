@@ -1091,6 +1091,32 @@ class ClaimReview(Base):
     reviewed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class ResearchDecision(Base):
+    """Phase A.2 append-only ledger of researcher judgments (project memory)."""
+
+    __tablename__ = "research_decisions"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    project_id = Column(Integer, nullable=False)
+    evidence_object_id = Column(Integer, nullable=False)
+    decision_type = Column(String(40), nullable=False)
+    reason = Column(Text, default="")
+    reason_code = Column(String(120), default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class WorkflowEvent(Base):
+    """Phase A.6 append-only workflow instrumentation breadcrumbs."""
+
+    __tablename__ = "workflow_events"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    project_id = Column(Integer, nullable=True)
+    event_name = Column(String(80), nullable=False)
+    meta_json = Column(Text, default="{}")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class WritingSentenceBinding(Base):
     __tablename__ = "writing_sentence_bindings"
     id = Column(Integer, primary_key=True)
@@ -4405,6 +4431,7 @@ app.register_blueprint(
         WritingDocument=WritingDocument,
         EvidenceObject=EvidenceObject,
         ClaimReview=ClaimReview,
+        ResearchDecision=ResearchDecision,
         WritingSentenceBinding=WritingSentenceBinding,
         EvidenceExtractionRun=EvidenceExtractionRun,
         ReviewerRun=ReviewerRun,
@@ -4420,6 +4447,20 @@ app.register_blueprint(
         ai_gateway=ai_model_gateway,
         get_model_registry=get_model_registry,
         PaperAnalysis=PaperAnalysis,
+        WorkflowEvent=WorkflowEvent,
+    )
+)
+
+from backend.workflow.routes import create_workflow_blueprint
+
+app.register_blueprint(
+    create_workflow_blueprint(
+        SessionLocal=SessionLocal,
+        Project=Project,
+        WorkflowEvent=WorkflowEvent,
+        select=select,
+        login_required=login_required,
+        limiter=limiter,
     )
 )
 

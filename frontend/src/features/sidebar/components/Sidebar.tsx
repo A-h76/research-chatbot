@@ -346,7 +346,7 @@ export function SidebarContents({
           icon={<GitCompare className="size-4" />}
           label="Research"
           active={isResearch}
-          onClick={() => go("library", "/research/compare")}
+          onClick={() => go("library", "/research/compare?tab=matrix")}
         />
         <NavItem
           icon={<PenLine className="size-4" />}

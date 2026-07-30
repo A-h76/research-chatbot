@@ -43,6 +43,14 @@ def _binding_row(
         or obj.get("confidence_band")
         or "low",
         "study_type": cite.get("study_type") or obj.get("study_type") or "",
+        "paper_title": cite.get("paper_title")
+        or cite.get("file_title")
+        or obj.get("file_title")
+        or "",
+        "authors": cite.get("authors") or obj.get("authors") or "",
+        "year": cite.get("year") or obj.get("year") or "",
+        "venue": cite.get("venue") or obj.get("venue") or "",
+        "doi": cite.get("doi") or obj.get("doi") or "",
     }
 
 
