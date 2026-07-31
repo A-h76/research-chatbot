@@ -168,6 +168,8 @@ export type ChatMessageLike = {
   confidence?: number | null;
   warnings?: unknown;
   references?: unknown;
+  /** W3 — research skill used for this turn */
+  skill?: string | null;
   metadata?: Record<string, unknown>;
 };
 
@@ -208,6 +210,8 @@ export function mapExplainableChat(
         snippet: s.snippet,
       }));
   }
+  const skill = asString(message.skill ?? undefined);
+  if (skill) metadata.skill = skill;
 
   return {
     id: message.id != null ? String(message.id) : `msg:${role}`,
