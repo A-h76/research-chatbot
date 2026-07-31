@@ -257,6 +257,7 @@ def ensure_prompt(registry, name, template_text):
 
 def ensure_default_prompts(db_session):
     from .prompt_registry import PromptRegistry
+    from .system_prompt import DEFAULT_SYSTEM_PROMPT, SystemPromptManager
     from backend.projects.prompts import PROJECT_RESEARCH_PROMPT
 
     registry = PromptRegistry(db_session)
@@ -264,3 +265,8 @@ def ensure_default_prompts(db_session):
     ensure_prompt(registry, "paper_analysis", PAPER_ANALYSIS_PROMPT)
     ensure_prompt(registry, "semantic_search", SEMANTIC_SEARCH_PROMPT)
     ensure_prompt(registry, "project_research", PROJECT_RESEARCH_PROMPT)
+    # PromptBuilder.build() always reads the global system prompt. Analysis
+    # used to 400 with `prompt not found: name='system_prompt'` when seed.py
+    # / backfill never ran — same lazy-ensure pattern as paper_analysis.
+    if registry.get_active_version(SystemPromptManager.NAME) is None:
+        SystemPromptManager(registry).set_active_prompt(DEFAULT_SYSTEM_PROMPT)

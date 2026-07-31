@@ -11,12 +11,44 @@ import {
 } from "../mappers/structure";
 import { structureSectionRefId } from "../mappers/chat";
 import { useWorkspaceFocus } from "../useWorkspaceFocus";
+import { parseSectionBody } from "./sectionContent";
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
     <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
       {children}
     </h3>
+  );
+}
+
+/** Renders extracted section text with bold in-body headings (Keywords, Abstract, …). */
+function SectionContentBody({ content }: { content: string }) {
+  const blocks = parseSectionBody(content);
+  return (
+    <div className="space-y-3 text-sm leading-relaxed text-foreground/90">
+      {blocks.map((block, i) => {
+        if (block.kind === "heading") {
+          return (
+            <div key={`h-${i}`} className="space-y-1.5">
+              <p className="text-[13px] font-semibold tracking-tight text-foreground">
+                {block.label}
+              </p>
+              {block.rest ? (
+                <p className="whitespace-pre-wrap break-words text-foreground/85">{block.rest}</p>
+              ) : null}
+            </div>
+          );
+        }
+        return (
+          <p
+            key={`p-${i}`}
+            className="whitespace-pre-wrap break-words text-foreground/85"
+          >
+            {block.text}
+          </p>
+        );
+      })}
+    </div>
   );
 }
 
@@ -178,10 +210,8 @@ function StructureReady({
                     </span>
                   </button>
                   {open && sec.content && (
-                    <div className="border-t border-border bg-muted/20 px-4 py-3">
-                      <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-foreground/80 max-h-64 overflow-y-auto scrollbar-thin">
-                        {sec.content}
-                      </pre>
+                    <div className="border-t border-border bg-muted/20 px-4 py-4 sm:px-5">
+                      <SectionContentBody content={sec.content} />
                     </div>
                   )}
                   {open && !sec.content && (
