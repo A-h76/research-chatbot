@@ -61,7 +61,7 @@ from .validators import require_processed_document, validate_document
 # This extraction logic's version — bump when a keyword list or scoring
 # rule changes (matches backend.document_understanding.pipeline's
 # PIPELINE_VERSION convention).
-PIPELINE_VERSION = "1.0.0"
+PIPELINE_VERSION = "1.0.1"
 
 _Label = TypeVar("_Label")
 

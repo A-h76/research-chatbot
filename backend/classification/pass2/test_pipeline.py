@@ -105,6 +105,8 @@ def test_reporting_guideline_receives_document_type_and_study_design_corroborati
 
 
 def test_detected_keywords_is_flat_and_deduplicated(document_factory, pipeline):
-    document = document_factory(full_text="preprint preprint arxiv biorxiv")
+    document = document_factory(full_text="patient patient disease medicine")
     result = pipeline.process(document)
-    assert result.detected_keywords.count("preprint") == 1
+    assert result.detected_keywords.count("patient") == 1
+    assert "disease" in result.detected_keywords
+    assert "we conducted" not in result.detected_keywords

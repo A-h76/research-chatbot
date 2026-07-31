@@ -275,6 +275,137 @@ export function buildProfileSummary(view: ClassificationViewModel): string | nul
 }
 
 /**
+ * Classifier chrome that used to leak into detected_keywords (pre-1.0.1).
+ * Applied client-side so already-stored phase results still show clean topics.
+ */
+const CLASSIFIER_TOPIC_NOISE = new Set(
+  [
+    // document type
+    "we conducted",
+    "we performed",
+    "our results show",
+    "data were collected",
+    "sample size",
+    "statistically significant",
+    "systematic review",
+    "prisma",
+    "search strategy",
+    "included studies",
+    "study selection",
+    "risk of bias assessment",
+    "meta-analysis",
+    "meta analysis",
+    "forest plot",
+    "pooled estimate",
+    "heterogeneity",
+    "random-effects model",
+    "fixed-effects model",
+    "narrative review",
+    "literature review",
+    "scoping review",
+    "we reviewed the literature",
+    "this review summarizes",
+    "this review provides an overview",
+    "in this review we",
+    "overview of the literature",
+    "clinical practice guideline",
+    "practice guideline",
+    "consensus statement",
+    "should be treated with",
+    "grade of recommendation",
+    "strength of recommendation",
+    "we recommend that",
+    "guideline panel",
+    "editorial",
+    "in this editorial",
+    "commentary",
+    "opinion piece",
+    "letter to the editor",
+    "we read with interest",
+    "in response to",
+    "correspondence",
+    "case report",
+    "case series",
+    "presented with",
+    "we describe a case",
+    "a patient presented",
+    "study protocol",
+    "trial registration",
+    "this protocol describes",
+    "planned statistical analysis",
+    "protocol registered",
+    "this chapter",
+    "in this volume",
+    "edited volume",
+    "chapter in",
+    "submitted in partial fulfillment",
+    "a thesis submitted",
+    "doctoral dissertation",
+    "master's thesis",
+    "white paper",
+    "industry perspective",
+    "this paper outlines",
+    "technical report",
+    "annual report",
+    "report prepared for",
+    "survey of",
+    "we survey",
+    "in this survey",
+    "comprehensive survey",
+    "taxonomy of",
+    "preprint",
+    "not yet peer reviewed",
+    "arxiv",
+    "biorxiv",
+    "medrxiv",
+    // study design (non-domain)
+    "randomized controlled trial",
+    "randomly assigned",
+    "double-blind",
+    "placebo-controlled",
+    "random allocation",
+    "we propose a framework",
+    "framework for",
+    "conceptual framework",
+    "theoretical framework",
+    "architectural framework",
+    "we benchmark",
+    "baseline comparison",
+    "leaderboard",
+    "benchmark dataset",
+    // reporting
+    "consort statement",
+    "consort checklist",
+    "consort flow diagram",
+    "prisma statement",
+    "prisma checklist",
+    "prisma flow diagram",
+    "strobe statement",
+    "strobe checklist",
+    "care guidelines",
+    "care checklist",
+    "spirit statement",
+    "spirit checklist",
+  ].map((s) => s.toLowerCase()),
+);
+
+/** Drop classifier chrome from Primary Topics (defense for stale phase JSON). */
+export function filterPrimaryTopics(keywords: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of keywords) {
+    const kw = raw.trim();
+    if (!kw) continue;
+    const key = kw.toLowerCase();
+    if (CLASSIFIER_TOPIC_NOISE.has(key)) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(kw);
+  }
+  return out;
+}
+
+/**
  * Soft research-context line from analysis_context fields already on the view.
  * Does not invent Foundational/Applied stages — only rephrases readiness/routing.
  */
@@ -429,7 +560,7 @@ export function mapClassification(
   );
 
   const candidates = mapCandidates(classification.candidate_labels);
-  const keywords = asStringArray(classification.detected_keywords);
+  const keywords = filterPrimaryTopics(asStringArray(classification.detected_keywords));
   const warnings = asStringArray(classification.warnings);
   const processingTimeMs = asNumber(classification.processing_time_ms);
   const pipelineVersion = asString(classification.pipeline_version);

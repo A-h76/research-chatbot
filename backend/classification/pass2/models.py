@@ -45,10 +45,9 @@ class ClassificationResult:
         domain: See domain.py.
         study_design: See study_design.py.
         reporting_guideline: See reporting_guideline.py.
-        detected_keywords: Every keyword phrase that matched any label in
-            any of the four detectors above, deduplicated — a flat
-            "what did this document actually contain" list, distinct
-            from any one detector's own evidence.
+        detected_keywords: Domain subject-matter keyword phrases found in
+            the document (not document-type / study-design / reporting
+            classifier chrome) — used as Primary Topics / key_themes.
         candidate_labels: Every label any detector considered (across all
             four families), keyed by that label's own string value, with
             its own confidence — not just the four winners; a caller

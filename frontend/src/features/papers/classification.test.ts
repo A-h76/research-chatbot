@@ -12,6 +12,7 @@ import {
   orderedProfileDecisions,
   buildProfileSummary,
   buildResearchContextLine,
+  filterPrimaryTopics,
 } from "./mappers/classification";
 import type { PhaseResult } from "@/features/pipeline";
 
@@ -126,7 +127,7 @@ describe("mapClassification", () => {
     expect(view.decisions[1].label).toBe("medicine");
     expect(view.decisions[2].displayLabel).toBe("RCT");
     expect(view.decisions[3].label).toBe("consort");
-    expect(view.keywords).toEqual(["patient", "clinical", "randomized controlled trial"]);
+    expect(view.keywords).toEqual(["patient", "clinical"]);
     expect(view.candidates.map((c) => c.key)).toEqual([
       "document_type.research_article",
       "domain.medicine",
@@ -272,6 +273,28 @@ describe("Research Profile presentation helpers", () => {
     expect(line).toMatch(/partially ready/i);
     expect(line).toMatch(/medical full/i);
     expect(buildResearchContextLine(null)).toBeNull();
+  });
+
+  it("strips classifier chrome from Primary Topics (stale phase JSON)", () => {
+    expect(
+      filterPrimaryTopics([
+        "heterogeneity",
+        "editorial",
+        "in response to",
+        "patient",
+        "gene expression",
+        "framework for",
+        "patient",
+      ]),
+    ).toEqual(["patient", "gene expression"]);
+  });
+
+  it("mapClassification applies topic filter to detected_keywords", () => {
+    const view = mapClassification({
+      ...SAMPLE_CLASSIFICATION,
+      detected_keywords: ["editorial", "patient", "in response to", "rna"],
+    })!;
+    expect(view.keywords).toEqual(["patient", "rna"]);
   });
 });
 

@@ -480,21 +480,26 @@ DOCUMENT_TYPE_TO_REPORTING_GUIDELINE: dict[DocumentType, ReportingGuideline] = {
 }
 
 # ------------------------------------------------------------ flat keyword overview
+# Primary Topics / key_themes should be subject-matter terms, not classifier
+# chrome ("editorial", "framework for", "consort statement"). Document-type,
+# study-design, and reporting-guideline phrases stay on their detectors'
+# evidence lists — they must not pollute the topic overview (PR-C follow-up).
 
-_ALL_KEYWORD_MAPS = (DOCUMENT_TYPE_KEYWORDS, DOMAIN_KEYWORDS, STUDY_DESIGN_KEYWORDS, REPORTING_GUIDELINE_KEYWORDS)
+_TOPIC_KEYWORD_MAPS = (DOMAIN_KEYWORDS,)
 
 
 def extract_detected_keywords(document: ProcessedDocument) -> list[str]:
-    """Every literal keyword phrase (from any of this module's four
-    keyword dictionaries) found anywhere in the document's title +
-    abstract + full_text — a flat, label-independent overview, distinct
-    from any one detector's own label-specific evidence (see pipeline.py,
-    the only caller). Deduplicated, first-seen order preserved."""
+    """Domain keyword phrases found in title + abstract + full_text.
+
+    Deduplicated, first-seen order preserved. Deliberately excludes
+    document-type / study-design / reporting-guideline lexicon so Primary
+    Topics stays researcher-facing.
+    """
     text = f"{document.metadata.title}\n{document.metadata.abstract}\n{document.full_text}"
 
     seen: list[str] = []
     seen_set: set[str] = set()
-    for keyword_map in _ALL_KEYWORD_MAPS:
+    for keyword_map in _TOPIC_KEYWORD_MAPS:
         for signal in match_keywords(text, keyword_map).values():
             for term in signal.matched_terms:
                 if term not in seen_set:
