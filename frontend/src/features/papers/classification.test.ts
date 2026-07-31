@@ -4,6 +4,14 @@ import {
   mapAnalysisSummary,
   formatClassificationLabel,
   formatConfidence,
+  confidenceBand,
+  formatConfidenceBand,
+  humanizeEvidenceLine,
+  isConfidentDecision,
+  profileDecisionLabel,
+  orderedProfileDecisions,
+  buildProfileSummary,
+  buildResearchContextLine,
 } from "./mappers/classification";
 import type { PhaseResult } from "@/features/pipeline";
 
@@ -168,6 +176,102 @@ describe("mapClassification", () => {
       warnings: ["ignored for strip"],
     })!;
     expect(view.analysisSummary).toBeNull();
+  });
+});
+
+describe("Research Profile presentation helpers", () => {
+  it("maps confidence to qualitative bands", () => {
+    expect(confidenceBand(0.8)).toBe("high");
+    expect(confidenceBand(0.5)).toBe("medium");
+    expect(confidenceBand(0.33)).toBe("low");
+    expect(formatConfidenceBand("low")).toBe("Low confidence");
+  });
+
+  it("treats low-confidence labels as not identified in the hero", () => {
+    const view = mapClassification(SAMPLE_CLASSIFICATION)!;
+    const domain = view.decisions.find((d) => d.family === "domain")!;
+    expect(isConfidentDecision(domain)).toBe(false);
+    expect(profileDecisionLabel(domain)).toBe("Not identified");
+
+    const docType = view.decisions.find((d) => d.family === "document_type")!;
+    expect(isConfidentDecision(docType)).toBe(true);
+    expect(profileDecisionLabel(docType)).toBe("Research Article");
+  });
+
+  it("orders identity Domain-first and humanizes evidence chrome", () => {
+    const view = mapClassification(SAMPLE_CLASSIFICATION)!;
+    expect(orderedProfileDecisions(view.decisions).map((d) => d.family)).toEqual([
+      "domain",
+      "document_type",
+      "study_design",
+      "reporting_guideline",
+    ]);
+    expect(humanizeEvidenceLine("5/14 ScientificDomain.MEDICINE keyword(s) matched")).toBe(
+      "5/14 MEDICINE keyword(s) matched",
+    );
+  });
+
+  it("builds a template summary from confident labels and keywords only", () => {
+    const view = mapClassification(SAMPLE_CLASSIFICATION)!;
+    const summary = buildProfileSummary(view)!;
+    expect(summary).toContain("research article");
+    expect(summary).toContain("patient");
+    expect(summary).toContain("No study design was detected");
+    expect(summary).toContain("CONSORT");
+    expect(summary).not.toMatch(/medicine/i); // domain below confidence floor
+    expect(summary).not.toMatch(/\bRCT\b/);
+  });
+
+  it("keeps acronyms and notes reporting when design is confident", () => {
+    const view = mapClassification({
+      ...SAMPLE_CLASSIFICATION,
+      domain: { label: "biology", confidence: 0.82, evidence: [], reasoning: null },
+      document_type: {
+        label: "research_article",
+        confidence: 0.9,
+        evidence: [],
+        reasoning: null,
+      },
+      study_design: { label: "rct", confidence: 0.88, evidence: [], reasoning: null },
+      reporting_guideline: {
+        label: "consort",
+        confidence: 0.8,
+        evidence: [],
+        reasoning: null,
+      },
+      detected_keywords: ["metformin"],
+    })!;
+    const summary = buildProfileSummary(view)!;
+    expect(summary).toContain("RCT");
+    expect(summary).toContain("biology");
+    expect(summary).toContain("metformin");
+    expect(summary).toContain("CONSORT");
+    expect(summary).not.toMatch(/no study design/i);
+  });
+
+  it("returns null when nothing confident and no keywords", () => {
+    const view = mapClassification({
+      document_type: { label: "unknown", confidence: 0.1, evidence: [], reasoning: null },
+      domain: { label: "medicine", confidence: 0.2, evidence: [], reasoning: null },
+      study_design: { label: "unknown", confidence: 0, evidence: [], reasoning: null },
+      reporting_guideline: { label: "unknown", confidence: 0, evidence: [], reasoning: null },
+      detected_keywords: [],
+      warnings: ["sparse"],
+    })!;
+    expect(buildProfileSummary(view)).toBeNull();
+  });
+
+  it("builds a research-context line from analysis_context fields only", () => {
+    const line = buildResearchContextLine({
+      audience: "researchers",
+      readiness: "partially_ready",
+      routing: "medical_full",
+      hasContent: true,
+    });
+    expect(line).toMatch(/researchers/i);
+    expect(line).toMatch(/partially ready/i);
+    expect(line).toMatch(/medical full/i);
+    expect(buildResearchContextLine(null)).toBeNull();
   });
 });
 

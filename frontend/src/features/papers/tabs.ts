@@ -17,7 +17,7 @@ export type PaperTabId = (typeof PAPER_TABS)[number];
 export const PAPER_TAB_LABELS: Record<PaperTabId, string> = {
   overview: "Overview",
   structure: "Structure",
-  classification: "Classification",
+  classification: "Research Profile",
   entities: "Entities",
   evidence: "Evidence",
   graph: "Knowledge Graph",

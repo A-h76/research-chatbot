@@ -108,7 +108,7 @@ describe("Paper Workspace shell (M4)", () => {
     expect(await screen.findByText(/no structure yet/i)).toBeTruthy();
   });
 
-  it("shows Classification tab empty state when phase is missing", async () => {
+  it("shows Research Profile tab empty state when phase is missing", async () => {
     const user = userEvent.setup();
     mockFetch({
       "/api/files/9": { status: 200, body: FILE },
@@ -119,8 +119,8 @@ describe("Paper Workspace shell (M4)", () => {
     renderPage("/papers/9");
     await screen.findByRole("heading", { name: "paper.pdf" });
 
-    await user.click(screen.getByRole("tab", { name: "Classification" }));
-    expect(await screen.findByText(/no classification yet/i)).toBeTruthy();
+    await user.click(screen.getByRole("tab", { name: "Research Profile" }));
+    expect(await screen.findByText(/no research profile yet/i)).toBeTruthy();
   });
 
   it("shows Entities tab empty state when phase is missing", async () => {

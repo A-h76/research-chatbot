@@ -37,6 +37,37 @@ def test_detects_systematic_review(document_factory):
     assert decision.label == DocumentType.SYSTEMATIC_REVIEW
 
 
+def test_detects_narrative_review_not_clinical_guideline(document_factory):
+    """Bare 'recommendation' / DISCUSSION must not steal narrative reviews (PR-C)."""
+    document = document_factory(
+        title="Kupffer cells in liver biology: a narrative review",
+        full_text=(
+            "In this review we summarize the literature on Kupffer cells and hepatic macrophages. "
+            "This narrative review provides an overview of immune homeostasis in liver tissue. "
+            "Prior recommendations in the field are discussed as background only."
+        ),
+        normalized_headings={
+            SectionType.INTRODUCTION: "intro text",
+            SectionType.DISCUSSION: "discussion text",
+        },
+    )
+    decision = DocumentTypeDetector().detect(document)
+    assert decision.label == DocumentType.NARRATIVE_REVIEW
+    assert decision.confidence > 0.3
+
+
+def test_detects_clinical_guideline_from_specific_phrases(document_factory):
+    document = document_factory(
+        full_text=(
+            "This clinical practice guideline was developed by a guideline panel. "
+            "We recommend that patients should be treated with first-line therapy. "
+            "Grade of recommendation: strong."
+        )
+    )
+    decision = DocumentTypeDetector().detect(document)
+    assert decision.label == DocumentType.CLINICAL_GUIDELINE
+
+
 def test_no_signal_falls_back_to_unknown(document_factory):
     document = document_factory(full_text="A completely generic piece of text with no distinguishing markers.")
     decision = DocumentTypeDetector().detect(document)

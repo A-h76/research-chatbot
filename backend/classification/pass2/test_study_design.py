@@ -31,6 +31,23 @@ def test_detects_qualitative_study(document_factory):
     assert decision.label == StudyDesign.QUALITATIVE
 
 
+def test_detects_narrative_review_design(document_factory):
+    document = document_factory(
+        full_text="This narrative review summarizes the literature on hepatic macrophages and Kupffer cells."
+    )
+    decision = StudyDesignDetector().detect(document)
+    assert decision.label == StudyDesign.NARRATIVE_REVIEW
+
+
+def test_framework_requires_specific_phrases(document_factory):
+    """Bare 'framework for' must not win (PR-C) — common in review prose."""
+    document = document_factory(
+        full_text="We discuss a framework for understanding liver immunity in this literature review."
+    )
+    decision = StudyDesignDetector().detect(document)
+    assert decision.label == StudyDesign.NARRATIVE_REVIEW
+
+
 def test_no_signal_falls_back_to_unknown(document_factory):
     document = document_factory(full_text="A generic sentence with no study design markers.")
     decision = StudyDesignDetector().detect(document)

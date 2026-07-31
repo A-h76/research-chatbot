@@ -24,7 +24,7 @@ const TAB_LINKS: { tab: WorkspaceTab; label: string; icon: LucideIcon }[] = [
   { tab: "evidence", label: "Evidence", icon: Scale },
   { tab: "entities", label: "Entities", icon: Tags },
   { tab: "graph", label: "Graph", icon: Network },
-  { tab: "classification", label: "Classify", icon: Layers },
+  { tab: "classification", label: "Profile", icon: Layers },
 ];
 
 /**

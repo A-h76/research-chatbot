@@ -6,7 +6,7 @@ import { groupWorkspaceReferences } from "../mappers/chat";
 
 const TAB_LABEL: Record<WorkspaceTab, string> = {
   structure: "Structure",
-  classification: "Classify",
+  classification: "Profile",
   entities: "Entities",
   evidence: "Evidence",
   graph: "Graph",

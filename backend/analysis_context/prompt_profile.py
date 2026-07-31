@@ -34,7 +34,13 @@ _TECHNICAL_DOMAINS = frozenset(
         ScientificDomain.ENGINEERING,
     }
 )
-_REVIEW_DOCUMENT_TYPES = frozenset({DocumentType.SYSTEMATIC_REVIEW, DocumentType.META_ANALYSIS})
+_REVIEW_DOCUMENT_TYPES = frozenset(
+    {
+        DocumentType.SYSTEMATIC_REVIEW,
+        DocumentType.META_ANALYSIS,
+        DocumentType.NARRATIVE_REVIEW,
+    }
+)
 _METHODOLOGICAL_STUDY_DESIGNS = frozenset(
     {StudyDesign.ALGORITHM, StudyDesign.BENCHMARK, StudyDesign.SYSTEM, StudyDesign.FRAMEWORK, StudyDesign.MODEL}
 )
@@ -51,6 +57,7 @@ _SECTION_PRIORITIES: dict[DocumentType, tuple[SectionType, ...]] = {
     ),
     DocumentType.SYSTEMATIC_REVIEW: (SectionType.RESULTS, SectionType.METHODS, SectionType.DISCUSSION),
     DocumentType.META_ANALYSIS: (SectionType.RESULTS, SectionType.METHODS, SectionType.DISCUSSION),
+    DocumentType.NARRATIVE_REVIEW: (SectionType.DISCUSSION, SectionType.INTRODUCTION, SectionType.ABSTRACT),
     DocumentType.CLINICAL_GUIDELINE: (SectionType.DISCUSSION, SectionType.ABSTRACT),
     DocumentType.CASE_REPORT: (SectionType.ABSTRACT, SectionType.DISCUSSION),
     DocumentType.PROTOCOL: (SectionType.METHODS, SectionType.ABSTRACT),
@@ -123,6 +130,8 @@ def _prompt_family(classification: ClassificationResult) -> PromptFamily:
             DocumentType.META_ANALYSIS,
         ):
             return PromptFamily.SYSTEMATIC
+        if study_design == StudyDesign.NARRATIVE_REVIEW or document_type == DocumentType.NARRATIVE_REVIEW:
+            return PromptFamily.MEDICAL
         if study_design == StudyDesign.RCT:
             return PromptFamily.CLINICAL
         return PromptFamily.MEDICAL

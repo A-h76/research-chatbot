@@ -126,7 +126,7 @@ export function splitReferenceLines(blob: string): string[] {
 /** Numbered biblio lines wrongly promoted to Structure headings. */
 export function looksLikeBibliographyHeading(
   heading: string,
-  content?: string,
+  _content?: string,
   sectionType?: string,
 ): boolean {
   const h = heading.trim();

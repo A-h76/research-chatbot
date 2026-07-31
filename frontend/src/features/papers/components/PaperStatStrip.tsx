@@ -62,9 +62,9 @@ export function PaperStatStrip({
     },
     {
       key: "classification",
-      label: "Classification",
+      label: "Profile",
       value: classificationLabel ?? "—",
-      hint: classificationHint ?? "Open Classification",
+      hint: classificationHint ?? "Open Research Profile",
       tab: "classification",
     },
   ];

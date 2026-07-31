@@ -35,6 +35,11 @@ _STUDY_DESIGN_ANALYSIS_TYPES: dict[StudyDesign, tuple[AnalysisType, ...]] = {
         AnalysisType.STATISTICAL_REVIEW,
         AnalysisType.CONSENSUS_DETECTION,
     ),
+    StudyDesign.NARRATIVE_REVIEW: (
+        AnalysisType.GAP_ANALYSIS,
+        AnalysisType.CONSENSUS_DETECTION,
+        AnalysisType.KNOWLEDGE_GRAPH,
+    ),
     StudyDesign.DIAGNOSTIC: (AnalysisType.STATISTICAL_REVIEW, AnalysisType.METHODOLOGY_REVIEW),
     StudyDesign.QUALITATIVE: (AnalysisType.METHODOLOGY_REVIEW,),
     StudyDesign.MIXED_METHODS: (AnalysisType.METHODOLOGY_REVIEW, AnalysisType.STATISTICAL_REVIEW),

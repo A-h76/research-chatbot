@@ -49,13 +49,28 @@ DOCUMENT_TYPE_KEYWORDS: dict[DocumentType, list[str]] = {
         "random-effects model",
         "fixed-effects model",
     ],
+    # Narrative / literature reviews — distinct from systematic_review and
+    # from clinical_guideline. Bare "guideline"/"recommendation" used to
+    # steal these into CLINICAL_GUIDELINE (PR-C).
+    DocumentType.NARRATIVE_REVIEW: [
+        "narrative review",
+        "literature review",
+        "scoping review",
+        "we reviewed the literature",
+        "this review summarizes",
+        "this review provides an overview",
+        "in this review we",
+        "overview of the literature",
+    ],
     DocumentType.CLINICAL_GUIDELINE: [
         "clinical practice guideline",
-        "guideline",
-        "recommendation",
+        "practice guideline",
         "consensus statement",
         "should be treated with",
         "grade of recommendation",
+        "strength of recommendation",
+        "we recommend that",
+        "guideline panel",
     ],
     DocumentType.EDITORIAL: [
         "editorial",
@@ -133,7 +148,9 @@ DOCUMENT_TYPE_STRUCTURAL_FEATURES: dict[DocumentType, tuple[SectionType, ...]] =
     DocumentType.RESEARCH_ARTICLE: (SectionType.METHODS, SectionType.RESULTS, SectionType.DISCUSSION),
     DocumentType.SYSTEMATIC_REVIEW: (SectionType.METHODS, SectionType.DISCUSSION),
     DocumentType.META_ANALYSIS: (SectionType.METHODS, SectionType.RESULTS),
-    DocumentType.CLINICAL_GUIDELINE: (SectionType.DISCUSSION,),
+    # Narrative reviews are keyword-led; DISCUSSION alone is shared by almost
+    # every scholarly paper and previously inflated clinical_guideline.
+    DocumentType.NARRATIVE_REVIEW: (SectionType.INTRODUCTION, SectionType.DISCUSSION),
     DocumentType.CASE_REPORT: (SectionType.ABSTRACT,),
     DocumentType.PROTOCOL: (SectionType.METHODS,),
 }
@@ -342,6 +359,13 @@ STUDY_DESIGN_KEYWORDS: dict[StudyDesign, list[str]] = {
         "pooled estimate",
         "heterogeneity",
     ],
+    StudyDesign.NARRATIVE_REVIEW: [
+        # Keep this list short so a single decisive phrase clears
+        # CONFIDENCE_THRESHOLD (match weight = hits / len(list)).
+        "narrative review",
+        "literature review",
+        "scoping review",
+    ],
     StudyDesign.DIAGNOSTIC: [
         "diagnostic accuracy",
         "sensitivity and specificity",
@@ -389,8 +413,9 @@ STUDY_DESIGN_KEYWORDS: dict[StudyDesign, list[str]] = {
     ],
     StudyDesign.FRAMEWORK: [
         "we propose a framework",
-        "framework for",
         "conceptual framework",
+        "theoretical framework",
+        "architectural framework",
     ],
     StudyDesign.DATASET: [
         "we release a dataset",

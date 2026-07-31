@@ -162,11 +162,13 @@ DOCUMENT_TYPE_KEYWORDS: dict[str, list[str]] = {
     ],
     "clinical_guideline": [
         "clinical practice guideline",
-        "guideline",
-        "recommendation",
+        "practice guideline",
         "consensus statement",
         "should be treated with",
         "grade of recommendation",
+        "strength of recommendation",
+        "we recommend that",
+        "guideline panel",
     ],
     "review": [
         "systematic review",
@@ -246,7 +248,8 @@ DOCUMENT_TYPE_KEYWORDS: dict[str, list[str]] = {
 # simply absent here; keyword/venue signals carry those instead.
 DOCUMENT_TYPE_STRUCTURAL_FEATURES: dict[str, tuple[str, ...]] = {
     "research_article": ("has_methods", "has_results", "has_discussion"),
-    "clinical_guideline": ("has_discussion",),
+    # clinical_guideline is keyword-led — has_discussion alone false-positives
+    # almost every paper (aligned with pass2 PR-C).
     "review": ("has_abstract", "has_discussion"),
     "case_report": ("has_abstract",),
     "protocol": ("has_methods",),

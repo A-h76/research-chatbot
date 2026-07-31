@@ -30,6 +30,7 @@ _RESEARCH_DOCUMENT_TYPES = frozenset(
         DocumentType.RESEARCH_ARTICLE,
         DocumentType.SYSTEMATIC_REVIEW,
         DocumentType.META_ANALYSIS,
+        DocumentType.NARRATIVE_REVIEW,
         DocumentType.CASE_REPORT,
         DocumentType.PROTOCOL,
         DocumentType.THESIS,
