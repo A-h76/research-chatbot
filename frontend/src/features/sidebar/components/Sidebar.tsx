@@ -19,6 +19,7 @@ import {
   GitCompare,
   PenLine,
   Upload,
+  FileUp,
   Plug,
 } from "lucide-react";
 import { AccountMenu } from "./AccountMenu";
@@ -180,9 +181,11 @@ export function SidebarContents({
     setNewOpen(false);
   }
 
-  function goLibraryImport(provider: "zotero" | "mendeley" | "upload") {
+  function goLibraryImport(provider: "zotero" | "mendeley" | "upload" | "bibtex") {
     setLibraryOpen(true);
-    setIntegrationsOpen(true);
+    if (provider === "zotero" || provider === "mendeley") {
+      setIntegrationsOpen(true);
+    }
     go("library", `/library?provider=${provider}#import`);
   }
 
@@ -307,28 +310,21 @@ export function SidebarContents({
           {libraryExpanded && (
             <div className="mt-0.5 space-y-0.5 border-l border-sidebar-border ml-4 pl-1.5">
               <p className="px-2 pb-0.5 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Import
+                Papers
               </p>
-              <NavItem
-                nested
-                icon={<ZoteroIcon className="size-4" />}
-                label="Import from Zotero"
-                active={isZoteroImport}
-                onClick={() => goLibraryImport("zotero")}
-              />
-              <NavItem
-                nested
-                icon={<MendeleyIcon className="size-4" />}
-                label="Import from Mendeley"
-                active={isMendeleyImport}
-                onClick={() => goLibraryImport("mendeley")}
-              />
               <NavItem
                 nested
                 icon={<Upload className="size-4" />}
                 label="Upload PDF"
                 active={isUploadImport}
                 onClick={() => goLibraryImport("upload")}
+              />
+              <NavItem
+                nested
+                icon={<FileUp className="size-4" />}
+                label="BibTeX / RIS"
+                active={isImportPanel && importProvider === "bibtex"}
+                onClick={() => goLibraryImport("bibtex")}
               />
               <NavItem
                 nested

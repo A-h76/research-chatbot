@@ -1,6 +1,11 @@
-import { useEffect, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useState,
+} from "react";
 import { useSearchParams } from "react-router-dom";
-import { Check, Download, Link2, Loader2, Unplug } from "lucide-react";
+import { Loader2, Unplug } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,13 +27,24 @@ import {
 import { LibraryImportDialog } from "./LibraryImportDialog";
 import { cn } from "@/lib/utils";
 
-export function ConnectLibraryPanel({
-  projectId,
-  onImported,
-}: {
-  projectId?: number | null;
-  onImported?: (projectId?: number | null) => void;
-}) {
+export type ConnectLibraryPanelHandle = {
+  openBibtex: () => void;
+  openZoteroImport: () => void;
+  openMendeleyImport: () => void;
+};
+
+/**
+ * Quiet Sources strip for connected managers (PR1).
+ * Connect lives in Sidebar → Integrations; this only surfaces import/sync when connected
+ * or when deep-linked to connect.
+ */
+export const ConnectLibraryPanel = forwardRef<
+  ConnectLibraryPanelHandle,
+  {
+    projectId?: number | null;
+    onImported?: (projectId?: number | null) => void;
+  }
+>(function ConnectLibraryPanel({ projectId, onImported }, ref) {
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [importOpen, setImportOpen] = useState(false);
@@ -40,7 +56,6 @@ export function ConnectLibraryPanel({
   const [folderId, setFolderId] = useState("all");
   const [createProject, setCreateProject] = useState(true);
   const [projectName, setProjectName] = useState("");
-  /** Per-action busy so Connect Zotero doesn't spin Mendeley too. */
   const [busyKey, setBusyKey] = useState<
     null | "zotero" | "mendeley" | "zotero-import" | "mendeley-import" | "zotero-sync" | "mendeley-sync"
   >(null);
@@ -68,32 +83,6 @@ export function ConnectLibraryPanel({
     setSearchParams(next, { replace: true });
     void qc.invalidateQueries({ queryKey: ["library-connections"] });
   }, [searchParams, setSearchParams, qc]);
-
-  /** Sidebar deep-links: ?provider=zotero|mendeley|upload + #import */
-  useEffect(() => {
-    const provider = searchParams.get("provider");
-    if (!provider) return;
-    const t = window.setTimeout(() => {
-      document.getElementById("import")?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-      if (provider === "zotero") {
-        document.getElementById("import-zotero")?.scrollIntoView({
-          behavior: "smooth",
-          block: "nearest",
-        });
-      } else if (provider === "mendeley") {
-        document.getElementById("import-mendeley")?.scrollIntoView({
-          behavior: "smooth",
-          block: "nearest",
-        });
-      } else if (provider === "upload") {
-        document.getElementById("library-upload-input")?.click();
-      }
-    }, 120);
-    return () => window.clearTimeout(t);
-  }, [searchParams]);
 
   const connectZotero = async () => {
     setBusyKey("zotero");
@@ -148,6 +137,32 @@ export function ConnectLibraryPanel({
       setBusyKey(null);
     }
   };
+
+  useImperativeHandle(ref, () => ({
+    openBibtex: () => setImportOpen(true),
+    openZoteroImport: () => void openZoteroImport(),
+    openMendeleyImport: () => void openMendeleyImport(),
+  }));
+
+  /** Deep-links: ?provider=zotero|mendeley|bibtex */
+  useEffect(() => {
+    const provider = searchParams.get("provider");
+    if (!provider) return;
+    const t = window.setTimeout(() => {
+      document.getElementById("import")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      if (provider === "bibtex") setImportOpen(true);
+      else if (provider === "zotero" && connections?.zotero?.connected) {
+        void openZoteroImport();
+      } else if (provider === "mendeley" && connections?.mendeley?.connected) {
+        void openMendeleyImport();
+      }
+    }, 150);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once per provider deep-link
+  }, [searchParams.get("provider"), connections?.zotero?.connected, connections?.mendeley?.connected]);
 
   const runZoteroImport = async () => {
     setBusyKey("zotero-import");
@@ -243,242 +258,141 @@ export function ConnectLibraryPanel({
     }
   };
 
-  const { data: syncRuns } = useQuery({
-    queryKey: ["library-sync-runs"],
-    queryFn: () => libraryBridgeApi.syncRuns(),
-    enabled: Boolean(connections?.zotero?.connected || connections?.mendeley?.connected),
-  });
-
   const zotero = connections?.zotero;
   const mendeley = connections?.mendeley;
   const focusProvider = searchParams.get("provider");
+  const zoteroOn = Boolean(zotero?.connected);
+  const mendeleyOn = Boolean(mendeley?.connected);
+  const anyConnected = zoteroOn || mendeleyOn;
+  const highlightZotero = focusProvider === "zotero";
+  const highlightMendeley = focusProvider === "mendeley";
+  const showConnectPrompt =
+    !anyConnected && (highlightZotero || highlightMendeley);
+  const showStrip = anyConnected || showConnectPrompt;
 
   return (
     <>
-      <section id="import" className="scroll-mt-20 rounded-xl border border-border bg-card/40 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold">Import research</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Upload PDFs or connect Zotero / Mendeley — trust signals for your workflow.
+      {showStrip ? (
+        <section
+          id="import"
+          className="scroll-mt-20 flex flex-wrap items-center gap-2 border-b border-border/60 pb-2 text-[12px]"
+        >
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Sources
+          </span>
+          {showConnectPrompt ? (
+            <p className="text-[12px] text-muted-foreground">
+              <button
+                type="button"
+                className="font-medium text-primary underline-offset-2 hover:underline"
+                disabled={
+                  highlightZotero
+                    ? busyKey === "zotero" || zotero?.available === false
+                    : busyKey === "mendeley" || mendeley?.available === false
+                }
+                onClick={() => void (highlightZotero ? connectZotero() : connectMendeley())}
+              >
+                {highlightZotero ? "Connect Zotero" : "Connect Mendeley"}
+              </button>
+              <span className="text-muted-foreground">
+                {" "}
+                — or use Integrations in the sidebar
+              </span>
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
-              BibTeX / RIS
-            </Button>
-            <a
-              href={libraryBridgeApi.exportUrl("bibtex", projectId)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-medium hover:bg-muted"
-            >
-              <Download className="size-3.5" /> BibTeX
-            </a>
-            <a
-              href={libraryBridgeApi.exportUrl("ris", projectId)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-medium hover:bg-muted"
-            >
-              <Download className="size-3.5" /> RIS
-            </a>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div
-            id="import-zotero"
-            tabIndex={-1}
-            className={cn(
-              "rounded-lg border p-3 outline-none transition-colors",
-              focusProvider === "zotero"
-                ? "border-primary/50 bg-primary/5 ring-2 ring-primary/20"
-                : "border-border",
-            )}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-sm font-medium">Zotero</p>
-                <p className="text-xs text-muted-foreground">
-                  {zotero?.connected
-                    ? `Connected${zotero.username ? ` as ${zotero.username}` : ""}`
-                    : "Import a collection into Dhund"}
-                </p>
-              </div>
-              {zotero?.connected ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
-                  <Check className="size-3" /> Connected
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {!zotero?.connected ? (
-                <Button
-                  size="sm"
-                  disabled={busyKey === "zotero" || zotero?.available === false}
-                  onClick={connectZotero}
-                  title={
-                    zotero?.available === false
-                      ? `Missing on server: ${(zotero.missing_env ?? ["ZOTERO_CLIENT_KEY", "ZOTERO_CLIENT_SECRET"]).join(", ")}`
-                      : undefined
-                  }
-                >
-                  {busyKey === "zotero" ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Link2 className="size-3.5" />
+          ) : (
+            <>
+              {zoteroOn && (
+                <div
+                  id="import-zotero"
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md",
+                    highlightZotero && "ring-1 ring-primary/30",
                   )}
-                  {zotero?.available === false ? "Server OAuth not set" : "Connect Zotero"}
-                </Button>
-              ) : (
-                <>
+                >
+                  <span className="text-muted-foreground">Zotero connected</span>
                   <Button
                     size="sm"
+                    variant="ghost"
+                    className="h-6 px-1.5 text-[11px]"
                     disabled={busyKey === "zotero-import"}
                     onClick={openZoteroImport}
                   >
-                    Import collection
+                    Import
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="ghost"
+                    className="h-6 px-1.5 text-[11px]"
                     disabled={busyKey === "zotero-sync"}
                     onClick={syncZotero}
                   >
-                    Sync now
+                    {busyKey === "zotero-sync" ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      "Sync"
+                    )}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={disconnectZotero}>
-                    <Unplug className="size-3.5" /> Disconnect
-                  </Button>
-                </>
-              )}
-            </div>
-            {zotero?.connected && zotero.last_synced_at && (
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                Last sync {new Date(zotero.last_synced_at).toLocaleString()}
-              </p>
-            )}
-            {zotero?.available === false && (
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                Set{" "}
-                <code className="text-[10px]">
-                  {(zotero.missing_env ?? ["ZOTERO_CLIENT_KEY", "ZOTERO_CLIENT_SECRET"]).join(
-                    " + ",
-                  )}
-                </code>{" "}
-                on the <strong>deployed</strong> host (Railway Variables). Local{" "}
-                <code className="text-[10px]">.env</code> is not shipped in Docker. Or import
-                BibTeX/RIS above.
-              </p>
-            )}
-          </div>
-
-          <div
-            id="import-mendeley"
-            tabIndex={-1}
-            className={cn(
-              "rounded-lg border p-3 outline-none transition-colors",
-              focusProvider === "mendeley"
-                ? "border-primary/50 bg-primary/5 ring-2 ring-primary/20"
-                : "border-border",
-            )}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-sm font-medium">Mendeley</p>
-                <p className="text-xs text-muted-foreground">
-                  {mendeley?.connected
-                    ? `Connected${mendeley.username ? ` as ${mendeley.username}` : ""}`
-                    : "Import a folder into Dhund"}
-                </p>
-              </div>
-              {mendeley?.connected ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
-                  <Check className="size-3" /> Connected
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {!mendeley?.connected ? (
-                <Button
-                  size="sm"
-                  disabled={busyKey === "mendeley" || mendeley?.available === false}
-                  onClick={connectMendeley}
-                  title={
-                    mendeley?.available === false
-                      ? `Missing on server: ${(mendeley.missing_env ?? ["MENDELEY_CLIENT_ID", "MENDELEY_CLIENT_SECRET"]).join(", ")}`
-                      : undefined
-                  }
-                >
-                  {busyKey === "mendeley" ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Link2 className="size-3.5" />
-                  )}
-                  {mendeley?.available === false ? "Server OAuth not set" : "Connect Mendeley"}
-                </Button>
-              ) : (
-                <>
                   <Button
                     size="sm"
+                    variant="ghost"
+                    className="h-6 px-1 text-muted-foreground"
+                    onClick={disconnectZotero}
+                    title="Disconnect"
+                  >
+                    <Unplug className="size-3" />
+                  </Button>
+                </div>
+              )}
+              {mendeleyOn && (
+                <div
+                  id="import-mendeley"
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md",
+                    highlightMendeley && "ring-1 ring-primary/30",
+                  )}
+                >
+                  <span className="text-muted-foreground">Mendeley connected</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-1.5 text-[11px]"
                     disabled={busyKey === "mendeley-import"}
                     onClick={openMendeleyImport}
                   >
-                    Import folder
+                    Import
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="ghost"
+                    className="h-6 px-1.5 text-[11px]"
                     disabled={busyKey === "mendeley-sync"}
                     onClick={syncMendeley}
                   >
-                    Sync now
+                    {busyKey === "mendeley-sync" ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      "Sync"
+                    )}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={disconnectMendeley}>
-                    <Unplug className="size-3.5" /> Disconnect
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-1 text-muted-foreground"
+                    onClick={disconnectMendeley}
+                    title="Disconnect"
+                  >
+                    <Unplug className="size-3" />
                   </Button>
-                </>
+                </div>
               )}
-            </div>
-            {mendeley?.connected && mendeley.last_synced_at && (
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                Last sync {new Date(mendeley.last_synced_at).toLocaleString()}
-              </p>
-            )}
-            {mendeley?.available === false && (
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                Set{" "}
-                <code className="text-[10px]">
-                  {(mendeley.missing_env ?? ["MENDELEY_CLIENT_ID", "MENDELEY_CLIENT_SECRET"]).join(
-                    " + ",
-                  )}
-                </code>{" "}
-                on the <strong>deployed</strong> host (Railway Variables). Local{" "}
-                <code className="text-[10px]">.env</code> is not shipped in Docker. Or import
-                BibTeX/RIS above.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {syncRuns?.items && syncRuns.items.length > 0 && (
-          <div className="mt-4 border-t border-border pt-3">
-            <p className="text-xs font-medium text-muted-foreground">Recent syncs</p>
-            <ul className="mt-1.5 space-y-1">
-              {syncRuns.items.slice(0, 5).map((r) => (
-                <li key={r.id} className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                  <span className="capitalize">{r.provider}</span>
-                  <span>· {r.status}</span>
-                  <span>
-                    · +{r.created} / ~{r.updated}
-                    {r.conflicts ? ` / !${r.conflicts}` : ""}
-                  </span>
-                  {r.started_at && (
-                    <span>· {new Date(r.started_at).toLocaleString()}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </section>
+            </>
+          )}
+          {!zoteroOn && <div id="import-zotero" className="sr-only" aria-hidden />}
+          {!mendeleyOn && <div id="import-mendeley" className="sr-only" aria-hidden />}
+        </section>
+      ) : (
+        <div id="import" className="sr-only" aria-hidden />
+      )}
 
       <LibraryImportDialog
         open={importOpen}
@@ -493,7 +407,6 @@ export function ConnectLibraryPanel({
             <DialogTitle>Import from Zotero</DialogTitle>
             <DialogDescription>
               Choose a collection. Papers are deduped by DOI (then title + year).
-              Collections stay as Library folders unless you create a project.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
@@ -545,7 +458,6 @@ export function ConnectLibraryPanel({
             <DialogTitle>Import from Mendeley</DialogTitle>
             <DialogDescription>
               Choose a folder. Metadata-only stubs are created (same pipeline as Zotero).
-              Create a project only when the folder is a real research effort.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
@@ -592,4 +504,4 @@ export function ConnectLibraryPanel({
       </Dialog>
     </>
   );
-}
+});

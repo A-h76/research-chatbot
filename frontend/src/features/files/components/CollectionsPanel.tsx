@@ -12,9 +12,12 @@ import { useLibraryCollections } from "../hooks/useLibraryCollections";
 export function CollectionsPanel({
   activeId,
   onSelect,
+  totalPapers,
 }: {
   activeId: number | null;
   onSelect: (id: number | null) => void;
+  /** Total papers in scope for “All papers” count. */
+  totalPapers?: number;
 }) {
   const qc = useQueryClient();
   const { data: collections = [], isLoading } = useLibraryCollections();
@@ -92,19 +95,21 @@ export function CollectionsPanel({
           className={cn(
             "group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors",
             active
-              ? "bg-sidebar-accent font-medium text-foreground"
-              : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+              ? "bg-muted font-medium text-foreground"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
           )}
           style={{ paddingLeft: 8 + depth * 12 }}
         >
           <button type="button" className="flex min-w-0 flex-1 items-center gap-1.5" onClick={() => onSelect(c.id)}>
-            <Folder className="size-3.5 shrink-0" />
+            <Folder className="size-3.5 shrink-0 opacity-70" />
             <span className="truncate">{c.name}</span>
-            <span className="ml-auto shrink-0 tabular-nums text-[10px] opacity-70">{c.paper_count}</span>
+            <span className="ml-auto shrink-0 tabular-nums text-[11px] text-muted-foreground">
+              {c.paper_count}
+            </span>
           </button>
           <button
             type="button"
-            className="hidden rounded p-0.5 hover:bg-muted group-hover:inline-flex"
+            className="hidden rounded p-0.5 hover:bg-background group-hover:inline-flex"
             aria-label="Rename"
             onClick={() => {
               setEditingId(c.id);
@@ -115,7 +120,7 @@ export function CollectionsPanel({
           </button>
           <button
             type="button"
-            className="hidden rounded p-0.5 text-destructive hover:bg-muted group-hover:inline-flex"
+            className="hidden rounded p-0.5 text-destructive hover:bg-background group-hover:inline-flex"
             aria-label="Delete collection"
             onClick={() => setToDelete(c)}
           >
@@ -128,14 +133,14 @@ export function CollectionsPanel({
   }
 
   return (
-    <aside className="w-full shrink-0 rounded-xl border border-border bg-card/40 p-3 sm:w-52">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+    <aside className="w-full shrink-0 sm:w-56">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight text-foreground">
           Collections
         </h2>
         <button
           type="button"
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="New collection"
           onClick={() => setCreating(true)}
         >
@@ -147,13 +152,18 @@ export function CollectionsPanel({
         type="button"
         onClick={() => onSelect(null)}
         className={cn(
-          "mb-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[13px]",
+          "mb-0.5 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[13px]",
           activeId == null
-            ? "bg-sidebar-accent font-medium text-foreground"
-            : "text-muted-foreground hover:bg-muted/60",
+            ? "bg-muted font-medium text-foreground"
+            : "text-muted-foreground hover:bg-muted/50",
         )}
       >
-        All papers
+        <span className="truncate">All papers</span>
+        {totalPapers != null && (
+          <span className="ml-auto shrink-0 tabular-nums text-[11px] text-muted-foreground">
+            {totalPapers}
+          </span>
+        )}
       </button>
 
       {isLoading ? (
@@ -190,8 +200,8 @@ export function CollectionsPanel({
       )}
 
       {!isLoading && collections.length === 0 && !creating && (
-        <p className="mt-2 px-1 text-[11px] leading-relaxed text-muted-foreground">
-          Folders organise papers without copying them. Zotero imports create collections automatically.
+        <p className="mt-3 px-1 text-[11px] leading-relaxed text-muted-foreground">
+          Folders organise papers without copying them.
         </p>
       )}
 
