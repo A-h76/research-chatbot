@@ -5,13 +5,15 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { AiStateBadge, isPipelineError, usePipeline, usePipelinePhase } from "@/features/pipeline";
 import { cn } from "@/lib/utils";
 import {
-  formatQualityScore,
   mapStructure,
   type DocumentUnderstandingView,
 } from "../mappers/structure";
+import { mapClassification } from "../mappers/classification";
 import { structureSectionRefId } from "../mappers/chat";
 import { useWorkspaceFocus } from "../useWorkspaceFocus";
 import { parseSectionBody } from "./sectionContent";
+import { buildDocumentAnalysisReport } from "./documentAnalysis";
+import { DocumentAnalysisPanel } from "./DocumentAnalysisPanel";
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -21,20 +23,22 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Renders extracted section text with bold in-body headings (Keywords, Abstract, …). */
+/** Renders extracted section text with bold in-body headings and full-width prose. */
 function SectionContentBody({ content }: { content: string }) {
   const blocks = parseSectionBody(content);
   return (
-    <div className="space-y-3 text-sm leading-relaxed text-foreground/90">
+    <div className="w-full min-w-0 space-y-3 text-sm leading-relaxed text-foreground/90">
       {blocks.map((block, i) => {
         if (block.kind === "heading") {
           return (
-            <div key={`h-${i}`} className="space-y-1.5">
+            <div key={`h-${i}`} className="w-full min-w-0 space-y-1.5">
               <p className="text-[13px] font-semibold tracking-tight text-foreground">
                 {block.label}
               </p>
               {block.rest ? (
-                <p className="whitespace-pre-wrap break-words text-foreground/85">{block.rest}</p>
+                <p className="w-full min-w-0 whitespace-normal break-words text-foreground/85">
+                  {block.rest}
+                </p>
               ) : null}
             </div>
           );
@@ -42,7 +46,7 @@ function SectionContentBody({ content }: { content: string }) {
         return (
           <p
             key={`p-${i}`}
-            className="whitespace-pre-wrap break-words text-foreground/85"
+            className="w-full min-w-0 whitespace-normal break-words text-foreground/85"
           >
             {block.text}
           </p>
@@ -65,9 +69,11 @@ function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
 function StructureReady({
   view,
   focusRef,
+  documentTypeLabel,
 }: {
   view: DocumentUnderstandingView;
   focusRef?: string | null;
+  documentTypeLabel?: string | null;
 }) {
   const [openHeading, setOpenHeading] = useState<string | null>(
     view.sections[0]?.heading ?? null,
@@ -82,17 +88,10 @@ function StructureReady({
   }, [focusRef, view.sections]);
 
   const journalOrVenue = view.journal || view.venue;
-  const qualityRows = (
-    [
-      ["OCR", view.quality.ocr_quality],
-      ["Extraction", view.quality.extraction_quality],
-      ["Metadata", view.quality.metadata_quality],
-      ["Sections", view.quality.section_quality],
-      ["Layout", view.quality.layout_quality],
-      ["Completeness", view.quality.completeness],
-      ["Confidence", view.quality.confidence],
-    ] as const
-  ).filter(([, v]) => v != null);
+  const analysis = useMemo(
+    () => buildDocumentAnalysisReport(view, { documentTypeLabel }),
+    [view, documentTypeLabel],
+  );
 
   return (
     <div className="space-y-8">
@@ -226,64 +225,7 @@ function StructureReady({
         </section>
       )}
 
-      {qualityRows.length > 0 && (
-        <section aria-labelledby="structure-quality-heading" className="space-y-2">
-          <h2 id="structure-quality-heading">
-            <SectionHeading>Quality indicators</SectionHeading>
-          </h2>
-          <table className="w-full text-sm border border-border rounded-xl overflow-hidden">
-            <caption className="sr-only">Document quality indicators</caption>
-            <thead>
-              <tr className="border-b border-border bg-muted/40 text-left">
-                <th scope="col" className="px-4 py-2 font-medium text-muted-foreground">
-                  Indicator
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium text-muted-foreground">
-                  Score
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {qualityRows.map(([label, value]) => (
-                <tr key={label} className="border-b border-border last:border-0">
-                  <th scope="row" className="px-4 py-2 text-left font-normal">
-                    {label}
-                  </th>
-                  <td className="px-4 py-2 tabular-nums">{formatQualityScore(value)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-
-      {(view.warnings.length > 0 || view.errors.length > 0) && (
-        <section aria-labelledby="structure-warnings-heading" className="space-y-2">
-          <h2 id="structure-warnings-heading">
-            <SectionHeading>Warnings</SectionHeading>
-          </h2>
-          <ul className="space-y-2" role="list">
-            {view.errors.map((msg) => (
-              <li
-                key={`e-${msg}`}
-                className="flex gap-2 rounded-lg border border-sem-error/30 bg-sem-error/5 px-3 py-2 text-sm text-sem-error"
-              >
-                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-                <span>{msg}</span>
-              </li>
-            ))}
-            {view.warnings.map((msg) => (
-              <li
-                key={`w-${msg}`}
-                className="flex gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-foreground/85"
-              >
-                <AlertCircle className="mt-0.5 size-4 shrink-0 text-sem-warn" aria-hidden />
-                <span>{msg}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <DocumentAnalysisPanel report={analysis} />
     </div>
   );
 }
@@ -320,14 +262,31 @@ export function PaperStructureTab({
     (pipeline.phases.includes("document_understanding") ||
       "document_understanding" in (pipeline.phase_results ?? {}));
 
+  const hasClassificationPhase =
+    pipeline != null &&
+    (pipeline.phases.includes("classification") ||
+      "classification" in (pipeline.phase_results ?? {}));
+
   const phaseQuery = usePipelinePhase(fileId, "document_understanding", {
     enabled: hasDuPhase,
+  });
+
+  const classificationQuery = usePipelinePhase(fileId, "classification", {
+    enabled: hasClassificationPhase,
   });
 
   const view = useMemo(
     () => mapStructure(phaseQuery.data?.result),
     [phaseQuery.data],
   );
+
+  const documentTypeLabel = useMemo(() => {
+    const clf = mapClassification(
+      classificationQuery.data?.result ?? pipeline?.phase_results?.classification ?? null,
+    );
+    const decision = clf?.decisions.find((d) => d.family === "document_type");
+    return decision?.displayLabel ?? decision?.label ?? null;
+  }, [classificationQuery.data, pipeline]);
 
   const waitingOnPipeline =
     derived.isQueued ||
@@ -409,7 +368,11 @@ export function PaperStructureTab({
           Document understanding
         </span>
       </div>
-      <StructureReady view={resolved} focusRef={focusRef} />
+      <StructureReady
+        view={resolved}
+        focusRef={focusRef}
+        documentTypeLabel={documentTypeLabel}
+      />
     </div>
   );
 }
