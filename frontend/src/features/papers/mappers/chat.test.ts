@@ -64,6 +64,7 @@ describe("buildWorkspaceRail", () => {
   it("builds navigable refs from existing view models using stable ids", () => {
     const structure = {
       sections: [{ heading: "Methods", sectionType: "methods" }],
+      references: [],
       authors: [],
       warnings: [],
       errors: [],
@@ -204,6 +205,7 @@ describe("buildWorkspaceRail", () => {
         { heading: "1. Introduction", sectionType: "introduction" },
         { heading: "2. Origin and heterogeneity of KCs", sectionType: "other" },
       ],
+      references: [],
       authors: [],
       warnings: [],
       errors: [],
