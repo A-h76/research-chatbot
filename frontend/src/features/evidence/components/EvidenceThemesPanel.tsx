@@ -1,18 +1,52 @@
-import { useQuery } from "@tanstack/react-query";
-import { Download, Loader2, Tags } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Download, Loader2, RefreshCw, Tags } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "@/components/common/Toast";
 import { evidenceApi } from "../api";
 import type { ThemeCluster } from "../types";
 
-/** RI-001 / B-615 — project theme discovery panel. */
+/** RI-001 / B-615 — project theme discovery panel (+ W6 theme_map job). */
 export function EvidenceThemesPanel({ projectId }: { projectId: number | null }) {
   const enabled = projectId != null;
+  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["evidence", "themes", projectId],
     queryFn: () => evidenceApi.themes(projectId as number),
     enabled,
+  });
+
+  const rebuild = useMutation({
+    mutationFn: async () => {
+      if (projectId == null) throw new Error("no_project");
+      const enqueued = await evidenceApi.enqueueResearchJob(projectId, {
+        type: "theme_map",
+      });
+      if (enqueued.status === "done" && enqueued.result) {
+        return enqueued;
+      }
+      if (enqueued.job_id) {
+        for (let i = 0; i < 8; i += 1) {
+          await new Promise((r) => setTimeout(r, 1000));
+          const st = await evidenceApi.researchJob(enqueued.job_id!);
+          if (st.status === "done") return st;
+          if (st.status === "failed") {
+            throw new Error(st.last_error || "theme_map_failed");
+          }
+        }
+        // Worker may be offline — finish synchronously.
+        return evidenceApi.enqueueResearchJob(projectId, { type: "theme_map", sync: true });
+      }
+      return evidenceApi.enqueueResearchJob(projectId, { type: "theme_map", sync: true });
+    },
+    onSuccess: () => {
+      toast.success("Theme map ready");
+      qc.invalidateQueries({ queryKey: ["evidence", "themes", projectId] });
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Theme map failed");
+    },
   });
 
   if (!enabled) {
@@ -72,14 +106,30 @@ export function EvidenceThemesPanel({ projectId }: { projectId: number | null })
           {data.metrics.theme_count} themes · {data.metrics.assigned_evidence} evidence assigned ·{" "}
           {coverage} · hash {(data.run.input_hash || "").slice(0, 10)}…
         </p>
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8 gap-1.5 text-[12px]"
-          onClick={downloadMarkdown}
-        >
-          <Download className="size-3.5" /> Markdown
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5 text-[12px]"
+            disabled={rebuild.isPending}
+            onClick={() => rebuild.mutate()}
+          >
+            {rebuild.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3.5" />
+            )}
+            Rebuild job
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5 text-[12px]"
+            onClick={downloadMarkdown}
+          >
+            <Download className="size-3.5" /> Markdown
+          </Button>
+        </div>
       </div>
 
       {data.themes.length === 0 ? (
@@ -125,13 +175,10 @@ export function EvidenceThemesPanel({ projectId }: { projectId: number | null })
       )}
 
       {data.unassigned.count > 0 ? (
-        <div className="rounded-md border border-dashed border-border px-3 py-2">
-          <p className="text-[12px] font-medium text-foreground">Unassigned</p>
-          <p className="text-[11px] text-muted-foreground">
-            {data.unassigned.count} evidence objects did not join a theme (
-            {data.unassigned.reason.replace(/_/g, " ")}).
-          </p>
-        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Unassigned: {data.unassigned.count} evidence object
+          {data.unassigned.count === 1 ? "" : "s"}
+        </p>
       ) : null}
     </div>
   );

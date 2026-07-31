@@ -28,17 +28,21 @@ export function WorkspaceReferenceChips({
       {(Object.keys(groups) as WorkspaceTab[]).map((tab) => {
         const items = groups[tab];
         if (!items.length) return null;
+        const heading =
+          tab === "structure" && items.every((r) => r.kind === "passage")
+            ? "Passages"
+            : TAB_LABEL[tab];
         return (
           <div key={tab} className="min-w-0 space-y-1.5">
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              {TAB_LABEL[tab]}
+              {heading}
             </p>
             <ul className="flex min-w-0 flex-col gap-1" role="list">
               {items.map((ref) => (
                 <li key={ref.id} className="min-w-0">
                   <Link
                     to={ref.href ?? `#`}
-                    aria-label={`Open ${ref.label ?? ref.refId} in ${TAB_LABEL[tab]}`}
+                    aria-label={`Open ${ref.label ?? ref.refId} in ${heading}`}
                     className={cn(
                       "flex w-full min-w-0 items-center rounded-md border border-border bg-card px-2 py-1 text-[12px] text-foreground",
                       "hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",

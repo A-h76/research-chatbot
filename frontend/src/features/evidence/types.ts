@@ -264,3 +264,40 @@ export interface EvidenceMethodologyResponse {
   };
   disclaimer: string;
 }
+
+/** W5 structured extract cell. */
+export interface ExtractCell {
+  value: string | null;
+  status: "known" | "unknown";
+  sources: string[];
+}
+
+export interface StructuredExtractRow {
+  file_id: number;
+  paper_title: string;
+  paper_year: string;
+  status: string;
+  population: ExtractCell;
+  intervention: ExtractCell;
+  comparator: ExtractCell;
+  outcomes: ExtractCell;
+  study_design: ExtractCell;
+  methods: ExtractCell;
+  key_findings: ExtractCell;
+  has_medical_understanding: boolean;
+  evidence_count: number;
+}
+
+export interface StructuredExtractResponse {
+  stage: "structured_extract";
+  extract_version: string;
+  project_id: number | null;
+  columns: string[];
+  rows: StructuredExtractRow[];
+  metrics: {
+    paper_count: number;
+    filled_rows: number;
+    empty_rows: number;
+    coverage: number;
+  };
+}

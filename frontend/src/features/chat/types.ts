@@ -1,11 +1,42 @@
 import type { SearchMode } from "@/types/api";
 
+export type ResearchSkillId = "ask" | "synthesize" | "compare" | "extract" | "draft";
+
+export const RESEARCH_SKILLS: {
+  id: ResearchSkillId;
+  label: string;
+  description: string;
+}[] = [
+  { id: "ask", label: "Ask", description: "Answer grounded in scoped sources" },
+  {
+    id: "synthesize",
+    label: "Synthesize",
+    description: "Themes, agreements, and tensions",
+  },
+  {
+    id: "compare",
+    label: "Compare",
+    description: "Methods, designs, samples, outcomes",
+  },
+  {
+    id: "extract",
+    label: "Extract",
+    description: "PICO / methods / outcomes table",
+  },
+  {
+    id: "draft",
+    label: "Draft",
+    description: "Citation-ready paragraph",
+  },
+];
+
 export interface ChatSettings {
   model: string;
   searchMode: SearchMode;
   temperature: number | null;
   reasoningEffort: "low" | "medium" | "high" | null;
   memoryEnabled: boolean;
+  skill: ResearchSkillId;
 }
 
 export interface PendingFile {
@@ -21,6 +52,7 @@ export interface SendPayload {
   message?: string;
   model: string;
   search: SearchMode;
+  skill?: ResearchSkillId;
   attachments?: number[];
   regenerate?: boolean;
 }

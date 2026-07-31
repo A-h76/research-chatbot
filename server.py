@@ -2784,67 +2784,73 @@ def rag_retrieve(user_id, conversation_id, project_id, query, top_k=6, file_id=N
 
     When file_id is given the retrieval is hard-scoped to that single file —
     used by Paper Chat (M7) so the AI draws only from the paper being discussed.
+
+    Delegates to ``backend.research.research_retrieve`` (W2 unified spine).
+    Returns prompt-oriented dicts (legacy shape + file_id/chunk_id).
     """
+    from backend.research import ResearchScope, research_retrieve
+
     db = SessionLocal()
     try:
-        if file_id:
-            # Hard-scope: retrieve only from the specified paper
-            files = (
-                db.execute(
-                    select(UserFile).where(
-                        UserFile.id == file_id,
-                        UserFile.user_id == user_id,
-                    )
-                )
-                .scalars()
-                .all()
-            )
-        else:
-            files = db.execute(select(UserFile).where(UserFile.user_id == user_id)).scalars().all()
-            files = [
-                f
-                for f in files
-                if (f.conversation_id == conversation_id) or (project_id and f.project_id == project_id)
-            ]
-        if not files:
-            return []
-        fids = [f.id for f in files]
-        fnames = {f.id: f.name for f in files}
-        chunks = db.execute(select(Chunk).where(Chunk.file_id.in_(fids))).scalars().all()
-        if not chunks:
-            return []
-        q_emb = embed_texts([query])[0]
-        scored = []
-        for c in chunks:
-            if q_emb and c.embedding:
-                try:
-                    s = cosine(q_emb, json.loads(c.embedding))
-                except Exception:
-                    s = keyword_score(query, c.content)
-            else:
-                s = keyword_score(query, c.content)
-            scored.append((s, c))
-        scored.sort(key=lambda x: -x[0])
-        results = []
-        for s, c in scored[:top_k]:
-            if s <= 0:
-                continue
-            entry = {
-                "file": fnames.get(c.file_id, "file"),
-                "content": c.content[:2000],
-            }
-            # Attach locators when present so the model can cite specifically
-            # (e.g. "p. 7, §Methodology") rather than just the filename.
-            if c.page is not None:
-                entry["page"] = c.page
-            if c.section:
-                entry["section"] = c.section
-            results.append(entry)
-        return results
+        scope = ResearchScope.for_chat(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            project_id=project_id,
+            file_id=file_id,
+        )
+        hits = research_retrieve(
+            db,
+            UserFile=UserFile,
+            Chunk=Chunk,
+            select=select,
+            scope=scope,
+            query=query,
+            embed_texts=embed_texts,
+            top_k=top_k,
+            LibraryCollectionPaper=LibraryCollectionPaper,
+        )
+        return [h.to_prompt_dict() for h in hits]
     finally:
         db.close()
 
 
+def _research_passages_for_chat(
+    user_id,
+    conversation_id,
+    project_id,
+    query,
+    file_id=None,
+    collection_id=None,
+    search_mode="off",
+    top_k=6,
+):
+    """W1/W2: PassageHit list + scope for Trust Chat citations."""
+    from backend.research import ResearchScope, research_retrieve
+
+    db = SessionLocal()
+    try:
+        scope = ResearchScope.for_chat(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            project_id=project_id,
+            file_id=file_id,
+            search_mode=search_mode if not file_id else "off",
+            collection_id=collection_id,
+        )
+        hits = research_retrieve(
+            db,
+            UserFile=UserFile,
+            Chunk=Chunk,
+            select=select,
+            scope=scope,
+            query=query,
+            embed_texts=embed_texts,
+            top_k=top_k,
+            LibraryCollectionPaper=LibraryCollectionPaper,
+        )
+        return hits, scope
+    finally:
+        db.close()
 # ------------------------------------------------------------------ web search
 def web_search(query, max_results=5):
     try:
@@ -4501,6 +4507,32 @@ app.register_blueprint(
     )
 )
 
+from backend.research.routes import create_research_blueprint
+
+app.register_blueprint(
+    create_research_blueprint(
+        SessionLocal=SessionLocal,
+        Project=Project,
+        UserFile=UserFile,
+        WritingDocument=WritingDocument,
+        EvidenceObject=EvidenceObject,
+        WritingSentenceBinding=WritingSentenceBinding,
+        ReviewerRun=ReviewerRun,
+        ReviewerFinding=ReviewerFinding,
+        AnalysisPipelineResult=AnalysisPipelineResult,
+        UploadJob=UploadJob,
+        OutboxEvent=OutboxEvent,
+        PaperAnalysis=PaperAnalysis,
+        select=select,
+        login_required=login_required,
+        limiter=limiter,
+        load_analysis_result=_load_analysis_result,
+        enqueue_job=_enqueue_job,
+        ai_gateway=ai_model_gateway,
+        get_model_registry=get_model_registry,
+    )
+)
+
 from backend.workflow.routes import create_workflow_blueprint
 
 app.register_blueprint(
@@ -4587,6 +4619,8 @@ def _role_label(role):
 
 
 def _collect_export(db, uid, conversation_id=None):
+    from backend.research import normalize_sources_for_api
+
     q = select(Conversation).where(Conversation.user_id == uid)
     if conversation_id:
         q = q.where(Conversation.id == conversation_id)
@@ -4599,7 +4633,7 @@ def _collect_export(db, uid, conversation_id=None):
                 "content": m.content,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
                 "attachments": json.loads(m.attachments) if m.attachments else [],
-                "sources": json.loads(m.sources) if m.sources else [],
+                **normalize_sources_for_api(m.sources),
             }
             for m in c.messages
         ]
@@ -4995,6 +5029,7 @@ def chat():
     attachment_ids = data.get("attachments") or []
     regenerate = bool(data.get("regenerate"))
     search_mode = data.get("search", "auto")
+    research_skill_raw = data.get("skill") or data.get("research_skill") or "ask"
     user_id = session["user_id"]
 
     # Phase 3 / F4.1 — hard cap before token estimates / model calls.
@@ -5169,6 +5204,10 @@ def chat():
         input_items = list(history)
         sources = []
         full_text = ""
+        workspace_references = []
+        research_scope = None
+        passages = []
+        skill = None
         stage1_started = time.perf_counter() if paper_executor is not None else None
         try:
             last_query = user_message or (history[-1]["content"] if history else "")
@@ -5199,8 +5238,98 @@ def chat():
                     }
                 )
 
-            # M7: paper chat hard-scopes RAG to the single paper file
-            excerpts = rag_retrieve(user_id, convo_id, project_id, last_query[:500], file_id=paper_file_id)
+            # M7 / W1–W4: research spine + skills + grounding
+            from backend.research import (
+                dump_message_sources,
+                get_skill,
+                passages_to_workspace_references,
+                verify_chat_grounding,
+            )
+
+            skill = get_skill(research_skill_raw)
+            passages, research_scope = _research_passages_for_chat(
+                user_id,
+                convo_id,
+                project_id,
+                last_query[:500],
+                file_id=paper_file_id,
+                search_mode=search_mode,
+                top_k=skill.top_k,
+            )
+            excerpts = [p.to_prompt_dict() for p in passages]
+            workspace_references = passages_to_workspace_references(
+                passages,
+                primary_file_id=paper_file_id,
+            )
+            if skill.instruction:
+                input_items.append(
+                    {
+                        "role": "developer",
+                        "content": skill.instruction,
+                    }
+                )
+            # W5 — prefer typed medical_understanding table for extract skill
+            if skill.id == "extract":
+                try:
+                    from backend.analysis_pipeline.persistence import load_analysis_result
+                    from backend.research.structured_extract import (
+                        build_structured_extract_table,
+                        table_prompt_block,
+                    )
+
+                    papers = []
+                    file_ids = []
+                    if paper_file_id:
+                        file_ids = [int(paper_file_id)]
+                    elif project_id:
+                        with SessionLocal() as _db:
+                            file_ids = [
+                                int(x)
+                                for x in _db.execute(
+                                    select(UserFile.id).where(
+                                        UserFile.user_id == user_id,
+                                        UserFile.project_id == int(project_id),
+                                    )
+                                )
+                                .scalars()
+                                .all()
+                            ][:20]
+                    if file_ids:
+                        with SessionLocal() as _db:
+                            for fid in file_ids:
+                                uf = _db.get(UserFile, fid)
+                                if not uf or int(uf.user_id) != int(user_id):
+                                    continue
+                                analysis = load_analysis_result(
+                                    _db, AnalysisPipelineResult, fid
+                                )
+                                medical = None
+                                if analysis and isinstance(analysis.phase_results, dict):
+                                    medical = analysis.phase_results.get(
+                                        "medical_understanding"
+                                    )
+                                papers.append(
+                                    {
+                                        "file_id": fid,
+                                        "paper_title": (uf.title or uf.name or f"#{fid}"),
+                                        "paper_year": getattr(uf, "year", None) or "",
+                                        "medical": medical
+                                        if isinstance(medical, dict)
+                                        else None,
+                                    }
+                                )
+                        if papers:
+                            table = build_structured_extract_table(
+                                project_id=project_id,
+                                papers=papers,
+                            )
+                            block = table_prompt_block(table)
+                            if block:
+                                input_items.append(
+                                    {"role": "developer", "content": block}
+                                )
+                except Exception:
+                    pass
             if excerpts:
                 yield sse("status", {"text": "Reading your documents…"})
                 input_items.append(
@@ -5209,9 +5338,10 @@ def chat():
                         "content": (
                             "Relevant excerpts from the user's uploaded documents.\n"
                             "Each excerpt may include 'page' (1-based PDF page) and/or "
-                            "'section' (heading the excerpt falls under). "
+                            "'section' (heading the excerpt falls under), plus file_id. "
                             "When citing, be specific: prefer 'p. 4, §Methodology' over "
                             "just the filename. If no locator is present, cite by filename.\n"
+                            "Only claim what these excerpts support — do not invent sources.\n"
                             + json.dumps(excerpts, ensure_ascii=False)
                         ),
                     }
@@ -5436,14 +5566,35 @@ def chat():
                 log_stage1_execution(exec_result)
 
             new_title = None
+            from backend.research import (
+                dump_message_sources as _dump_sources,
+                get_skill as _get_skill_fallback,
+                verify_chat_grounding as _verify_grounding,
+            )
+
+            _skill = skill or _get_skill_fallback("ask")
+            grounding_report = _verify_grounding(
+                full_text,
+                passages,
+                skill=_skill.id,
+            )
+            grounding_dict = grounding_report.to_dict()
+            grounding_dict["warnings"] = list(grounding_report.warnings)
+
             dbi = SessionLocal()
             try:
+                sources_blob = _dump_sources(
+                    web=sources,
+                    references=workspace_references,
+                    scope=research_scope.to_dict() if research_scope else None,
+                    grounding=grounding_dict,
+                )
                 dbi.add(
                     Message(
                         conversation_id=convo_id,
                         role="assistant",
                         content=full_text,
-                        sources=json.dumps(sources) if sources else None,
+                        sources=sources_blob,
                     )
                 )
                 c2 = dbi.get(Conversation, convo_id)
@@ -5457,7 +5608,15 @@ def chat():
             finally:
                 dbi.close()
 
-            done_payload = {"sources": sources}
+            done_payload = {
+                "sources": sources,
+                "references": workspace_references,
+                "scope": research_scope.to_dict() if research_scope else None,
+                "confidence": grounding_report.confidence,
+                "warnings": list(grounding_report.warnings),
+                "skill": _skill.id,
+                "grounding": grounding_dict,
+            }
             if new_title:
                 done_payload["title"] = new_title
             yield sse("done", done_payload)

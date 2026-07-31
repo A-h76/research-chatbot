@@ -159,6 +159,8 @@ def create_conversation_blueprint(
     @bp.route("/api/conversations/<int:cid>", methods=["GET"])
     @login_required
     def get_conversation(cid):
+        from backend.research import normalize_sources_for_api
+
         db = SessionLocal()
         try:
             c = db.get(Conversation, cid)
@@ -177,7 +179,7 @@ def create_conversation_blueprint(
                             "id": m.id,
                             "role": m.role,
                             "content": m.content,
-                            "sources": json.loads(m.sources) if m.sources else [],
+                            **normalize_sources_for_api(m.sources),
                             "attachments": (json.loads(m.attachments) if m.attachments else []),
                         }
                         for m in c.messages

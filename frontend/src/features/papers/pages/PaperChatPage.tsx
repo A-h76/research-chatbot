@@ -210,6 +210,7 @@ export function PaperChatPage() {
     temperature: null,
     reasoningEffort: null,
     memoryEnabled: false, // paper chat doesn't use user memory
+    skill: "ask",
   });
 
   const { data: conv, isLoading: convLoading } = useConversation(activeConvId);
@@ -225,6 +226,7 @@ export function PaperChatPage() {
         message: item.text,
         model: settings.model,
         search: "off",
+        skill: item.skill ?? settings.skill,
         attachments: item.attachmentIds,
       });
     }
@@ -250,6 +252,7 @@ export function PaperChatPage() {
       message: text,
       model: settings.model,
       search: "off",
+      skill: settings.skill,
       attachments: files.map((f) => f.id),
     });
   }
@@ -262,6 +265,7 @@ export function PaperChatPage() {
       regenerate: true,
       model: settings.model,
       search: "off",
+      skill: settings.skill,
     });
   }
 
@@ -274,6 +278,9 @@ export function PaperChatPage() {
           text: stream.streamingText,
           status: stream.status,
           sources: stream.sources,
+          references: stream.references,
+          confidence: stream.confidence,
+          warnings: stream.warnings,
           isStreaming: stream.isStreaming,
           error: stream.error,
         }

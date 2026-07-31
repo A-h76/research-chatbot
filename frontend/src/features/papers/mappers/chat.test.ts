@@ -37,6 +37,48 @@ describe("mapExplainableChat", () => {
     ]);
   });
 
+  it("maps W4 grounding confidence and warnings", () => {
+    const view = mapExplainableChat(
+      {
+        id: 7,
+        role: "assistant",
+        content: "Grounded claim from the paper.",
+        confidence: 0.81,
+        warnings: ["Partial grounding — verify claims"],
+        skill: "synthesize",
+      },
+      { fileId: 3 },
+    )!;
+    expect(view.confidence).toBe(0.81);
+    expect(view.warnings).toEqual(["Partial grounding — verify claims"]);
+  });
+
+  it("maps W1 Trust Chat passage references from the live contract", () => {
+    const view = mapExplainableChat(
+      {
+        id: 99,
+        role: "assistant",
+        content: "Kupffer cells regulate immunity.",
+        references: [
+          {
+            id: "passage:7:passage:chunk:101:0",
+            kind: "passage",
+            refId: "passage:chunk:101",
+            label: "p. 4 · Discussion",
+            tab: "structure",
+            href: "/papers/7?tab=structure&ref=passage%3Achunk%3A101",
+            metadata: { file_id: 7, page: 4 },
+          },
+        ],
+      },
+      { fileId: 7 },
+    )!;
+    expect(view.references).toHaveLength(1);
+    expect(view.references[0].kind).toBe("passage");
+    expect(view.references[0].label).toContain("p. 4");
+    expect(view.references[0].href).toContain("/papers/7");
+  });
+
   it("passes through structured references only when present and valid", () => {
     const view = mapExplainableChat(
       {

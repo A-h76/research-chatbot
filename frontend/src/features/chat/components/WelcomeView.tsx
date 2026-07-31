@@ -34,6 +34,7 @@ export function WelcomeView({ me }: { me: Me }) {
     temperature: null,
     reasoningEffort: null,
     memoryEnabled: true,
+    skill: "ask",
   });
 
   const onSettingsChange = (partial: Partial<ChatSettings>) =>
@@ -58,6 +59,7 @@ export function WelcomeView({ me }: { me: Me }) {
       text,
       attachmentIds: files.map((f) => f.id),
       searchMode: settings.searchMode,
+      skill: settings.skill,
     });
     navigate(`/c/${conv.id}`);
   };

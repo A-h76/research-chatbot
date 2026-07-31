@@ -1,4 +1,5 @@
 import type { SearchMode } from "@/types/api";
+import type { ResearchSkillId } from "../types";
 
 // Carries the first message of a brand-new conversation across the
 // create-conversation → navigate(/c/:id) → ConversationView boundary, so the
@@ -7,6 +8,7 @@ export interface OutboxItem {
   text: string;
   attachmentIds: number[];
   searchMode: SearchMode;
+  skill?: ResearchSkillId;
 }
 
 const outbox = new Map<number, OutboxItem>();

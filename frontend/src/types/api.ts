@@ -206,6 +206,16 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   sources: Source[];
+  /** W1 Trust Chat — structured passage / workspace cites */
+  references?: Array<Record<string, unknown>>;
+  /** W2/W7 — research scope snapshot (session_id reserved) */
+  scope?: Record<string, unknown> | null;
+  /** W4 — grounding confidence 0–1 from verify_chat_grounding */
+  confidence?: number | null;
+  /** W4 — researcher-facing grounding warnings */
+  warnings?: string[];
+  /** W3 — research skill used for this turn */
+  skill?: string;
   attachments: Attachment[];
 }
 

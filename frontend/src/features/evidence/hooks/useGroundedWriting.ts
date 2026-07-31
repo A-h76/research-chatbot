@@ -240,6 +240,74 @@ export function useGroundedWriting() {
       sectionType?: WritingSectionType;
     }) => {
       const query = buildWritingQuery(opts);
+      const sectionType = opts.sectionType || "support_sentence";
+
+      // W6 — long literature reviews go through the research job queue.
+      if (sectionType === "literature_review") {
+        const enqueued = await evidenceApi.enqueueResearchJob(opts.projectId, {
+          type: "literature_review",
+          query,
+        });
+        let writingPayload: Record<string, unknown> | undefined;
+        let writingVersion: string | undefined;
+        if (enqueued.status === "done" && enqueued.result) {
+          const r = enqueued.result as {
+            writing?: GroundedWritingResult;
+            writing_version?: string;
+          };
+          writingPayload = r.writing as unknown as Record<string, unknown>;
+          writingVersion = r.writing_version;
+        } else if (enqueued.job_id) {
+          let done: Awaited<ReturnType<typeof evidenceApi.researchJob>> | null = null;
+          for (let i = 0; i < 20; i += 1) {
+            await new Promise((r) => setTimeout(r, 1500));
+            const st = await evidenceApi.researchJob(enqueued.job_id!);
+            if (st.status === "done") {
+              done = st;
+              break;
+            }
+            if (st.status === "failed") {
+              throw new Error(st.last_error || "literature_review_failed");
+            }
+          }
+          if (!done?.result) {
+            // Worker may be offline — fall back to sync path.
+            const raw = await evidenceApi.writing(query);
+            const writing = raw.writing;
+            if (!writing) throw new Error("writing_payload_missing");
+            return {
+              ...(writing as GroundedWritingResult),
+              writing_version: raw.writing_version,
+              _projectId: opts.projectId,
+              _documentId: opts.documentId,
+            };
+          }
+          const r = done.result as {
+            writing?: GroundedWritingResult;
+            writing_version?: string;
+          };
+          writingPayload = r.writing as unknown as Record<string, unknown>;
+          writingVersion = r.writing_version;
+        } else {
+          const raw = await evidenceApi.writing(query);
+          const writing = raw.writing;
+          if (!writing) throw new Error("writing_payload_missing");
+          return {
+            ...(writing as GroundedWritingResult),
+            writing_version: raw.writing_version,
+            _projectId: opts.projectId,
+            _documentId: opts.documentId,
+          };
+        }
+        if (!writingPayload) throw new Error("writing_payload_missing");
+        return {
+          ...(writingPayload as GroundedWritingResult),
+          writing_version: writingVersion,
+          _projectId: opts.projectId,
+          _documentId: opts.documentId,
+        };
+      }
+
       const raw = await evidenceApi.writing(query);
       const writing = raw.writing;
       if (!writing) {

@@ -1,14 +1,15 @@
 /**
  * Explainable Chat mapper — thin orchestration over chat messages + workspace refs.
  *
- * Live Paper Chat contract (server.py /api/chat SSE):
+ * Live Paper Chat contract (server.py /api/chat SSE) — W1 Trust Chat:
  *   message.content = answer markdown
- *   message.sources = web { title, url, snippet }[] (usually [] for paper chat)
- *   No structured reasoning / confidence / workspace references on the turn.
+ *   message.sources = web { title, url, snippet }[]
+ *   message.references = WorkspaceReference[] (passage cites from research_retrieve)
+ *   message.scope = ResearchScope dict (session_id reserved for W7)
  *
  * mapExplainableChat() only normalizes fields the backend actually returns.
- * WorkspaceReferences for the evidence rail are built from existing M5–M9
- * ViewModels via buildWorkspaceRail() — never by re-running domain mappers' logic.
+ * WorkspaceReferences for the evidence rail are also built from M5–M9
+ * ViewModels via buildWorkspaceRail().
  */
 
 import type { PaperTabId } from "../tabs";
@@ -25,6 +26,7 @@ export type WorkspaceTab = Extract<
 >;
 
 export type WorkspaceReferenceKind =
+  | "passage"
   | "structure.section"
   | "classification.decision"
   | "entity"
@@ -57,6 +59,7 @@ export type ExplainableChatViewModel = {
 };
 
 const KIND_SET = new Set<string>([
+  "passage",
   "structure.section",
   "classification.decision",
   "entity",
@@ -67,6 +70,7 @@ const KIND_SET = new Set<string>([
 ]);
 
 const TAB_BY_KIND: Record<WorkspaceReferenceKind, WorkspaceTab> = {
+  passage: "structure",
   "structure.section": "structure",
   "classification.decision": "classification",
   entity: "entities",

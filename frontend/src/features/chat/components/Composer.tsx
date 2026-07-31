@@ -9,6 +9,7 @@ import {
 import { ComposerAttachments } from "./ComposerAttachments";
 import { ModelPickerPopover } from "./ModelPickerPopover";
 import { SearchModePicker } from "./SearchModePicker";
+import { ResearchSkillPicker } from "./ResearchSkillPicker";
 import { TemperatureControl } from "./TemperatureControl";
 import { ReasoningEffortControl } from "./ReasoningEffortControl";
 import { MemoryToggle } from "./MemoryToggle";
@@ -305,6 +306,10 @@ export function Composer({
             </DropdownMenuContent>
           </DropdownMenu>
           <ModelPickerPopover value={settings.model} onChange={(m) => onSettingsChange({ model: m })} />
+          <ResearchSkillPicker
+            value={settings.skill ?? "ask"}
+            onChange={(skill) => onSettingsChange({ skill })}
+          />
           {!paperScoped && (
             <SearchModePicker value={settings.searchMode} onChange={(m) => onSettingsChange({ searchMode: m })} />
           )}

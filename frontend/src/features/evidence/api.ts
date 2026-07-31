@@ -310,4 +310,53 @@ export const evidenceApi = {
 
   methodologyExportUrl: (projectId: number, format: "markdown" = "markdown") =>
     `/api/projects/${projectId}/evidence/methodology?format=${format}`,
+
+  /** W5 — structured PICO / methods / outcomes table. */
+  extractTable: (projectId: number, opts?: { file_ids?: number[] }) => {
+    const p = new URLSearchParams();
+    if (opts?.file_ids?.length) p.set("file_ids", opts.file_ids.join(","));
+    const qs = p.toString();
+    return api.get<import("./types").StructuredExtractResponse>(
+      `/api/projects/${projectId}/research/extract-table${qs ? `?${qs}` : ""}`,
+    );
+  },
+
+  extractTableExportUrl: (
+    projectId: number,
+    format: "markdown" | "csv",
+    opts?: { file_ids?: number[] },
+  ) => {
+    const p = new URLSearchParams({ format });
+    if (opts?.file_ids?.length) p.set("file_ids", opts.file_ids.join(","));
+    return `/api/projects/${projectId}/research/extract-table?${p.toString()}`;
+  },
+
+  /** W6 — enqueue literature_review | theme_map (202 or sync done). */
+  enqueueResearchJob: (
+    projectId: number,
+    body: {
+      type: "literature_review" | "theme_map";
+      sync?: boolean;
+      file_ids?: number[];
+      query?: Record<string, unknown>;
+    },
+  ) =>
+    api.post<{
+      status: string;
+      job_id: number | null;
+      type: string;
+      result?: Record<string, unknown>;
+      project_id?: number;
+    }>(`/api/projects/${projectId}/research/jobs`, body),
+
+  researchJob: (jobId: number) =>
+    api.get<{
+      job_id: number;
+      type: string;
+      status: string;
+      attempts: number;
+      last_error: string | null;
+      result: Record<string, unknown> | null;
+      kind?: string;
+    }>(`/api/research/jobs/${jobId}`),
 };

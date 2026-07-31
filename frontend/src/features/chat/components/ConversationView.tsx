@@ -23,6 +23,7 @@ export function ConversationView({ conversationId }: { conversationId: number })
   const { defaultSearchMode } = useUI();
   const stream = useChatStream(conversationId);
   const [searchMode, setSearchMode] = useState<SearchMode>(defaultSearchMode);
+  const [skill, setSkill] = useState<ChatSettings["skill"]>("ask");
 
   const messages = conv?.messages ?? [];
   const projectId = conv?.project_id ?? null;
@@ -38,9 +39,11 @@ export function ConversationView({ conversationId }: { conversationId: number })
         message: item.text,
         model: conv?.model ?? "",
         search: item.searchMode,
+        skill: item.skill ?? "ask",
         attachments: item.attachmentIds,
       });
       setSearchMode(item.searchMode);
+      if (item.skill) setSkill(item.skill);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
@@ -59,10 +62,12 @@ export function ConversationView({ conversationId }: { conversationId: number })
     temperature: conv.temperature,
     reasoningEffort: conv.reasoning_effort,
     memoryEnabled: conv.memory_enabled,
+    skill,
   };
 
   const onSettingsChange = (partial: Partial<ChatSettings>) => {
     if (partial.searchMode !== undefined) setSearchMode(partial.searchMode);
+    if (partial.skill !== undefined) setSkill(partial.skill);
     const body: Record<string, unknown> = {};
     if (partial.model !== undefined) body.model = partial.model;
     if (partial.temperature !== undefined) body.temperature = partial.temperature;
@@ -84,6 +89,7 @@ export function ConversationView({ conversationId }: { conversationId: number })
       message: text,
       model: settings.model,
       search: searchMode,
+      skill,
       attachments: files.map((f) => f.id),
     });
   };
@@ -95,6 +101,7 @@ export function ConversationView({ conversationId }: { conversationId: number })
       regenerate: true,
       model: settings.model,
       search: searchMode,
+      skill,
     });
   };
 
@@ -104,6 +111,9 @@ export function ConversationView({ conversationId }: { conversationId: number })
           text: stream.streamingText,
           status: stream.status,
           sources: stream.sources,
+          references: stream.references,
+          confidence: stream.confidence,
+          warnings: stream.warnings,
           isStreaming: stream.isStreaming,
           error: stream.error,
         }

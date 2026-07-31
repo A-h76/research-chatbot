@@ -449,12 +449,95 @@ def _handle_evidence_extract(db, job):
     )
 
 
+def _research_job_payload(db, job) -> dict:
+    events = (
+        db.execute(
+            select(OutboxEvent).where(
+                OutboxEvent.aggregate_type == "upload_job",
+                OutboxEvent.aggregate_id == job.id,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for ev in events:
+        try:
+            payload = json.loads(ev.payload or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        if isinstance(payload, dict) and (
+            payload.get("type") in ("literature_review", "theme_map")
+            or payload.get("project_id") is not None
+        ):
+            return payload
+    return {}
+
+
+def _handle_theme_map(db, job):
+    """W6 — async theme map over project evidence."""
+    from backend.research.jobs import run_theme_map_job, store_research_job_result
+
+    payload = _research_job_payload(db, job)
+    project_id = payload.get("project_id")
+    if project_id is None:
+        raise RuntimeError("theme_map requires project_id in outbox payload")
+    file_ids = payload.get("file_ids")
+    result = run_theme_map_job(
+        db,
+        user_id=job.user_id,
+        project_id=int(project_id),
+        EvidenceObject=server.EvidenceObject,
+        select=select,
+        file_ids=[int(x) for x in file_ids] if file_ids else None,
+    )
+    store_research_job_result(
+        db,
+        OutboxEvent=OutboxEvent,
+        job_id=job.id,
+        kind="theme_map",
+        result=result,
+    )
+
+
+def _handle_literature_review(db, job):
+    """W6 — async grounded literature review (Writing Intelligence)."""
+    from backend.evidence.services.permission_service import require_owned_document
+    from backend.research.jobs import run_literature_review_job, store_research_job_result
+
+    payload = _research_job_payload(db, job)
+    query = payload.get("query")
+    if not isinstance(query, dict):
+        raise RuntimeError("literature_review requires query in outbox payload")
+    result = run_literature_review_job(
+        db,
+        user_id=job.user_id,
+        query=query,
+        EvidenceObject=server.EvidenceObject,
+        WritingSentenceBinding=server.WritingSentenceBinding,
+        WritingDocument=server.WritingDocument,
+        ReviewerRun=server.ReviewerRun,
+        ReviewerFinding=server.ReviewerFinding,
+        select=select,
+        require_owned_document=require_owned_document,
+        composer=None,
+    )
+    store_research_job_result(
+        db,
+        OutboxEvent=OutboxEvent,
+        job_id=job.id,
+        kind="literature_review",
+        result=result,
+    )
+
+
 HANDLERS = {
     "import": _handle_import,
     "extract_metadata": _handle_extract_metadata,
     "phase1_analysis": _handle_phase1_analysis,
     "paper_analysis": _handle_paper_analysis,
     "evidence_extract": _handle_evidence_extract,
+    "theme_map": _handle_theme_map,
+    "literature_review": _handle_literature_review,
 }
 
 

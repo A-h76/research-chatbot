@@ -8,6 +8,7 @@ import {
   SearchX,
   Table2,
   Tags,
+  ClipboardList,
 } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { useAllFiles } from "@/features/files/useFiles";
@@ -19,6 +20,7 @@ import { EvidenceGraphPanel } from "@/features/evidence/components/EvidenceGraph
 import { EvidenceGapsPanel } from "@/features/evidence/components/EvidenceGapsPanel";
 import { EvidenceTimelinePanel } from "@/features/evidence/components/EvidenceTimelinePanel";
 import { EvidenceMethodologyPanel } from "@/features/evidence/components/EvidenceMethodologyPanel";
+import { StructuredExtractPanel } from "@/features/evidence/components/StructuredExtractPanel";
 import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
 import { loadResearchPrefs } from "@/features/settings/lib/researchPrefs";
 import { cn } from "@/lib/utils";
@@ -26,6 +28,7 @@ import { cn } from "@/lib/utils";
 /** Phase A.5: Evidence RI tabs are primary; LLM narrative compare is advanced. */
 type Tab =
   | "matrix"
+  | "extract"
   | "themes"
   | "gaps"
   | "graph"
@@ -35,6 +38,7 @@ type Tab =
 
 const TAB_KEYS: Tab[] = [
   "matrix",
+  "extract",
   "themes",
   "gaps",
   "graph",
@@ -45,6 +49,7 @@ const TAB_KEYS: Tab[] = [
 
 const TITLES: Record<Tab, string> = {
   matrix: "Evidence Matrix",
+  extract: "Structured Extract",
   themes: "Theme Discovery",
   gaps: "Research Gaps",
   graph: "Knowledge Graph",
@@ -97,6 +102,7 @@ export function MultiPaperAnalysisPage() {
   const tabs = (
     [
       { key: "matrix" as const, label: "Matrix", icon: Table2 },
+      { key: "extract" as const, label: "Extract", icon: ClipboardList },
       { key: "themes" as const, label: "Themes", icon: Tags },
       { key: "gaps" as const, label: "Gaps", icon: SearchX },
       { key: "graph" as const, label: "Graph", icon: Network },
@@ -136,6 +142,8 @@ export function MultiPaperAnalysisPage() {
 
       {tab === "matrix" ? (
         <EvidenceMatrixPanel projectId={currentProjectId} />
+      ) : tab === "extract" ? (
+        <StructuredExtractPanel projectId={currentProjectId} />
       ) : tab === "themes" ? (
         <EvidenceThemesPanel projectId={currentProjectId} />
       ) : tab === "gaps" ? (

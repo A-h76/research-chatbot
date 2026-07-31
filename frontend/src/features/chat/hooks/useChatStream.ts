@@ -12,6 +12,11 @@ interface StreamState {
   streamingText: string;
   status: string | null;
   sources: Source[];
+  references: Message["references"];
+  scope: Message["scope"];
+  confidence: number | undefined;
+  warnings: string[] | undefined;
+  skill: string | undefined;
   isStreaming: boolean;
   error: string | null;
 }
@@ -20,7 +25,15 @@ type Action =
   | { type: "RESET" }
   | { type: "DELTA"; text: string }
   | { type: "STATUS"; text: string }
-  | { type: "DONE"; sources: Source[] }
+  | {
+      type: "DONE";
+      sources: Source[];
+      references?: Message["references"];
+      scope?: Message["scope"];
+      confidence?: number;
+      warnings?: string[];
+      skill?: string;
+    }
   | { type: "ERROR"; text: string }
   | { type: "STOPPED" };
 
@@ -28,6 +41,11 @@ const initialState: StreamState = {
   streamingText: "",
   status: null,
   sources: [],
+  references: undefined,
+  scope: undefined,
+  confidence: undefined,
+  warnings: undefined,
+  skill: undefined,
   isStreaming: false,
   error: null,
 };
@@ -41,7 +59,17 @@ function reducer(state: StreamState, action: Action): StreamState {
     case "STATUS":
       return { ...state, status: action.text };
     case "DONE":
-      return { ...state, sources: action.sources, status: null, isStreaming: false };
+      return {
+        ...state,
+        sources: action.sources,
+        references: action.references,
+        scope: action.scope,
+        confidence: action.confidence,
+        warnings: action.warnings,
+        skill: action.skill,
+        status: null,
+        isStreaming: false,
+      };
     case "ERROR":
       return { ...state, error: action.text, status: null, isStreaming: false };
     case "STOPPED":
@@ -63,6 +91,11 @@ export function useChatStream(conversationId: number) {
       abortRef.current = controller;
       let full = "";
       let sources: Source[] = [];
+      let references: Message["references"];
+      let scope: Message["scope"];
+      let confidence: number | undefined;
+      let warnings: string[] | undefined;
+      let skill: string | undefined;
       try {
         const res = await chatApi.streamChat(payload, controller.signal);
         if (!res.ok || !res.body) {
@@ -77,6 +110,16 @@ export function useChatStream(conversationId: number) {
             dispatch({ type: "STATUS", text: data.text });
           } else if (event === "done") {
             sources = data.sources || [];
+            references = Array.isArray(data.references) ? data.references : undefined;
+            scope = data.scope && typeof data.scope === "object" ? data.scope : undefined;
+            confidence =
+              typeof data.confidence === "number" && Number.isFinite(data.confidence)
+                ? data.confidence
+                : undefined;
+            warnings = Array.isArray(data.warnings)
+              ? data.warnings.map(String).filter(Boolean)
+              : undefined;
+            skill = typeof data.skill === "string" ? data.skill : undefined;
             if (data.title) {
               qc.setQueryData<Conversation>(queryKeys.conversation(conversationId), (old) =>
                 old ? { ...old, title: data.title } : old
@@ -92,12 +135,25 @@ export function useChatStream(conversationId: number) {
               role: "assistant",
               content: full,
               sources,
+              references,
+              scope,
+              confidence,
+              warnings,
+              skill,
               attachments: [],
             };
             qc.setQueryData<Conversation>(queryKeys.conversation(conversationId), (old) =>
               old ? { ...old, messages: [...old.messages, assistantMsg] } : old
             );
-            dispatch({ type: "DONE", sources });
+            dispatch({
+              type: "DONE",
+              sources,
+              references,
+              scope,
+              confidence,
+              warnings,
+              skill,
+            });
           } else if (event === "error") {
             throw new Error(data.text);
           }

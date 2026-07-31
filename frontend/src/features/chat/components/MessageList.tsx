@@ -10,6 +10,9 @@ export interface LiveStream {
   text: string;
   status: string | null;
   sources: Source[];
+  references?: Message["references"];
+  confidence?: number;
+  warnings?: string[];
   isStreaming: boolean;
   error: string | null;
 }
@@ -85,11 +88,10 @@ export function MessageList({
   })();
 
   const explainableById = useMemo(() => {
-    if (fileId == null) return null;
     const map = new Map<number, ExplainableSlice>();
     for (const m of messages) {
       if (m.role === "assistant") {
-        const view = mapExplainableChat(m, { fileId });
+        const view = mapExplainableChat(m, fileId != null ? { fileId } : undefined);
         if (view) {
           map.set(m.id, {
             answer: view.answer,
@@ -119,7 +121,7 @@ export function MessageList({
           >
             <MemoHistoricalRow
               message={m}
-              explainable={explainableById?.get(m.id)}
+              explainable={explainableById.get(m.id)}
               onRegenerate={!live && i === lastAssistantIdx ? onRegenerate : undefined}
             />
           </motion.div>
@@ -138,6 +140,20 @@ export function MessageList({
                   content={live.text}
                   streaming={live.isStreaming}
                   sources={live.sources}
+                  confidence={!live.isStreaming ? live.confidence : undefined}
+                  warnings={!live.isStreaming ? live.warnings : undefined}
+                  references={
+                    !live.isStreaming && live.references?.length
+                      ? (mapExplainableChat(
+                          {
+                            role: "assistant",
+                            content: live.text,
+                            references: live.references,
+                          },
+                          fileId != null ? { fileId } : undefined,
+                        )?.references ?? undefined)
+                      : undefined
+                  }
                 />
               )
             )}
