@@ -102,56 +102,59 @@ function buildSections(structure: Record<string, unknown>): DocumentSectionRow[]
   });
 }
 
+function sectionToCitationRaw(s: DocumentSectionRow): string {
+  const body = s.content?.trim();
+  // Prefer the heading when the citation text lives there (common DU false-positive).
+  if (looksLikeBibliographyHeading(s.heading, s.content, s.sectionType)) {
+    if (!body || body.length < 12) return s.heading;
+    // Avoid duplicating if content already starts with the same number
+    if (body.startsWith(s.heading.slice(0, 12))) return body;
+    return `${s.heading} ${body}`;
+  }
+  return body || s.heading;
+}
+
 function collectReferences(
   structure: Record<string, unknown>,
   sections: DocumentSectionRow[],
 ): CitationPreview[] {
-  const fromApi = asStringArray(structure.references);
-  if (fromApi.length > 0) {
-    return fromApi.map((raw, i) => parseCitationPreview(raw, i));
-  }
+  const fromApi = asStringArray(structure.references).map((raw, i) =>
+    parseCitationPreview(raw, i),
+  );
 
   const refSection = sections.find(
     (s) =>
       (s.sectionType ?? "").toLowerCase() === "references" ||
       /^references?$/i.test(s.heading.trim()),
   );
-  if (refSection?.content) {
-    const lines = splitReferenceLines(refSection.content);
-    if (lines.length > 0) {
-      return lines.map((raw, i) => parseCitationPreview(raw, i));
-    }
-  }
+  const fromSectionBody =
+    refSection?.content && splitReferenceLines(refSection.content).length > 0
+      ? splitReferenceLines(refSection.content).map((raw, i) => parseCitationPreview(raw, i))
+      : [];
 
-  // Numbered citation lines wrongly promoted to Structure headings
+  // Numbered citation lines wrongly promoted to Structure headings (often 50–200 rows).
   const stolen = sections.filter((s) =>
-    looksLikeBibliographyHeading(s.heading, s.content),
+    looksLikeBibliographyHeading(s.heading, s.content, s.sectionType),
   );
-  if (stolen.length >= 3) {
-    return stolen.map((s, i) =>
-      parseCitationPreview(s.content?.trim() ? `${s.heading} ${s.content}` : s.heading, i),
-    );
-  }
+  const fromStolen =
+    stolen.length >= 3
+      ? stolen.map((s, i) => parseCitationPreview(sectionToCitationRaw(s), i))
+      : [];
 
-  return [];
+  // Prefer the richest source so a thin structure.references list (e.g. 7)
+  // does not leave 90+ false outline rows behind.
+  const sources = [fromStolen, fromSectionBody, fromApi].sort(
+    (a, b) => b.length - a.length,
+  );
+  return sources[0] ?? [];
 }
 
-function filterOutlineSections(
-  sections: DocumentSectionRow[],
-  references: CitationPreview[],
-): DocumentSectionRow[] {
-  if (references.length === 0) {
-    return sections.filter(
-      (s) =>
-        (s.sectionType ?? "").toLowerCase() !== "references" &&
-        !/^references?$/i.test(s.heading.trim()),
-    );
-  }
-
+function filterOutlineSections(sections: DocumentSectionRow[]): DocumentSectionRow[] {
+  // Always strip bibliography noise from the outline — References belong in ReferenceBrowser.
   return sections.filter((s) => {
     if ((s.sectionType ?? "").toLowerCase() === "references") return false;
     if (/^references?$/i.test(s.heading.trim())) return false;
-    if (looksLikeBibliographyHeading(s.heading, s.content)) return false;
+    if (looksLikeBibliographyHeading(s.heading, s.content, s.sectionType)) return false;
     return true;
   });
 }
@@ -186,7 +189,7 @@ export function mapStructure(result: PhaseResult | null | undefined): DocumentUn
 
   const allSections = buildSections(structure);
   const references = collectReferences(structure, allSections);
-  const sections = filterOutlineSections(allSections, references);
+  const sections = filterOutlineSections(allSections);
   const statsCount = asNumber(statistics.reference_count);
   const referenceCount = references.length > 0 ? references.length : statsCount;
 

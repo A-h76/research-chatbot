@@ -124,17 +124,33 @@ export function splitReferenceLines(blob: string): string[] {
 }
 
 /** Numbered biblio lines wrongly promoted to Structure headings. */
-export function looksLikeBibliographyHeading(heading: string, content?: string): boolean {
+export function looksLikeBibliographyHeading(
+  heading: string,
+  content?: string,
+  sectionType?: string,
+): boolean {
   const h = heading.trim();
   if (/^references?$/i.test(h)) return true;
   if (!/^(?:\[\d+\]|\d+\.)\s+\S/.test(h)) return false;
-  // Citation text lives in the heading; body empty or tiny
-  if (content && content.trim().length > 80) return false;
-  return (
+
+  const afterNum = h.replace(/^(?:\[\d+\]|\d+\.)\s+/, "").trim();
+  // Keep real numbered paper sections in the outline ("1. Introduction").
+  if (
+    /^(introduction|methods?|materials?\s+and\s+methods|results?|discussion|conclusion|conclusions|background|abstract|acknowledgements?|acknowledgment|appendix|references?)\b/i.test(
+      afterNum,
+    ) &&
+    afterNum.length < 90
+  ) {
+    return false;
+  }
+
+  const citationSignals =
     h.length >= 24 ||
     /\bet al\b/i.test(h) ||
     YEAR_RE.test(h) ||
     DOI_RE.test(h) ||
-    /,\s*[A-Z]\./.test(h)
-  );
+    /,\s*[A-Z]\./.test(h) ||
+    (/^(other|unknown|misc)?$/i.test(sectionType ?? "") && afterNum.length >= 20);
+
+  return citationSignals;
 }

@@ -40,6 +40,14 @@ describe("citationPreview", () => {
       ),
     ).toBe(true);
     expect(looksLikeBibliographyHeading("1. Introduction", "Long body…".repeat(20))).toBe(false);
+    // Long body must not keep citation-like rows in the Structure outline
+    expect(
+      looksLikeBibliographyHeading(
+        "62. Guilliams M, Scott CL. Liver macrophages in health and disease. Immunity.",
+        "x".repeat(200),
+        "other",
+      ),
+    ).toBe(true);
   });
 });
 
@@ -100,5 +108,33 @@ describe("mapStructure references", () => {
 
     expect(view.sections.map((s) => s.heading)).toEqual(["Introduction"]);
     expect(view.references.length).toBe(3);
+  });
+
+  it("prefers the larger stolen bibliography over a thin structure.references list", () => {
+    const stolenHeadings = Array.from({ length: 12 }, (_, i) => {
+      const n = i + 1;
+      return `${n}. Author${n} A. Long citation title about liver cells number ${n}. Immunity.`;
+    });
+    const raw: Record<string, string> = { Introduction: "Body" };
+    const types: Record<string, string> = { Introduction: "introduction" };
+    for (const h of stolenHeadings) {
+      raw[h] = "x".repeat(120);
+      types[h] = "other";
+    }
+
+    const view = mapStructure({
+      metadata: {},
+      structure: {
+        heading_order: ["Introduction", ...stolenHeadings],
+        raw_headings: raw,
+        section_types: types,
+        references: ["1. Only seven.", "2. Thin list."],
+      },
+      statistics: { reference_count: 2 },
+      quality: {},
+    })!;
+
+    expect(view.sections.map((s) => s.heading)).toEqual(["Introduction"]);
+    expect(view.references.length).toBe(12);
   });
 });
