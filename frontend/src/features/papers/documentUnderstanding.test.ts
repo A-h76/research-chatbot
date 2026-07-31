@@ -24,6 +24,7 @@ const SAMPLE: PhaseResult = {
       Introduction: "introduction",
       Methods: "methods",
     },
+    references: [],
   },
   statistics: {
     word_count: 1200,
@@ -59,6 +60,7 @@ describe("mapStructure", () => {
       sectionType: "introduction",
       content: "Widgets matter.",
     });
+    expect(view.references).toEqual([]);
     expect(view.warnings).toEqual(["Low figure contrast"]);
     expect(view.quality.extraction_quality).toBe(0.9);
     expect(view.hasContent).toBe(true);

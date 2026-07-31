@@ -14,6 +14,7 @@ import { useWorkspaceFocus } from "../useWorkspaceFocus";
 import { parseSectionBody } from "./sectionContent";
 import { buildDocumentAnalysisReport } from "./documentAnalysis";
 import { DocumentAnalysisPanel } from "./DocumentAnalysisPanel";
+import { ReferenceBrowser } from "./ReferenceBrowser";
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -196,16 +197,15 @@ function StructureReady({
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="font-medium text-foreground">{sec.heading}</span>
-                      <span className="mt-0.5 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        {sec.sectionType && (
-                          <span className="rounded-full border border-border px-2 py-0.5">
-                            {sec.sectionType}
+                      {sec.sectionType &&
+                        sec.sectionType.toLowerCase() !== "other" &&
+                        sec.sectionType.toLowerCase() !== "unknown" && (
+                          <span className="mt-0.5 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                            <span className="rounded-full border border-border px-2 py-0.5">
+                              {sec.sectionType}
+                            </span>
                           </span>
                         )}
-                        {sec.contentChars != null && (
-                          <span>{sec.contentChars.toLocaleString()} characters</span>
-                        )}
-                      </span>
                     </span>
                   </button>
                   {open && sec.content && (
@@ -224,6 +224,8 @@ function StructureReady({
           </ul>
         </section>
       )}
+
+      <ReferenceBrowser references={view.references} />
 
       <DocumentAnalysisPanel report={analysis} />
     </div>

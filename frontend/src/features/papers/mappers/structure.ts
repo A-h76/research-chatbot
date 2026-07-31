@@ -4,6 +4,12 @@
  */
 
 import type { PhaseResult } from "@/features/pipeline";
+import {
+  looksLikeBibliographyHeading,
+  parseCitationPreview,
+  splitReferenceLines,
+  type CitationPreview,
+} from "./citationPreview";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -64,7 +70,10 @@ export type DocumentUnderstandingView = {
   headingCount?: number;
   sectionCount?: number;
   referenceCount?: number;
+  /** Outline sections only — bibliography entries are in `references`. */
   sections: DocumentSectionRow[];
+  /** Bibliography as a collection, not Structure headings. */
+  references: CitationPreview[];
   warnings: string[];
   errors: string[];
   quality: DocumentQualityScores;
@@ -90,6 +99,60 @@ function buildSections(structure: Record<string, unknown>): DocumentSectionRow[]
       content,
       contentChars: content?.length,
     };
+  });
+}
+
+function collectReferences(
+  structure: Record<string, unknown>,
+  sections: DocumentSectionRow[],
+): CitationPreview[] {
+  const fromApi = asStringArray(structure.references);
+  if (fromApi.length > 0) {
+    return fromApi.map((raw, i) => parseCitationPreview(raw, i));
+  }
+
+  const refSection = sections.find(
+    (s) =>
+      (s.sectionType ?? "").toLowerCase() === "references" ||
+      /^references?$/i.test(s.heading.trim()),
+  );
+  if (refSection?.content) {
+    const lines = splitReferenceLines(refSection.content);
+    if (lines.length > 0) {
+      return lines.map((raw, i) => parseCitationPreview(raw, i));
+    }
+  }
+
+  // Numbered citation lines wrongly promoted to Structure headings
+  const stolen = sections.filter((s) =>
+    looksLikeBibliographyHeading(s.heading, s.content),
+  );
+  if (stolen.length >= 3) {
+    return stolen.map((s, i) =>
+      parseCitationPreview(s.content?.trim() ? `${s.heading} ${s.content}` : s.heading, i),
+    );
+  }
+
+  return [];
+}
+
+function filterOutlineSections(
+  sections: DocumentSectionRow[],
+  references: CitationPreview[],
+): DocumentSectionRow[] {
+  if (references.length === 0) {
+    return sections.filter(
+      (s) =>
+        (s.sectionType ?? "").toLowerCase() !== "references" &&
+        !/^references?$/i.test(s.heading.trim()),
+    );
+  }
+
+  return sections.filter((s) => {
+    if ((s.sectionType ?? "").toLowerCase() === "references") return false;
+    if (/^references?$/i.test(s.heading.trim())) return false;
+    if (looksLikeBibliographyHeading(s.heading, s.content)) return false;
+    return true;
   });
 }
 
@@ -120,9 +183,13 @@ export function mapStructure(result: PhaseResult | null | undefined): DocumentUn
   const charCount = asNumber(statistics.char_count);
   const headingCount = asNumber(statistics.heading_count);
   const sectionCount = asNumber(statistics.section_count);
-  const referenceCount = asNumber(statistics.reference_count);
 
-  const sections = buildSections(structure);
+  const allSections = buildSections(structure);
+  const references = collectReferences(structure, allSections);
+  const sections = filterOutlineSections(allSections, references);
+  const statsCount = asNumber(statistics.reference_count);
+  const referenceCount = references.length > 0 ? references.length : statsCount;
+
   const warnings = asStringArray(qualityRaw.warnings);
   const errors = asStringArray(qualityRaw.errors);
 
@@ -150,6 +217,7 @@ export function mapStructure(result: PhaseResult | null | undefined): DocumentUn
       wordCount != null ||
       pageCount != null ||
       sections.length ||
+      references.length ||
       warnings.length ||
       errors.length ||
       hasQuality,
@@ -172,6 +240,7 @@ export function mapStructure(result: PhaseResult | null | undefined): DocumentUn
     sectionCount,
     referenceCount,
     sections,
+    references,
     warnings,
     errors,
     quality,
@@ -181,7 +250,6 @@ export function mapStructure(result: PhaseResult | null | undefined): DocumentUn
 
 export function formatQualityScore(n: number | undefined): string | undefined {
   if (n == null) return undefined;
-  // Backend stores 0–1 floats; show as percent without inventing precision claims
   if (n >= 0 && n <= 1) return `${Math.round(n * 100)}%`;
   return String(n);
 }

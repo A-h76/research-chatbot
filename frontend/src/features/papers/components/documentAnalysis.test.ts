@@ -10,6 +10,7 @@ function baseView(over: Partial<DocumentUnderstandingView> = {}): DocumentUnders
   return {
     authors: [],
     sections: [],
+    references: [],
     warnings: [],
     errors: [],
     quality: {},

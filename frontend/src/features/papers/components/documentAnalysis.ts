@@ -57,7 +57,7 @@ function presentTypes(view: DocumentUnderstandingView): Set<string> {
     if (t && t !== "other" && t !== "unknown" && t !== "misc") types.add(t);
   }
   if (view.abstract) types.add("abstract");
-  if ((view.referenceCount ?? 0) > 0) types.add("references");
+  if ((view.referenceCount ?? 0) > 0 || view.references.length > 0) types.add("references");
   // Heading text fallback when type is other/missing
   for (const s of view.sections) {
     const h = s.heading.trim().toLowerCase();
@@ -288,6 +288,7 @@ export function buildDocumentAnalysisReport(
   });
 
   const hasRefs =
+    view.references.length > 0 ||
     (view.referenceCount ?? 0) > 0 ||
     view.sections.some((s) => /reference|bibliograph/i.test(s.heading) || normType(s.sectionType) === "references");
   processingSignals.push({
