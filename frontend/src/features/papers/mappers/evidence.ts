@@ -133,7 +133,10 @@ export type AssessmentsView = {
 
 export type EvidenceViewModel = {
   skipped: boolean;
+  /** Researcher-facing skip explanation (never raw routing jargon). */
   skipReason?: string;
+  /** Short title for the skipped state. */
+  skipTitle?: string;
   hasContent: boolean;
   overallGrade: GradeView | null;
   studyQuality?: string;
@@ -144,6 +147,54 @@ export type EvidenceViewModel = {
   warnings: string[];
   errors: string[];
 };
+
+/**
+ * Turn pipeline skip `reasoning` into calm researcher copy.
+ * Raw strings like "routing profile does not include evidence_grading" stay out of the UI.
+ */
+export function humanizeEvidenceSkipReason(raw: string | undefined): {
+  title: string;
+  detail: string;
+} {
+  const text = (raw ?? "").trim().toLowerCase();
+  if (!text) {
+    return {
+      title: "No formal evidence grade",
+      detail:
+        "Dhund did not produce a formal evidence grade for this paper. Chat and extract tools can still use the manuscript text.",
+    };
+  }
+  if (
+    text.includes("routing profile") ||
+    text.includes("not required") ||
+    text.includes("does not include evidence_grading") ||
+    text.includes("formal evidence grading was not run") ||
+    text.includes("narrative reviews, editorials")
+  ) {
+    return {
+      title: "No formal evidence grade",
+      detail:
+        "Formal evidence grading (study quality, GRADE-style frameworks) was not run for this document type. That is common for narrative reviews, editorials, and papers outside clinical-trial or systematic-review pipelines.",
+    };
+  }
+  if (text.includes("skipped") || text.includes("insufficient") || text.includes("too little")) {
+    return {
+      title: "Evidence grading unavailable",
+      detail:
+        "There was not enough structured evidence signal to produce a reliable grade for this paper.",
+    };
+  }
+  // Unknown backend copy — keep readable, strip snake_case module ids.
+  const cleaned = raw!
+    .replace(/\bevidence_grading\b/gi, "evidence grading")
+    .replace(/\brouting profile\b/gi, "analysis plan")
+    .replace(/_/g, " ")
+    .trim();
+  return {
+    title: "No formal evidence grade",
+    detail: cleaned.charAt(0).toUpperCase() + cleaned.slice(1),
+  };
+}
 
 function mapGrade(raw: unknown): GradeView | null {
   if (!isRecord(raw)) return null;
@@ -406,7 +457,7 @@ export function mapEvidence(phase: PhaseResult | null | undefined): EvidenceView
   if (!phase || !isRecord(phase)) return null;
 
   const skipped = phase.skipped === true;
-  const skipReason = asString(phase.reasoning);
+  const skipCopy = skipped ? humanizeEvidenceSkipReason(asString(phase.reasoning)) : null;
   const warnings = asStringArray(phase.warnings).map(cleanMarkdownArtifacts);
   const errors = errorMessages(phase.errors);
 
@@ -452,7 +503,8 @@ export function mapEvidence(phase: PhaseResult | null | undefined): EvidenceView
 
   return {
     skipped,
-    skipReason,
+    skipReason: skipCopy?.detail,
+    skipTitle: skipCopy?.title,
     hasContent,
     overallGrade,
     studyQuality,

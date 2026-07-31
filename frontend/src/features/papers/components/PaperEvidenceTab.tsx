@@ -298,22 +298,26 @@ function EvidenceReady({
       <div className="space-y-6">
         <section
           aria-labelledby="evidence-skipped-heading"
-          className="rounded-xl border border-border bg-muted/20 px-4 py-5 space-y-2"
+          className="rounded-xl border border-border bg-card px-4 py-5 sm:px-5"
         >
-          <h2 id="evidence-skipped-heading" className="text-sm font-medium text-foreground">
-            Evidence grading skipped
+          <h2
+            id="evidence-skipped-heading"
+            className="text-[15px] font-semibold tracking-tight text-foreground"
+          >
+            {view.skipTitle ?? "No formal evidence grade"}
           </h2>
-          <p className="text-sm text-foreground/85">
-            {view.skipReason ?? "Evidence grading was not required for this document’s routing."}
+          <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+            {view.skipReason ??
+              "Dhund did not produce a formal evidence grade for this paper. Chat and extract tools can still use the manuscript text."}
           </p>
           {view.warnings.length > 0 && (
-            <ul className="mt-3 space-y-2" role="list">
+            <ul className="mt-4 space-y-2" role="list">
               {view.warnings.map((msg) => (
                 <li
                   key={msg}
-                  className="flex gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm"
+                  className="flex gap-2 rounded-lg border border-border bg-muted/25 px-3 py-2 text-[13px] text-foreground/85"
                 >
-                  <AlertCircle className="mt-0.5 size-4 shrink-0 text-sem-warn" aria-hidden />
+                  <AlertCircle className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
                   <span>{msg}</span>
                 </li>
               ))}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapEvidence } from "./evidence";
+import { humanizeEvidenceSkipReason, mapEvidence } from "./evidence";
 import { cleanMarkdownArtifacts, humanizeEnumKey, normalizeFrameworkId } from "./shared";
 import type { PhaseResult } from "@/features/pipeline";
 
@@ -173,6 +173,18 @@ describe("mapEvidence", () => {
     expect(view.skipped).toBe(true);
     expect(view.hasContent).toBe(true);
     expect(view.assessments.publicationBias).toBeUndefined();
-    expect(view.skipReason).toMatch(/not required/i);
+    expect(view.skipTitle).toBe("No formal evidence grade");
+    expect(view.skipReason).toMatch(/narrative reviews/i);
+    expect(view.skipReason).not.toMatch(/routing profile|evidence_grading/i);
+  });
+});
+
+describe("humanizeEvidenceSkipReason", () => {
+  it("never surfaces routing-profile jargon", () => {
+    const copy = humanizeEvidenceSkipReason(
+      "evidence grading not required (routing profile does not include evidence_grading)",
+    );
+    expect(copy.title).toBe("No formal evidence grade");
+    expect(copy.detail).not.toMatch(/routing profile|evidence_grading/i);
   });
 });

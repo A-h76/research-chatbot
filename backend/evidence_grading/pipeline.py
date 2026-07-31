@@ -110,7 +110,11 @@ class EvidenceGradingPipeline:
         if not self._should_run(context):
             return EvidenceGrades(
                 skipped=True,
-                reasoning="evidence grading not required (routing profile does not include evidence_grading)",
+                reasoning=(
+                    "Formal evidence grading was not run for this document type. "
+                    "Common for narrative reviews, editorials, and papers outside "
+                    "clinical-trial or systematic-review pipelines."
+                ),
                 pipeline_version=PIPELINE_VERSION,
                 processing_time_ms=(time.perf_counter() - start) * 1000,
             )
