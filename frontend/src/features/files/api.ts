@@ -193,7 +193,7 @@ export const filesApi = {
     id: number,
     body: Partial<Pick<UserFile,
       "title" | "authors" | "year" | "venue" | "doi" |
-      "abstract" | "reading_status" | "tags"
+      "abstract" | "reading_status" | "tags" | "project_id"
     >>,
   ) => api.patch<UserFile>(`/api/files/${id}`, body),
 

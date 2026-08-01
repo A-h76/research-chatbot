@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, FolderKanban } from "lucide-react";
+import { Plus } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/common/EmptyState";
 import { ProjectCard } from "../components/ProjectCard";
 import { ProjectDialog } from "../components/ProjectDialog";
+import { ProjectsEmptyState } from "../components/ProjectsEmptyState";
 import { useProjects } from "../useProjects";
 import { useConversations } from "@/features/chat/hooks/useConversation";
 import { useAllFiles } from "@/features/files/useFiles";
@@ -13,14 +13,30 @@ import { useMemories } from "@/features/memory/useMemories";
 import type { Project } from "@/types/api";
 
 export function ProjectsPage() {
-  const { data: projects = [] }      = useProjects();
+  const { data: projects = [] } = useProjects();
   const { data: conversations = [] } = useConversations();
-  const { data: files = [] }         = useAllFiles();
-  const { data: memories = [] }      = useMemories();
-  const navigate                     = useNavigate();
+  const { data: files = [] } = useAllFiles();
+  const { data: memories = [] } = useMemories();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [dialogOpen,  setDialogOpen]  = useState(false);
-  const [editing,     setEditing]     = useState<Project | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<Project | null>(null);
+
+  const libraryPapers = useMemo(
+    () => files.filter((f) => f.kind === "document").slice(0, 6),
+    [files],
+  );
+
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  // Pre-select library papers when the empty state first has them.
+  useEffect(() => {
+    if (projects.length > 0 || libraryPapers.length === 0) return;
+    setSelectedIds((prev) => {
+      if (prev.size > 0) return prev;
+      return new Set(libraryPapers.map((p) => p.id));
+    });
+  }, [projects.length, libraryPapers]);
 
   // D8 — ⌘K “New project”
   useEffect(() => {
@@ -32,28 +48,43 @@ export function ProjectsPage() {
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
+  const openCreate = () => {
+    setEditing(null);
+    setDialogOpen(true);
+  };
+
+  const isEmpty = projects.length === 0;
+
   return (
     <PageContainer
       title="Projects"
-      description="Your research home — open a project to collect papers, track questions, and work with evidence."
+      description={
+        isEmpty
+          ? "Your research home."
+          : "Your research home — open a project to collect papers, track questions, and work with evidence."
+      }
       actions={
         <Button
-          onClick={() => { setEditing(null); setDialogOpen(true); }}
+          variant={isEmpty ? "outline" : "default"}
+          onClick={openCreate}
         >
           <Plus className="size-4" /> New project
         </Button>
       }
     >
-      {projects.length === 0 ? (
-        <EmptyState
-          icon={<FolderKanban className="size-8" />}
-          title="Start your first research project"
-          description="Dhund is organised around projects, not individual PDFs. Create one to keep papers, questions, and insights together."
-          action={
-            <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
-              <Plus className="size-4" /> Create first project
-            </Button>
-          }
+      {isEmpty ? (
+        <ProjectsEmptyState
+          papers={libraryPapers}
+          selectedIds={selectedIds}
+          onToggle={(id) => {
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            });
+          }}
+          onCreate={openCreate}
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -65,12 +96,20 @@ export function ProjectsPage() {
               fileCount={files.filter((f) => f.project_id === p.id).length}
               memoryCount={memories.filter((m) => m.project_id === p.id).length}
               onOpen={() => navigate(`/projects/${p.id}`)}
-              onEdit={() => { setEditing(p); setDialogOpen(true); }}
+              onEdit={() => {
+                setEditing(p);
+                setDialogOpen(true);
+              }}
             />
           ))}
         </div>
       )}
-      <ProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} project={editing} />
+      <ProjectDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        project={editing}
+        fileIdsToAttach={editing ? undefined : Array.from(selectedIds)}
+      />
     </PageContainer>
   );
 }

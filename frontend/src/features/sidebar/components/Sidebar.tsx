@@ -221,15 +221,15 @@ export function SidebarContents({
           <button
             type="button"
             onClick={() => setNewOpen((o) => !o)}
-            className="flex w-full items-center justify-between rounded-lg bg-primary px-3 py-2.5 font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-transform hover:scale-[0.98] active:scale-95"
+            className="flex w-full items-center justify-between rounded-lg border border-sidebar-border bg-sidebar-accent/40 px-3 py-2.5 text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
             aria-expanded={newOpen}
             aria-haspopup="menu"
           >
-            <span className="flex items-center gap-2.5 text-[12px] font-semibold uppercase tracking-wide">
-              <PlusCircle className="size-4" />
+            <span className="flex items-center gap-2.5 text-[12px] font-semibold tracking-wide">
+              <PlusCircle className="size-4 text-primary" />
               New
             </span>
-            <kbd className="rounded bg-primary-foreground/10 px-1.5 py-0.5 text-[10px] opacity-70">
+            <kbd className="rounded bg-sidebar/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
               ⌘N
             </kbd>
           </button>
@@ -297,17 +297,17 @@ export function SidebarContents({
 
         <div className="mx-1 border-t border-sidebar-border/80" />
 
-        {/* Ask Dhund */}
+        {/* Ask Dhund — secondary, not competing with nav accent */}
         <button
           type="button"
           onClick={() => go("chat", "/chat")}
           className={cn(
-            "w-full rounded-lg bg-primary px-3 py-2.5 text-left text-primary-foreground transition-opacity hover:opacity-90",
-            isGlobalChat && "ring-1 ring-primary-foreground/25",
+            "w-full rounded-lg border border-sidebar-border bg-transparent px-3 py-2.5 text-left transition-colors hover:bg-sidebar-accent/60",
+            isGlobalChat && "border-primary/40 bg-primary/10",
           )}
         >
-          <span className="flex items-center gap-2 text-[13px] font-semibold">
-            <MessageSquare className="size-4" />
+          <span className="flex items-center gap-2 text-[13px] font-semibold text-sidebar-foreground">
+            <MessageSquare className="size-4 text-primary" />
             Ask Dhund
           </span>
         </button>

@@ -366,21 +366,21 @@
 
 /* Lab sidebar — solid navy chrome (mock hierarchy). No glass / blur. */
 .dhund-lab-sidebar {
-  --sidebar: #0c1324;
+  --sidebar: #111827;
   --sidebar-foreground: #dce1fb;
-  --sidebar-primary: #4fdbc8;
+  --sidebar-primary: #3bb5a8;
   --sidebar-primary-foreground: #003731;
-  --sidebar-accent: #2e3447;
+  --sidebar-accent: #1f2937;
   --sidebar-accent-foreground: #dce1fb;
-  --sidebar-border: #3c4947;
-  --sidebar-ring: #4fdbc8;
+  --sidebar-border: #2a3540;
+  --sidebar-ring: #3bb5a8;
   --primary: #14b8a6;
   --primary-foreground: #003731;
-  --muted-foreground: #859490;
+  --muted-foreground: #8b9a97;
   --accent-soft: #005048;
   --popover: #191f31;
   --popover-foreground: #dce1fb;
-  --border: #3c4947;
+  --border: #2a3540;
   background: var(--sidebar);
   color: var(--sidebar-foreground);
 }

@@ -84,6 +84,19 @@ def create_file_detail_blueprint(
 
                 tags = [str(t)[:80] for t in (data["tags"] or []) if t][:30]
                 x.tags = json.dumps(tags)
+            if "project_id" in data:
+                from security.authz import resolve_owned_project_id
+
+                raw = data["project_id"]
+                if raw in (None, "", "null"):
+                    x.project_id = None
+                else:
+                    pid, denied = resolve_owned_project_id(
+                        db, Project, raw, session["user_id"]
+                    )
+                    if denied:
+                        return jsonify({"error": "forbidden", "detail": "project_not_owned"}), 403
+                    x.project_id = pid
 
             db.commit()
             return jsonify(file_to_dict(x))

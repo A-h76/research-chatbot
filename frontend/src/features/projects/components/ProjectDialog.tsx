@@ -8,23 +8,32 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label }    from "@/components/ui/label";
 import { Button }   from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { useNavigate } from "react-router-dom";
 import { useCreateProject, useDeleteProject, useUpdateProject } from "../useProjects";
+import { filesApi } from "@/features/files/api";
 import { useUI } from "@/context/UIContext";
 import { toast } from "@/components/common/Toast";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import type { Project } from "@/types/api";
 
 export function ProjectDialog({
   open,
   onOpenChange,
   project,
+  fileIdsToAttach,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   project?: Project | null;
+  /** On create, assign these library papers to the new project. */
+  fileIdsToAttach?: number[];
 }) {
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
   const deleteProject = useDeleteProject();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
   const { currentProjectId, setCurrentProjectId } = useUI();
 
   const [emoji,        setEmoji]        = useState("");
@@ -56,11 +65,34 @@ export function ProjectDialog({
     if (project) {
       await updateProject.mutateAsync({ id: project.id, body });
       toast.success("Project updated");
+      onOpenChange(false);
+      return;
+    }
+
+    const created = await createProject.mutateAsync(body);
+    const attachIds = (fileIdsToAttach ?? []).filter((id) => Number.isFinite(id));
+    if (attachIds.length > 0) {
+      const results = await Promise.allSettled(
+        attachIds.map((id) => filesApi.patch(id, { project_id: created.id })),
+      );
+      const failed = results.filter((r) => r.status === "rejected").length;
+      void qc.invalidateQueries({ queryKey: queryKeys.files });
+      void qc.invalidateQueries({ queryKey: ["library"] });
+      if (failed > 0) {
+        toast.error(
+          `Project created — ${failed} paper${failed === 1 ? "" : "s"} could not be assigned`,
+        );
+      } else {
+        toast.success(
+          `Project created with ${attachIds.length} paper${attachIds.length === 1 ? "" : "s"}`,
+        );
+      }
     } else {
-      await createProject.mutateAsync(body);
       toast.success("Project created");
     }
     onOpenChange(false);
+    setCurrentProjectId(created.id);
+    navigate(`/projects/${created.id}`);
   };
 
   return (
