@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
@@ -8,34 +8,63 @@ import {
   Library,
   FolderKanban,
   Settings,
-  FileText,
   Loader2,
   Home,
-  Plus,
-  ChevronRight,
+  PlusCircle,
+  ChevronDown,
   Search,
   Quote,
   StickyNote,
-  GitCompare,
   PenLine,
-  Upload,
-  FileUp,
-  Plug,
   Brain,
+  FlaskConical,
 } from "lucide-react";
 import { AccountMenu } from "./AccountMenu";
 import { MendeleyIcon, ZoteroIcon } from "./BrandIcons";
 import { useUI } from "@/context/UIContext";
 import { useFiles, useLibraryStats } from "@/features/files/useFiles";
 import { libraryBridgeApi } from "@/features/files/libraryBridgeApi";
+import { isTypingTarget } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
-import type { Me } from "@/types/api";
+import type { Me, ReadingStatus } from "@/types/api";
 
-const SIDEBAR_WIDTH = 260;
+const SIDEBAR_WIDTH = 280;
+const SIDEBAR_GUTTER = 16;
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function readingProgress(status: ReadingStatus | undefined): number {
+  if (status === "read") return 100;
+  if (status === "reading") return 55;
+  return 12;
+}
+
+function SectionLabel({
+  children,
+  onToggle,
+  open,
+}: {
+  children: React.ReactNode;
+  onToggle?: () => void;
+  open?: boolean;
+}) {
+  if (onToggle) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        className="mb-1.5 flex w-full items-center justify-between px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80"
+      >
+        {children}
+        <ChevronDown
+          className={cn(
+            "size-3.5 transition-transform",
+            open === false && "-rotate-90",
+          )}
+        />
+      </button>
+    );
+  }
   return (
-    <p className="px-2.5 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+    <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
       {children}
     </p>
   );
@@ -46,16 +75,12 @@ function NavItem({
   label,
   active,
   onClick,
-  muted,
-  nested,
   badge,
 }: {
   icon: React.ReactNode;
   label: string;
   active?: boolean;
   onClick: () => void;
-  muted?: boolean;
-  nested?: boolean;
   badge?: string | number | null;
 }) {
   return (
@@ -63,31 +88,16 @@ function NavItem({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] transition-colors",
-        nested && "py-1.5 pl-2",
+        "group relative flex w-full items-center gap-3 rounded-lg border-l-2 px-3 py-2.5 text-left text-[13px] transition-colors",
         active
-          ? "bg-sidebar-accent font-medium text-foreground"
-          : "text-sidebar-foreground hover:bg-sidebar-accent/80",
-        muted && !active && "text-muted-foreground",
+          ? "border-primary bg-primary/10 font-semibold text-primary"
+          : "border-transparent font-medium text-muted-foreground hover:border-primary/30 hover:bg-sidebar-accent/60 hover:text-primary",
       )}
     >
-      {active && !nested && (
-        <span
-          aria-hidden
-          className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-primary"
-        />
-      )}
-      <span
-        className={cn(
-          "shrink-0",
-          active ? "text-primary" : "text-muted-foreground",
-        )}
-      >
-        {icon}
-      </span>
+      <span className="shrink-0">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
       {badge != null && badge !== "" && (
-        <span className="rounded-md bg-sidebar-accent px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+        <span className="rounded bg-sidebar-accent px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
           {badge}
         </span>
       )}
@@ -95,7 +105,7 @@ function NavItem({
   );
 }
 
-function RecentPapersList({ projectId }: { projectId: number | null }) {
+function RecentActivityList({ projectId }: { projectId: number | null }) {
   const navigate = useNavigate();
   const { setActiveView } = useUI();
 
@@ -123,30 +133,41 @@ function RecentPapersList({ projectId }: { projectId: number | null }) {
   }
 
   return (
-    <div className="flex flex-col gap-0.5 px-1.5">
-      {papers.map((paper) => (
-        <button
-          key={paper.id}
-          type="button"
-          onClick={() => {
-            setActiveView("paper");
-            navigate(`/papers/${paper.id}`);
-          }}
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-sidebar-foreground hover:bg-sidebar-accent"
-        >
-          <FileText className="size-3 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate">
-            {paper.title || paper.name}
-          </span>
-        </button>
-      ))}
+    <div className="space-y-3 px-3">
+      {papers.map((paper) => {
+        const pct = readingProgress(paper.reading_status);
+        return (
+          <button
+            key={paper.id}
+            type="button"
+            onClick={() => {
+              setActiveView("paper");
+              navigate(`/papers/${paper.id}`);
+            }}
+            className="group w-full cursor-pointer text-left"
+          >
+            <div className="mb-1 flex items-start justify-between gap-2">
+              <span className="truncate text-[13px] text-sidebar-foreground transition-colors group-hover:text-primary">
+                {paper.title || paper.name}
+              </span>
+              <span className="shrink-0 text-[10px] text-muted-foreground">{pct}%</span>
+            </div>
+            <div className="h-1 w-full overflow-hidden rounded-full bg-sidebar-accent">
+              <div
+                className="h-full rounded-full bg-primary transition-all group-hover:brightness-110"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 /**
- * Primary workflow nav — mock hierarchy, real Dhund routes only.
- * Solid surfaces (no glass / shimmer). Tokens from design system.
+ * Lab sidebar — mock hierarchy & density, solid surfaces only (no glass / blur / shimmer).
+ * Wired to existing Dhund routes and real library / connection data.
  */
 export function SidebarContents({
   me,
@@ -157,8 +178,7 @@ export function SidebarContents({
 }) {
   const [newOpen, setNewOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [libraryOpen, setLibraryOpen] = useState(true);
-  const [integrationsOpen, setIntegrationsOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(true);
   const { setActiveView, currentProjectId } = useUI();
   const navigate = useNavigate();
   const location = useLocation();
@@ -184,7 +204,6 @@ export function SidebarContents({
     path.startsWith("/library") ||
     path.startsWith("/files") ||
     (path.startsWith("/papers/") && !path.includes("/chat"));
-  const isResearch = path.startsWith("/research") || path.startsWith("/analysis");
   const isWriting = path.startsWith("/writing");
   const isCitations = path.startsWith("/citations");
   const importProvider = new URLSearchParams(search).get("provider");
@@ -193,18 +212,26 @@ export function SidebarContents({
     (hash === "#import" || search.includes("import=1") || Boolean(importProvider));
   const isZoteroImport = isImportPanel && importProvider === "zotero";
   const isMendeleyImport = isImportPanel && importProvider === "mendeley";
-  const isUploadImport = isImportPanel && importProvider === "upload";
-  const isGlobalChat =
-    path.startsWith("/chat") || path.startsWith("/c/");
+  const isGlobalChat = path.startsWith("/chat") || path.startsWith("/c/");
   const isSettings = path.startsWith("/settings");
-  const isIntegrations = isImportPanel;
   const isMoreActive =
     path.startsWith("/search") ||
     path.startsWith("/notes") ||
-    path.startsWith("/memory");
+    path.startsWith("/memory") ||
+    path.startsWith("/research") ||
+    path.startsWith("/analysis");
 
-  const libraryExpanded = libraryOpen || isLibrary;
-  const integrationsExpanded = integrationsOpen || isIntegrations;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        setNewOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   function go(view: Parameters<typeof setActiveView>[0], next: string) {
     setActiveView(view);
@@ -213,10 +240,6 @@ export function SidebarContents({
   }
 
   function goLibraryImport(provider: "zotero" | "mendeley" | "upload" | "bibtex") {
-    setLibraryOpen(true);
-    if (provider === "zotero" || provider === "mendeley") {
-      setIntegrationsOpen(true);
-    }
     go("library", `/library?provider=${provider}#import`);
   }
 
@@ -225,381 +248,274 @@ export function SidebarContents({
 
   return (
     <div className="flex h-full flex-col" onClickCapture={onNavigate}>
-      {/* Brand header */}
-      <div className="flex items-start gap-2.5 px-3 pt-3.5 pb-1 pr-10">
-        <div
-          className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"
-          title="Dhund — Research Operating System"
-          aria-hidden
-        >
-          <span className="text-[11px] font-bold leading-none tracking-tight">Dh</span>
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-semibold leading-tight tracking-tight">Dhund</p>
-          <p className="truncate text-[11px] text-muted-foreground">Research OS</p>
-        </div>
-      </div>
-
-      {/* Full-width New CTA */}
-      <div className="relative px-3 pt-2 pb-1.5">
-        <button
-          type="button"
-          onClick={() => setNewOpen((o) => !o)}
-          className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground hover:opacity-90"
-          aria-expanded={newOpen}
-          aria-haspopup="menu"
-        >
-          <Plus className="size-3.5" />
-          New
-        </button>
-        {newOpen && (
+      {/* Brand */}
+      <div className="flex items-center justify-between gap-2 px-5 pt-5 pb-2 pr-10">
+        <div className="flex min-w-0 items-center gap-3">
           <div
-            role="menu"
-            className="absolute left-3 right-3 z-20 mt-1 rounded-md border border-border bg-popover py-1 shadow-md"
+            className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+            title="Dhund — Research Operating System"
+            aria-hidden
           >
-            <button
-              type="button"
-              role="menuitem"
-              className="flex w-full px-3 py-1.5 text-left text-[13px] hover:bg-muted"
-              onClick={() => go("projects", "/projects?new=1")}
-            >
-              New project
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="flex w-full px-3 py-1.5 text-left text-[13px] hover:bg-muted"
-              onClick={() => go("library", "/library?provider=zotero#import")}
-            >
-              Import papers
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="flex w-full px-3 py-1.5 text-left text-[13px] hover:bg-muted"
-              onClick={() => go("citations", "/writing")}
-            >
-              Continue writing
-            </button>
-            <div className="my-1 border-t border-border" />
-            <button
-              type="button"
-              role="menuitem"
-              className="flex w-full px-3 py-1.5 text-left text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => go("chat", "/chat")}
-            >
-              Ask Dhund…
-            </button>
+            <FlaskConical className="size-5" strokeWidth={2} />
           </div>
-        )}
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-semibold tracking-tight text-sidebar-foreground">
+              Dhund
+            </h1>
+            <p className="truncate text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+              Research OS
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Ask Dhund — solid featured card */}
-      <div className="px-3 pb-2 pt-0.5">
-        <button
-          type="button"
-          onClick={() => go("chat", "/chat")}
-          className={cn(
-            "flex w-full flex-col gap-0.5 rounded-lg bg-accent-soft px-3 py-2.5 text-left transition-colors hover:bg-accent-soft/80",
-            isGlobalChat && "ring-1 ring-primary/30",
-          )}
-        >
-          <span className="flex items-center gap-2 text-[13px] font-medium text-foreground">
-            <MessageSquare className="size-3.5 text-primary" />
-            Ask Dhund
-          </span>
-          <span className="text-[11px] leading-snug text-muted-foreground">
-            Grounded answers from your library
-          </span>
-        </button>
-      </div>
+      <nav className="lab-sidebar-scroll flex-1 space-y-5 overflow-y-auto px-3 pb-4">
+        {/* New + primary */}
+        <div className="space-y-1">
+          <div className="relative mb-3">
+            <button
+              type="button"
+              onClick={() => setNewOpen((o) => !o)}
+              className="flex w-full items-center justify-between rounded-lg bg-primary px-3 py-2.5 font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-transform hover:scale-[0.98] active:scale-95"
+              aria-expanded={newOpen}
+              aria-haspopup="menu"
+            >
+              <span className="flex items-center gap-3 text-[12px] font-semibold uppercase tracking-wide">
+                <PlusCircle className="size-5" />
+                New Research
+              </span>
+              <kbd className="rounded bg-primary-foreground/10 px-1.5 py-0.5 text-[10px] opacity-70">
+                ⌘N
+              </kbd>
+            </button>
+            {newOpen && (
+              <div
+                role="menu"
+                className="absolute left-0 right-0 z-20 mt-1 rounded-lg border border-sidebar-border bg-sidebar-accent py-1 shadow-xl"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full px-3 py-2 text-left text-[13px] text-sidebar-foreground hover:bg-sidebar/40"
+                  onClick={() => go("projects", "/projects?new=1")}
+                >
+                  New project
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full px-3 py-2 text-left text-[13px] text-sidebar-foreground hover:bg-sidebar/40"
+                  onClick={() => goLibraryImport("upload")}
+                >
+                  Import papers
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full px-3 py-2 text-left text-[13px] text-sidebar-foreground hover:bg-sidebar/40"
+                  onClick={() => go("citations", "/writing")}
+                >
+                  Continue writing
+                </button>
+                <div className="my-1 border-t border-sidebar-border" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full px-3 py-2 text-left text-[13px] text-muted-foreground hover:bg-sidebar/40 hover:text-sidebar-foreground"
+                  onClick={() => go("chat", "/chat")}
+                >
+                  Ask Dhund…
+                </button>
+              </div>
+            )}
+          </div>
 
-      <div className="scrollbar-thin flex-1 overflow-y-auto">
-        {/* Primary */}
-        <nav className="space-y-0.5 px-2 pb-1" aria-label="Primary">
-          <SectionLabel>Workspace</SectionLabel>
           <NavItem
-            icon={<Home className="size-4" />}
+            icon={<Home className="size-5" />}
             label="Home"
             active={isHome}
             onClick={() => go("library", "/home")}
           />
           <NavItem
-            icon={<FolderKanban className="size-4" />}
+            icon={<FolderKanban className="size-5" />}
             label="Projects"
             active={isProjects}
             onClick={() => go("projects", "/")}
           />
-
-          <div>
-            <button
-              type="button"
-              onClick={() => {
-                if (!isLibrary) {
-                  setLibraryOpen(true);
-                  go("library", "/library");
-                  return;
-                }
-                setLibraryOpen((o) => !o);
-              }}
-              aria-expanded={libraryExpanded}
-              className={cn(
-                "relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] transition-colors",
-                isLibrary && !isImportPanel
-                  ? "bg-sidebar-accent font-medium text-foreground"
-                  : isLibrary
-                    ? "font-medium text-foreground"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent/80",
-              )}
-            >
-              {isLibrary && !isImportPanel && (
-                <span
-                  aria-hidden
-                  className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-primary"
-                />
-              )}
-              <Library
-                className={cn(
-                  "size-4 shrink-0",
-                  isLibrary ? "text-primary" : "text-muted-foreground",
-                )}
-              />
-              <span className="flex-1 truncate">Library</span>
-              {paperCount != null && (
-                <span className="rounded-md bg-sidebar-accent px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
-                  {paperCount}
-                </span>
-              )}
-              <ChevronRight
-                className={cn(
-                  "size-3.5 text-muted-foreground transition-transform",
-                  libraryExpanded && "rotate-90",
-                )}
-              />
-            </button>
-
-            {libraryExpanded && (
-              <div className="mt-0.5 space-y-0.5 border-l border-sidebar-border ml-4 pl-1.5">
-                <p className="px-2 pb-0.5 pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Papers
-                </p>
-                <NavItem
-                  nested
-                  icon={<Upload className="size-4" />}
-                  label="Upload PDF"
-                  active={isUploadImport}
-                  onClick={() => goLibraryImport("upload")}
-                />
-                <NavItem
-                  nested
-                  icon={<FileUp className="size-4" />}
-                  label="BibTeX / RIS"
-                  active={isImportPanel && importProvider === "bibtex"}
-                  onClick={() => goLibraryImport("bibtex")}
-                />
-                <NavItem
-                  nested
-                  muted
-                  icon={<Library className="size-4" />}
-                  label="All papers"
-                  active={isLibrary && !isImportPanel}
-                  onClick={() => go("library", "/library")}
-                />
-              </div>
-            )}
-          </div>
-        </nav>
-
-        {/* Research tools */}
-        <nav className="space-y-0.5 px-2 pb-1" aria-label="Research tools">
-          <SectionLabel>Research tools</SectionLabel>
           <NavItem
-            icon={<GitCompare className="size-4" />}
-            label="Research"
-            active={isResearch}
-            onClick={() => go("library", "/research/compare?tab=matrix")}
+            icon={<Library className="size-5" />}
+            label="Library"
+            active={isLibrary && !isImportPanel}
+            badge={paperCount}
+            onClick={() => go("library", "/library")}
           />
-          <NavItem
-            icon={<PenLine className="size-4" />}
-            label="Writing"
-            active={isWriting}
-            onClick={() => go("citations", "/writing")}
-          />
-          <NavItem
-            icon={<Quote className="size-4" />}
-            label="Citations"
-            active={isCitations}
-            onClick={() => go("citations", "/citations")}
-          />
-        </nav>
-
-        <div className="mx-3 my-1.5 border-t border-sidebar-border" />
-
-        {/* Recent */}
-        <div className="pb-1">
-          <SectionLabel>Recent</SectionLabel>
-          <RecentPapersList projectId={currentProjectId} />
         </div>
 
-        <div className="mx-3 my-1.5 border-t border-sidebar-border" />
+        {/* Ask Dhund — solid primary card (no glass / shimmer) */}
+        <div className="px-1">
+          <button
+            type="button"
+            onClick={() => go("chat", "/chat")}
+            className={cn(
+              "w-full cursor-pointer rounded-xl bg-primary p-4 text-left text-primary-foreground shadow-md shadow-primary/15 transition-shadow hover:shadow-lg hover:shadow-primary/25",
+              isGlobalChat && "ring-1 ring-primary-foreground/30",
+            )}
+          >
+            <div className="mb-1.5 flex items-center gap-3">
+              <MessageSquare className="size-5 fill-current" />
+              <h3 className="text-[15px] font-bold">Ask Dhund</h3>
+            </div>
+            <p className="text-[11px] leading-relaxed text-primary-foreground/80">
+              Grounded answers from your library.
+            </p>
+          </button>
+        </div>
 
-        {/* Integrations */}
-        <nav className="space-y-0.5 px-2 pb-1" aria-label="Integrations">
-          <div>
+        {/* Research tools */}
+        <div>
+          <SectionLabel open={toolsOpen} onToggle={() => setToolsOpen((o) => !o)}>
+            Research Tools
+          </SectionLabel>
+          {toolsOpen && (
+            <div className="space-y-0.5">
+              <NavItem
+                icon={<Quote className="size-5" />}
+                label="Citations"
+                active={isCitations}
+                onClick={() => go("citations", "/citations")}
+              />
+              <NavItem
+                icon={<Library className="size-5" />}
+                label="Papers"
+                active={isLibrary && !isImportPanel}
+                onClick={() => go("library", "/library")}
+              />
+              <NavItem
+                icon={<PenLine className="size-5" />}
+                label="Writing Tools"
+                active={isWriting}
+                onClick={() => go("citations", "/writing")}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Recent — real reading_status progress, no fake % */}
+        <div>
+          <SectionLabel>Recent Activity</SectionLabel>
+          <RecentActivityList projectId={currentProjectId} />
+        </div>
+
+        {/* Integrations — flat list like mock */}
+        <div>
+          <SectionLabel>Integrations</SectionLabel>
+          <div className="space-y-0.5">
             <button
               type="button"
-              onClick={() => setIntegrationsOpen((o) => !o)}
-              aria-expanded={integrationsExpanded}
+              onClick={() => goLibraryImport("zotero")}
               className={cn(
-                "relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] transition-colors",
-                isIntegrations
-                  ? "bg-sidebar-accent font-medium text-foreground"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent/80",
+                "flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] transition-colors",
+                isZoteroImport
+                  ? "text-primary"
+                  : "text-muted-foreground hover:text-primary",
               )}
             >
-              {isIntegrations && (
-                <span
-                  aria-hidden
-                  className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-primary"
-                />
-              )}
-              <Plug
+              <span
                 className={cn(
-                  "size-4 shrink-0",
-                  isIntegrations ? "text-primary" : "text-muted-foreground",
+                  "size-2 shrink-0 rounded-full",
+                  zoteroConnected ? "bg-emerald-500" : "bg-muted-foreground/40",
                 )}
+                aria-hidden
               />
-              <span className="flex-1 truncate">Integrations</span>
-              <span className="flex items-center gap-1">
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    zoteroConnected ? "bg-emerald-500" : "bg-muted-foreground/40",
-                  )}
-                  title={zoteroConnected ? "Zotero connected" : "Zotero not connected"}
-                />
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    mendeleyConnected ? "bg-emerald-500" : "bg-muted-foreground/40",
-                  )}
-                  title={mendeleyConnected ? "Mendeley connected" : "Mendeley not connected"}
-                />
-              </span>
-              <ChevronRight
-                className={cn(
-                  "size-3.5 text-muted-foreground transition-transform",
-                  integrationsExpanded && "rotate-90",
-                )}
-              />
+              <ZoteroIcon className="size-3.5 shrink-0 opacity-80" />
+              <span className="truncate">Zotero Cloud</span>
             </button>
-            {integrationsExpanded && (
-              <div className="mt-0.5 space-y-0.5 border-l border-sidebar-border ml-4 pl-1.5">
-                <button
-                  type="button"
-                  onClick={() => goLibraryImport("zotero")}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors",
-                    isZoteroImport
-                      ? "bg-sidebar-accent font-medium text-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent/80",
-                  )}
-                >
-                  <ZoteroIcon className="size-3.5 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">Zotero</span>
-                  <span
-                    className={cn(
-                      "size-1.5 shrink-0 rounded-full",
-                      zoteroConnected ? "bg-emerald-500" : "bg-muted-foreground/40",
-                    )}
-                    title={zoteroConnected ? "Connected" : "Not connected"}
-                    aria-label={zoteroConnected ? "Connected" : "Not connected"}
-                  />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => goLibraryImport("mendeley")}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors",
-                    isMendeleyImport
-                      ? "bg-sidebar-accent font-medium text-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent/80",
-                  )}
-                >
-                  <MendeleyIcon className="size-3.5 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">Mendeley</span>
-                  <span
-                    className={cn(
-                      "size-1.5 shrink-0 rounded-full",
-                      mendeleyConnected ? "bg-emerald-500" : "bg-muted-foreground/40",
-                    )}
-                    title={mendeleyConnected ? "Connected" : "Not connected"}
-                    aria-label={mendeleyConnected ? "Connected" : "Not connected"}
-                  />
-                </button>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => goLibraryImport("mendeley")}
+              className={cn(
+                "flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] transition-colors",
+                isMendeleyImport
+                  ? "text-primary"
+                  : "text-muted-foreground hover:text-primary",
+              )}
+            >
+              <span
+                className={cn(
+                  "size-2 shrink-0 rounded-full",
+                  mendeleyConnected ? "bg-emerald-500" : "bg-muted-foreground/40",
+                )}
+                aria-hidden
+              />
+              <MendeleyIcon className="size-3.5 shrink-0 opacity-80" />
+              <span className="truncate">Mendeley Library</span>
+            </button>
           </div>
-        </nav>
+        </div>
 
-        {/* More — demoted tools */}
-        <div className="px-2 pb-2">
+        {/* More — demoted Dhund tools */}
+        <div>
           <button
             type="button"
             onClick={() => setMoreOpen((o) => !o)}
             aria-expanded={moreOpen || isMoreActive}
-            className={cn(
-              "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] transition-colors",
-              isMoreActive
-                ? "bg-sidebar-accent/60 font-medium text-foreground"
-                : "text-muted-foreground hover:bg-sidebar-accent/80 hover:text-foreground",
-            )}
+            className="mb-1 flex w-full items-center justify-between px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80"
           >
-            <span className="flex-1">More</span>
-            <ChevronRight
+            More
+            <ChevronDown
               className={cn(
                 "size-3.5 transition-transform",
-                (moreOpen || isMoreActive) && "rotate-90",
+                !(moreOpen || isMoreActive) && "-rotate-90",
               )}
             />
           </button>
           {(moreOpen || isMoreActive) && (
-            <div className="mt-0.5 space-y-0.5 pl-1">
+            <div className="space-y-0.5">
               <NavItem
-                muted
-                icon={<Search className="size-4" />}
+                icon={<Search className="size-5" />}
                 label="Search"
                 active={path.startsWith("/search")}
                 onClick={() => go("chat", "/search")}
               />
               <NavItem
-                muted
-                icon={<StickyNote className="size-4" />}
+                icon={<StickyNote className="size-5" />}
                 label="Notes"
                 active={path.startsWith("/notes")}
                 onClick={() => go("memory", "/notes")}
               />
               <NavItem
-                muted
-                icon={<Brain className="size-4" />}
+                icon={<Brain className="size-5" />}
                 label="Memory"
                 active={path.startsWith("/memory")}
                 onClick={() => go("memory", "/memory")}
               />
+              <NavItem
+                icon={<FlaskConical className="size-5" />}
+                label="Research Compare"
+                active={path.startsWith("/research") || path.startsWith("/analysis")}
+                onClick={() => go("library", "/research/compare?tab=matrix")}
+              />
             </div>
           )}
         </div>
-      </div>
+      </nav>
 
-      {/* Footer: Settings + account */}
-      <div className="mt-auto border-t border-sidebar-border px-2 pt-1.5 pb-2">
-        <NavItem
-          icon={<Settings className="size-4" />}
-          label="Settings"
-          active={isSettings}
+      {/* Footer */}
+      <div className="space-y-1 border-t border-sidebar-border/80 p-4">
+        <button
+          type="button"
           onClick={() => go("settings", "/settings")}
-        />
-        <div className="mt-0.5">
+          className={cn(
+            "group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] transition-colors",
+            isSettings
+              ? "bg-sidebar-accent text-sidebar-foreground"
+              : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+          )}
+        >
+          <Settings className="size-5 transition-transform group-hover:rotate-45" />
+          Settings
+        </button>
+        <div className="mt-2 rounded-xl border border-sidebar-border/60 bg-sidebar-accent/40 px-1 py-1 shadow-sm">
           <AccountMenu me={me} />
         </div>
       </div>
@@ -609,24 +525,30 @@ export function SidebarContents({
 
 export function Sidebar({ me }: { me: Me }) {
   const { sidebarCollapsed, setSidebarCollapsed } = useUI();
+  const openWidth = SIDEBAR_WIDTH + SIDEBAR_GUTTER;
 
   return (
     <motion.aside
       initial={false}
-      animate={{ width: sidebarCollapsed ? 0 : SIDEBAR_WIDTH }}
+      animate={{ width: sidebarCollapsed ? 0 : openWidth }}
       transition={{ duration: 0.2, ease: "easeInOut" }}
-      className="relative hidden shrink-0 overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:block"
+      className="relative hidden shrink-0 overflow-hidden md:block"
     >
-      <div className="absolute inset-y-0" style={{ width: SIDEBAR_WIDTH }}>
-        <SidebarContents me={me} />
-        <button
-          type="button"
-          onClick={() => setSidebarCollapsed(true)}
-          title="Close sidebar (⌘B)"
-          className="absolute top-3 right-2 rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-        >
-          <PanelLeftClose className="size-4" />
-        </button>
+      <div
+        className="absolute inset-y-0 left-0 py-4 pl-4"
+        style={{ width: openWidth }}
+      >
+        <div className="dhund-lab-sidebar relative flex h-full w-[280px] flex-col overflow-hidden rounded-xl border border-sidebar-border shadow-2xl">
+          <SidebarContents me={me} />
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(true)}
+            title="Close sidebar (⌘B)"
+            className="absolute top-4 right-3 rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <PanelLeftClose className="size-4" />
+          </button>
+        </div>
       </div>
     </motion.aside>
   );

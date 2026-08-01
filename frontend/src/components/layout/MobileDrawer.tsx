@@ -13,7 +13,10 @@ export function MobileDrawer({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="left" className="w-72 bg-sidebar p-0 text-sidebar-foreground">
+      <SheetContent
+        side="left"
+        className="dhund-lab-sidebar w-[280px] border-sidebar-border p-0 text-sidebar-foreground"
+      >
         <SheetTitle className="sr-only">Navigation</SheetTitle>
         <SidebarContents me={me} onNavigate={() => onOpenChange(false)} />
       </SheetContent>

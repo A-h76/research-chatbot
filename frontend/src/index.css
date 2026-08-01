@@ -85,7 +85,7 @@
   --sidebar-accent-foreground: #111827;
   --sidebar-border: #e5e7eb;
   --sidebar-ring: #0f6e6a;
-  --sidebar-width: 260px;
+  --sidebar-width: 280px;
 
   --user-bubble: #d8f0ee;
   --user-bubble-foreground: #111827;
@@ -362,6 +362,37 @@
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+/* Lab sidebar — solid navy chrome (mock hierarchy). No glass / blur. */
+.dhund-lab-sidebar {
+  --sidebar: #0c1324;
+  --sidebar-foreground: #dce1fb;
+  --sidebar-primary: #4fdbc8;
+  --sidebar-primary-foreground: #003731;
+  --sidebar-accent: #2e3447;
+  --sidebar-accent-foreground: #dce1fb;
+  --sidebar-border: #3c4947;
+  --sidebar-ring: #4fdbc8;
+  --primary: #14b8a6;
+  --primary-foreground: #003731;
+  --muted-foreground: #859490;
+  --accent-soft: #005048;
+  --popover: #191f31;
+  --popover-foreground: #dce1fb;
+  --border: #3c4947;
+  background: var(--sidebar);
+  color: var(--sidebar-foreground);
+}
+.dhund-lab-sidebar .lab-sidebar-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.dhund-lab-sidebar .lab-sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dhund-lab-sidebar .lab-sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.1);
+  border-radius: 10px;
 }
 
 @layer utilities {
