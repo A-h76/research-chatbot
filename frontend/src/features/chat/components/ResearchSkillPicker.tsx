@@ -30,7 +30,7 @@ export function ResearchSkillPicker({
         title="Research skill"
       >
         <Layers className="size-3.5" />
-        <span className="hidden sm:inline">{current.label}</span>
+        <span>{current.label}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
         {RESEARCH_SKILLS.map((s) => (

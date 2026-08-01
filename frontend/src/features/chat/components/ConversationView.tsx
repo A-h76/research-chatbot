@@ -114,6 +114,7 @@ export function ConversationView({ conversationId }: { conversationId: number })
           references: stream.references,
           confidence: stream.confidence,
           warnings: stream.warnings,
+          skill: stream.skill,
           isStreaming: stream.isStreaming,
           error: stream.error,
         }
@@ -154,7 +155,12 @@ export function ConversationView({ conversationId }: { conversationId: number })
         }
       >
         <div className="min-h-0 min-w-0">
-          <MessageList messages={messages} live={live} onRegenerate={onRegenerate} />
+          <MessageList
+            messages={messages}
+            live={live}
+            onRegenerate={onRegenerate}
+            fileId={fileId ?? undefined}
+          />
         </div>
         {showProjectRail && (
           <aside className="hidden min-h-0 min-w-0 overflow-hidden border-l border-border p-3 lg:block">
@@ -174,8 +180,8 @@ export function ConversationView({ conversationId }: { conversationId: number })
         />
         <p className="mt-2 text-center text-[11px] text-muted-foreground">
           {projectId
-            ? "Project-scoped answers · prefer Paper Chat for evidence links"
-            : "General inquiry · open a paper for evidence-grounded chat"}
+            ? "Project-scoped answers · pick a research skill · prefer Paper Chat for passage links"
+            : "Pick a research skill · open a paper for passage-linked chat"}
         </p>
       </div>
     </div>

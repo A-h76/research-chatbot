@@ -13,6 +13,7 @@ export interface LiveStream {
   references?: Message["references"];
   confidence?: number;
   warnings?: string[];
+  skill?: string;
   isStreaming: boolean;
   error: string | null;
 }
@@ -26,6 +27,7 @@ type ExplainableSlice = {
   confidence?: number;
   warnings?: string[];
   references?: WorkspaceReference[];
+  skill?: string;
 };
 
 function HistoricalRow({
@@ -48,6 +50,7 @@ function HistoricalRow({
       confidence={explainable?.confidence}
       warnings={explainable?.warnings}
       references={explainable?.references}
+      skill={explainable?.skill ?? message.skill}
       onRegenerate={onRegenerate}
     />
   );
@@ -99,6 +102,9 @@ export function MessageList({
             confidence: view.confidence,
             warnings: view.warnings.length ? view.warnings : undefined,
             references: view.references.length ? view.references : undefined,
+            skill:
+              m.skill ||
+              (typeof view.metadata.skill === "string" ? view.metadata.skill : undefined),
           });
         }
       }
@@ -142,6 +148,7 @@ export function MessageList({
                   sources={live.sources}
                   confidence={!live.isStreaming ? live.confidence : undefined}
                   warnings={!live.isStreaming ? live.warnings : undefined}
+                  skill={!live.isStreaming ? live.skill : undefined}
                   references={
                     !live.isStreaming && live.references?.length
                       ? (mapExplainableChat(

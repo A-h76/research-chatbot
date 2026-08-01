@@ -281,6 +281,7 @@ export function PaperChatPage() {
           references: stream.references,
           confidence: stream.confidence,
           warnings: stream.warnings,
+          skill: stream.skill,
           isStreaming: stream.isStreaming,
           error: stream.error,
         }

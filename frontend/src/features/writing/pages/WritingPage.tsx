@@ -671,7 +671,7 @@ function DraftTab() {
           ) : (
             <FlaskConicalIcon />
           )}
-          Write literature review
+          Write {sectionType === "literature_review" ? "literature review" : sectionType.replaceAll("_", " ")}
         </button>
         <span className="text-[12px] text-muted-foreground">
           Outline → Evidence → Verify → Accept · click [#id] markers to inspect
@@ -734,12 +734,19 @@ function DraftTab() {
           {grounded.isPending ? (
             <ResearchProgressStage
               active
-              liveMetric="Organising accepted EvidenceObjects for this section"
+              liveMetric={
+                grounded.jobStatus ||
+                "Organising accepted EvidenceObjects for this section"
+              }
             />
           ) : grounded.last?.status === "ok" ? (
             <ResearchProgressStage
               active={false}
-              doneLabel="Literature Review Ready"
+              doneLabel={
+                (grounded.last.section_type || sectionType) === "literature_review"
+                  ? "Literature Review Ready"
+                  : `${(grounded.last.section_type || sectionType).replaceAll("_", " ")} ready`
+              }
             />
           ) : null}
 

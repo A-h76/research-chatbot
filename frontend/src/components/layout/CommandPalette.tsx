@@ -33,6 +33,7 @@ import {
   FlaskConical,
   Tags,
   Table2,
+  ClipboardList,
 } from "lucide-react";
 import { useAllFiles } from "@/features/files/useFiles";
 import { useProjects } from "@/features/projects/useProjects";
@@ -369,6 +370,15 @@ export function CommandPalette() {
         icon: Tags,
         show: true,
         run: () => go("/research/compare?tab=themes"),
+      },
+      {
+        id: "structured-extract",
+        label: "Structured extract (PICO)",
+        hint: "Research",
+        keywords: "extract pico methods outcomes population intervention table csv",
+        icon: ClipboardList,
+        show: true,
+        run: () => go("/research/compare?tab=extract"),
       },
       {
         id: "citations",

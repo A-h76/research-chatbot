@@ -4,8 +4,16 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/common/Toast";
+import { ResearchProgressStage } from "@/features/writing/components/ResearchProgressStage";
 import { evidenceApi } from "../api";
 import type { ThemeCluster } from "../types";
+
+const THEME_MAP_STAGES = [
+  "Loading evidence objects",
+  "Clustering themes",
+  "Assigning papers",
+  "Building theme map",
+] as const;
 
 /** RI-001 / B-615 — project theme discovery panel (+ W6 theme_map job). */
 export function EvidenceThemesPanel({ projectId }: { projectId: number | null }) {
@@ -24,21 +32,34 @@ export function EvidenceThemesPanel({ projectId }: { projectId: number | null })
         type: "theme_map",
       });
       if (enqueued.status === "done" && enqueued.result) {
-        return enqueued;
+        return { mode: "sync" as const, payload: enqueued };
       }
       if (enqueued.job_id) {
         for (let i = 0; i < 8; i += 1) {
           await new Promise((r) => setTimeout(r, 1000));
           const st = await evidenceApi.researchJob(enqueued.job_id!);
-          if (st.status === "done") return st;
+          if (st.status === "done") return { mode: "async" as const, payload: st };
           if (st.status === "failed") {
             throw new Error(st.last_error || "theme_map_failed");
           }
         }
         // Worker may be offline — finish synchronously.
-        return evidenceApi.enqueueResearchJob(projectId, { type: "theme_map", sync: true });
+        toast.message("Worker slow — finishing theme map inline");
+        return {
+          mode: "fallback" as const,
+          payload: await evidenceApi.enqueueResearchJob(projectId, {
+            type: "theme_map",
+            sync: true,
+          }),
+        };
       }
-      return evidenceApi.enqueueResearchJob(projectId, { type: "theme_map", sync: true });
+      return {
+        mode: "sync" as const,
+        payload: await evidenceApi.enqueueResearchJob(projectId, {
+          type: "theme_map",
+          sync: true,
+        }),
+      };
     },
     onSuccess: () => {
       toast.success("Theme map ready");
@@ -74,20 +95,58 @@ export function EvidenceThemesPanel({ projectId }: { projectId: number | null })
 
   if (q.isError) {
     return (
-      <p className="text-[13px] text-muted-foreground">
-        Could not load themes. Extract evidence from papers first, then retry.
-      </p>
+      <div className="space-y-3">
+        <p className="text-[13px] text-muted-foreground">
+          Could not load themes. Extract evidence from papers first, then retry.
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 gap-1.5 text-[12px]"
+          disabled={rebuild.isPending}
+          onClick={() => rebuild.mutate()}
+        >
+          {rebuild.isPending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="size-3.5" />
+          )}
+          Rebuild theme map
+        </Button>
+        {rebuild.isPending ? (
+          <ResearchProgressStage active stages={THEME_MAP_STAGES} liveMetric="Queuing theme_map job…" />
+        ) : null}
+      </div>
     );
   }
 
   const data = q.data;
   if (!data || (data.themes.length === 0 && data.unassigned.count === 0)) {
     return (
-      <EmptyState
-        icon={<Tags className="size-7" />}
-        title="No evidence to cluster"
-        description="Upload papers and run evidence extract to discover Theme A–N clusters."
-      />
+      <div className="space-y-3">
+        <EmptyState
+          icon={<Tags className="size-7" />}
+          title="No evidence to cluster"
+          description="Upload papers and run evidence extract, then rebuild the theme map."
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 gap-1.5 text-[12px]"
+          disabled={rebuild.isPending}
+          onClick={() => rebuild.mutate()}
+        >
+          {rebuild.isPending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="size-3.5" />
+          )}
+          Rebuild theme map
+        </Button>
+        {rebuild.isPending ? (
+          <ResearchProgressStage active stages={THEME_MAP_STAGES} liveMetric="Queuing theme_map job…" />
+        ) : null}
+      </div>
     );
   }
 
@@ -104,7 +163,7 @@ export function EvidenceThemesPanel({ projectId }: { projectId: number | null })
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-muted-foreground">
           {data.metrics.theme_count} themes · {data.metrics.assigned_evidence} evidence assigned ·{" "}
-          {coverage} · hash {(data.run.input_hash || "").slice(0, 10)}…
+          {coverage}
         </p>
         <div className="flex gap-2">
           <Button
@@ -125,6 +184,7 @@ export function EvidenceThemesPanel({ projectId }: { projectId: number | null })
             size="sm"
             variant="outline"
             className="h-8 gap-1.5 text-[12px]"
+            disabled={rebuild.isPending}
             onClick={downloadMarkdown}
           >
             <Download className="size-3.5" /> Markdown
@@ -132,9 +192,18 @@ export function EvidenceThemesPanel({ projectId }: { projectId: number | null })
         </div>
       </div>
 
+      {rebuild.isPending ? (
+        <ResearchProgressStage
+          active
+          stages={THEME_MAP_STAGES}
+          liveMetric="Waiting on theme_map research job…"
+        />
+      ) : null}
+
       {data.themes.length === 0 ? (
         <p className="text-[13px] text-muted-foreground">
-          No clusters met the minimum size. Add more related evidence or lower min cluster size.
+          No clusters met the minimum size. Add more related evidence or rebuild after extracting
+          more papers.
         </p>
       ) : (
         <ul className="space-y-2">
@@ -159,16 +228,20 @@ export function EvidenceThemesPanel({ projectId }: { projectId: number | null })
                 <ul className="mt-2 space-y-1">
                   {theme.sample_claims.map((s) => (
                     <li key={s.evidence_id} className="text-[12px] text-foreground/85">
-                      <span className="text-muted-foreground">e:{s.evidence_id}</span>{" "}
                       {s.claim}
                     </li>
                   ))}
                 </ul>
               ) : null}
-              <p className="mt-1.5 text-[10px] text-muted-foreground/80">
-                ids: {theme.evidence_ids.slice(0, 12).join(", ")}
-                {theme.evidence_ids.length > 12 ? "…" : ""}
-              </p>
+              <details className="mt-1.5">
+                <summary className="cursor-pointer text-[10px] text-muted-foreground/80">
+                  Evidence ids ({theme.evidence_ids.length})
+                </summary>
+                <p className="mt-1 text-[10px] text-muted-foreground/80">
+                  {theme.evidence_ids.slice(0, 24).join(", ")}
+                  {theme.evidence_ids.length > 24 ? "…" : ""}
+                </p>
+              </details>
             </li>
           ))}
         </ul>

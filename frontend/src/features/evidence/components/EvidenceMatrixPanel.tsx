@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { Download, Loader2, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -106,6 +107,10 @@ export function EvidenceMatrixPanel({
           Paper × Method × Dataset × Findings × Limitations ·{" "}
           {data.metrics.paper_count} papers · {data.metrics.papers_with_evidence} with
           evidence · {coverageLabel(data.metrics.coverage)}
+          {" · "}
+          <Link to="/research/compare?tab=extract" className="text-primary hover:underline">
+            Open structured Extract
+          </Link>
         </p>
         <div className="flex items-center gap-1.5">
           <Button

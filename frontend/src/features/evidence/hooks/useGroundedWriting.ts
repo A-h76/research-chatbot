@@ -229,6 +229,7 @@ function hashText(text: string): string {
 
 export function useGroundedWriting() {
   const [last, setLast] = useState<GroundedWritingResult | null>(null);
+  const [jobStatus, setJobStatus] = useState<string | null>(null);
   const generateCountRef = useRef(0);
 
   const mutation = useMutation({
@@ -241,9 +242,11 @@ export function useGroundedWriting() {
     }) => {
       const query = buildWritingQuery(opts);
       const sectionType = opts.sectionType || "support_sentence";
+      setJobStatus(null);
 
       // W6 — long literature reviews go through the research job queue.
       if (sectionType === "literature_review") {
+        setJobStatus("Queuing literature_review job…");
         const enqueued = await evidenceApi.enqueueResearchJob(opts.projectId, {
           type: "literature_review",
           query,
@@ -260,6 +263,7 @@ export function useGroundedWriting() {
         } else if (enqueued.job_id) {
           let done: Awaited<ReturnType<typeof evidenceApi.researchJob>> | null = null;
           for (let i = 0; i < 20; i += 1) {
+            setJobStatus(`Waiting on research job… (${i + 1}/20)`);
             await new Promise((r) => setTimeout(r, 1500));
             const st = await evidenceApi.researchJob(enqueued.job_id!);
             if (st.status === "done") {
@@ -272,12 +276,15 @@ export function useGroundedWriting() {
           }
           if (!done?.result) {
             // Worker may be offline — fall back to sync path.
+            toast.message("Worker slow — finishing literature review inline");
+            setJobStatus("Finishing inline…");
             const raw = await evidenceApi.writing(query);
             const writing = raw.writing;
             if (!writing) throw new Error("writing_payload_missing");
             return {
               ...(writing as GroundedWritingResult),
               writing_version: raw.writing_version,
+              section_type: sectionType,
               _projectId: opts.projectId,
               _documentId: opts.documentId,
             };
@@ -289,12 +296,14 @@ export function useGroundedWriting() {
           writingPayload = r.writing as unknown as Record<string, unknown>;
           writingVersion = r.writing_version;
         } else {
+          setJobStatus("Generating section…");
           const raw = await evidenceApi.writing(query);
           const writing = raw.writing;
           if (!writing) throw new Error("writing_payload_missing");
           return {
             ...(writing as GroundedWritingResult),
             writing_version: raw.writing_version,
+            section_type: sectionType,
             _projectId: opts.projectId,
             _documentId: opts.documentId,
           };
@@ -303,11 +312,13 @@ export function useGroundedWriting() {
         return {
           ...(writingPayload as GroundedWritingResult),
           writing_version: writingVersion,
+          section_type: sectionType,
           _projectId: opts.projectId,
           _documentId: opts.documentId,
         };
       }
 
+      setJobStatus("Generating section…");
       const raw = await evidenceApi.writing(query);
       const writing = raw.writing;
       if (!writing) {
@@ -316,11 +327,13 @@ export function useGroundedWriting() {
       return {
         ...(writing as GroundedWritingResult),
         writing_version: raw.writing_version,
+        section_type: sectionType,
         _projectId: opts.projectId,
         _documentId: opts.documentId,
       };
     },
     onSuccess: (writing) => {
+      setJobStatus(null);
       setLast(writing);
       generateCountRef.current += 1;
       const projectId = (writing as { _projectId?: number })._projectId;
@@ -365,6 +378,7 @@ export function useGroundedWriting() {
       );
     },
     onError: (err) => {
+      setJobStatus(null);
       if (err instanceof ApiError) {
         toast.error(err.message || "Grounded generate failed");
         return;
@@ -377,6 +391,7 @@ export function useGroundedWriting() {
     generate: mutation.mutate,
     generateAsync: mutation.mutateAsync,
     isPending: mutation.isPending,
+    jobStatus,
     last,
     clear: () => setLast(null),
   };

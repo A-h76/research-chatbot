@@ -81,6 +81,8 @@ export function StructuredExtractPanel({
         <p className="text-[12px] text-muted-foreground">
           {data.metrics.filled_rows}/{data.metrics.paper_count} papers with extract · coverage{" "}
           {Math.round((data.metrics.coverage || 0) * 100)}%
+          {" · "}
+          from Phase-1 medical understanding (unknown stays unknown)
         </p>
         <div className="flex gap-2">
           <Button

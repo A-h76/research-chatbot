@@ -6,6 +6,13 @@ import type { Attachment, Message, Source } from "@/types/api";
 import type { WorkspaceReference } from "@/features/papers/mappers/chat";
 import { WorkspaceReferenceChips } from "@/features/papers/components/WorkspaceReferenceChips";
 import { formatConfidence } from "@/features/papers/mappers/shared";
+import { RESEARCH_SKILLS } from "../types";
+
+function skillLabel(skill?: string | null): string | null {
+  if (!skill) return null;
+  const found = RESEARCH_SKILLS.find((s) => s.id === skill);
+  return found?.label ?? skill;
+}
 
 function AttachmentChips({ attachments }: { attachments: Attachment[] }) {
   if (!attachments.length) return null;
@@ -53,6 +60,7 @@ export function AssistantMessage({
   confidence,
   warnings,
   references,
+  skill,
 }: {
   content: string;
   sources?: Source[];
@@ -62,13 +70,36 @@ export function AssistantMessage({
   confidence?: number;
   warnings?: string[];
   references?: WorkspaceReference[];
+  skill?: string | null;
 }) {
+  const skillText = skillLabel(skill);
+
   return (
     <div className="flex gap-3.5">
       <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-border text-sm">
         ✦
       </div>
       <div className="min-w-0 flex-1 space-y-3">
+        {!streaming && (skillText || confidence != null) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {skillText && skillText !== "Ask" ? (
+              <span
+                className="inline-flex items-center rounded-full border border-primary/30 bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-primary"
+                title="Research skill used for this answer"
+              >
+                {skillText}
+              </span>
+            ) : null}
+            {confidence != null ? (
+              <p
+                className="text-xs text-muted-foreground"
+                aria-label={`Answer confidence ${formatConfidence(confidence)}`}
+              >
+                Confidence {formatConfidence(confidence)}
+              </p>
+            ) : null}
+          </div>
+        )}
         <MarkdownRenderer content={content} />
         {streaming && (
           <span className="ml-0.5 inline-block h-4 w-[3px] translate-y-0.5 animate-pulse rounded-full bg-foreground align-middle" />
@@ -80,14 +111,6 @@ export function AssistantMessage({
             </summary>
             <p className="mt-2 whitespace-pre-wrap text-foreground/85">{reasoning}</p>
           </details>
-        )}
-        {!streaming && confidence != null && (
-          <p
-            className="text-xs text-muted-foreground"
-            aria-label={`Answer confidence ${formatConfidence(confidence)}`}
-          >
-            Confidence {formatConfidence(confidence)}
-          </p>
         )}
         {!streaming && warnings && warnings.length > 0 && (
           <ul className="space-y-1" role="list" aria-label="Warnings">
