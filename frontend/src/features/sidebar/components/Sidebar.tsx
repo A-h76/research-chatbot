@@ -31,7 +31,6 @@ import { cn } from "@/lib/utils";
 import type { Me } from "@/types/api";
 
 const SIDEBAR_WIDTH = 280;
-const SIDEBAR_GUTTER = 16;
 
 function NavItem({
   icon,
@@ -443,30 +442,26 @@ export function SidebarContents({
 
 export function Sidebar({ me }: { me: Me }) {
   const { sidebarCollapsed, setSidebarCollapsed } = useUI();
-  const openWidth = SIDEBAR_WIDTH + SIDEBAR_GUTTER;
 
   return (
     <motion.aside
       initial={false}
-      animate={{ width: sidebarCollapsed ? 0 : openWidth }}
+      animate={{ width: sidebarCollapsed ? 0 : SIDEBAR_WIDTH }}
       transition={{ duration: 0.2, ease: "easeInOut" }}
       className="relative hidden shrink-0 overflow-hidden md:block"
     >
       <div
-        className="absolute inset-y-0 left-0 py-4 pl-4"
-        style={{ width: openWidth }}
+        className="dhund-lab-sidebar absolute inset-y-0 left-0 flex w-[280px] flex-col overflow-hidden border-r border-sidebar-border"
       >
-        <div className="dhund-lab-sidebar relative flex h-full w-[280px] flex-col overflow-hidden rounded-xl border border-sidebar-border shadow-2xl">
-          <SidebarContents me={me} />
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed(true)}
-            title="Close sidebar (⌘B)"
-            className="absolute top-4 right-3 rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <PanelLeftClose className="size-4" />
-          </button>
-        </div>
+        <SidebarContents me={me} />
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed(true)}
+          title="Close sidebar (⌘B)"
+          className="absolute top-4 right-3 rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
+        >
+          <PanelLeftClose className="size-4" />
+        </button>
       </div>
     </motion.aside>
   );
