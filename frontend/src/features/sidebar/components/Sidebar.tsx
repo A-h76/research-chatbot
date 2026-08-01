@@ -254,10 +254,10 @@ export function SidebarContents({
   }
 
   return (
-    <div className="flex h-full flex-col" onClickCapture={onNavigate}>
+    <div className="flex h-full min-h-0 flex-col" onClickCapture={onNavigate}>
       <div
         className={cn(
-          "flex items-center gap-2.5 pt-5 pb-3",
+          "flex shrink-0 items-center gap-2.5 pt-5 pb-3",
           showLabels ? "justify-between px-4 pr-10" : "justify-center px-2",
         )}
       >
@@ -282,7 +282,7 @@ export function SidebarContents({
         </div>
       </div>
 
-      <nav className="lab-sidebar-scroll flex-1 space-y-5 overflow-y-auto px-2.5 pb-3">
+      <nav className="lab-sidebar-scroll min-h-0 flex-1 space-y-5 overflow-y-auto px-2.5 pb-3">
         <div className="relative" data-create-menu>
           <button
             type="button"
@@ -490,7 +490,7 @@ export function SidebarContents({
         )}
       </nav>
 
-      <div className="space-y-0.5 border-t border-sidebar-border/60 p-2.5">
+      <div className="mt-auto shrink-0 space-y-0.5 border-t border-sidebar-border/60 p-2.5">
         <PlaceItem
           density={density}
           icon={<Settings />}
@@ -611,7 +611,7 @@ export function Sidebar({ me }: { me: Me }) {
           : { duration: 0.2, ease: "easeInOut" }
       }
       className={cn(
-        "relative hidden shrink-0 md:block",
+        "relative hidden h-full min-h-0 shrink-0 self-stretch md:block",
         sidebarCollapsed ? "overflow-hidden" : "overflow-visible",
       )}
       style={
@@ -622,7 +622,7 @@ export function Sidebar({ me }: { me: Me }) {
     >
       <div
         className={cn(
-          "dhund-sidebar relative flex h-full flex-col overflow-hidden border-r border-sidebar-border",
+          "dhund-sidebar absolute inset-y-0 left-0 flex min-h-0 flex-col overflow-hidden border-r border-sidebar-border",
           sidebarCollapsed && "pointer-events-none",
         )}
         style={{ width: sidebarWidth }}
@@ -632,7 +632,10 @@ export function Sidebar({ me }: { me: Me }) {
           type="button"
           onClick={() => setSidebarCollapsed(true)}
           title="Close sidebar (⌘B)"
-          className="absolute top-4 right-2 z-10 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          className={cn(
+            "absolute top-3 z-10 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+            density === "icons" ? "right-0.5" : "right-2",
+          )}
         >
           <PanelLeftClose className="size-4" />
         </button>
