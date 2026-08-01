@@ -57,18 +57,18 @@ export function ProjectsPage() {
 
   return (
     <PageContainer
-      title="Projects"
+      title="Research"
       description={
         isEmpty
-          ? "Your research home."
-          : "Your research home — open a project to collect papers, track questions, and work with evidence."
+          ? "Continue a literature review, synthesis, or writing effort."
+          : "Pick up where you left off — papers, evidence, questions, and writing in one place."
       }
       actions={
         <Button
           variant={isEmpty ? "outline" : "default"}
           onClick={openCreate}
         >
-          <Plus className="size-4" /> New project
+          <Plus className="size-4" /> New research
         </Button>
       }
     >

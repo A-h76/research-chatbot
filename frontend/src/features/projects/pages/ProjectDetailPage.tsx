@@ -545,7 +545,7 @@ export function ProjectDetailPage() {
           onClick={() => navigate("/projects")}
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
-          <ChevronLeft className="size-4" /> Research Projects
+          <ChevronLeft className="size-4" /> Research
         </button>
 
         <motion.div

@@ -1,9 +1,244 @@
-import { Check, ChevronRight, FileText, Plus } from "lucide-react";
+import { Check, FileText, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { UserFile } from "@/types/api";
 
-const LOOP = ["Papers", "Questions", "Evidence", "Writing", "Exports"] as const;
+/** Calm editorial graphic — research workflow, not a fake UI widget. */
+function ResearchWorkflowIllustration() {
+  const stroke = "currentColor";
+  const accent = "var(--color-primary, currentColor)";
+
+  return (
+    <svg
+      viewBox="0 0 320 72"
+      className="mx-auto h-16 w-full max-w-[320px] text-muted-foreground"
+      role="img"
+      aria-label="Papers flow into evidence, writing, then export"
+    >
+      {/* Papers */}
+      <g transform="translate(8, 14)">
+        <rect
+          x="4"
+          y="2"
+          width="28"
+          height="36"
+          rx="3"
+          fill="none"
+          stroke={stroke}
+          strokeWidth="1.5"
+          opacity="0.35"
+        />
+        <rect
+          x="0"
+          y="6"
+          width="28"
+          height="36"
+          rx="3"
+          fill="none"
+          stroke={stroke}
+          strokeWidth="1.5"
+        />
+        <line x1="6" y1="16" x2="22" y2="16" stroke={stroke} strokeWidth="1.25" opacity="0.55" />
+        <line x1="6" y1="22" x2="20" y2="22" stroke={stroke} strokeWidth="1.25" opacity="0.45" />
+        <line x1="6" y1="28" x2="18" y2="28" stroke={stroke} strokeWidth="1.25" opacity="0.35" />
+      </g>
+      <text
+        x="22"
+        y="68"
+        textAnchor="middle"
+        className="fill-current"
+        style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.04em" }}
+        opacity="0.7"
+      >
+        Papers
+      </text>
+
+      {/* Arrow */}
+      <path
+        d="M48 36 H72"
+        fill="none"
+        stroke={accent}
+        strokeWidth="1.25"
+        strokeLinecap="round"
+        opacity="0.45"
+      />
+      <path
+        d="M68 32 L74 36 L68 40"
+        fill="none"
+        stroke={accent}
+        strokeWidth="1.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.45"
+      />
+
+      {/* Evidence — bookmark / quote mark */}
+      <g transform="translate(86, 16)">
+        <rect
+          x="0"
+          y="0"
+          width="36"
+          height="40"
+          rx="3"
+          fill="none"
+          stroke={stroke}
+          strokeWidth="1.5"
+        />
+        <path
+          d="M10 12 H26 M10 20 H22"
+          fill="none"
+          stroke={stroke}
+          strokeWidth="1.25"
+          strokeLinecap="round"
+          opacity="0.5"
+        />
+        <path
+          d="M8 28 H20"
+          fill="none"
+          stroke={accent}
+          strokeWidth="2"
+          strokeLinecap="round"
+          opacity="0.7"
+        />
+      </g>
+      <text
+        x="104"
+        y="68"
+        textAnchor="middle"
+        className="fill-current"
+        style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.04em" }}
+        opacity="0.7"
+      >
+        Evidence
+      </text>
+
+      <path
+        d="M134 36 H158"
+        fill="none"
+        stroke={accent}
+        strokeWidth="1.25"
+        strokeLinecap="round"
+        opacity="0.45"
+      />
+      <path
+        d="M154 32 L160 36 L154 40"
+        fill="none"
+        stroke={accent}
+        strokeWidth="1.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.45"
+      />
+
+      {/* Writing — lines + pen tip */}
+      <g transform="translate(172, 16)">
+        <rect
+          x="0"
+          y="0"
+          width="36"
+          height="40"
+          rx="3"
+          fill="none"
+          stroke={stroke}
+          strokeWidth="1.5"
+        />
+        <path
+          d="M8 14 H28 M8 22 H24 M8 30 H20"
+          fill="none"
+          stroke={stroke}
+          strokeWidth="1.25"
+          strokeLinecap="round"
+          opacity="0.5"
+        />
+        <path
+          d="M26 34 L32 28 L34 30 L28 36 Z"
+          fill="none"
+          stroke={accent}
+          strokeWidth="1.25"
+          strokeLinejoin="round"
+          opacity="0.75"
+        />
+      </g>
+      <text
+        x="190"
+        y="68"
+        textAnchor="middle"
+        className="fill-current"
+        style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.04em" }}
+        opacity="0.7"
+      >
+        Writing
+      </text>
+
+      <path
+        d="M220 36 H244"
+        fill="none"
+        stroke={accent}
+        strokeWidth="1.25"
+        strokeLinecap="round"
+        opacity="0.45"
+      />
+      <path
+        d="M240 32 L246 36 L240 40"
+        fill="none"
+        stroke={accent}
+        strokeWidth="1.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.45"
+      />
+
+      {/* Export — tray / share out */}
+      <g transform="translate(258, 16)">
+        <rect
+          x="0"
+          y="8"
+          width="36"
+          height="32"
+          rx="3"
+          fill="none"
+          stroke={stroke}
+          strokeWidth="1.5"
+        />
+        <path
+          d="M18 4 V22"
+          fill="none"
+          stroke={accent}
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          opacity="0.75"
+        />
+        <path
+          d="M12 12 L18 4 L24 12"
+          fill="none"
+          stroke={accent}
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity="0.75"
+        />
+        <path
+          d="M8 32 H28"
+          fill="none"
+          stroke={stroke}
+          strokeWidth="1.25"
+          strokeLinecap="round"
+          opacity="0.4"
+        />
+      </g>
+      <text
+        x="276"
+        y="68"
+        textAnchor="middle"
+        className="fill-current"
+        style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.04em" }}
+        opacity="0.7"
+      >
+        Export
+      </text>
+    </svg>
+  );
+}
 
 export function ProjectsEmptyState({
   papers,
@@ -21,42 +256,16 @@ export function ProjectsEmptyState({
 
   return (
     <div className="mx-auto flex max-w-lg flex-col items-center py-10 text-center sm:py-14">
-      {/* Mental model — why Projects exist */}
-      <div
-        className="mb-8 flex flex-wrap items-center justify-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-        aria-label="How a research project is organised"
-      >
-        {LOOP.map((step, i) => (
-          <span key={step} className="flex items-center gap-1">
-            {i > 0 && <ChevronRight className="size-3 opacity-40" aria-hidden />}
-            <span
-              className={cn(
-                "rounded-md px-2 py-1",
-                i === 0 ? "bg-muted text-foreground" : "bg-muted/50",
-              )}
-            >
-              {step}
-            </span>
-          </span>
-        ))}
-      </div>
-
-      <div className="mb-5 flex size-14 items-center justify-center rounded-2xl border border-border bg-muted/40">
-        <div className="flex flex-col items-center gap-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-          <span className="text-primary">Project</span>
-          <span className="h-px w-8 bg-border" />
-          <span>Papers</span>
-          <span className="h-px w-6 bg-border" />
-          <span>Evidence</span>
-        </div>
+      <div className="mb-8 w-full opacity-90">
+        <ResearchWorkflowIllustration />
       </div>
 
       <h2 className="text-lg font-semibold tracking-tight text-foreground">
         No projects yet
       </h2>
       <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
-        Projects organise papers, evidence, questions, and writing into one workspace —
-        not a pile of PDFs.
+        Start a research effort — gather papers, extract evidence, write with
+        citations, and export when you&apos;re ready.
       </p>
 
       {hasPapers && (
@@ -64,8 +273,8 @@ export function ProjectsEmptyState({
           <p className="mb-2 text-center text-[12px] text-muted-foreground">
             You already imported {papers.length === 1 ? "a paper" : `${papers.length} papers`}.
             {selectedCount > 0
-              ? ` Create a project from ${selectedCount === 1 ? "it" : "them"}.`
-              : " Select papers to include, or create an empty project."}
+              ? ` Start research with ${selectedCount === 1 ? "it" : "them"}.`
+              : " Select papers to include, or start empty."}
           </p>
           <ul className="overflow-hidden rounded-xl border border-border bg-card">
             {papers.map((p) => {
@@ -107,8 +316,8 @@ export function ProjectsEmptyState({
       <Button size="lg" className="mt-7 gap-1.5" onClick={onCreate}>
         <Plus className="size-4" />
         {hasPapers && selectedCount > 0
-          ? "Create project"
-          : "Create first project"}
+          ? "Start research"
+          : "Start your first research"}
       </Button>
     </div>
   );

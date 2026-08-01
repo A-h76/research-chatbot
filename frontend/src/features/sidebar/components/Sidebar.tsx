@@ -392,7 +392,7 @@ export function SidebarContents({
             {researchProjects.length === 0 ? (
               <button
                 type="button"
-                title="Start a project"
+                title="Start research"
                 onClick={() => go("projects", "/projects?new=1")}
                 className={cn(
                   "flex w-full items-center gap-2.5 rounded-md py-1.5 pr-2.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
@@ -400,7 +400,7 @@ export function SidebarContents({
                 )}
               >
                 <Plus className="size-4 shrink-0" />
-                <FadeLabel show={showLabel}>Start a project</FadeLabel>
+                <FadeLabel show={showLabel}>Start research</FadeLabel>
               </button>
             ) : (
               researchProjects.map((p) => {
@@ -455,8 +455,8 @@ export function SidebarContents({
                 type="button"
                 title={
                   projects.length > RESEARCH_LIST_LIMIT
-                    ? "View all projects"
-                    : "All projects"
+                    ? "View all research"
+                    : "All research"
                 }
                 onClick={() => go("projects", "/projects")}
                 className={cn(
@@ -467,8 +467,8 @@ export function SidebarContents({
                 <FolderKanban className="size-3.5 shrink-0 opacity-70" />
                 <FadeLabel show={showLabel}>
                   {projects.length > RESEARCH_LIST_LIMIT
-                    ? "View all projects…"
-                    : "All projects"}
+                    ? "View all research…"
+                    : "All research"}
                 </FadeLabel>
               </button>
             )}

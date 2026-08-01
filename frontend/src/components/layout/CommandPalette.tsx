@@ -354,7 +354,7 @@ export function CommandPalette() {
       },
       {
         id: "projects",
-        label: "Projects",
+        label: "Research",
         hint: "Jump",
         keywords: "projects research list all",
         icon: FolderKanban,
@@ -672,7 +672,7 @@ export function CommandPalette() {
           {mode === "mention" && (
             <>
               {rankedProjects.length > 0 && (
-                <CommandGroup heading="Projects">
+                <CommandGroup heading="Research">
                   {rankedProjects.map((p) => (
                     <CommandItem
                       key={`project-${p.id}`}
@@ -802,7 +802,7 @@ export function CommandPalette() {
                 </CommandGroup>
               )}
               {rankedProjects.length > 0 && mode === "none" && (
-                <CommandGroup heading="Projects">
+                <CommandGroup heading="Research">
                   {rankedProjects.map((p) => (
                     <CommandItem
                       key={`hit-project-${p.id}`}

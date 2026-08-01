@@ -100,14 +100,14 @@ export function WelcomeView({ me }: { me: Me }) {
                   to={`/projects/${project.id}`}
                   className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-muted-foreground hover:text-foreground"
                 >
-                  <FolderKanban className="size-3.5" /> Project
+                  <FolderKanban className="size-3.5" /> Research
                 </Link>
               ) : (
                 <Link
                   to="/projects"
                   className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-muted-foreground hover:text-foreground"
                 >
-                  <FolderKanban className="size-3.5" /> Projects
+                  <FolderKanban className="size-3.5" /> Research
                 </Link>
               )}
             </div>
