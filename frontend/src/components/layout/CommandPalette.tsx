@@ -34,12 +34,13 @@ import {
   Tags,
   Table2,
   ClipboardList,
+  PenLine,
+  Layers,
 } from "lucide-react";
 import { useAllFiles } from "@/features/files/useFiles";
 import { useProjects } from "@/features/projects/useProjects";
 import { useConversations } from "@/features/chat/hooks/useConversation";
 import { useUI } from "@/context/UIContext";
-import { cn } from "@/lib/utils";
 import type { ConversationSummary, Project, UserFile } from "@/types/api";
 
 type ScopeKind = "paper" | "project" | "library" | "global";
@@ -53,6 +54,18 @@ type Scope = {
 
 type Ranked<T> = { item: T; score: number };
 
+type Cmd = {
+  id: string;
+  label: string;
+  hint?: string;
+  keywords: string;
+  icon: ComponentType<{ className?: string }>;
+  show: boolean;
+  run: () => void;
+};
+
+type PrefixMode = "none" | "command" | "mention" | "entity" | "skill";
+
 function scoreMatch(haystack: string, q: string): number {
   if (!q) return 0;
   const h = haystack.toLowerCase();
@@ -61,7 +74,6 @@ function scoreMatch(haystack: string, q: string): number {
   const idx = h.indexOf(q);
   if (idx === 0) return 140;
   if (idx > 0) return 80 - Math.min(idx, 40);
-  // light fuzzy: all query chars in order
   let qi = 0;
   for (let i = 0; i < h.length && qi < q.length; i++) {
     if (h[i] === q[qi]) qi++;
@@ -74,19 +86,14 @@ function parseRouteIds(pathname: string): {
   projectId: number | null;
 } {
   const paper = pathname.match(/^\/papers\/(\d+)/);
-  if (paper) {
-    return { paperId: Number(paper[1]), projectId: null };
-  }
+  if (paper) return { paperId: Number(paper[1]), projectId: null };
   const project = pathname.match(/^\/projects\/(\d+)/);
-  if (project) {
-    return { paperId: null, projectId: Number(project[1]) };
-  }
+  if (project) return { paperId: null, projectId: Number(project[1]) };
   return { paperId: null, projectId: null };
 }
 
 function resolveScope(pathname: string, currentProjectId: number | null): Scope {
   const { paperId, projectId: routeProjectId } = parseRouteIds(pathname);
-
   if (paperId != null) {
     return { kind: "paper", label: "Paper", paperId, projectId: currentProjectId };
   }
@@ -121,9 +128,31 @@ function paperTitle(f: UserFile): string {
   return (f.title || f.name || "Untitled").trim();
 }
 
+function parsePrefix(raw: string): { mode: PrefixMode; q: string } {
+  const t = raw.trimStart();
+  if (t.startsWith(">")) return { mode: "command", q: t.slice(1).trim().toLowerCase() };
+  if (t.startsWith("@")) return { mode: "mention", q: t.slice(1).trim().toLowerCase() };
+  if (t.startsWith("#")) return { mode: "entity", q: t.slice(1).trim().toLowerCase() };
+  if (t.startsWith("/")) return { mode: "skill", q: t.slice(1).trim().toLowerCase() };
+  return { mode: "none", q: t.trim().toLowerCase() };
+}
+
+function filterCmds(list: Cmd[], q: string): Cmd[] {
+  if (!q) return list.filter((c) => c.show);
+  return list
+    .filter((c) => c.show)
+    .map((c) => ({
+      cmd: c,
+      score: scoreMatch(`${c.label} ${c.keywords} ${c.hint ?? ""}`, q),
+    }))
+    .filter((x) => x.score >= 0)
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.cmd);
+}
+
 /**
- * D8 — ⌘K command palette: research actions first (write / import / export),
- * then find (papers / projects / chats) + navigate. Scope-aware; private library first.
+ * Research Command Center — ⌘K / sidebar Search.
+ * Places stay in the sidebar; this is actions + find across the Research OS.
  */
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -161,20 +190,24 @@ export function CommandPalette() {
     if (!open) setQuery("");
   }, [open]);
 
-  const q = query.trim().toLowerCase();
+  const { mode, q } = parsePrefix(query);
+  const paperId = scope.paperId;
+
+  function go(path: string) {
+    setOpen(false);
+    navigate(path);
+  }
+
+  function run(fn: () => void) {
+    setOpen(false);
+    fn();
+  }
 
   const rankedPapers = useMemo(() => {
     const ranked: Ranked<UserFile>[] = [];
     for (const f of files) {
       if (f.kind !== "document") continue;
-      const blob = [
-        paperTitle(f),
-        f.authors,
-        f.year,
-        f.venue,
-        f.doi,
-        ...(f.tags ?? []),
-      ]
+      const blob = [paperTitle(f), f.authors, f.year, f.venue, f.doi, ...(f.tags ?? [])]
         .filter(Boolean)
         .join(" ");
       let score = scoreMatch(blob, q);
@@ -229,215 +262,171 @@ export function CommandPalette() {
     return ranked.slice(0, q ? 6 : 4).map((r) => r.item);
   }, [conversations, q, scope.paperId, scope.projectId]);
 
-  function go(path: string) {
-    setOpen(false);
-    navigate(path);
-  }
-
-  function run(fn: () => void) {
-    setOpen(false);
-    fn();
-  }
-
-  const paperId = scope.paperId;
-
-  type Cmd = {
-    id: string;
-    label: string;
-    hint?: string;
-    keywords: string;
-    icon: ComponentType<{ className?: string }>;
-    show: boolean;
-    run: () => void;
-  };
-
-  const visibleCommands = useMemo(() => {
-    const commands: Cmd[] = [
-      {
-        id: "write-lit-review",
-        label: "Write literature review",
-        hint: "Writing",
-        keywords:
-          "write literature review generate grounded draft evidence manuscript section",
-        icon: FlaskConical,
-        show: true,
-        run: () => go("/writing?action=lit-review"),
-      },
-      {
-        id: "writing-desk",
-        label: "Open writing desk",
-        hint: "Writing",
-        keywords: "writing desk draft manuscript outline evidence reviewer",
-        icon: Wand2,
-        show: true,
-        run: () => go("/writing"),
-      },
-      {
-        id: "writing-evidence",
-        label: "Open evidence inspector",
-        hint: "Writing",
-        keywords: "evidence inspector verify citations markers writing",
-        icon: FlaskConical,
-        show: true,
-        run: () => go("/writing?focus=evidence"),
-      },
-      {
-        id: "export-markdown",
-        label: "Export Markdown",
-        hint: "Writing",
-        keywords: "export markdown md literature review download writing",
-        icon: FileDown,
-        show: true,
-        run: () => go("/writing?tab=export"),
-      },
-      {
-        id: "import-research",
-        label: "Library tools — BibTeX / RIS",
-        hint: "Library",
-        keywords: "import research bibtex ris library tools",
-        icon: Library,
-        show: true,
-        run: () => go("/library?provider=bibtex#import"),
-      },
-      {
-        id: "integrations-zotero",
-        label: "Integrations — Zotero",
-        hint: "Integrations",
-        keywords: "zotero connect import reference manager integrations",
-        icon: Link2,
-        show: true,
-        run: () => go("/library?provider=zotero#import"),
-      },
-      {
-        id: "integrations-mendeley",
-        label: "Integrations — Mendeley",
-        hint: "Integrations",
-        keywords: "mendeley connect import reference manager integrations",
-        icon: Link2,
-        show: true,
-        run: () => go("/library?provider=mendeley#import"),
-      },
-      {
-        id: "upload",
-        label: "Upload PDF",
-        hint: "Library",
-        keywords: "upload paper pdf document add file",
-        icon: Upload,
-        show: true,
-        run: () => go("/library?upload=1"),
-      },
-      {
-        id: "search-papers",
-        label: "Search papers",
-        hint: "Search",
-        keywords: "search find papers library rag",
-        icon: Search,
-        show: true,
-        run: () => go("/search"),
-      },
-      {
-        id: "find-library",
-        label: q ? `Find in library: “${query.trim()}”` : "Find in library",
-        hint: "Library",
-        keywords: "find library filter author title",
-        icon: Library,
-        show: Boolean(q),
-        run: () => go(`/library?q=${encodeURIComponent(query.trim())}`),
-      },
-      {
-        id: "compare",
-        label: "Compare papers",
-        hint: "Research",
-        keywords: "compare gaps multi paper analysis research",
-        icon: GitCompare,
-        show: true,
-        run: () => go("/research/compare?tab=compare"),
-      },
-      {
-        id: "evidence-matrix",
-        label: "Evidence matrix",
-        hint: "Research",
-        keywords: "matrix method dataset findings limitations lit review table export",
-        icon: Table2,
-        show: true,
-        run: () => go("/research/compare?tab=matrix"),
-      },
-      {
-        id: "theme-discovery",
-        label: "Theme discovery",
-        hint: "Research",
-        keywords: "themes clusters topic theme discovery literature",
-        icon: Tags,
-        show: true,
-        run: () => go("/research/compare?tab=themes"),
-      },
-      {
-        id: "structured-extract",
-        label: "Structured extract (PICO)",
-        hint: "Research",
-        keywords: "extract pico methods outcomes population intervention table csv",
-        icon: ClipboardList,
-        show: true,
-        run: () => go("/research/compare?tab=extract"),
-      },
-      {
-        id: "citations",
-        label: "Export citation",
-        hint: "Citations",
-        keywords: "citation export apa ieee bibtex cite",
-        icon: Quote,
-        show: true,
-        run: () => go("/citations"),
-      },
-      {
-        id: "notes",
-        label: "Open notes",
-        hint: "Notes",
-        keywords: "notes open",
-        icon: StickyNote,
-        show: true,
-        run: () => go("/notes"),
-      },
-      {
-        id: "new-project",
-        label: "New project",
-        hint: "Projects",
-        keywords: "new create project",
-        icon: Plus,
-        show: true,
-        run: () => go("/projects?new=1"),
-      },
+  const quickActions: Cmd[] = useMemo(
+    () => [
       {
         id: "ask",
         label: "Ask Dhund",
         hint: "Chat",
-        keywords: "ask chat soro start conversation",
+        keywords: "ask chat agent conversation",
         icon: MessageSquare,
         show: true,
         run: () => go(paperId ? `/papers/${paperId}/chat` : "/chat"),
       },
       {
-        id: "paper-structure",
-        label: "Open Structure",
-        hint: "Paper",
-        keywords: "structure sections headings outline",
-        icon: LayoutList,
-        show: paperId != null,
-        run: () => go(`/papers/${paperId}?tab=structure`),
+        id: "new-project",
+        label: "Create project",
+        hint: "Create",
+        keywords: "new create project research",
+        icon: Plus,
+        show: true,
+        run: () => go("/projects?new=1"),
       },
       {
-        id: "paper-evidence",
-        label: "Open paper evidence",
-        hint: "Paper",
-        keywords: "evidence grade quality bias paper",
-        icon: FlaskConical,
+        id: "create-writing",
+        label: "Create writing",
+        hint: "Create",
+        keywords: "write literature review manuscript draft",
+        icon: PenLine,
+        show: true,
+        run: () => go("/writing?action=lit-review"),
+      },
+      {
+        id: "upload",
+        label: "Upload paper",
+        hint: "Library",
+        keywords: "upload pdf paper document",
+        icon: Upload,
+        show: true,
+        run: () => go("/library?upload=1"),
+      },
+      {
+        id: "import-doi",
+        label: "Import DOI",
+        hint: "Library",
+        keywords: "import doi crossref discover",
+        icon: Link2,
+        show: true,
+        run: () => go("/library?provider=bibtex#import"),
+      },
+      {
+        id: "import-pmid",
+        label: "Import PMID",
+        hint: "Library",
+        keywords: "import pmid pubmed",
+        icon: Link2,
+        show: true,
+        run: () => go("/library?provider=bibtex#import"),
+      },
+      {
+        id: "new-collection",
+        label: "New collection",
+        hint: "Library",
+        keywords: "collection folder organize",
+        icon: Layers,
+        show: true,
+        run: () => go("/library?collections=1"),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [paperId],
+  );
+
+  const jumpTo: Cmd[] = useMemo(
+    () => [
+      {
+        id: "home",
+        label: "Home",
+        hint: "Jump",
+        keywords: "home launchpad dashboard continue",
+        icon: Home,
+        show: true,
+        run: () => go("/home"),
+      },
+      {
+        id: "library",
+        label: "Library",
+        hint: "Jump",
+        keywords: "library papers files",
+        icon: Library,
+        show: true,
+        run: () => go("/library"),
+      },
+      {
+        id: "projects",
+        label: "Projects",
+        hint: "Jump",
+        keywords: "projects research list all",
+        icon: FolderKanban,
+        show: true,
+        run: () => go("/projects"),
+      },
+      {
+        id: "writing-desk",
+        label: "Writing",
+        hint: "Jump",
+        keywords: "writing desk draft manuscript",
+        icon: Wand2,
+        show: true,
+        run: () => go("/writing"),
+      },
+      {
+        id: "notes",
+        label: "Notes",
+        hint: "Jump",
+        keywords: "notes",
+        icon: StickyNote,
+        show: true,
+        run: () => go("/notes"),
+      },
+      {
+        id: "citations",
+        label: "Citations",
+        hint: "Jump",
+        keywords: "citations export apa bibtex",
+        icon: Quote,
+        show: true,
+        run: () => go("/citations"),
+      },
+      {
+        id: "settings",
+        label: "Settings",
+        hint: "Jump",
+        keywords: "settings account preferences integrations",
+        icon: Settings,
+        show: true,
+        run: () => go("/settings"),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const knowledge: Cmd[] = useMemo(
+    () => [
+      {
+        id: "paper-overview",
+        label: "Research profile",
+        hint: "Knowledge",
+        keywords: "research profile overview summary",
+        icon: FileText,
         show: paperId != null,
-        run: () => go(`/papers/${paperId}?tab=evidence`),
+        run: () => go(`/papers/${paperId}`),
+      },
+      {
+        id: "writing-evidence",
+        label: "Evidence",
+        hint: "Knowledge",
+        keywords: "evidence inspector verify passages",
+        icon: FlaskConical,
+        show: true,
+        run: () =>
+          go(paperId ? `/papers/${paperId}?tab=evidence` : "/writing?focus=evidence"),
       },
       {
         id: "paper-graph",
-        label: "Open Graph",
-        hint: "Paper",
+        label: "Knowledge graph",
+        hint: "Knowledge",
         keywords: "graph knowledge network",
         icon: Network,
         show: paperId != null,
@@ -445,251 +434,439 @@ export function CommandPalette() {
       },
       {
         id: "paper-entities",
-        label: "Open Entities",
-        hint: "Paper",
-        keywords: "entities pico jump entity section",
+        label: "Entities",
+        hint: "Knowledge",
+        keywords: "entities concepts pico",
         icon: Tags,
         show: paperId != null,
         run: () => go(`/papers/${paperId}?tab=entities`),
       },
       {
-        id: "paper-overview",
-        label: "Open Overview",
-        hint: "Paper",
-        keywords: "overview summary paper",
-        icon: FileText,
+        id: "paper-structure",
+        label: "Structure",
+        hint: "Knowledge",
+        keywords: "structure sections outline narrative",
+        icon: LayoutList,
         show: paperId != null,
-        run: () => go(`/papers/${paperId}`),
+        run: () => go(`/papers/${paperId}?tab=structure`),
+      },
+      {
+        id: "theme-discovery",
+        label: "Themes",
+        hint: "Knowledge",
+        keywords: "themes clusters discovery narrative",
+        icon: Tags,
+        show: true,
+        run: () => go("/research/compare?tab=themes"),
       },
       {
         id: "memory",
-        label: "Open memory",
-        hint: "Account",
-        keywords: "memory preferences",
+        label: "Memory",
+        hint: "Knowledge",
+        keywords: "memory preferences claims",
         icon: Brain,
         show: true,
         run: () => go("/memory"),
       },
-      {
-        id: "settings",
-        label: "Settings",
-        hint: "App",
-        keywords: "settings preferences account",
-        icon: Settings,
-        show: true,
-        run: () => go("/settings"),
-      },
-      {
-        id: "home",
-        label: "Go to Home",
-        hint: "Navigate",
-        keywords: "home continue research launchpad dashboard",
-        icon: Home,
-        show: true,
-        run: () => go("/home"),
-      },
-      {
-        id: "projects",
-        label: "Go to Projects",
-        hint: "Navigate",
-        keywords: "projects workspace list",
-        icon: FolderKanban,
-        show: true,
-        run: () => go("/projects"),
-      },
-      {
-        id: "library",
-        label: "Go to Library",
-        hint: "Navigate",
-        keywords: "library papers files",
-        icon: Library,
-        show: true,
-        run: () => go("/library"),
-      },
-    ];
-
-    const list = commands.filter((c) => c.show);
-    if (!q) {
-      // Research-first default order (Skiper-style workspace actions)
-      const order = [
-        "write-lit-review",
-        "import-research",
-        "upload",
-        "writing-desk",
-        "writing-evidence",
-        "export-markdown",
-        "import-zotero",
-        "search-papers",
-        "compare",
-        "paper-evidence",
-        "paper-structure",
-        "citations",
-        "library",
-        "projects",
-        "home",
-        "new-project",
-        "notes",
-        "ask",
-        "settings",
-        "memory",
-        "paper-graph",
-        "paper-entities",
-        "paper-overview",
-      ];
-      return [...list]
-        .sort((a, b) => {
-          const ai = order.indexOf(a.id);
-          const bi = order.indexOf(b.id);
-          return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
-        })
-        .slice(0, 12);
-    }
-    return list
-      .map((c) => ({
-        cmd: c,
-        score: scoreMatch(`${c.label} ${c.keywords} ${c.hint ?? ""}`, q),
-      }))
-      .filter((x) => x.score >= 0)
-      .sort((a, b) => b.score - a.score)
-      .map((x) => x.cmd);
-    // go/navigate are stable enough for palette actions
+    ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, paperId, query]);
+    [paperId],
+  );
+
+  const skills: Cmd[] = useMemo(
+    () => [
+      {
+        id: "skill-compare",
+        label: "Compare",
+        hint: "Skill",
+        keywords: "compare papers gaps",
+        icon: GitCompare,
+        show: true,
+        run: () => go("/research/compare?tab=compare"),
+      },
+      {
+        id: "skill-summarize",
+        label: "Summarize",
+        hint: "Skill",
+        keywords: "summarize overview profile",
+        icon: BookOpen,
+        show: true,
+        run: () => go(paperId ? `/papers/${paperId}` : "/library"),
+      },
+      {
+        id: "skill-extract",
+        label: "Extract",
+        hint: "Skill",
+        keywords: "extract pico structured",
+        icon: ClipboardList,
+        show: true,
+        run: () => go("/research/compare?tab=extract"),
+      },
+      {
+        id: "skill-review",
+        label: "Reviewer",
+        hint: "Skill",
+        keywords: "review verify evidence writing",
+        icon: FlaskConical,
+        show: true,
+        run: () => go("/writing?focus=evidence"),
+      },
+      {
+        id: "skill-write",
+        label: "Write",
+        hint: "Skill",
+        keywords: "write literature review",
+        icon: PenLine,
+        show: true,
+        run: () => go("/writing?action=lit-review"),
+      },
+      {
+        id: "skill-matrix",
+        label: "Evidence matrix",
+        hint: "Skill",
+        keywords: "matrix methods findings",
+        icon: Table2,
+        show: true,
+        run: () => go("/research/compare?tab=matrix"),
+      },
+      {
+        id: "skill-export",
+        label: "Export",
+        hint: "Skill",
+        keywords: "export markdown download",
+        icon: FileDown,
+        show: true,
+        run: () => go("/writing?tab=export"),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [paperId],
+  );
+
+  const directCommands: Cmd[] = useMemo(
+    () => [
+      ...quickActions,
+      ...skills,
+      {
+        id: "search-papers",
+        label: "Search papers page",
+        hint: "Command",
+        keywords: "search find library rag",
+        icon: Search,
+        show: true,
+        run: () => go("/search"),
+      },
+      {
+        id: "zotero",
+        label: "Connect Zotero",
+        hint: "Command",
+        keywords: "zotero import",
+        icon: Link2,
+        show: true,
+        run: () => go("/library?provider=zotero#import"),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [quickActions, skills],
+  );
+
+  const idle = mode === "none" && !q;
+  const searching = mode === "none" && Boolean(q);
+
+  const shownQuick = filterCmds(quickActions, idle ? "" : q).slice(0, idle ? 7 : 8);
+  const shownJump = filterCmds(jumpTo, idle ? "" : q);
+  const shownKnowledge = filterCmds(knowledge, idle ? "" : q);
+  const shownSkills = filterCmds(skills, q);
+  const shownCommands = filterCmds(directCommands, q);
 
   const showEmpty =
-    visibleCommands.length === 0 &&
+    !idle &&
+    shownQuick.length === 0 &&
+    shownJump.length === 0 &&
+    shownKnowledge.length === 0 &&
+    shownSkills.length === 0 &&
+    shownCommands.length === 0 &&
     rankedPapers.length === 0 &&
     rankedProjects.length === 0 &&
     rankedChats.length === 0;
+
+  function renderCmd(c: Cmd) {
+    const Icon = c.icon;
+    return (
+      <CommandItem key={c.id} value={c.id} onSelect={() => run(c.run)} className="gap-2">
+        <Icon className="size-4 shrink-0 text-muted-foreground" />
+        <span className="flex-1 truncate">{c.label}</span>
+        {c.hint && (
+          <span className="shrink-0 text-[11px] text-muted-foreground">{c.hint}</span>
+        )}
+      </CommandItem>
+    );
+  }
 
   return (
     <CommandDialog
       open={open}
       onOpenChange={setOpen}
-      title="Command palette"
-      description="Write, import, export, find papers — researcher workspace"
+      title="Search Dhund"
+      description="Research command center — find papers, projects, evidence, and run actions"
     >
       <Command shouldFilter={false} className="rounded-xl">
         <CommandInput
           value={query}
           onValueChange={setQuery}
-          placeholder="Search papers, evidence, authors, or ask a research question…"
+          placeholder="Search papers, projects, evidence, entities, citations…"
         />
-        <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-          <span
-            className={cn(
-              "rounded-md border border-border bg-muted/50 px-1.5 py-0.5",
-              "text-[10px] font-medium uppercase tracking-wide text-muted-foreground",
-            )}
-          >
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+          <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
             {scope.label}
           </span>
-          <span className="text-[11px] text-muted-foreground">
-            ↑↓ move · Enter run · Esc close
+          <span>
+            <kbd className="opacity-70">/</kbd> skills ·{" "}
+            <kbd className="opacity-70">@</kbd> mention ·{" "}
+            <kbd className="opacity-70">#</kbd> entities ·{" "}
+            <kbd className="opacity-70">&gt;</kbd> commands
           </span>
         </div>
-        <CommandList>
+        <CommandList className="max-h-[min(420px,55vh)]">
           {showEmpty && <CommandEmpty>No matches.</CommandEmpty>}
 
-          {visibleCommands.length > 0 && (
-            <CommandGroup heading={q ? "Commands" : "Research"}>
-              {visibleCommands.map((c) => {
-                const Icon = c.icon;
-                return (
-                  <CommandItem
-                    key={c.id}
-                    value={c.id}
-                    onSelect={() => run(c.run)}
-                    className="gap-2"
-                  >
-                    <Icon className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="flex-1 truncate">{c.label}</span>
-                    {c.hint && (
-                      <span className="shrink-0 text-[11px] text-muted-foreground">
-                        {c.hint}
-                      </span>
-                    )}
-                  </CommandItem>
-                );
-              })}
+          {mode === "skill" && (
+            <CommandGroup heading="Skills">{shownSkills.map(renderCmd)}</CommandGroup>
+          )}
+
+          {mode === "command" && (
+            <CommandGroup heading="Commands">{shownCommands.map(renderCmd)}</CommandGroup>
+          )}
+
+          {mode === "entity" && (
+            <CommandGroup heading="Entities & knowledge">
+              {shownKnowledge.length > 0 ? (
+                shownKnowledge.map(renderCmd)
+              ) : (
+                <CommandItem value="entity-hint" disabled>
+                  <Tags className="size-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">
+                    {q
+                      ? `No entity match for “${q}” — open a paper for entity maps`
+                      : "Open a paper, then #jump to entities · graph · structure"}
+                  </span>
+                </CommandItem>
+              )}
+              {paperId != null &&
+                rankedPapers
+                  .filter((f) => f.id === paperId)
+                  .map((f) => (
+                    <CommandItem
+                      key={`ent-paper-${f.id}`}
+                      value={`ent-paper-${f.id}`}
+                      onSelect={() => go(`/papers/${f.id}?tab=entities`)}
+                      className="gap-2"
+                    >
+                      <Tags className="size-4 text-muted-foreground" />
+                      <span className="truncate">{paperTitle(f)} · Entities</span>
+                    </CommandItem>
+                  ))}
             </CommandGroup>
           )}
 
-          {rankedPapers.length > 0 && (
+          {mode === "mention" && (
             <>
-              <CommandSeparator />
-              <CommandGroup heading={q ? "Papers" : "Recent papers"}>
-                {rankedPapers.map((f) => (
-                  <CommandItem
-                    key={`paper-${f.id}`}
-                    value={`paper-${f.id}`}
-                    onSelect={() => go(`/papers/${f.id}`)}
-                    className="gap-2"
-                  >
-                    <BookOpen className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">{paperTitle(f)}</span>
-                    <span className="shrink-0 text-[11px] text-muted-foreground">
-                      {[f.year, f.reading_status].filter(Boolean).join(" · ")}
-                    </span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
+              {rankedProjects.length > 0 && (
+                <CommandGroup heading="Projects">
+                  {rankedProjects.map((p) => (
+                    <CommandItem
+                      key={`project-${p.id}`}
+                      value={`project-${p.id}`}
+                      onSelect={() =>
+                        run(() => {
+                          setCurrentProjectId(p.id);
+                          navigate(`/projects/${p.id}`);
+                        })
+                      }
+                      className="gap-2"
+                    >
+                      <span className="size-4 text-center text-sm leading-4">
+                        {p.emoji || "📁"}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                      <span className="text-[11px] text-muted-foreground">Project</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {rankedPapers.length > 0 && (
+                <CommandGroup heading="Papers">
+                  {rankedPapers.map((f) => (
+                    <CommandItem
+                      key={`paper-${f.id}`}
+                      value={`paper-${f.id}`}
+                      onSelect={() => go(`/papers/${f.id}`)}
+                      className="gap-2"
+                    >
+                      <BookOpen className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">{paperTitle(f)}</span>
+                      <span className="text-[11px] text-muted-foreground">Paper</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
             </>
           )}
 
-          {rankedProjects.length > 0 && (
+          {idle && (
             <>
+              {(rankedPapers.length > 0 || rankedProjects.length > 0 || rankedChats.length > 0) && (
+                <CommandGroup heading="Recent">
+                  {rankedProjects.slice(0, 3).map((p) => (
+                    <CommandItem
+                      key={`recent-p-${p.id}`}
+                      value={`recent-p-${p.id}`}
+                      onSelect={() =>
+                        run(() => {
+                          setCurrentProjectId(p.id);
+                          navigate(`/projects/${p.id}`);
+                        })
+                      }
+                      className="gap-2"
+                    >
+                      <span className="size-4 text-center text-sm leading-4">
+                        {p.emoji || "📁"}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                      <span className="text-[11px] text-muted-foreground">Project</span>
+                    </CommandItem>
+                  ))}
+                  {rankedPapers.slice(0, 4).map((f) => (
+                    <CommandItem
+                      key={`recent-f-${f.id}`}
+                      value={`recent-f-${f.id}`}
+                      onSelect={() => go(`/papers/${f.id}`)}
+                      className="gap-2"
+                    >
+                      <BookOpen className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">{paperTitle(f)}</span>
+                      <span className="text-[11px] text-muted-foreground">Paper</span>
+                    </CommandItem>
+                  ))}
+                  {rankedChats.slice(0, 2).map((c) => (
+                    <CommandItem
+                      key={`recent-c-${c.id}`}
+                      value={`recent-c-${c.id}`}
+                      onSelect={() => go(chatPath(c))}
+                      className="gap-2"
+                    >
+                      <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {c.title || "Untitled chat"}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">Chat</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+
               <CommandSeparator />
-              <CommandGroup heading="Projects">
-                {rankedProjects.map((p) => (
-                  <CommandItem
-                    key={`project-${p.id}`}
-                    value={`project-${p.id}`}
-                    onSelect={() =>
-                      run(() => {
-                        setCurrentProjectId(p.id);
-                        navigate(`/projects/${p.id}`);
-                      })
-                    }
-                    className="gap-2"
-                  >
-                    <span className="size-4 shrink-0 text-center text-sm leading-4">
-                      {p.emoji || "📁"}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                    <span className="shrink-0 text-[11px] text-muted-foreground">
-                      {scope.projectId === p.id ? "Active" : "Switch"}
-                    </span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
+              <CommandGroup heading="Quick actions">{shownQuick.map(renderCmd)}</CommandGroup>
+              <CommandSeparator />
+              <CommandGroup heading="Jump to">{shownJump.map(renderCmd)}</CommandGroup>
+              {shownKnowledge.length > 0 && (
+                <>
+                  <CommandSeparator />
+                  <CommandGroup heading="Knowledge">{shownKnowledge.map(renderCmd)}</CommandGroup>
+                </>
+              )}
             </>
           )}
 
-          {rankedChats.length > 0 && (
+          {searching && (
             <>
-              <CommandSeparator />
-              <CommandGroup heading="Chats">
-                {rankedChats.map((c) => (
+              {shownQuick.length > 0 && (
+                <CommandGroup heading="Actions">{shownQuick.map(renderCmd)}</CommandGroup>
+              )}
+              {rankedPapers.length > 0 && mode === "none" && (
+                <CommandGroup heading="Papers">
+                  {rankedPapers.map((f) => (
+                    <CommandItem
+                      key={`hit-paper-${f.id}`}
+                      value={`hit-paper-${f.id}`}
+                      onSelect={() => go(`/papers/${f.id}`)}
+                      className="gap-2"
+                    >
+                      <BookOpen className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">{paperTitle(f)}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {[f.year, f.reading_status].filter(Boolean).join(" · ")}
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {rankedProjects.length > 0 && mode === "none" && (
+                <CommandGroup heading="Projects">
+                  {rankedProjects.map((p) => (
+                    <CommandItem
+                      key={`hit-project-${p.id}`}
+                      value={`hit-project-${p.id}`}
+                      onSelect={() =>
+                        run(() => {
+                          setCurrentProjectId(p.id);
+                          navigate(`/projects/${p.id}`);
+                        })
+                      }
+                      className="gap-2"
+                    >
+                      <span className="size-4 text-center text-sm leading-4">
+                        {p.emoji || "📁"}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {rankedChats.length > 0 && (
+                <CommandGroup heading="Chats">
+                  {rankedChats.map((c) => (
+                    <CommandItem
+                      key={`hit-chat-${c.id}`}
+                      value={`hit-chat-${c.id}`}
+                      onSelect={() => go(chatPath(c))}
+                      className="gap-2"
+                    >
+                      <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {c.title || "Untitled chat"}
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {shownJump.length > 0 && (
+                <CommandGroup heading="Jump to">{shownJump.map(renderCmd)}</CommandGroup>
+              )}
+              {shownKnowledge.length > 0 && (
+                <CommandGroup heading="Knowledge">{shownKnowledge.map(renderCmd)}</CommandGroup>
+              )}
+              {q && (
+                <CommandGroup heading="Library">
                   <CommandItem
-                    key={`chat-${c.id}`}
-                    value={`chat-${c.id}`}
-                    onSelect={() => go(chatPath(c))}
+                    value="find-library"
+                    onSelect={() => go(`/library?q=${encodeURIComponent(query.trim())}`)}
                     className="gap-2"
                   >
-                    <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">
-                      {c.title || "Untitled chat"}
-                    </span>
-                    <span className="shrink-0 text-[11px] text-muted-foreground">
-                      {c.file_id ? "Paper" : c.project_id ? "Project" : "Ask"}
-                    </span>
+                    <Library className="size-4 text-muted-foreground" />
+                    <span className="truncate">Find in library: “{query.trim()}”</span>
                   </CommandItem>
-                ))}
-              </CommandGroup>
+                </CommandGroup>
+              )}
             </>
           )}
         </CommandList>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-2 text-[10px] text-muted-foreground">
+          <span>↑↓ Navigate</span>
+          <span>Enter Open</span>
+          <span>Esc Close</span>
+          <span className="ml-auto">⌘K anywhere</span>
+        </div>
       </Command>
     </CommandDialog>
   );

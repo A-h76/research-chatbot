@@ -43,8 +43,8 @@ function PaperBreadcrumb() {
   );
 }
 
-const STATIC_TITLES: { prefix: string; label: string }[] = [
-  { prefix: "/projects",          label: "Projects" },
+  const STATIC_TITLES: { prefix: string; label: string }[] = [
+  { prefix: "/projects",          label: "Research" },
   { prefix: "/library",           label: "Library" },
   { prefix: "/files",             label: "Library" },
   { prefix: "/citations",         label: "Citations" },
@@ -66,9 +66,9 @@ export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void 
 
   const isHome         = path === "/" || path === "/projects";
   const staticTitle    = isHome
-    ? "Projects"
+    ? "Research"
     : path === "/home"
-      ? "Launchpad"
+      ? "Home"
       : path.startsWith("/c/")
       ? "Ask Dhund"
       : STATIC_TITLES.find((t) => path.startsWith(t.prefix))?.label;
@@ -137,7 +137,7 @@ export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void 
           aria-label="Open command palette"
         >
           <Search className="size-3.5" />
-          <span className="text-[12px]">Search</span>
+          <span className="text-[12px]">Search Dhund</span>
           <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] text-muted-foreground">
             ⌘K
           </kbd>

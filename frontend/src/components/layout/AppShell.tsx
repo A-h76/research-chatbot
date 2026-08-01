@@ -3,6 +3,7 @@ import { Sidebar } from "@/features/sidebar/components/Sidebar";
 import { MobileDrawer } from "./MobileDrawer";
 import { TopBar } from "./TopBar";
 import { CommandPalette } from "./CommandPalette";
+import { AskDhundFab } from "./AskDhundFab";
 import { RightPanel } from "@/features/right-panel/components/RightPanel";
 import { BetaBanner } from "@/components/common/BetaBanner";
 import { BetaWelcomeModal } from "@/components/common/BetaWelcomeModal";
@@ -28,10 +29,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
-      <a
-        href="#main-content"
-        className="skip-link"
-      >
+      <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
       <Sidebar me={me} />
@@ -45,6 +43,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
       </div>
       <RightPanel />
       <CommandPalette />
+      <AskDhundFab />
       <BetaWelcomeModal me={me} />
     </div>
   );

@@ -364,23 +364,23 @@
   outline-offset: 2px;
 }
 
-/* Lab sidebar — solid navy chrome (mock hierarchy). No glass / blur. */
+/* Lab sidebar — Places nav (Anara-calm). Flush with shell. */
 .dhund-lab-sidebar {
-  --sidebar: #111827;
-  --sidebar-foreground: #dce1fb;
-  --sidebar-primary: #3bb5a8;
-  --sidebar-primary-foreground: #003731;
-  --sidebar-accent: #1f2937;
-  --sidebar-accent-foreground: #dce1fb;
-  --sidebar-border: #2a3540;
-  --sidebar-ring: #3bb5a8;
+  --sidebar: #101215;
+  --sidebar-foreground: #e8eaed;
+  --sidebar-primary: #14a39c;
+  --sidebar-primary-foreground: #041413;
+  --sidebar-accent: #181c22;
+  --sidebar-accent-foreground: #e8eaed;
+  --sidebar-border: #1e2329;
+  --sidebar-ring: #14a39c;
   --primary: #14b8a6;
   --primary-foreground: #003731;
-  --muted-foreground: #8b9a97;
+  --muted-foreground: #8b949e;
   --accent-soft: #005048;
-  --popover: #191f31;
-  --popover-foreground: #dce1fb;
-  --border: #2a3540;
+  --popover: #181c22;
+  --popover-foreground: #e8eaed;
+  --border: #1e2329;
   background: var(--sidebar);
   color: var(--sidebar-foreground);
 }
