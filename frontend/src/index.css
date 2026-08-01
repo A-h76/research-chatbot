@@ -83,7 +83,7 @@
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f1f3f7;
   --sidebar-accent-foreground: #111827;
-  --sidebar-border: #e5e7eb;
+  --sidebar-border: #e8eaed;
   --sidebar-ring: #0f6e6a;
   --sidebar-width: 280px;
 
@@ -158,13 +158,13 @@
   --ring: #14a39c;
   --hover: #21262d;
 
-  --sidebar: #0e1218;
-  --sidebar-foreground: #fafafa;
+  --sidebar: #16181c;
+  --sidebar-foreground: #eceef0;
   --sidebar-primary: #14a39c;
   --sidebar-primary-foreground: #041413;
-  --sidebar-accent: #21262d;
-  --sidebar-accent-foreground: #fafafa;
-  --sidebar-border: #3f3f46;
+  --sidebar-accent: #1e2228;
+  --sidebar-accent-foreground: #eceef0;
+  --sidebar-border: #2a2e35;
   --sidebar-ring: #14a39c;
 
   --user-bubble: #0d2f2d;
@@ -364,25 +364,34 @@
   outline-offset: 2px;
 }
 
-/* Lab sidebar — Places nav (Anara-calm). Flush with shell. */
-.dhund-lab-sidebar {
-  --sidebar: #101215;
-  --sidebar-foreground: #e8eaed;
-  --sidebar-primary: #14a39c;
-  --sidebar-primary-foreground: #041413;
-  --sidebar-accent: #181c22;
-  --sidebar-accent-foreground: #e8eaed;
-  --sidebar-border: #1e2329;
-  --sidebar-ring: #14a39c;
-  --primary: #14b8a6;
-  --primary-foreground: #003731;
-  --muted-foreground: #8b949e;
-  --accent-soft: #005048;
-  --popover: #181c22;
-  --popover-foreground: #e8eaed;
-  --border: #1e2329;
+/* App sidebar — theme tokens only (light/dark via :root / .dark). */
+.dhund-sidebar {
   background: var(--sidebar);
   color: var(--sidebar-foreground);
+  transition:
+    background-color 200ms ease,
+    color 200ms ease,
+    border-color 200ms ease;
+}
+.dhund-sidebar .lab-sidebar-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.dhund-sidebar .lab-sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dhund-sidebar .lab-sidebar-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--sidebar-foreground) 12%, transparent);
+  border-radius: 10px;
+}
+
+/* Back-compat alias */
+.dhund-lab-sidebar {
+  background: var(--sidebar);
+  color: var(--sidebar-foreground);
+  transition:
+    background-color 200ms ease,
+    color 200ms ease,
+    border-color 200ms ease;
 }
 .dhund-lab-sidebar .lab-sidebar-scroll::-webkit-scrollbar {
   width: 4px;
@@ -391,7 +400,7 @@
   background: transparent;
 }
 .dhund-lab-sidebar .lab-sidebar-scroll::-webkit-scrollbar-thumb {
-  background: rgb(255 255 255 / 0.1);
+  background: color-mix(in oklab, var(--sidebar-foreground) 12%, transparent);
   border-radius: 10px;
 }
 

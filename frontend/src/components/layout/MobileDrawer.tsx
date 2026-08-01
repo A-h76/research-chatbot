@@ -15,10 +15,14 @@ export function MobileDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="left"
-        className="dhund-lab-sidebar w-[280px] border-sidebar-border p-0 text-sidebar-foreground"
+        className="dhund-sidebar w-[280px] border-sidebar-border p-0 text-sidebar-foreground"
       >
         <SheetTitle className="sr-only">Navigation</SheetTitle>
-        <SidebarContents me={me} onNavigate={() => onOpenChange(false)} />
+        <SidebarContents
+          me={me}
+          density="labels"
+          onNavigate={() => onOpenChange(false)}
+        />
       </SheetContent>
     </Sheet>
   );
