@@ -8,7 +8,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script>document.documentElement.classList.remove('no-js');document.documentElement.classList.add('js');</script>
+<script>
+  document.documentElement.classList.remove('no-js');
+  document.documentElement.classList.add('js');
+  (function () {
+    try {
+      var t = localStorage.getItem('dhund-landing-theme');
+      if (t === 'light' || t === 'dark') {
+        document.documentElement.setAttribute('data-theme', t);
+      }
+    } catch (e) {}
+  })();
+</script>
 <style>
   :root {
     --ink: #14201f;
@@ -28,7 +39,7 @@
     --serif: "Newsreader", Georgia, "Times New Roman", serif;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --ink: #e8eeed;
       --muted: #9aaba8;
       --line: #2a3836;
@@ -40,6 +51,30 @@
       --surface: #1a2423;
       --shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
     }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8eeed;
+    --muted: #9aaba8;
+    --line: #2a3836;
+    --teal: #14a39c;
+    --teal-deep: #4fdbc8;
+    --teal-soft: #0d2f2d;
+    --bg: #0c1211;
+    --paper: #141c1b;
+    --surface: #1a2423;
+    --shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  }
+  :root[data-theme="light"] {
+    --ink: #14201f;
+    --muted: #5a6b69;
+    --line: #d8e3e1;
+    --teal: #0F6E6A;
+    --teal-deep: #0a524f;
+    --teal-soft: #e6f3f2;
+    --bg: #FAFBFC;
+    --paper: #ffffff;
+    --surface: #f1f5f4;
+    --shadow: 0 18px 48px rgba(20, 32, 31, 0.08);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html { scroll-behavior: smooth; }
@@ -53,9 +88,9 @@
   a { color: inherit; text-decoration: none; }
   button, input { font: inherit; }
   .wrap { width: min(1080px, calc(100% - 2.5rem)); margin-inline: auto; }
-  .wrap-narrow { width: min(720px, calc(100% - 2.5rem)); margin-inline: auto; }
+  .wrap-narrow { width: min(640px, calc(100% - 2.5rem)); margin-inline: auto; }
+  .wrap-wide { width: min(1120px, calc(100% - 2.5rem)); margin-inline: auto; }
 
-  /* Nav — solid, no glass */
   .topbar {
     position: sticky;
     top: 0;
@@ -88,11 +123,7 @@
     font-size: 0.72rem;
     font-weight: 700;
   }
-  .nav-links {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
+  .nav-links { display: flex; align-items: center; gap: 0.25rem; }
   .nav-links a {
     padding: 0.4rem 0.75rem;
     border-radius: 8px;
@@ -101,6 +132,38 @@
     color: var(--muted);
   }
   .nav-links a:hover { color: var(--ink); background: var(--surface); }
+  .nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--muted);
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .theme-toggle:hover {
+    color: var(--ink);
+    border-color: var(--teal);
+    background: var(--surface);
+  }
+  .theme-toggle svg { width: 1.05rem; height: 1.05rem; }
+  .theme-toggle .icon-sun { display: none; }
+  .theme-toggle .icon-moon { display: block; }
+  :root[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
+  :root[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme-toggle .icon-sun { display: block; }
+    :root:not([data-theme="light"]) .theme-toggle .icon-moon { display: none; }
+  }
   .nav-cta {
     display: inline-flex;
     align-items: center;
@@ -124,7 +187,7 @@
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background .18s ease, transform .18s ease, border-color .18s ease;
+    transition: background .18s ease, border-color .18s ease;
   }
   .btn-primary { background: var(--teal); color: #fff; }
   .btn-primary:hover { background: var(--teal-deep); }
@@ -134,6 +197,7 @@
     border: 1px solid var(--line);
   }
   .btn-ghost:hover { border-color: var(--teal); color: var(--teal); }
+  .btn-lg { padding: 1rem 1.6rem; font-size: 1rem; }
 
   .eyebrow {
     font-size: 0.72rem;
@@ -145,7 +209,7 @@
   }
   .section-title {
     font-family: var(--serif);
-    font-size: clamp(1.65rem, 3vw, 2.25rem);
+    font-size: clamp(1.65rem, 3vw, 2.35rem);
     font-weight: 400;
     letter-spacing: -0.02em;
     line-height: 1.2;
@@ -153,23 +217,29 @@
   }
   .section-lead {
     color: var(--muted);
-    font-size: 1.02rem;
+    font-size: 1.05rem;
     max-width: 42ch;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0;
   }
-  .block { padding: 5.5rem 0; }
-  .block + .block { border-top: 1px solid var(--line); }
+  .block { padding: 5rem 0; }
+  .block-tight { padding: 3.25rem 0; }
+  .block-band {
+    padding: 4.5rem 0;
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
 
-  /* Hero */
+  /* Hero — text left, proof right */
   .hero {
-    padding: 4rem 0 3.5rem;
+    padding: 3.75rem 0 2.5rem;
     display: grid;
     grid-template-columns: 1fr 1.05fr;
-    gap: 2.5rem;
+    gap: 2.75rem;
     align-items: center;
   }
   .hero h1 {
-    font-size: clamp(2.4rem, 5.2vw, 3.6rem);
+    font-size: clamp(2.4rem, 5.2vw, 3.55rem);
     line-height: 1.08;
     letter-spacing: -0.035em;
     font-weight: 700;
@@ -184,24 +254,60 @@
   .hero-lead {
     color: var(--muted);
     font-size: 1.08rem;
-    max-width: 38ch;
-    margin-bottom: 1.75rem;
+    max-width: 36ch;
+    margin-bottom: 1.65rem;
   }
   .hero-actions { display: flex; flex-wrap: wrap; gap: 0.7rem; }
-  .journey {
+
+  .signals {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem 0.5rem;
+    gap: 0.45rem;
     margin-top: 1.75rem;
+  }
+  .signal {
+    padding: 0.35rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--paper);
     font-size: 0.72rem;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
     color: var(--muted);
+    letter-spacing: 0.02em;
   }
-  .journey span { color: var(--teal); }
 
-  /* Product frame */
+  /* Research Loop — editorial strip after hero */
+  .loop {
+    text-align: center;
+    padding: 2.5rem 0 3.5rem;
+  }
+  .loop-title {
+    font-family: var(--serif);
+    font-size: clamp(1.35rem, 2.2vw, 1.65rem);
+    font-weight: 400;
+    margin-bottom: 1.75rem;
+  }
+  .loop-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem 0.15rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .loop-step {
+    padding: 0.45rem 0.85rem;
+    color: var(--ink);
+  }
+  .loop-arrow {
+    color: var(--teal);
+    font-weight: 400;
+    opacity: 0.7;
+    padding: 0 0.15rem;
+  }
+
   .frame {
     border: 1px solid var(--line);
     border-radius: var(--radius);
@@ -230,29 +336,55 @@
     text-transform: uppercase;
   }
 
-  /* Evidence aha demo */
+  /* Guided evidence story steps */
+  .story-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1.25rem;
+  }
+  .story-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .story-step.is-active {
+    background: var(--teal-soft);
+    border-color: var(--teal);
+    color: var(--teal-deep);
+  }
+  .story-step .n {
+    width: 1.15rem;
+    height: 1.15rem;
+    border-radius: 50%;
+    background: var(--surface);
+    display: grid;
+    place-items: center;
+    font-size: 0.65rem;
+  }
+  .story-step.is-active .n { background: var(--teal); color: #fff; }
+
   .aha-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1.25rem;
+    min-height: 320px;
   }
-  .chat-pane { padding: 1.15rem; min-height: 280px; }
-  .chat-q {
-    font-size: 0.82rem;
-    color: var(--muted);
-    margin-bottom: 0.85rem;
-  }
-  .chat-q strong { color: var(--ink); font-weight: 600; }
-  .chat-a {
-    font-size: 0.95rem;
-    line-height: 1.55;
-    margin-bottom: 1rem;
-  }
+  .chat-pane { padding: 1.25rem; }
+  .chat-q { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.75rem; }
+  .chat-q strong { color: var(--ink); }
+  .chat-a { font-size: 0.95rem; line-height: 1.55; margin-bottom: 0.85rem; }
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    margin: 0.15rem 0.25rem 0.15rem 0;
+    margin: 0.1rem 0.2rem;
     padding: 0.28rem 0.55rem;
     border-radius: 999px;
     border: 1px solid var(--line);
@@ -261,24 +393,20 @@
     font-size: 0.75rem;
     font-weight: 600;
     cursor: pointer;
-    transition: border-color .15s ease, transform .15s ease;
+    transition: border-color .15s ease, box-shadow .15s ease;
   }
   .chip:hover, .chip.is-active {
     border-color: var(--teal);
-    transform: translateY(-1px);
+    box-shadow: 0 0 0 3px rgba(15, 110, 106, 0.12);
   }
-  .chip-hint {
-    margin-top: 0.85rem;
-    font-size: 0.78rem;
-    color: var(--muted);
-  }
+  .chip-hint { margin-top: 0.75rem; font-size: 0.78rem; color: var(--muted); }
   .inspect-pane {
     border-left: 1px solid var(--line);
     background: var(--surface);
-    padding: 1.15rem;
+    padding: 1.25rem;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.7rem;
   }
   .inspect-meta {
     font-size: 0.72rem;
@@ -292,35 +420,53 @@
     font-family: var(--serif);
     font-size: 0.95rem;
     line-height: 1.55;
-    padding: 0.85rem;
+    padding: 0.9rem;
     border-radius: 8px;
     background: var(--paper);
     border: 1px solid var(--line);
   }
   .passage mark {
-    background: rgba(15, 110, 106, 0.18);
+    background: rgba(15, 110, 106, 0.2);
     color: inherit;
-    padding: 0 0.1em;
+    padding: 0 0.08em;
   }
-  .inspect-foot {
+  .inspect-foot { font-size: 0.78rem; color: var(--muted); }
+  .accept-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: auto;
+    padding: 0.45rem 0.75rem;
+    border-radius: 8px;
+    background: rgba(31, 107, 74, 0.1);
+    color: var(--ok);
     font-size: 0.78rem;
-    color: var(--muted);
+    font-weight: 600;
   }
 
-  /* Understanding / compare / write grids */
+  /* Section layouts — varied rhythm */
+  .center-head {
+    text-align: center;
+    max-width: 36rem;
+    margin: 0 auto 2rem;
+  }
+  .center-head .section-lead { margin-inline: auto; }
+
   .split {
     display: grid;
-    grid-template-columns: 0.9fr 1.1fr;
-    gap: 2.5rem;
-    align-items: start;
+    grid-template-columns: 0.85fr 1.15fr;
+    gap: 2.75rem;
+    align-items: center;
   }
-  .split.reverse { direction: rtl; }
-  .split.reverse > * { direction: ltr; }
-
+  .split-under {
+    display: grid;
+    gap: 1.75rem;
+  }
   .mini-cards {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.75rem;
+    margin-top: 1.5rem;
   }
   .mini {
     border: 1px solid var(--line);
@@ -328,14 +474,10 @@
     background: var(--paper);
     padding: 0.95rem;
   }
-  .mini h3 {
-    font-size: 0.88rem;
-    font-weight: 600;
-    margin-bottom: 0.3rem;
-  }
+  .mini h3 { font-size: 0.88rem; font-weight: 600; margin-bottom: 0.3rem; }
   .mini p { font-size: 0.8rem; color: var(--muted); line-height: 1.45; }
 
-  .profile-mock { padding: 1.1rem; }
+  .profile-mock { padding: 1.15rem; }
   .profile-row {
     display: flex;
     justify-content: space-between;
@@ -350,7 +492,7 @@
 
   .matrix {
     display: grid;
-    grid-template-columns: 1.2fr repeat(3, 1fr);
+    grid-template-columns: 1.3fr repeat(3, 1fr);
     gap: 1px;
     background: var(--line);
     border: 1px solid var(--line);
@@ -358,11 +500,7 @@
     overflow: hidden;
     font-size: 0.72rem;
   }
-  .matrix > * {
-    background: var(--paper);
-    padding: 0.55rem 0.45rem;
-    text-align: center;
-  }
+  .matrix > * { background: var(--paper); padding: 0.55rem 0.45rem; text-align: center; }
   .matrix .h { background: var(--surface); font-weight: 600; color: var(--muted); }
   .matrix .row-h { text-align: left; font-weight: 500; }
   .cell-yes { color: var(--ok); font-weight: 600; }
@@ -371,73 +509,78 @@
 
   .write-mock {
     display: grid;
-    grid-template-columns: 1.4fr 0.9fr;
-    min-height: 260px;
+    grid-template-columns: 1.45fr 0.9fr;
+    min-height: 280px;
   }
-  .write-body { padding: 1.1rem; border-right: 1px solid var(--line); }
-  .write-body h4 {
+  .write-body { padding: 1.25rem 1.35rem; border-right: 1px solid var(--line); }
+  .write-body h4, .reviewer h4 {
     font-size: 0.72rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--muted);
-    margin-bottom: 0.65rem;
+    margin-bottom: 0.75rem;
   }
   .write-body p {
     font-family: var(--serif);
-    font-size: 0.92rem;
-    line-height: 1.6;
-    margin-bottom: 0.75rem;
+    font-size: 0.95rem;
+    line-height: 1.65;
+    margin-bottom: 0.85rem;
   }
   .cite {
-    display: inline;
     color: var(--teal);
     font-family: var(--font);
     font-size: 0.78rem;
     font-weight: 600;
-    font-style: normal;
   }
-  .reviewer {
-    padding: 1.1rem;
-    background: var(--surface);
-  }
-  .reviewer h4 {
-    font-size: 0.72rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 0.75rem;
-  }
+  .reviewer { padding: 1.25rem; background: var(--surface); }
   .issue {
     border: 1px solid var(--line);
     border-radius: 8px;
     background: var(--paper);
-    padding: 0.65rem 0.75rem;
+    padding: 0.7rem 0.8rem;
     margin-bottom: 0.5rem;
     font-size: 0.8rem;
   }
-  .issue strong { display: block; margin-bottom: 0.15rem; color: var(--danger); font-size: 0.75rem; }
+  .issue strong { display: block; margin-bottom: 0.2rem; font-size: 0.75rem; color: var(--danger); }
 
   .start-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1.1fr 1fr 1fr;
     gap: 0.85rem;
   }
   .start-card {
     border: 1px solid var(--line);
     border-radius: 10px;
     background: var(--paper);
-    padding: 1.1rem;
+    padding: 1.2rem;
   }
-  .start-card h3 { font-size: 0.92rem; font-weight: 600; margin-bottom: 0.35rem; }
-  .start-card p { font-size: 0.82rem; color: var(--muted); }
+  .start-card h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.35rem; }
+  .start-card p { font-size: 0.84rem; color: var(--muted); }
   .start-card ul {
-    margin-top: 0.65rem;
+    margin-top: 0.7rem;
     padding-left: 1rem;
     font-size: 0.8rem;
     color: var(--muted);
   }
 
-  /* FAQ */
+  /* Conversion band */
+  .ready {
+    text-align: center;
+    padding: 4.5rem 0;
+  }
+  .ready h2 {
+    font-family: var(--serif);
+    font-size: clamp(1.8rem, 3.2vw, 2.5rem);
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.65rem;
+  }
+  .ready p {
+    color: var(--muted);
+    font-size: 1.05rem;
+    margin-bottom: 1.5rem;
+  }
+
   .faq-list { display: flex; flex-direction: column; gap: 0.5rem; }
   .faq-item {
     border: 1px solid var(--line);
@@ -460,7 +603,6 @@
     max-width: 62ch;
   }
 
-  /* Sign-in */
   .signin-layout {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -469,7 +611,7 @@
   }
   .signin-copy h2 {
     font-family: var(--serif);
-    font-size: clamp(1.6rem, 2.5vw, 2rem);
+    font-size: clamp(1.55rem, 2.4vw, 1.95rem);
     font-weight: 400;
     margin-bottom: 0.75rem;
   }
@@ -583,21 +725,43 @@
 
   footer {
     border-top: 1px solid var(--line);
-    padding: 1.75rem 0 2.5rem;
-    margin-top: 2rem;
+    padding: 3rem 0 2.5rem;
+    background: var(--paper);
   }
-  .footer-inner {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 1rem;
-    font-size: 0.82rem;
+  .footer-grid {
+    display: grid;
+    grid-template-columns: 1.4fr repeat(3, 1fr);
+    gap: 2rem;
+  }
+  .footer-brand p {
+    margin-top: 0.45rem;
+    font-size: 0.88rem;
+    color: var(--muted);
+    max-width: 28ch;
+  }
+  .footer-col h4 {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.85rem;
+  }
+  .footer-col a {
+    display: block;
+    font-size: 0.88rem;
+    color: var(--ink);
+    padding: 0.25rem 0;
+  }
+  .footer-col a:hover { color: var(--teal); }
+  .footer-bottom {
+    margin-top: 2.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.8rem;
     color: var(--muted);
   }
-  .footer-links { display: flex; flex-wrap: wrap; gap: 0.85rem; }
-  .footer-links a:hover { color: var(--teal); }
 
-  /* Motion */
   .reveal { opacity: 1; transform: none; }
   .js-animate .reveal {
     opacity: 0;
@@ -613,18 +777,19 @@
   }
 
   @media (max-width: 900px) {
-    .hero, .aha-grid, .split, .split.reverse, .write-mock, .signin-layout, .start-grid {
+    .hero, .aha-grid, .split, .write-mock, .signin-layout, .start-grid, .footer-grid {
       grid-template-columns: 1fr;
     }
-    .split.reverse { direction: ltr; }
     .inspect-pane { border-left: 0; border-top: 1px solid var(--line); }
     .write-body { border-right: 0; border-bottom: 1px solid var(--line); }
     .nav-links { display: none; }
+    .loop-flow { flex-direction: column; gap: 0.15rem; }
+    .loop-arrow { transform: rotate(90deg); }
   }
   @media (max-width: 640px) {
-    .wrap, .wrap-narrow { width: min(100% - 1.5rem, 1080px); }
-    .block { padding: 3.5rem 0; }
-    .hero { padding-top: 2.5rem; }
+    .wrap, .wrap-narrow, .wrap-wide { width: min(100% - 1.5rem, 1120px); }
+    .block, .block-band { padding: 3.25rem 0; }
+    .hero { padding-top: 2.25rem; }
     .mini-cards { grid-template-columns: 1fr; }
   }
 </style>
@@ -638,12 +803,29 @@
       </a>
       <nav class="nav-links" aria-label="Primary">
         <a href="#trust">Evidence</a>
+        <a href="#loop">Loop</a>
         <a href="#understand">Understanding</a>
-        <a href="#synthesize">Synthesis</a>
         <a href="#write">Writing</a>
         <a href="#faq">FAQ</a>
       </nav>
-      <a class="nav-cta" href="#signin">Sign in</a>
+      <div class="nav-actions">
+        <button
+          type="button"
+          class="theme-toggle"
+          id="theme-toggle"
+          aria-label="Toggle light and dark theme"
+          title="Toggle theme"
+        >
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 14.5A8.5 8.5 0 1 1 9.5 3a7 7 0 0 0 11.5 11.5z"/>
+          </svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"/>
+            <path stroke-linecap="round" d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+          </svg>
+        </button>
+        <a class="nav-cta" href="#ready">Start research</a>
+      </div>
     </div>
   </header>
 
@@ -654,113 +836,101 @@
         <p class="eyebrow">Research Operating System</p>
         <h1>Understand every paper.<br><em>Trust every claim.</em></h1>
         <p class="hero-lead">
-          Dhund grounds answers in evidence you can inspect — from the passage in your PDF
-          to the draft you export.
+          Grounded answers you can inspect — from the passage in your PDF to the draft you export.
         </p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="#signin">
-            {% if closed_beta %}Sign in to closed beta{% else %}Sign in{% endif %}
-          </a>
-          <a class="btn btn-ghost" href="#trust">See how evidence works</a>
+          <a class="btn btn-primary" href="#ready">Start your research</a>
+          <a class="btn btn-ghost" href="#trust">See the evidence moment</a>
         </div>
-        <p class="journey" aria-label="Research journey">
-          Paper <span>→</span> Understanding <span>→</span> Evidence <span>→</span>
-          Reasoning <span>→</span> Writing <span>→</span> Publication
-        </p>
+        <div class="signals" aria-label="Trusted workflow signals">
+          <span class="signal">Evidence-backed</span>
+          <span class="signal">Inspectable citations</span>
+          <span class="signal">Research reviewer</span>
+          <span class="signal">Knowledge graph</span>
+        </div>
       </div>
 
-      <aside class="frame" aria-label="Evidence-backed answer preview">
+      <aside class="frame" aria-label="Grounded answer preview">
         <div class="frame-bar">
           <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
           <span class="frame-label">Ask Dhund · grounded</span>
         </div>
         <div class="chat-pane">
-          <p class="chat-q"><strong>Research question</strong> — Do lipid nanoemulsions improve oral bioavailability?</p>
+          <p class="chat-q"><strong>Question</strong> — Do lipid nanoemulsions improve oral bioavailability?</p>
           <p class="chat-a">
-            Across accepted studies in your library, nanoemulsion formulations show higher oral bioavailability
-            versus conventional suspensions, primarily via enhanced solubilisation and lymphatic uptake
-            <button type="button" class="chip is-active" tabindex="-1">[12]</button>
-            <button type="button" class="chip" tabindex="-1">[7]</button>.
+            Accepted studies in your library show higher oral bioavailability versus suspensions,
+            via solubilisation and lymphatic uptake
+            <span class="chip is-active" tabindex="-1">[12]</span>
+            <span class="chip" tabindex="-1">[7]</span>.
           </p>
           <div class="passage">
-            <p class="inspect-meta" style="margin-bottom:0.45rem">Source · page 4</p>
-            “Formulations based on biocompatible surfactants achieved a 2.1-fold increase in AUC
-            compared with the aqueous suspension…”
+            <p class="inspect-meta" style="margin-bottom:0.4rem">Source · page 4</p>
+            “Formulations based on biocompatible surfactants achieved a 2.1-fold increase in AUC…”
           </div>
         </div>
       </aside>
     </section>
 
-    <!-- Section 1: Can I trust this? -->
-    <section class="wrap block" id="trust">
-      <div class="reveal" style="margin-bottom:1.75rem">
-        <p class="eyebrow">Can I trust this?</p>
-        <h2 class="section-title">Every answer is verifiable.</h2>
-        <p class="section-lead">
-          Click an evidence chip. Dhund opens the original passage — not a paraphrase you have to take on faith.
-        </p>
+    <!-- Research Loop -->
+    <section class="wrap loop reveal" id="loop">
+      <p class="eyebrow">The research loop</p>
+      <h2 class="loop-title">How research moves through Dhund</h2>
+      <div class="loop-flow" aria-label="Research loop">
+        <span class="loop-step">Import</span><span class="loop-arrow" aria-hidden="true">→</span>
+        <span class="loop-step">Understand</span><span class="loop-arrow" aria-hidden="true">→</span>
+        <span class="loop-step">Ground</span><span class="loop-arrow" aria-hidden="true">→</span>
+        <span class="loop-step">Synthesize</span><span class="loop-arrow" aria-hidden="true">→</span>
+        <span class="loop-step">Write</span><span class="loop-arrow" aria-hidden="true">→</span>
+        <span class="loop-step">Publish</span>
       </div>
+    </section>
 
-      <div class="frame reveal" id="evidence-demo">
-        <div class="frame-bar">
-          <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
-          <span class="frame-label">Evidence inspection</span>
+    <!-- Trust: interactive evidence moment -->
+    <section class="block-band" id="trust">
+      <div class="wrap">
+        <div class="center-head reveal">
+          <p class="eyebrow">Can I trust this?</p>
+          <h2 class="section-title">Click an evidence chip. Open the passage.</h2>
+          <p class="section-lead">
+            Walk the moment that makes Dhund different — question, answer, citation, source.
+          </p>
         </div>
-        <div class="aha-grid">
-          <div class="chat-pane">
-            <p class="chat-q"><strong>You asked</strong></p>
-            <p class="chat-a" style="font-family:var(--serif);font-size:1.05rem">
-              How do Kupffer cells affect nanoparticle clearance in the liver?
-            </p>
-            <p class="chat-a">
-              Kupffer cells are the primary hepatic scavengers of circulating nanoparticles;
-              surface PEGylation reduces uptake and prolongs circulation
-              <button type="button" class="chip is-active" data-ev="a" aria-pressed="true">[3]</button>
-              <button type="button" class="chip" data-ev="b" aria-pressed="false">[9]</button>
-              <button type="button" class="chip" data-ev="c" aria-pressed="false">[14]</button>.
-            </p>
-            <p class="chip-hint">Select a chip to inspect the source passage.</p>
+
+        <div class="reveal" id="evidence-demo">
+          <div class="story-steps" role="tablist" aria-label="Evidence moment steps">
+            <button type="button" class="story-step is-active" data-step="1" role="tab" aria-selected="true"><span class="n">1</span> Question</button>
+            <button type="button" class="story-step" data-step="2" role="tab" aria-selected="false"><span class="n">2</span> Answer</button>
+            <button type="button" class="story-step" data-step="3" role="tab" aria-selected="false"><span class="n">3</span> Chip</button>
+            <button type="button" class="story-step" data-step="4" role="tab" aria-selected="false"><span class="n">4</span> Passage</button>
+            <button type="button" class="story-step" data-step="5" role="tab" aria-selected="false"><span class="n">5</span> Accept</button>
           </div>
-          <aside class="inspect-pane" aria-live="polite">
-            <p class="inspect-meta" id="ev-meta">Accepted evidence · [3]</p>
-            <p class="inspect-title" id="ev-title">Patel et al., 2021 — Hepatic clearance of lipid nanoparticles</p>
-            <div class="passage" id="ev-passage">
-              <mark>Kupffer cells accounted for the majority of nanoparticle sequestration</mark>
-              within 30 minutes of intravenous administration in murine models…
+
+          <div class="frame">
+            <div class="frame-bar">
+              <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
+              <span class="frame-label">Evidence moment · interactive</span>
             </div>
-            <p class="inspect-foot" id="ev-foot">PDF · page 7 · Methods · Support: strong</p>
-          </aside>
+            <div class="aha-grid">
+              <div class="chat-pane">
+                <div id="demo-left"></div>
+                <p class="chip-hint" id="demo-hint">Use the steps above — or click a citation chip.</p>
+              </div>
+              <aside class="inspect-pane" aria-live="polite" id="demo-right"></aside>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- Section 2: Understanding -->
+    <!-- Understanding — large mock, text under -->
     <section class="wrap block" id="understand">
-      <div class="split reveal">
-        <div>
+      <div class="split-under reveal">
+        <div class="center-head" style="margin-bottom:0">
           <p class="eyebrow">How does Dhund understand research?</p>
           <h2 class="section-title">It reads structure — not just summaries.</h2>
           <p class="section-lead">
             Papers become Research Profiles: methods, entities, findings, and relationships you can navigate.
           </p>
-          <div class="mini-cards">
-            <div class="mini">
-              <h3>Structure</h3>
-              <p>Sections, figures, and references mapped for retrieval.</p>
-            </div>
-            <div class="mini">
-              <h3>Research Profile</h3>
-              <p>Objective, design, population, and outcomes — explicit.</p>
-            </div>
-            <div class="mini">
-              <h3>Entities</h3>
-              <p>Compounds, populations, endpoints linked across papers.</p>
-            </div>
-            <div class="mini">
-              <h3>Knowledge graph</h3>
-              <p>Supports, conflicts, and themes across your library.</p>
-            </div>
-          </div>
         </div>
         <div class="frame">
           <div class="frame-bar">
@@ -776,23 +946,29 @@
             <div class="profile-row"><span>Status</span><strong style="color:var(--teal)">Analysed · indexed</strong></div>
           </div>
         </div>
+        <div class="mini-cards">
+          <div class="mini"><h3>Structure</h3><p>Sections, figures, and references mapped for retrieval.</p></div>
+          <div class="mini"><h3>Entities</h3><p>Compounds, populations, and endpoints linked across papers.</p></div>
+          <div class="mini"><h3>Knowledge graph</h3><p>Supports, conflicts, and themes across your library.</p></div>
+          <div class="mini"><h3>Research Profile</h3><p>Objective, design, population, and outcomes — explicit.</p></div>
+        </div>
       </div>
     </section>
 
-    <!-- Section 3: Synthesis across papers -->
-    <section class="wrap block" id="synthesize">
-      <div class="split reverse reveal">
+    <!-- Synthesis — interactive diagram feel -->
+    <section class="block-band" id="synthesize">
+      <div class="wrap split reveal">
         <div>
           <p class="eyebrow">How do I work across many papers?</p>
           <h2 class="section-title">Synthesis — not another chat thread.</h2>
-          <p class="section-lead">
-            Collections, compare views, consensus, conflicts, and an evidence matrix
-            help you see agreement and disagreement across the library.
+          <p class="section-lead" style="margin-bottom:1.25rem">
+            Collections, compare, consensus, conflicts, and an evidence matrix
+            make agreement and disagreement visible.
           </p>
           <div class="mini-cards">
-            <div class="mini"><h3>Collections</h3><p>Group papers around a question or theme.</p></div>
-            <div class="mini"><h3>Compare</h3><p>Side-by-side methods and outcomes.</p></div>
-            <div class="mini"><h3>Consensus</h3><p>Where findings align — and how strongly.</p></div>
+            <div class="mini"><h3>Collections</h3><p>Group papers around a question.</p></div>
+            <div class="mini"><h3>Compare</h3><p>Methods and outcomes side by side.</p></div>
+            <div class="mini"><h3>Consensus</h3><p>Where findings align.</p></div>
             <div class="mini"><h3>Conflicts</h3><p>Unresolved contradictions stay visible.</p></div>
           </div>
         </div>
@@ -801,7 +977,7 @@
             <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
             <span class="frame-label">Evidence matrix</span>
           </div>
-          <div style="padding:1rem">
+          <div style="padding:1.1rem">
             <div class="matrix" aria-label="Example evidence matrix">
               <div class="h"></div>
               <div class="h">Paper A</div>
@@ -821,16 +997,16 @@
               <div class="cell-no">No</div>
             </div>
             <p class="inspect-foot" style="margin-top:0.85rem">
-              Cells open the underlying evidence — empty cells stay unknown, not invented.
+              Empty cells stay unknown — never invented.
             </p>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Section 4: Writing -->
+    <!-- Writing — full width -->
     <section class="wrap block" id="write">
-      <div class="reveal" style="margin-bottom:1.75rem">
+      <div class="center-head reveal">
         <p class="eyebrow">How do I write?</p>
         <h2 class="section-title">Draft from accepted evidence. Review before you export.</h2>
         <p class="section-lead">
@@ -848,8 +1024,8 @@
             <p>
               Lipid-based nanoemulsions consistently improve oral exposure relative to aqueous suspensions
               <span class="cite">[12]</span><span class="cite">[7]</span>. Mechanisms include
-              solubilisation of poorly soluble actives and partial lymphatic transport that bypasses
-              first-pass metabolism <span class="cite">[3]</span>.
+              solubilisation of poorly soluble actives and partial lymphatic transport
+              <span class="cite">[3]</span>.
             </p>
             <p>
               Remaining uncertainty centres on hepatic uptake by Kupffer cells under PEGylated regimens —
@@ -860,9 +1036,9 @@
             <h4>Reviewer</h4>
             <div class="issue">
               <strong>Unsupported claim</strong>
-              Sentence 2 cites [3] for lymphatic transport — verify span matches the accepted passage.
+              Sentence 2 cites [3] for lymphatic transport — verify the span matches the accepted passage.
             </div>
-            <div class="issue" style="border-color:var(--line)">
+            <div class="issue">
               <strong style="color:var(--teal)">Grounded</strong>
               Bioavailability claim linked to 2 accepted findings.
             </div>
@@ -872,40 +1048,52 @@
       </div>
     </section>
 
-    <!-- Section 5: Start -->
-    <section class="wrap block" id="start">
-      <div class="reveal" style="margin-bottom:1.75rem">
+    <!-- Start — two-ish columns / three cards -->
+    <section class="wrap block-tight" id="start">
+      <div class="center-head reveal">
         <p class="eyebrow">How do I start?</p>
         <h2 class="section-title">Bring the library you already have.</h2>
-        <p class="section-lead">
-          Import is the beginning of the path — not the product. Evidence and writing come after.
-        </p>
+        <p class="section-lead">Import begins the path — evidence and writing follow.</p>
       </div>
       <div class="start-grid reveal">
         <div class="start-card">
-          <h3>Library</h3>
-          <p>Projects organised around the review you’re writing.</p>
+          <h3>Library &amp; projects</h3>
+          <p>Organise papers around the review you’re writing.</p>
         </div>
         <div class="start-card">
           <h3>Upload &amp; identifiers</h3>
-          <p>PDF upload, DOI lookup, RIS, and BibTeX.</p>
+          <p>PDF, DOI, RIS, and BibTeX.</p>
+          <ul>
+            <li>PDF upload</li>
+            <li>DOI lookup</li>
+            <li>RIS · BibTeX</li>
+          </ul>
         </div>
         <div class="start-card">
           <h3>Reference managers</h3>
-          <p>Connect Zotero or Mendeley and sync into Dhund.</p>
+          <p>Sync from tools you already use.</p>
           <ul>
             <li>Zotero Cloud</li>
             <li>Mendeley Library</li>
+            <li>PubMed via DOI</li>
           </ul>
         </div>
       </div>
     </section>
 
+    <!-- Conversion -->
+    <section class="wrap ready reveal" id="ready">
+      <p class="eyebrow">Begin</p>
+      <h2>Ready to start your next paper?</h2>
+      <p>Start your research in Dhund — grounded, inspectable, exportable.</p>
+      <a class="btn btn-primary btn-lg" href="#signin">Start your research</a>
+    </section>
+
     <!-- FAQ -->
     <section class="wrap-narrow block" id="faq">
-      <div class="reveal" style="margin-bottom:1.5rem">
-        <p class="eyebrow">Research and trust</p>
-        <h2 class="section-title">Before you invite Dhund into a review.</h2>
+      <div class="reveal" style="margin-bottom:1.5rem;text-align:center">
+        <p class="eyebrow">Research &amp; trust</p>
+        <h2 class="section-title">Frequently asked questions</h2>
       </div>
       <div class="faq-list reveal">
         <details class="faq-item">
@@ -1045,21 +1233,89 @@
   </main>
 
   <footer>
-    <div class="wrap footer-inner">
-      <p>© Dhund · Research Operating System</p>
-      <div class="footer-links">
-        <a href="{{ url_for('marketing_product') }}">Product</a>
-        <a href="{{ url_for('marketing_how_it_works') }}">How it Works</a>
-        <a href="{{ url_for('marketing_early_access') }}">Early Access</a>
-        <a href="#signin">Sign In</a>
+    <div class="wrap footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="#top">
+          <span class="brand-mark" aria-hidden="true">D</span>
+          Dhund
+        </a>
+        <p>Research Operating System — understand every paper, trust every claim.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <a href="{{ url_for('marketing_product') }}">Overview</a>
+        <a href="{{ url_for('marketing_how_it_works') }}">How it works</a>
+        <a href="#ready">Start research</a>
+        <a href="#signin">Sign in</a>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <a href="{{ url_for('marketing_research') }}">Research guides</a>
+        <a href="{{ url_for('marketing_early_access') }}">Early access</a>
+        <a href="#faq">FAQ</a>
+      </div>
+      <div class="footer-col">
+        <h4>Legal</h4>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
       </div>
+    </div>
+    <div class="wrap footer-bottom">
+      © Dhund · Research Operating System
     </div>
   </footer>
 
   <script>
     (function () {
+      var root = document.documentElement;
+      var toggle = document.getElementById('theme-toggle');
+
+      function systemPrefersDark() {
+        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      }
+
+      function currentTheme() {
+        var explicit = root.getAttribute('data-theme');
+        if (explicit === 'light' || explicit === 'dark') return explicit;
+        return systemPrefersDark() ? 'dark' : 'light';
+      }
+
+      function applyTheme(theme) {
+        root.setAttribute('data-theme', theme);
+        try { localStorage.setItem('dhund-landing-theme', theme); } catch (e) {}
+        if (toggle) {
+          toggle.setAttribute(
+            'aria-label',
+            theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'
+          );
+          toggle.setAttribute(
+            'title',
+            theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'
+          );
+        }
+      }
+
+      if (toggle) {
+        toggle.addEventListener('click', function () {
+          applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
+        });
+        var stored = null;
+        try { stored = localStorage.getItem('dhund-landing-theme'); } catch (e) {}
+        if (stored === 'light' || stored === 'dark') {
+          applyTheme(stored);
+        } else {
+          var resolved = currentTheme();
+          toggle.setAttribute(
+            'aria-label',
+            resolved === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'
+          );
+          toggle.setAttribute(
+            'title',
+            resolved === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'
+          );
+        }
+      }
+
       var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if (reduce) document.documentElement.classList.add('reduce-motion');
 
@@ -1076,7 +1332,7 @@
         nodes.forEach(function (el) { el.classList.add('in'); });
       }
 
-      /* Evidence aha — chip → passage */
+      /* Guided evidence moment */
       var evidence = {
         a: {
           meta: 'Accepted evidence · [3]',
@@ -1097,24 +1353,107 @@
           foot: 'PDF · page 3 · Discussion · Conflict noted elsewhere'
         }
       };
+
+      var left = document.getElementById('demo-left');
+      var right = document.getElementById('demo-right');
+      var hint = document.getElementById('demo-hint');
       var demo = document.getElementById('evidence-demo');
-      if (demo) {
-        demo.querySelectorAll('.chip[data-ev]').forEach(function (chip) {
+      if (!left || !right || !demo) return;
+
+      var activeKey = 'a';
+
+      function chipsHtml(active) {
+        return ['a', 'b', 'c'].map(function (k, i) {
+          var n = [3, 9, 14][i];
+          return '<button type="button" class="chip' + (k === active ? ' is-active' : '') +
+            '" data-ev="' + k + '" aria-pressed="' + (k === active) + '">[' + n + ']</button>';
+        }).join('');
+      }
+
+      function renderInspect(key, showAccept) {
+        var d = evidence[key] || evidence.a;
+        right.innerHTML =
+          '<p class="inspect-meta">' + d.meta + '</p>' +
+          '<p class="inspect-title">' + d.title + '</p>' +
+          '<div class="passage">' + d.html + '</div>' +
+          '<p class="inspect-foot">' + d.foot + '</p>' +
+          (showAccept
+            ? '<div class="accept-pill">✓ Finding accepted into project evidence</div>'
+            : '');
+      }
+
+      function setStep(step) {
+        demo.querySelectorAll('.story-step').forEach(function (btn) {
+          var on = btn.getAttribute('data-step') === String(step);
+          btn.classList.toggle('is-active', on);
+          btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+
+        if (step === 1) {
+          left.innerHTML =
+            '<p class="chat-q"><strong>You ask</strong></p>' +
+            '<p class="chat-a" style="font-family:var(--serif);font-size:1.08rem">How do Kupffer cells affect nanoparticle clearance in the liver?</p>';
+          right.innerHTML =
+            '<p class="inspect-meta">Waiting</p>' +
+            '<p class="inspect-title">Pose a research question grounded in your library.</p>' +
+            '<p class="inspect-foot">Next: Dhund answers with citations you can open.</p>';
+          hint.textContent = 'Step 1 — the research question.';
+        } else if (step === 2) {
+          left.innerHTML =
+            '<p class="chat-q"><strong>You asked</strong></p>' +
+            '<p class="chat-a" style="font-family:var(--serif);font-size:1rem;margin-bottom:0.85rem">How do Kupffer cells affect nanoparticle clearance in the liver?</p>' +
+            '<p class="chat-a">Kupffer cells are the primary hepatic scavengers of circulating nanoparticles; surface PEGylation reduces uptake and prolongs circulation.</p>';
+          right.innerHTML =
+            '<p class="inspect-meta">Answer</p>' +
+            '<p class="inspect-title">Grounded response — citations arrive next.</p>' +
+            '<p class="inspect-foot">Claims stay provisional until you open the source.</p>';
+          hint.textContent = 'Step 2 — an answer before you verify.';
+        } else if (step === 3) {
+          left.innerHTML =
+            '<p class="chat-q"><strong>Answer with evidence chips</strong></p>' +
+            '<p class="chat-a">Kupffer cells are the primary hepatic scavengers of circulating nanoparticles; surface PEGylation reduces uptake and prolongs circulation ' +
+            chipsHtml(activeKey) + '.</p>';
+          right.innerHTML =
+            '<p class="inspect-meta">Citation chips</p>' +
+            '<p class="inspect-title">Each chip maps to an evidence object in your project.</p>' +
+            '<p class="inspect-foot">Click a chip — or continue to open the passage.</p>';
+          hint.textContent = 'Step 3 — click a chip, or advance to the passage.';
+          bindChips();
+        } else if (step === 4) {
+          left.innerHTML =
+            '<p class="chat-q"><strong>Answer · inspectable</strong></p>' +
+            '<p class="chat-a">Kupffer cells are the primary hepatic scavengers of circulating nanoparticles; surface PEGylation reduces uptake and prolongs circulation ' +
+            chipsHtml(activeKey) + '.</p>';
+          renderInspect(activeKey, false);
+          hint.textContent = 'Step 4 — original PDF passage with highlight.';
+          bindChips();
+        } else {
+          left.innerHTML =
+            '<p class="chat-q"><strong>Reviewer</strong></p>' +
+            '<p class="chat-a">Support is strong for hepatic scavenging. Accept this finding into the project evidence set used for writing.</p>' +
+            '<p class="chat-a">' + chipsHtml(activeKey) + '</p>';
+          renderInspect(activeKey, true);
+          hint.textContent = 'Step 5 — accepted finding joins grounded writing.';
+          bindChips();
+        }
+      }
+
+      function bindChips() {
+        left.querySelectorAll('.chip[data-ev]').forEach(function (chip) {
           chip.addEventListener('click', function () {
-            var key = chip.getAttribute('data-ev');
-            var data = evidence[key];
-            if (!data) return;
-            demo.querySelectorAll('.chip[data-ev]').forEach(function (c) {
-              c.classList.toggle('is-active', c === chip);
-              c.setAttribute('aria-pressed', c === chip ? 'true' : 'false');
-            });
-            document.getElementById('ev-meta').textContent = data.meta;
-            document.getElementById('ev-title').textContent = data.title;
-            document.getElementById('ev-passage').innerHTML = data.html;
-            document.getElementById('ev-foot').textContent = data.foot;
+            activeKey = chip.getAttribute('data-ev') || 'a';
+            setStep(4);
           });
         });
       }
+
+      demo.querySelectorAll('.story-step').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          setStep(Number(btn.getAttribute('data-step')));
+        });
+      });
+
+      setStep(1);
     })();
 
     async function sendMagicLink(e) {
