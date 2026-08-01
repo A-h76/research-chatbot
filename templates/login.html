@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dhund — Research Operating System</title>
-<meta name="description" content="Evidence first, then write. Dhund is a Research Operating System for evidence-backed literature review — from library to export.">
+<meta name="description" content="Understand every paper. Trust every claim. Dhund is a Research Operating System — grounded answers you can inspect back to the original passage.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -13,55 +13,62 @@
   :root {
     --ink: #14201f;
     --muted: #5a6b69;
-    --line: rgba(15, 110, 106, 0.14);
+    --line: #d8e3e1;
     --teal: #0F6E6A;
     --teal-deep: #0a524f;
     --teal-soft: #e6f3f2;
-    --bg: #F7F8FA;
+    --bg: #FAFBFC;
     --paper: #ffffff;
+    --surface: #f1f5f4;
     --ok: #1f6b4a;
     --danger: #9b2c2c;
-    --radius: 16px;
-    --shadow: 0 22px 60px rgba(20, 32, 31, 0.09);
-    --shadow-soft: 0 12px 36px rgba(20, 32, 31, 0.06);
+    --radius: 12px;
+    --shadow: 0 18px 48px rgba(20, 32, 31, 0.08);
     --font: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
     --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8eeed;
+      --muted: #9aaba8;
+      --line: #2a3836;
+      --teal: #14a39c;
+      --teal-deep: #4fdbc8;
+      --teal-soft: #0d2f2d;
+      --bg: #0c1211;
+      --paper: #141c1b;
+      --surface: #1a2423;
+      --shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+    }
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
     font-family: var(--font);
     color: var(--ink);
-    background:
-      radial-gradient(1100px 560px at 8% -8%, rgba(15, 110, 106, 0.11), transparent 55%),
-      radial-gradient(900px 480px at 92% 4%, rgba(70, 100, 130, 0.07), transparent 50%),
-      radial-gradient(700px 400px at 50% 100%, rgba(15, 110, 106, 0.05), transparent 55%),
-      var(--bg);
+    background: var(--bg);
     min-height: 100vh;
     line-height: 1.55;
   }
   a { color: inherit; text-decoration: none; }
   button, input { font: inherit; }
-  .wrap { width: min(1120px, calc(100% - 2.5rem)); margin-inline: auto; }
+  .wrap { width: min(1080px, calc(100% - 2.5rem)); margin-inline: auto; }
+  .wrap-narrow { width: min(720px, calc(100% - 2.5rem)); margin-inline: auto; }
 
-  /* Floating pill nav */
+  /* Nav — solid, no glass */
   .topbar {
     position: sticky;
     top: 0;
     z-index: 50;
-    padding: 1rem 0 0.5rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--paper);
   }
-  .pill-nav {
+  .nav {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 0.45rem 0.5rem 0.45rem 0.85rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.82);
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow-soft);
-    backdrop-filter: blur(14px);
+    padding: 0.85rem 0;
   }
   .brand {
     display: inline-flex;
@@ -69,12 +76,11 @@
     gap: 0.55rem;
     font-weight: 700;
     letter-spacing: -0.03em;
-    font-size: 1.02rem;
   }
   .brand-mark {
-    width: 1.7rem;
-    height: 1.7rem;
-    border-radius: 0.45rem;
+    width: 1.65rem;
+    height: 1.65rem;
+    border-radius: 0.4rem;
     background: var(--teal);
     color: #fff;
     display: grid;
@@ -82,34 +88,30 @@
     font-size: 0.72rem;
     font-weight: 700;
   }
-  .pill-links {
+  .nav-links {
     display: flex;
     align-items: center;
-    gap: 0.15rem;
+    gap: 0.25rem;
   }
-  .pill-links a {
-    padding: 0.45rem 0.85rem;
-    border-radius: 999px;
+  .nav-links a {
+    padding: 0.4rem 0.75rem;
+    border-radius: 8px;
     font-size: 0.84rem;
     font-weight: 500;
     color: var(--muted);
-    transition: background .18s ease, color .18s ease;
   }
-  .pill-links a:hover { background: var(--teal-soft); color: var(--teal-deep); }
-  .pill-cta {
+  .nav-links a:hover { color: var(--ink); background: var(--surface); }
+  .nav-cta {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    padding: 0.55rem 1.05rem;
+    padding: 0.5rem 1rem;
     border-radius: 999px;
     background: var(--teal);
     color: #fff;
     font-size: 0.84rem;
     font-weight: 600;
-    box-shadow: 0 8px 22px rgba(15, 110, 106, 0.22);
-    transition: background .18s ease, transform .18s ease;
   }
-  .pill-cta:hover { background: var(--teal-deep); transform: scale(1.03); }
+  .nav-cta:hover { background: var(--teal-deep); }
 
   .btn {
     display: inline-flex;
@@ -118,718 +120,807 @@
     gap: 0.45rem;
     border: none;
     border-radius: 999px;
-    padding: 0.9rem 1.4rem;
+    padding: 0.85rem 1.35rem;
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
-    transition: transform .18s ease, background .18s ease, box-shadow .18s ease;
+    transition: background .18s ease, transform .18s ease, border-color .18s ease;
   }
-  .btn-primary {
-    background: var(--teal);
-    color: #fff;
-    box-shadow: 0 10px 28px rgba(15, 110, 106, 0.24);
-  }
-  .btn-primary:hover { background: var(--teal-deep); transform: scale(1.03); }
+  .btn-primary { background: var(--teal); color: #fff; }
+  .btn-primary:hover { background: var(--teal-deep); }
   .btn-ghost {
-    background: #fff;
+    background: transparent;
     color: var(--ink);
     border: 1px solid var(--line);
   }
-  .btn-ghost:hover { background: #fff; transform: scale(1.03); box-shadow: var(--shadow-soft); }
+  .btn-ghost:hover { border-color: var(--teal); color: var(--teal); }
+
+  .eyebrow {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 0.85rem;
+  }
+  .section-title {
+    font-family: var(--serif);
+    font-size: clamp(1.65rem, 3vw, 2.25rem);
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin-bottom: 0.65rem;
+  }
+  .section-lead {
+    color: var(--muted);
+    font-size: 1.02rem;
+    max-width: 42ch;
+    margin-bottom: 1.5rem;
+  }
+  .block { padding: 5.5rem 0; }
+  .block + .block { border-top: 1px solid var(--line); }
 
   /* Hero */
   .hero {
-    padding: 2.75rem 0 3.25rem;
-    max-width: 44rem;
-  }
-  .eyebrow {
-    display: inline-flex;
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: var(--teal);
-    margin-bottom: 1rem;
+    padding: 4rem 0 3.5rem;
+    display: grid;
+    grid-template-columns: 1fr 1.05fr;
+    gap: 2.5rem;
+    align-items: center;
   }
   .hero h1 {
-    font-size: clamp(2.6rem, 6vw, 4.1rem);
-    line-height: 1.05;
-    letter-spacing: -0.04em;
+    font-size: clamp(2.4rem, 5.2vw, 3.6rem);
+    line-height: 1.08;
+    letter-spacing: -0.035em;
     font-weight: 700;
-    margin-bottom: 1.1rem;
+    margin-bottom: 1rem;
   }
-  .hero h1 .serif-accent {
+  .hero h1 em {
     font-family: var(--serif);
     font-style: italic;
     font-weight: 500;
-    color: var(--muted);
+    color: var(--teal);
   }
   .hero-lead {
     color: var(--muted);
     font-size: 1.08rem;
-    max-width: 42ch;
+    max-width: 38ch;
     margin-bottom: 1.75rem;
   }
-  .hero-actions {
+  .hero-actions { display: flex; flex-wrap: wrap; gap: 0.7rem; }
+  .journey {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: 0.35rem 0.5rem;
+    margin-top: 1.75rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .journey span { color: var(--teal); }
+
+  /* Product frame */
+  .frame {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--paper);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .frame-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .frame-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--line);
+  }
+  .frame-label {
+    margin-left: 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 
-  /* Product split */
-  .product {
-    padding: 1rem 0 3.5rem;
-  }
-  .product-grid {
+  /* Evidence aha demo */
+  .aha-grid {
     display: grid;
-    grid-template-columns: 1fr 1.05fr;
-    gap: 2.75rem;
-    align-items: center;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
   }
-  .section-kicker {
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: var(--teal);
-    margin-bottom: 0.65rem;
-  }
-  .section-title {
-    font-size: clamp(1.55rem, 2.8vw, 2.15rem);
-    letter-spacing: -0.03em;
-    line-height: 1.15;
-    margin-bottom: 0.55rem;
-  }
-  .section-support {
-    font-family: var(--serif);
-    font-style: italic;
+  .chat-pane { padding: 1.15rem; min-height: 280px; }
+  .chat-q {
+    font-size: 0.82rem;
     color: var(--muted);
-    font-size: 1.15rem;
-    margin-bottom: 1.75rem;
+    margin-bottom: 0.85rem;
   }
-  .cap-list {
-    list-style: none;
-    display: grid;
-    gap: 1rem;
+  .chat-q strong { color: var(--ink); font-weight: 600; }
+  .chat-a {
+    font-size: 0.95rem;
+    line-height: 1.55;
+    margin-bottom: 1rem;
   }
-  .cap-item {
-    display: grid;
-    grid-template-columns: 2.4rem 1fr;
-    gap: 0.85rem;
-    align-items: start;
-  }
-  .cap-num {
-    width: 2.4rem;
-    height: 2.4rem;
-    border-radius: 0.7rem;
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0.15rem 0.25rem 0.15rem 0;
+    padding: 0.28rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
     background: var(--teal-soft);
     color: var(--teal-deep);
-    display: grid;
-    place-items: center;
-    font-size: 0.82rem;
-    font-weight: 700;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color .15s ease, transform .15s ease;
   }
-  .cap-item h3 {
-    font-size: 1.02rem;
-    letter-spacing: -0.02em;
-    margin-bottom: 0.2rem;
+  .chip:hover, .chip.is-active {
+    border-color: var(--teal);
+    transform: translateY(-1px);
   }
-  .cap-item p {
+  .chip-hint {
+    margin-top: 0.85rem;
+    font-size: 0.78rem;
     color: var(--muted);
-    font-size: 0.92rem;
+  }
+  .inspect-pane {
+    border-left: 1px solid var(--line);
+    background: var(--surface);
+    padding: 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .inspect-meta {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--teal);
+  }
+  .inspect-title { font-size: 0.88rem; font-weight: 600; }
+  .passage {
+    font-family: var(--serif);
+    font-size: 0.95rem;
+    line-height: 1.55;
+    padding: 0.85rem;
+    border-radius: 8px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+  }
+  .passage mark {
+    background: rgba(15, 110, 106, 0.18);
+    color: inherit;
+    padding: 0 0.1em;
+  }
+  .inspect-foot {
+    font-size: 0.78rem;
+    color: var(--muted);
   }
 
-  /* Workspace mockup */
-  .mock {
-    border-radius: 22px;
-    background: linear-gradient(165deg, #fff 0%, #f3f8f7 100%);
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow);
-    padding: 1rem;
-    transform: translateY(0);
-  }
-  .mock-chrome {
-    display: flex;
-    gap: 0.45rem;
-    margin-bottom: 0.85rem;
-    padding: 0 0.2rem;
-  }
-  .mock-dot {
-    width: 0.55rem;
-    height: 0.55rem;
-    border-radius: 50%;
-    background: rgba(15, 110, 106, 0.2);
-  }
-  .mock-body {
+  /* Understanding / compare / write grids */
+  .split {
     display: grid;
-    grid-template-columns: 7rem 1fr 8.5rem;
-    gap: 0.65rem;
-    min-height: 280px;
+    grid-template-columns: 0.9fr 1.1fr;
+    gap: 2.5rem;
+    align-items: start;
   }
-  .mock-outline,
-  .mock-manuscript,
-  .mock-rail {
-    background: rgba(255, 255, 255, 0.85);
+  .split.reverse { direction: rtl; }
+  .split.reverse > * { direction: ltr; }
+
+  .mini-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+  .mini {
     border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 0.75rem;
+    border-radius: 10px;
+    background: var(--paper);
+    padding: 0.95rem;
   }
-  .mock-label {
-    font-size: 0.65rem;
-    font-weight: 700;
+  .mini h3 {
+    font-size: 0.88rem;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+  }
+  .mini p { font-size: 0.8rem; color: var(--muted); line-height: 1.45; }
+
+  .profile-mock { padding: 1.1rem; }
+  .profile-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.84rem;
+  }
+  .profile-row:last-child { border-bottom: 0; }
+  .profile-row span { color: var(--muted); }
+  .profile-row strong { font-weight: 600; text-align: right; }
+
+  .matrix {
+    display: grid;
+    grid-template-columns: 1.2fr repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 0.72rem;
+  }
+  .matrix > * {
+    background: var(--paper);
+    padding: 0.55rem 0.45rem;
+    text-align: center;
+  }
+  .matrix .h { background: var(--surface); font-weight: 600; color: var(--muted); }
+  .matrix .row-h { text-align: left; font-weight: 500; }
+  .cell-yes { color: var(--ok); font-weight: 600; }
+  .cell-no { color: var(--danger); font-weight: 600; }
+  .cell-mix { color: var(--teal); font-weight: 600; }
+
+  .write-mock {
+    display: grid;
+    grid-template-columns: 1.4fr 0.9fr;
+    min-height: 260px;
+  }
+  .write-body { padding: 1.1rem; border-right: 1px solid var(--line); }
+  .write-body h4 {
+    font-size: 0.72rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--muted);
-    margin-bottom: 0.55rem;
+    margin-bottom: 0.65rem;
   }
-  .mock-outline ul {
-    list-style: none;
-    display: grid;
-    gap: 0.4rem;
-    font-size: 0.72rem;
-    color: var(--muted);
-  }
-  .mock-outline li.is-active {
-    color: var(--teal-deep);
-    font-weight: 600;
-  }
-  .mock-manuscript h4 {
-    font-size: 0.88rem;
-    letter-spacing: -0.02em;
-    margin-bottom: 0.55rem;
-  }
-  .mock-manuscript p {
-    font-size: 0.78rem;
-    color: var(--muted);
-    margin-bottom: 0.55rem;
-    line-height: 1.5;
+  .write-body p {
+    font-family: var(--serif);
+    font-size: 0.92rem;
+    line-height: 1.6;
+    margin-bottom: 0.75rem;
   }
   .cite {
-    display: inline-block;
-    background: var(--teal-soft);
-    color: var(--teal-deep);
-    font-weight: 700;
-    font-size: 0.72rem;
-    padding: 0.05rem 0.35rem;
-    border-radius: 0.35rem;
-  }
-  .mock-rail .ev-card {
-    border: 1px solid rgba(15, 110, 106, 0.18);
-    background: var(--teal-soft);
-    border-radius: 10px;
-    padding: 0.55rem 0.6rem;
-    margin-bottom: 0.45rem;
-  }
-  .mock-rail .ev-card strong {
-    display: block;
-    font-size: 0.72rem;
-    margin-bottom: 0.2rem;
-  }
-  .mock-rail .ev-card span {
-    font-size: 0.68rem;
-    color: var(--muted);
-  }
-  .mock-float {
-    margin-top: 0.75rem;
-    display: flex;
-    justify-content: flex-end;
-  }
-  .mock-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.45rem 0.75rem;
-    border-radius: 999px;
-    background: #fff;
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow-soft);
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--teal-deep);
-  }
-
-  /* How it works */
-  .how {
-    padding: 2.5rem 0 3.5rem;
-  }
-  .how-strip {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 0.65rem;
-  }
-  .how-step {
-    background: var(--paper);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 1.1rem 0.95rem;
-    box-shadow: var(--shadow-soft);
-  }
-  .how-step .n {
-    font-size: 0.72rem;
-    font-weight: 700;
+    display: inline;
     color: var(--teal);
-    letter-spacing: 0.04em;
-    margin-bottom: 0.45rem;
+    font-family: var(--font);
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-style: normal;
   }
-  .how-step strong {
-    display: block;
-    font-size: 0.95rem;
-    letter-spacing: -0.015em;
-    margin-bottom: 0.3rem;
+  .reviewer {
+    padding: 1.1rem;
+    background: var(--surface);
   }
-  .how-step p {
+  .reviewer h4 {
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+  }
+  .issue {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    padding: 0.65rem 0.75rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+  }
+  .issue strong { display: block; margin-bottom: 0.15rem; color: var(--danger); font-size: 0.75rem; }
+
+  .start-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.85rem;
+  }
+  .start-card {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--paper);
+    padding: 1.1rem;
+  }
+  .start-card h3 { font-size: 0.92rem; font-weight: 600; margin-bottom: 0.35rem; }
+  .start-card p { font-size: 0.82rem; color: var(--muted); }
+  .start-card ul {
+    margin-top: 0.65rem;
+    padding-left: 1rem;
     font-size: 0.8rem;
     color: var(--muted);
   }
 
   /* FAQ */
-  .faq {
-    padding: 1rem 0 3.5rem;
-  }
-  .faq-grid {
-    display: grid;
-    gap: 0.75rem;
-    max-width: 720px;
-  }
-  details.faq-item {
-    background: var(--paper);
+  .faq-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .faq-item {
     border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 1rem 1.15rem;
+    border-radius: 10px;
+    background: var(--paper);
+    padding: 0.15rem 1rem;
   }
-  details.faq-item summary {
+  .faq-item summary {
     cursor: pointer;
-    font-weight: 600;
-    letter-spacing: -0.015em;
     list-style: none;
+    padding: 0.95rem 0;
+    font-weight: 600;
+    font-size: 0.95rem;
   }
-  details.faq-item summary::-webkit-details-marker { display: none; }
-  details.faq-item summary::after {
-    content: "+";
-    float: right;
-    color: var(--teal);
-    font-weight: 700;
-  }
-  details.faq-item[open] summary::after { content: "–"; }
-  details.faq-item p {
-    margin-top: 0.65rem;
+  .faq-item summary::-webkit-details-marker { display: none; }
+  .faq-item p {
+    padding: 0 0 1rem;
     color: var(--muted);
     font-size: 0.92rem;
+    max-width: 62ch;
   }
 
-  /* Auth */
-  .signin {
-    padding: 1rem 0 4rem;
-  }
+  /* Sign-in */
   .signin-layout {
     display: grid;
-    grid-template-columns: 0.9fr 1.1fr;
-    gap: 2rem;
+    grid-template-columns: 1fr 1fr;
+    gap: 2.5rem;
     align-items: start;
   }
   .signin-copy h2 {
-    font-size: clamp(1.55rem, 2.6vw, 2rem);
-    letter-spacing: -0.03em;
-    margin-bottom: 0.55rem;
+    font-family: var(--serif);
+    font-size: clamp(1.6rem, 2.5vw, 2rem);
+    font-weight: 400;
+    margin-bottom: 0.75rem;
   }
-  .signin-copy p {
-    color: var(--muted);
-    max-width: 34ch;
-    margin-bottom: 1rem;
-  }
+  .signin-copy p { color: var(--muted); margin-bottom: 0.75rem; max-width: 36ch; }
   .auth-card {
-    background: var(--paper);
     border: 1px solid var(--line);
-    border-radius: 18px;
-    padding: 1.6rem 1.5rem;
+    border-radius: var(--radius);
+    background: var(--paper);
+    padding: 1.75rem;
     box-shadow: var(--shadow);
     text-align: center;
   }
-  .auth-card h2 {
-    font-size: 1.35rem;
-    letter-spacing: -0.02em;
-    margin-bottom: 0.35rem;
-  }
-  .auth-card .sub {
-    color: var(--muted);
-    font-size: 0.95rem;
-    margin-bottom: 1.1rem;
-  }
-  .beta-note {
-    background: var(--teal-soft);
-    border: 1px solid rgba(15, 110, 106, 0.2);
-    color: var(--teal-deep);
-    padding: 0.85rem 1rem;
-    border-radius: 10px;
-    margin-bottom: 1rem;
-    font-size: 0.88rem;
+  .auth-card h2 { font-size: 1.25rem; margin-bottom: 0.35rem; }
+  .auth-card .sub { color: var(--muted); font-size: 0.88rem; margin-bottom: 1.25rem; }
+  .err, .ok, .beta-note {
     text-align: left;
-  }
-  .beta-note a {
-    color: var(--teal-deep);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-  .err {
-    background: #fdf2f2;
-    border: 1px solid #f0c4c4;
-    color: var(--danger);
-    padding: 0.85rem 1rem;
-    border-radius: 10px;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    padding: 0.75rem 0.85rem;
     margin-bottom: 1rem;
-    font-size: 0.88rem;
-    text-align: left;
   }
-  .ok {
-    background: #eef8f2;
-    border: 1px solid #c6e6d3;
-    color: var(--ok);
-    padding: 0.85rem 1rem;
-    border-radius: 10px;
-    margin-bottom: 1rem;
-    font-size: 0.88rem;
-    text-align: left;
-  }
+  .err { background: #fde8e8; color: var(--danger); }
+  .ok { background: #e6f4ea; color: var(--ok); }
+  .beta-note { background: var(--teal-soft); color: var(--ink); }
+  .beta-note a { color: var(--teal-deep); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
   .gbtn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.7rem;
-    background: #fff;
-    color: #1f1f1f;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 0.85rem 1.1rem;
-    font-size: 0.95rem;
-    font-weight: 600;
-    width: 100%;
-    justify-content: center;
-    transition: background .15s, transform .18s;
-  }
-  .gbtn:hover { background: #f7faf9; transform: scale(1.01); }
-  .gbtn svg { width: 20px; height: 20px; flex-shrink: 0; }
-  .or {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    justify-content: center;
+    gap: 0.65rem;
+    width: 100%;
+    padding: 0.8rem 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    font-weight: 600;
+    font-size: 0.92rem;
+  }
+  .gbtn:hover { border-color: var(--teal); }
+  .gbtn svg { width: 1.15rem; height: 1.15rem; }
+  .or {
     margin: 1rem 0;
-    color: #8a9a97;
     font-size: 0.78rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
-  .or::before, .or::after {
-    content: "";
-    flex: 1;
-    height: 1px;
-    background: var(--line);
-  }
-  .field { margin-bottom: 0.85rem; text-align: left; }
+  .field { text-align: left; margin-bottom: 0.75rem; }
   .field label {
     display: block;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     font-weight: 600;
-    color: var(--muted);
     margin-bottom: 0.35rem;
+    color: var(--muted);
   }
   .field input {
     width: 100%;
+    padding: 0.7rem 0.85rem;
+    border-radius: 8px;
     border: 1px solid var(--line);
-    background: #fbfcfc;
-    border-radius: 10px;
-    padding: 0.75rem 0.85rem;
+    background: var(--bg);
     color: var(--ink);
   }
   .field input:focus {
-    outline: 2px solid rgba(15, 110, 106, 0.25);
+    outline: 2px solid rgba(15, 110, 106, 0.35);
     border-color: var(--teal);
   }
   .magic-btn {
     width: 100%;
     border: none;
-    border-radius: 10px;
+    border-radius: 999px;
     padding: 0.8rem 1rem;
     background: var(--teal);
     color: #fff;
     font-weight: 600;
     cursor: pointer;
-    transition: background .15s, transform .18s, opacity .15s;
   }
-  .magic-btn:hover { background: var(--teal-deep); transform: scale(1.02); }
-  .magic-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+  .magic-btn:hover { background: var(--teal-deep); }
+  .magic-btn:disabled { opacity: 0.6; cursor: wait; }
   .setup-box {
-    background: #f4f8f7;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 1rem 1.1rem;
     text-align: left;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1rem;
+    background: var(--surface);
+    font-size: 0.85rem;
   }
-  .setup-box h3 { font-size: 0.95rem; margin-bottom: 0.75rem; }
-  .step {
-    display: flex;
-    gap: 0.6rem;
-    align-items: flex-start;
-    margin-bottom: 0.65rem;
-    font-size: 0.86rem;
-    color: var(--muted);
-  }
+  .setup-box h3 { font-size: 0.92rem; margin-bottom: 0.65rem; }
+  .step { display: flex; gap: 0.65rem; margin-bottom: 0.55rem; color: var(--muted); }
   .step-num {
     flex-shrink: 0;
-    width: 1.25rem;
-    height: 1.25rem;
+    width: 1.25rem; height: 1.25rem;
     border-radius: 50%;
-    background: var(--teal-soft);
-    color: var(--teal-deep);
-    display: grid;
-    place-items: center;
+    background: var(--teal);
+    color: #fff;
     font-size: 0.7rem;
     font-weight: 700;
-    margin-top: 0.1rem;
-  }
-  code {
-    background: #eef3f1;
-    border: 1px solid var(--line);
-    border-radius: 5px;
-    padding: 0.05rem 0.35rem;
-    font-family: ui-monospace, monospace;
-    font-size: 0.78rem;
-    color: var(--teal-deep);
+    display: grid;
+    place-items: center;
   }
   .dev-btn {
-    display: block;
+    display: inline-flex;
     width: 100%;
+    justify-content: center;
     padding: 0.75rem;
-    background: transparent;
-    border: 1px dashed rgba(15, 110, 106, 0.35);
-    border-radius: 12px;
+    border-radius: 999px;
+    border: 1px dashed var(--line);
     color: var(--muted);
     font-size: 0.88rem;
-    text-align: center;
   }
-  .dev-btn:hover { border-color: var(--teal); color: var(--teal-deep); }
 
   footer {
-    padding: 2rem 0 2.75rem;
     border-top: 1px solid var(--line);
-    color: var(--muted);
-    font-size: 0.86rem;
+    padding: 1.75rem 0 2.5rem;
+    margin-top: 2rem;
   }
   .footer-inner {
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
     gap: 1rem;
-    align-items: center;
+    font-size: 0.82rem;
+    color: var(--muted);
   }
-  .footer-links {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-  .footer-links a:hover { color: var(--teal-deep); }
+  .footer-links { display: flex; flex-wrap: wrap; gap: 0.85rem; }
+  .footer-links a:hover { color: var(--teal); }
 
-  .reveal { opacity: 1; transform: none; transition: opacity .45s ease, transform .45s ease; }
-  html.js:not(.reduce-motion) .js-animate .reveal:not(.in) {
+  /* Motion */
+  .reveal { opacity: 1; transform: none; }
+  .js-animate .reveal {
     opacity: 0;
     transform: translateY(12px);
+    transition: opacity .55s ease, transform .55s ease;
   }
-  html.js:not(.reduce-motion) .js-animate .reveal.in {
-    opacity: 1;
-    transform: none;
+  .js-animate .reveal.in { opacity: 1; transform: none; }
+  .reduce-motion .reveal,
+  .reduce-motion .js-animate .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .btn:hover, .pill-cta:hover { transform: none; }
-    .reveal { transition: none !important; opacity: 1 !important; transform: none !important; }
-  }
-
-  @media (max-width: 960px) {
-    .pill-links { display: none; }
-    .product-grid, .signin-layout { grid-template-columns: 1fr; }
-    .mock-body { grid-template-columns: 1fr; }
-    .mock-outline { display: none; }
-    .how-strip { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 900px) {
+    .hero, .aha-grid, .split, .split.reverse, .write-mock, .signin-layout, .start-grid {
+      grid-template-columns: 1fr;
+    }
+    .split.reverse { direction: ltr; }
+    .inspect-pane { border-left: 0; border-top: 1px solid var(--line); }
+    .write-body { border-right: 0; border-bottom: 1px solid var(--line); }
+    .nav-links { display: none; }
   }
   @media (max-width: 640px) {
-    .wrap { width: min(100% - 1.5rem, 1120px); }
-    .how-strip { grid-template-columns: 1fr; }
-    .hero { padding-top: 1.75rem; }
+    .wrap, .wrap-narrow { width: min(100% - 1.5rem, 1080px); }
+    .block { padding: 3.5rem 0; }
+    .hero { padding-top: 2.5rem; }
+    .mini-cards { grid-template-columns: 1fr; }
   }
 </style>
 </head>
 <body>
   <header class="topbar">
-    <div class="wrap">
-      <div class="pill-nav">
-        <a class="brand" href="#top" aria-label="Dhund home">
-          <span class="brand-mark" aria-hidden="true">D</span>
-          Dhund
-        </a>
-        <nav class="pill-links" aria-label="Primary">
-          <a href="#how">How it works</a>
-          <a href="#faq">FAQ</a>
-          <a href="#signin">Sign in</a>
-        </nav>
-        <a class="pill-cta" href="#signin">Sign in</a>
-      </div>
+    <div class="wrap nav">
+      <a class="brand" href="#top" aria-label="Dhund home">
+        <span class="brand-mark" aria-hidden="true">D</span>
+        Dhund
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#trust">Evidence</a>
+        <a href="#understand">Understanding</a>
+        <a href="#synthesize">Synthesis</a>
+        <a href="#write">Writing</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <a class="nav-cta" href="#signin">Sign in</a>
     </div>
   </header>
 
   <main id="top">
+    <!-- Hero -->
     <section class="wrap hero reveal">
-      <p class="eyebrow">Research Operating System</p>
-      <h1>
-        Evidence first,<br>
-        <span class="serif-accent">then write.</span>
-      </h1>
-      <p class="hero-lead">
-        Build trustworthy literature reviews inside Dhund — from papers you import,
-        through accepted evidence, to a grounded draft and export.
-      </p>
-      <div class="hero-actions">
-        <a class="btn btn-primary" href="#signin">
-          {% if closed_beta %}Sign in to closed beta{% else %}Sign in{% endif %}
-        </a>
-        <a class="btn btn-ghost" href="#product">See the workspace</a>
-      </div>
-    </section>
-
-    <section class="wrap product" id="product">
-      <div class="product-grid">
-        <div class="reveal">
-          <p class="section-kicker">What Dhund does</p>
-          <h2 class="section-title">A system for research — not a prompt box</h2>
-          <p class="section-support">Every claim should point back to evidence you accepted.</p>
-          <ol class="cap-list">
-            <li class="cap-item">
-              <span class="cap-num">01</span>
-              <div>
-                <h3>Library of your papers</h3>
-                <p>Import PDFs and keep projects organised around the review you’re actually writing.</p>
-              </div>
-            </li>
-            <li class="cap-item">
-              <span class="cap-num">02</span>
-              <div>
-                <h3>Evidence you review</h3>
-                <p>Extracted claims become candidates. Accept, reject, or mark important — decisions stick.</p>
-              </div>
-            </li>
-            <li class="cap-item">
-              <span class="cap-num">03</span>
-              <div>
-                <h3>Writing desk</h3>
-                <p>Generate grounded drafts from accepted evidence, revise in place, and keep citations bound.</p>
-              </div>
-            </li>
-            <li class="cap-item">
-              <span class="cap-num">04</span>
-              <div>
-                <h3>Verify <span class="cite">[#id]</span> → Export</h3>
-                <p>Inspect bindings, then export Markdown and BibTeX for the manuscript path you’re on.</p>
-              </div>
-            </li>
-          </ol>
+      <div>
+        <p class="eyebrow">Research Operating System</p>
+        <h1>Understand every paper.<br><em>Trust every claim.</em></h1>
+        <p class="hero-lead">
+          Dhund grounds answers in evidence you can inspect — from the passage in your PDF
+          to the draft you export.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#signin">
+            {% if closed_beta %}Sign in to closed beta{% else %}Sign in{% endif %}
+          </a>
+          <a class="btn btn-ghost" href="#trust">See how evidence works</a>
         </div>
+        <p class="journey" aria-label="Research journey">
+          Paper <span>→</span> Understanding <span>→</span> Evidence <span>→</span>
+          Reasoning <span>→</span> Writing <span>→</span> Publication
+        </p>
+      </div>
 
-        <aside class="mock reveal" aria-label="Dhund workspace preview">
-          <div class="mock-chrome" aria-hidden="true">
-            <span class="mock-dot"></span>
-            <span class="mock-dot"></span>
-            <span class="mock-dot"></span>
+      <aside class="frame" aria-label="Evidence-backed answer preview">
+        <div class="frame-bar">
+          <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
+          <span class="frame-label">Ask Dhund · grounded</span>
+        </div>
+        <div class="chat-pane">
+          <p class="chat-q"><strong>Research question</strong> — Do lipid nanoemulsions improve oral bioavailability?</p>
+          <p class="chat-a">
+            Across accepted studies in your library, nanoemulsion formulations show higher oral bioavailability
+            versus conventional suspensions, primarily via enhanced solubilisation and lymphatic uptake
+            <button type="button" class="chip is-active" tabindex="-1">[12]</button>
+            <button type="button" class="chip" tabindex="-1">[7]</button>.
+          </p>
+          <div class="passage">
+            <p class="inspect-meta" style="margin-bottom:0.45rem">Source · page 4</p>
+            “Formulations based on biocompatible surfactants achieved a 2.1-fold increase in AUC
+            compared with the aqueous suspension…”
           </div>
-          <div class="mock-body">
-            <div class="mock-outline">
-              <p class="mock-label">Outline</p>
-              <ul>
-                <li>Introduction</li>
-                <li class="is-active">Related work</li>
-                <li>Methods</li>
-                <li>Discussion</li>
-              </ul>
-            </div>
-            <div class="mock-manuscript">
-              <p class="mock-label">Manuscript</p>
-              <h4>Related work</h4>
-              <p>
-                Prior detection systems overfit to lexical cues and underperform on adversarial phishing
-                <span class="cite">[#12]</span>. Cross-paper review shows stronger gains when models fuse
-                URL structure with message intent.
-              </p>
-              <p>
-                Accepted evidence from six papers supports this claim; opposing results stay visible for revision.
-              </p>
-            </div>
-            <div class="mock-rail">
-              <p class="mock-label">Evidence</p>
-              <div class="ev-card">
-                <strong>Accepted · [#12]</strong>
-                <span>Supports claim · page 4</span>
-              </div>
-              <div class="ev-card">
-                <strong>Candidate</strong>
-                <span>Needs review before draft</span>
-              </div>
-            </div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- Section 1: Can I trust this? -->
+    <section class="wrap block" id="trust">
+      <div class="reveal" style="margin-bottom:1.75rem">
+        <p class="eyebrow">Can I trust this?</p>
+        <h2 class="section-title">Every answer is verifiable.</h2>
+        <p class="section-lead">
+          Click an evidence chip. Dhund opens the original passage — not a paraphrase you have to take on faith.
+        </p>
+      </div>
+
+      <div class="frame reveal" id="evidence-demo">
+        <div class="frame-bar">
+          <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
+          <span class="frame-label">Evidence inspection</span>
+        </div>
+        <div class="aha-grid">
+          <div class="chat-pane">
+            <p class="chat-q"><strong>You asked</strong></p>
+            <p class="chat-a" style="font-family:var(--serif);font-size:1.05rem">
+              How do Kupffer cells affect nanoparticle clearance in the liver?
+            </p>
+            <p class="chat-a">
+              Kupffer cells are the primary hepatic scavengers of circulating nanoparticles;
+              surface PEGylation reduces uptake and prolongs circulation
+              <button type="button" class="chip is-active" data-ev="a" aria-pressed="true">[3]</button>
+              <button type="button" class="chip" data-ev="b" aria-pressed="false">[9]</button>
+              <button type="button" class="chip" data-ev="c" aria-pressed="false">[14]</button>.
+            </p>
+            <p class="chip-hint">Select a chip to inspect the source passage.</p>
           </div>
-          <div class="mock-float">
-            <span class="mock-badge">Library → Evidence → Writing → Export</span>
-          </div>
-        </aside>
+          <aside class="inspect-pane" aria-live="polite">
+            <p class="inspect-meta" id="ev-meta">Accepted evidence · [3]</p>
+            <p class="inspect-title" id="ev-title">Patel et al., 2021 — Hepatic clearance of lipid nanoparticles</p>
+            <div class="passage" id="ev-passage">
+              <mark>Kupffer cells accounted for the majority of nanoparticle sequestration</mark>
+              within 30 minutes of intravenous administration in murine models…
+            </div>
+            <p class="inspect-foot" id="ev-foot">PDF · page 7 · Methods · Support: strong</p>
+          </aside>
+        </div>
       </div>
     </section>
 
-    <section class="wrap how" id="how">
+    <!-- Section 2: Understanding -->
+    <section class="wrap block" id="understand">
+      <div class="split reveal">
+        <div>
+          <p class="eyebrow">How does Dhund understand research?</p>
+          <h2 class="section-title">It reads structure — not just summaries.</h2>
+          <p class="section-lead">
+            Papers become Research Profiles: methods, entities, findings, and relationships you can navigate.
+          </p>
+          <div class="mini-cards">
+            <div class="mini">
+              <h3>Structure</h3>
+              <p>Sections, figures, and references mapped for retrieval.</p>
+            </div>
+            <div class="mini">
+              <h3>Research Profile</h3>
+              <p>Objective, design, population, and outcomes — explicit.</p>
+            </div>
+            <div class="mini">
+              <h3>Entities</h3>
+              <p>Compounds, populations, endpoints linked across papers.</p>
+            </div>
+            <div class="mini">
+              <h3>Knowledge graph</h3>
+              <p>Supports, conflicts, and themes across your library.</p>
+            </div>
+          </div>
+        </div>
+        <div class="frame">
+          <div class="frame-bar">
+            <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
+            <span class="frame-label">Research Profile</span>
+          </div>
+          <div class="profile-mock">
+            <div class="profile-row"><span>Objective</span><strong>Oral bioavailability of nanoemulsions</strong></div>
+            <div class="profile-row"><span>Design</span><strong>In vivo PK · rat model</strong></div>
+            <div class="profile-row"><span>Population</span><strong>Male Sprague–Dawley · n=24</strong></div>
+            <div class="profile-row"><span>Primary endpoint</span><strong>AUC<sub>0–∞</sub></strong></div>
+            <div class="profile-row"><span>Key entities</span><strong>PEG · MCT · Kupffer cells</strong></div>
+            <div class="profile-row"><span>Status</span><strong style="color:var(--teal)">Analysed · indexed</strong></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Synthesis across papers -->
+    <section class="wrap block" id="synthesize">
+      <div class="split reverse reveal">
+        <div>
+          <p class="eyebrow">How do I work across many papers?</p>
+          <h2 class="section-title">Synthesis — not another chat thread.</h2>
+          <p class="section-lead">
+            Collections, compare views, consensus, conflicts, and an evidence matrix
+            help you see agreement and disagreement across the library.
+          </p>
+          <div class="mini-cards">
+            <div class="mini"><h3>Collections</h3><p>Group papers around a question or theme.</p></div>
+            <div class="mini"><h3>Compare</h3><p>Side-by-side methods and outcomes.</p></div>
+            <div class="mini"><h3>Consensus</h3><p>Where findings align — and how strongly.</p></div>
+            <div class="mini"><h3>Conflicts</h3><p>Unresolved contradictions stay visible.</p></div>
+          </div>
+        </div>
+        <div class="frame">
+          <div class="frame-bar">
+            <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
+            <span class="frame-label">Evidence matrix</span>
+          </div>
+          <div style="padding:1rem">
+            <div class="matrix" aria-label="Example evidence matrix">
+              <div class="h"></div>
+              <div class="h">Paper A</div>
+              <div class="h">Paper B</div>
+              <div class="h">Paper C</div>
+              <div class="row-h">↑ Bioavailability</div>
+              <div class="cell-yes">Yes</div>
+              <div class="cell-yes">Yes</div>
+              <div class="cell-mix">Mixed</div>
+              <div class="row-h">Lymphatic uptake</div>
+              <div class="cell-yes">Yes</div>
+              <div class="cell-no">—</div>
+              <div class="cell-yes">Yes</div>
+              <div class="row-h">Kupffer clearance</div>
+              <div class="cell-mix">Noted</div>
+              <div class="cell-yes">Yes</div>
+              <div class="cell-no">No</div>
+            </div>
+            <p class="inspect-foot" style="margin-top:0.85rem">
+              Cells open the underlying evidence — empty cells stay unknown, not invented.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: Writing -->
+    <section class="wrap block" id="write">
+      <div class="reveal" style="margin-bottom:1.75rem">
+        <p class="eyebrow">How do I write?</p>
+        <h2 class="section-title">Draft from accepted evidence. Review before you export.</h2>
+        <p class="section-lead">
+          Writing Studio binds citations to evidence you accepted. The reviewer flags unsupported claims.
+        </p>
+      </div>
+      <div class="frame reveal">
+        <div class="frame-bar">
+          <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
+          <span class="frame-label">Writing Studio</span>
+        </div>
+        <div class="write-mock">
+          <div class="write-body">
+            <h4>Literature review · draft</h4>
+            <p>
+              Lipid-based nanoemulsions consistently improve oral exposure relative to aqueous suspensions
+              <span class="cite">[12]</span><span class="cite">[7]</span>. Mechanisms include
+              solubilisation of poorly soluble actives and partial lymphatic transport that bypasses
+              first-pass metabolism <span class="cite">[3]</span>.
+            </p>
+            <p>
+              Remaining uncertainty centres on hepatic uptake by Kupffer cells under PEGylated regimens —
+              results diverge across models <span class="cite">[9]</span>.
+            </p>
+          </div>
+          <aside class="reviewer">
+            <h4>Reviewer</h4>
+            <div class="issue">
+              <strong>Unsupported claim</strong>
+              Sentence 2 cites [3] for lymphatic transport — verify span matches the accepted passage.
+            </div>
+            <div class="issue" style="border-color:var(--line)">
+              <strong style="color:var(--teal)">Grounded</strong>
+              Bioavailability claim linked to 2 accepted findings.
+            </div>
+            <p class="inspect-foot" style="margin-top:0.75rem">Export Markdown · BibTeX when ready.</p>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 5: Start -->
+    <section class="wrap block" id="start">
+      <div class="reveal" style="margin-bottom:1.75rem">
+        <p class="eyebrow">How do I start?</p>
+        <h2 class="section-title">Bring the library you already have.</h2>
+        <p class="section-lead">
+          Import is the beginning of the path — not the product. Evidence and writing come after.
+        </p>
+      </div>
+      <div class="start-grid reveal">
+        <div class="start-card">
+          <h3>Library</h3>
+          <p>Projects organised around the review you’re writing.</p>
+        </div>
+        <div class="start-card">
+          <h3>Upload &amp; identifiers</h3>
+          <p>PDF upload, DOI lookup, RIS, and BibTeX.</p>
+        </div>
+        <div class="start-card">
+          <h3>Reference managers</h3>
+          <p>Connect Zotero or Mendeley and sync into Dhund.</p>
+          <ul>
+            <li>Zotero Cloud</li>
+            <li>Mendeley Library</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="wrap-narrow block" id="faq">
       <div class="reveal" style="margin-bottom:1.5rem">
-        <p class="section-kicker">How Dhund works</p>
-        <h2 class="section-title">One evidence-first path</h2>
-        <p class="section-support">No second reasoning pipeline. Papers to export, in product.</p>
+        <p class="eyebrow">Research and trust</p>
+        <h2 class="section-title">Before you invite Dhund into a review.</h2>
       </div>
-      <div class="how-strip reveal">
-        <div class="how-step">
-          <div class="n">01</div>
-          <strong>Import</strong>
-          <p>Add papers to a project library.</p>
-        </div>
-        <div class="how-step">
-          <div class="n">02</div>
-          <strong>Extract</strong>
-          <p>Claims become reviewable evidence.</p>
-        </div>
-        <div class="how-step">
-          <div class="n">03</div>
-          <strong>Decide</strong>
-          <p>Accept or reject — permanently remembered.</p>
-        </div>
-        <div class="how-step">
-          <div class="n">04</div>
-          <strong>Draft</strong>
-          <p>Write from accepted evidence only.</p>
-        </div>
-        <div class="how-step">
-          <div class="n">05</div>
-          <strong>Export</strong>
-          <p>Markdown + citations for your paper.</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="wrap faq" id="faq">
-      <div class="reveal" style="margin-bottom:1.5rem">
-        <p class="section-kicker">FAQ</p>
-        <h2 class="section-title">Research and trust</h2>
-        <p class="section-support">What matters before you invite Dhund into a literature review.</p>
-      </div>
-      <div class="faq-grid reveal">
+      <div class="faq-list reveal">
         <details class="faq-item">
           <summary>Is Dhund another “write my thesis” chatbot?</summary>
           <p>
             No. Dhund is a Research Operating System. The point is not one prompt → eighty pages.
-            It’s keeping your library, evidence decisions, and grounded writing in one place so drafts stay tied to sources you accepted.
+            It’s keeping your library, evidence decisions, and grounded writing in one place so drafts
+            stay tied to sources you accepted.
           </p>
         </details>
         <details class="faq-item">
           <summary>Where do citations come from?</summary>
           <p>
-            From papers you import and evidence you accept. Bindings connect manuscript spans to evidence objects,
-            then back to paper metadata for export — including BibTeX when bibliography data is available.
+            From papers you import and evidence you accept. Bindings connect manuscript spans to evidence
+            objects, then back to paper metadata for export — including BibTeX when bibliography data is available.
           </p>
         </details>
         <details class="faq-item">
@@ -853,16 +944,17 @@
       </div>
     </section>
 
-    <section class="wrap signin" id="signin">
+    <!-- Sign in -->
+    <section class="wrap block" id="signin">
       <div class="signin-layout">
         <div class="signin-copy reveal">
-          <p class="section-kicker">Sign in</p>
+          <p class="eyebrow">Sign in</p>
           <h2>Continue to your research workspace</h2>
           <p>
             {% if closed_beta %}
             Closed beta is invite-only. Use the email on your invite.
             {% else %}
-            Sign in to open projects, evidence, and the writing desk.
+            Open projects, inspect evidence, and write with citations bound to sources you accepted.
             {% endif %}
           </p>
           {% if closed_beta %}
@@ -943,7 +1035,7 @@
                onclick="fetch('/api/dev-login',{method:'POST'}).then(function(r){if(r.ok)window.location.href='/';}).catch(function(){});return false;">
               Skip login (dev mode only)
             </a>
-            <p style="margin-top:0.65rem;font-size:0.75rem;color:#8a9a97">
+            <p style="margin-top:0.65rem;font-size:0.75rem;color:var(--muted)">
               Add <code>DEV_AUTO_LOGIN=1</code> to <code>.env</code> to enable permanently.
             </p>
           {% endif %}
@@ -980,15 +1072,48 @@
           });
         }, { threshold: 0.12, rootMargin: '0px 0px -32px 0px' });
         nodes.forEach(function (el) { io.observe(el); });
-        if (location.hash) {
-          var target = document.querySelector(location.hash);
-          if (target) {
-            target.classList.add('in');
-            target.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('in'); });
-          }
-        }
       } else {
         nodes.forEach(function (el) { el.classList.add('in'); });
+      }
+
+      /* Evidence aha — chip → passage */
+      var evidence = {
+        a: {
+          meta: 'Accepted evidence · [3]',
+          title: 'Patel et al., 2021 — Hepatic clearance of lipid nanoparticles',
+          html: '<mark>Kupffer cells accounted for the majority of nanoparticle sequestration</mark> within 30 minutes of intravenous administration in murine models…',
+          foot: 'PDF · page 7 · Methods · Support: strong'
+        },
+        b: {
+          meta: 'Accepted evidence · [9]',
+          title: 'Chen & Rivera, 2019 — PEGylation and RES evasion',
+          html: 'Surface PEGylation <mark>reduced Kupffer-mediated uptake by approximately 40%</mark> and extended plasma half-life relative to bare lipid particles…',
+          foot: 'PDF · page 12 · Results · Support: moderate'
+        },
+        c: {
+          meta: 'Accepted evidence · [14]',
+          title: 'Okada et al., 2020 — Species differences in hepatic scavenging',
+          html: 'Authors note <mark>inter-species variability in Kupffer density</mark> that may limit direct translation of murine clearance findings…',
+          foot: 'PDF · page 3 · Discussion · Conflict noted elsewhere'
+        }
+      };
+      var demo = document.getElementById('evidence-demo');
+      if (demo) {
+        demo.querySelectorAll('.chip[data-ev]').forEach(function (chip) {
+          chip.addEventListener('click', function () {
+            var key = chip.getAttribute('data-ev');
+            var data = evidence[key];
+            if (!data) return;
+            demo.querySelectorAll('.chip[data-ev]').forEach(function (c) {
+              c.classList.toggle('is-active', c === chip);
+              c.setAttribute('aria-pressed', c === chip ? 'true' : 'false');
+            });
+            document.getElementById('ev-meta').textContent = data.meta;
+            document.getElementById('ev-title').textContent = data.title;
+            document.getElementById('ev-passage').innerHTML = data.html;
+            document.getElementById('ev-foot').textContent = data.foot;
+          });
+        });
       }
     })();
 
