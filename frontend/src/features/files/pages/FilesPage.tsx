@@ -352,7 +352,7 @@ export function FilesPage() {
                 /* ignore */
               }
               navigate(
-                `/research/compare?tab=compare&ids=${selectedList.join(",")}`,
+                `/research/compare?tab=matrix&ids=${selectedList.join(",")}`,
               );
             }}
             onBulkAddToCollection={() => setAddToCollectionIds(selectedList)}

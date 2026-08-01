@@ -248,7 +248,7 @@ export function FileCard({
                 } catch {
                   /* ignore */
                 }
-                navigate(`/research/compare?tab=compare&ids=${file.id}`);
+                navigate(`/research/compare?tab=matrix&ids=${file.id}`);
               }}
             >
               <GitCompare className="size-3.5" />

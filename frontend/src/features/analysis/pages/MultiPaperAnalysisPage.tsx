@@ -25,7 +25,7 @@ import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
 import { loadResearchPrefs } from "@/features/settings/lib/researchPrefs";
 import { cn } from "@/lib/utils";
 
-/** Phase A.5: Evidence RI tabs are primary; LLM narrative compare is advanced. */
+/** Evidence RI tabs are primary; LLM narrative compare is optional (settings). */
 type Tab =
   | "matrix"
   | "extract"
@@ -47,23 +47,12 @@ const TAB_KEYS: Tab[] = [
   "compare",
 ];
 
-const TITLES: Record<Tab, string> = {
-  matrix: "Evidence Matrix",
-  extract: "Structured Extract",
-  themes: "Theme Discovery",
-  gaps: "Research Gaps",
-  graph: "Knowledge Graph",
-  timeline: "Research Timeline",
-  methodology: "Methodology",
-  compare: "Narrative compare (AI)",
-};
-
 function parseTab(raw: string | null): Tab {
   if (raw && (TAB_KEYS as string[]).includes(raw)) return raw as Tab;
   return "matrix";
 }
 
-/** Research Intelligence workbench — Evidence-first single truth path (Phase A.5). */
+/** Research Intelligence workbench — evidence-first. Top bar names the place. */
 export function MultiPaperAnalysisPage() {
   const { currentProjectId } = useUI();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -115,23 +104,17 @@ export function MultiPaperAnalysisPage() {
   );
 
   return (
-    <PageContainer title={TITLES[tab]} maxWidth="6xl" dense>
-      <p className="mb-2 text-[11px] text-muted-foreground">
-        Structured analysis uses Evidence Objects.
-        {showAiCompare
-          ? " Narrative AI compare is optional and secondary."
-          : " Enable AI Compare under Settings → Research defaults if needed."}
-      </p>
-      <div className="mb-3 flex flex-wrap items-center gap-0.5 rounded-md border border-border p-0.5 w-fit">
+    <PageContainer maxWidth="6xl" dense>
+      <div className="mb-4 flex flex-wrap items-center gap-0.5 border-b border-border/70 pb-0">
         {tabs.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             type="button"
             onClick={() => setTab(key)}
             className={cn(
-              "inline-flex h-8 items-center gap-1.5 rounded px-2.5 text-[12px] font-medium",
+              "relative inline-flex h-9 items-center gap-1.5 px-2.5 text-[12px] font-medium",
               tab === key
-                ? "bg-muted text-foreground"
+                ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -155,11 +138,7 @@ export function MultiPaperAnalysisPage() {
       ) : tab === "methodology" ? (
         <EvidenceMethodologyPanel projectId={currentProjectId} />
       ) : (
-        <CompareGapsWorkbench
-          files={allFiles}
-          projectId={currentProjectId}
-          onOpenEvidenceTab={setTab}
-        />
+        <CompareGapsWorkbench files={allFiles} projectId={currentProjectId} />
       )}
     </PageContainer>
   );

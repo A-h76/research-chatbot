@@ -482,7 +482,7 @@ export function CommandPalette() {
         keywords: "compare papers gaps",
         icon: GitCompare,
         show: true,
-        run: () => go("/research/compare?tab=compare"),
+        run: () => go("/research/compare?tab=matrix"),
       },
       {
         id: "skill-summarize",
