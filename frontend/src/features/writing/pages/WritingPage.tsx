@@ -172,13 +172,18 @@ function DraftTab() {
       return;
     }
     if (activeId && docs.some((d) => d.id === activeId)) return;
-    const d = docs[0];
+    const docParam = Number(searchParams.get("doc"));
+    const fromQuery =
+      Number.isFinite(docParam) && docParam > 0
+        ? docs.find((d) => d.id === docParam)
+        : undefined;
+    const d = fromQuery ?? docs[0];
     setActiveId(d.id);
     setDraftTitle(d.title || "Untitled draft");
     setInput(d.content || "");
     setVersion(d.current_version || 1);
     setSaveState("saved");
-  }, [activeId, docs]);
+  }, [activeId, docs, searchParams]);
 
   const createDoc = useMutation({
     mutationFn: () =>
