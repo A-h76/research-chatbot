@@ -21,6 +21,7 @@ export function MobileDrawer({
         <SidebarContents
           me={me}
           density="labels"
+          showLabel
           onNavigate={() => onOpenChange(false)}
         />
       </SheetContent>

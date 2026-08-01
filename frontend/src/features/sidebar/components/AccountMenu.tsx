@@ -25,8 +25,8 @@ export function AccountMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          "flex w-full items-center gap-2.5 rounded-lg py-2 text-left transition-colors hover:bg-sidebar-accent",
-          compact ? "justify-center px-1" : "px-2",
+          "flex w-full items-center gap-2.5 rounded-lg py-2 pl-3 text-left transition-colors hover:bg-sidebar-accent",
+          compact ? "pr-1" : "pr-2",
         )}
         title={me.name}
       >

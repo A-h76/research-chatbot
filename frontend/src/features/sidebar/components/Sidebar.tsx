@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   PanelLeftClose,
+  PanelLeftOpen,
   Library,
   Settings,
   Home,
@@ -17,6 +18,8 @@ import {
 import { AccountMenu } from "./AccountMenu";
 import {
   useUI,
+  SIDEBAR_COLLAPSED_WIDTH,
+  SIDEBAR_SNAP_COLLAPSE,
   SIDEBAR_WIDTH_DEFAULT,
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
@@ -29,13 +32,11 @@ import type { Me, Project, UserFile } from "@/types/api";
 
 const RESEARCH_LIST_LIMIT = 5;
 
-/** Density bands for fluid sidebar content. */
-export type SidebarDensity = "icons" | "labels" | "rich";
+/** Density for expanded rail only (collapsed always clips labels). */
+export type SidebarDensity = "labels" | "rich";
 
 export function sidebarDensity(width: number): SidebarDensity {
-  if (width < 268) return "icons";
-  if (width < 340) return "labels";
-  return "rich";
+  return width >= 340 ? "rich" : "labels";
 }
 
 type ResearchStatus = "ready" | "review" | "idle";
@@ -69,6 +70,9 @@ const STATUS_LABEL: Record<ResearchStatus, string> = {
   idle: "Idle",
 };
 
+/** Fixed icon column inset — never recenters when the rail folds. */
+const ICON_INSET = "pl-3";
+
 function FadeLabel({
   show,
   children,
@@ -81,8 +85,10 @@ function FadeLabel({
   return (
     <span
       className={cn(
-        "min-w-0 overflow-hidden whitespace-nowrap transition-[opacity,max-width] duration-200 ease-out",
-        show ? "max-w-[14rem] opacity-100" : "max-w-0 opacity-0",
+        "min-w-0 overflow-hidden whitespace-nowrap transition-[opacity,max-width,transform] duration-200 ease-out",
+        show
+          ? "max-w-[14rem] translate-x-0 opacity-100"
+          : "max-w-0 -translate-x-1 opacity-0",
         className,
       )}
       aria-hidden={!show}
@@ -98,24 +104,23 @@ function PlaceItem({
   active,
   onClick,
   trailing,
-  density,
+  showLabel,
 }: {
   icon: React.ReactNode;
   label: string;
   active?: boolean;
   onClick: () => void;
   trailing?: React.ReactNode;
-  density: SidebarDensity;
+  showLabel: boolean;
 }) {
-  const showLabel = density !== "icons";
   return (
     <button
       type="button"
       onClick={onClick}
       title={label}
       className={cn(
-        "group relative flex w-full items-center gap-2.5 rounded-md py-1.5 text-left text-[13px] transition-colors duration-200",
-        density === "icons" ? "justify-center px-2" : "pr-2.5 pl-2.5",
+        "group relative flex w-full items-center gap-2.5 rounded-md py-1.5 pr-2.5 text-left text-[13px] transition-colors duration-200",
+        ICON_INSET,
         active
           ? "bg-sidebar-accent font-medium text-sidebar-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
           : "font-normal text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
@@ -127,20 +132,20 @@ function PlaceItem({
       <FadeLabel show={showLabel} className="flex-1 truncate">
         {label}
       </FadeLabel>
-      {showLabel && trailing}
+      {showLabel ? trailing : null}
     </button>
   );
 }
 
 function ResearchContextCard({
   projectId,
-  density,
+  show,
 }: {
   projectId: number;
-  density: SidebarDensity;
+  show: boolean;
 }) {
   const { data: hub } = useProjectHub(projectId);
-  if (!hub || density !== "rich") return null;
+  if (!hub || !show) return null;
 
   const papers = hub.stats.papers;
   const evidence = hub.stats.insights + hub.stats.open_questions;
@@ -168,16 +173,17 @@ function ResearchContextCard({
 }
 
 /**
- * Places sidebar — Create · Home · Library · Search · Research · Settings.
- * Theme-aware · resizable · fluid density.
+ * Places sidebar — left-anchored icons; rail folds from the right (VS Code / Cursor).
  */
 export function SidebarContents({
   me,
   onNavigate,
+  showLabel,
   density = "labels",
 }: {
   me: Me;
   onNavigate?: () => void;
+  showLabel: boolean;
   density?: SidebarDensity;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
@@ -185,8 +191,7 @@ export function SidebarContents({
   const navigate = useNavigate();
   const location = useLocation();
   const path = location.pathname;
-  const showLabels = density !== "icons";
-  const showMeta = density === "rich";
+  const showMeta = showLabel && density === "rich";
 
   const { data: projects = [] } = useProjects();
   const { data: files = [] } = useAllFiles();
@@ -255,13 +260,8 @@ export function SidebarContents({
 
   return (
     <div className="flex h-full min-h-0 flex-col" onClickCapture={onNavigate}>
-      <div
-        className={cn(
-          "flex shrink-0 items-center gap-2.5 pt-5 pb-3",
-          showLabels ? "justify-between px-4 pr-10" : "justify-center px-2",
-        )}
-      >
-        <div className={cn("flex min-w-0 items-center gap-2.5", !showLabels && "justify-center")}>
+      <div className={cn("flex shrink-0 items-center gap-2.5 pt-5 pb-3 pr-10", ICON_INSET)}>
+        <div className="flex min-w-0 items-center gap-2.5">
           <div
             className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors duration-200"
             title="Dhund — Research Operating System"
@@ -269,7 +269,7 @@ export function SidebarContents({
           >
             <span className="text-[10px] font-bold tracking-tight">Dh</span>
           </div>
-          <FadeLabel show={showLabels}>
+          <FadeLabel show={showLabel}>
             <div className="min-w-0">
               <h1 className="truncate text-[14px] font-semibold tracking-tight text-sidebar-foreground">
                 Dhund
@@ -282,30 +282,30 @@ export function SidebarContents({
         </div>
       </div>
 
-      <nav className="lab-sidebar-scroll min-h-0 flex-1 space-y-5 overflow-y-auto px-2.5 pb-3">
+      <nav className="lab-sidebar-scroll min-h-0 flex-1 space-y-5 overflow-y-auto px-1.5 pb-3">
         <div className="relative" data-create-menu>
           <button
             type="button"
             onClick={() => setCreateOpen((o) => !o)}
             title="Create"
             className={cn(
-              "flex w-full items-center rounded-md py-1.5 text-sidebar-foreground transition-colors duration-200 hover:bg-sidebar-accent",
-              showLabels ? "justify-between px-2.5" : "justify-center px-2",
+              "flex w-full items-center gap-2.5 rounded-md py-1.5 pr-2.5 text-sidebar-foreground transition-colors duration-200 hover:bg-sidebar-accent",
+              ICON_INSET,
             )}
             aria-expanded={createOpen}
             aria-haspopup="menu"
           >
-            <span className="flex items-center gap-2.5 text-[13px] font-medium">
-              <Plus className="size-[18px] shrink-0 text-muted-foreground" />
-              <FadeLabel show={showLabels}>Create</FadeLabel>
-            </span>
-            {showLabels && (
+            <Plus className="size-[18px] shrink-0 text-muted-foreground" />
+            <FadeLabel show={showLabel} className="flex-1 text-[13px] font-medium">
+              Create
+            </FadeLabel>
+            {showLabel && (
               <kbd className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/80">
                 ⌘N
               </kbd>
             )}
           </button>
-          {createOpen && (
+          {createOpen && showLabel && (
             <div
               role="menu"
               className="absolute left-0 right-0 z-30 mt-1 rounded-lg border border-sidebar-border bg-popover py-1 text-popover-foreground shadow-lg"
@@ -356,21 +356,21 @@ export function SidebarContents({
 
         <div className="space-y-0.5">
           <PlaceItem
-            density={density}
+            showLabel={showLabel}
             icon={<Home />}
             label="Home"
             active={isHome}
             onClick={() => go("library", "/home")}
           />
           <PlaceItem
-            density={density}
+            showLabel={showLabel}
             icon={<Library />}
             label="Library"
             active={isLibrary}
             onClick={() => go("library", "/library")}
           />
           <PlaceItem
-            density={density}
+            showLabel={showLabel}
             icon={<Search />}
             label="Search"
             onClick={openPalette}
@@ -382,147 +382,128 @@ export function SidebarContents({
           />
         </div>
 
-        {showLabels && (
-          <div>
-            <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/75">
+        <div>
+          <FadeLabel show={showLabel}>
+            <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/75">
               Research
             </p>
-            <div className="space-y-0.5">
-              {researchProjects.length === 0 ? (
-                <button
-                  type="button"
-                  onClick={() => go("projects", "/projects?new=1")}
-                  className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                >
-                  <Plus className="size-4" />
-                  Start a project
-                </button>
-              ) : (
-                researchProjects.map((p) => {
-                  const status = researchStatus(p.id, files);
-                  const count = paperCountFor(p.id, files);
-                  const active =
-                    activeResearchId === p.id && path.startsWith("/projects/");
-                  return (
-                    <div key={p.id}>
-                      <button
-                        type="button"
-                        title={`${p.name} · ${STATUS_LABEL[status]}`}
-                        onClick={() => openProject(p)}
+          </FadeLabel>
+          <div className="space-y-0.5">
+            {researchProjects.length === 0 ? (
+              <button
+                type="button"
+                title="Start a project"
+                onClick={() => go("projects", "/projects?new=1")}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-md py-1.5 pr-2.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                  ICON_INSET,
+                )}
+              >
+                <Plus className="size-4 shrink-0" />
+                <FadeLabel show={showLabel}>Start a project</FadeLabel>
+              </button>
+            ) : (
+              researchProjects.map((p) => {
+                const status = researchStatus(p.id, files);
+                const count = paperCountFor(p.id, files);
+                const active =
+                  activeResearchId === p.id && path.startsWith("/projects/");
+                return (
+                  <div key={p.id}>
+                    <button
+                      type="button"
+                      title={`${p.name} · ${STATUS_LABEL[status]}`}
+                      onClick={() => openProject(p)}
+                      className={cn(
+                        "group relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] transition-colors duration-200",
+                        ICON_INSET,
+                        active
+                          ? "bg-sidebar-accent font-medium text-sidebar-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
+                          : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+                      )}
+                    >
+                      <span
                         className={cn(
-                          "group relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 pl-2.5 text-left text-[13px] transition-colors duration-200",
-                          active
-                            ? "bg-sidebar-accent font-medium text-sidebar-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
-                            : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+                          "size-1.5 shrink-0 rounded-full",
+                          STATUS_DOT[status],
                         )}
-                      >
-                        <span
-                          className={cn(
-                            "size-1.5 shrink-0 rounded-full",
-                            STATUS_DOT[status],
-                          )}
-                          aria-hidden
-                        />
-                        <span className="min-w-0 flex-1 truncate">
-                          {p.emoji ? `${p.emoji} ` : ""}
-                          {p.name}
-                        </span>
-                      </button>
-                      {showMeta && (
-                        <p className="truncate pl-6 text-[11px] text-muted-foreground/80">
-                          {count} paper{count === 1 ? "" : "s"}
-                          {active ? ` · ${STATUS_LABEL[status]}` : ""}
-                        </p>
-                      )}
-                      {active && activeResearchId != null && (
-                        <ResearchContextCard
-                          projectId={activeResearchId}
-                          density={density}
-                        />
-                      )}
-                    </div>
-                  );
-                })
-              )}
-              {projects.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => go("projects", "/projects")}
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                >
-                  <FolderKanban className="size-3.5 opacity-70" />
+                        aria-hidden
+                      />
+                      <FadeLabel show={showLabel} className="min-w-0 flex-1 truncate">
+                        {p.emoji ? `${p.emoji} ` : ""}
+                        {p.name}
+                      </FadeLabel>
+                    </button>
+                    {showMeta && (
+                      <p className="truncate pl-8 text-[11px] text-muted-foreground/80">
+                        {count} paper{count === 1 ? "" : "s"}
+                        {active ? ` · ${STATUS_LABEL[status]}` : ""}
+                      </p>
+                    )}
+                    {active && activeResearchId != null && (
+                      <ResearchContextCard
+                        projectId={activeResearchId}
+                        show={showMeta}
+                      />
+                    )}
+                  </div>
+                );
+              })
+            )}
+            {projects.length > 0 && (
+              <button
+                type="button"
+                title={
+                  projects.length > RESEARCH_LIST_LIMIT
+                    ? "View all projects"
+                    : "All projects"
+                }
+                onClick={() => go("projects", "/projects")}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md py-1.5 pr-2.5 text-left text-[12px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                  ICON_INSET,
+                )}
+              >
+                <FolderKanban className="size-3.5 shrink-0 opacity-70" />
+                <FadeLabel show={showLabel}>
                   {projects.length > RESEARCH_LIST_LIMIT
                     ? "View all projects…"
                     : "All projects"}
-                </button>
-              )}
-            </div>
+                </FadeLabel>
+              </button>
+            )}
           </div>
-        )}
-
-        {!showLabels && (
-          <div className="space-y-0.5">
-            {researchProjects.slice(0, 3).map((p) => {
-              const status = researchStatus(p.id, files);
-              const active =
-                activeResearchId === p.id && path.startsWith("/projects/");
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  title={p.name}
-                  onClick={() => openProject(p)}
-                  className={cn(
-                    "flex w-full items-center justify-center rounded-md py-1.5 transition-colors",
-                    active
-                      ? "bg-sidebar-accent"
-                      : "hover:bg-sidebar-accent/70",
-                  )}
-                >
-                  <span
-                    className={cn("size-2 rounded-full", STATUS_DOT[status])}
-                    aria-hidden
-                  />
-                </button>
-              );
-            })}
-          </div>
-        )}
+        </div>
       </nav>
 
-      <div className="mt-auto shrink-0 space-y-0.5 border-t border-sidebar-border/60 p-2.5">
+      <div className="mt-auto shrink-0 space-y-0.5 border-t border-sidebar-border/60 p-1.5 pt-2">
         <PlaceItem
-          density={density}
+          showLabel={showLabel}
           icon={<Settings />}
           label="Settings"
           active={isSettings}
           onClick={() => go("settings", "/settings")}
         />
-        <AccountMenu me={me} compact={!showLabels} />
+        <AccountMenu me={me} compact={!showLabel} />
       </div>
     </div>
   );
 }
 
 function SidebarResizeHandle({
-  onResize,
-  disabled,
+  onDragWidth,
 }: {
-  onResize: (width: number) => void;
-  disabled?: boolean;
+  /** Live width from left edge of the shell to the pointer. */
+  onDragWidth: (width: number) => void;
 }) {
   const dragging = useRef(false);
-  const startX = useRef(0);
-  const startW = useRef(SIDEBAR_WIDTH_DEFAULT);
-  const { sidebarWidth } = useUI();
+  const { sidebarRailWidth } = useUI();
 
   useEffect(() => {
-    if (disabled) return;
-
     const onMove = (e: PointerEvent) => {
       if (!dragging.current) return;
-      const delta = e.clientX - startX.current;
-      onResize(startW.current + delta);
+      // Sidebar is flush left — clientX is the target width.
+      onDragWidth(e.clientX);
     };
     const onUp = () => {
       if (!dragging.current) return;
@@ -538,23 +519,19 @@ function SidebarResizeHandle({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [disabled, onResize]);
-
-  if (disabled) return null;
+  }, [onDragWidth]);
 
   return (
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-valuenow={sidebarWidth}
-      aria-valuemin={SIDEBAR_WIDTH_MIN}
+      aria-valuenow={sidebarRailWidth}
+      aria-valuemin={SIDEBAR_COLLAPSED_WIDTH}
       aria-valuemax={SIDEBAR_WIDTH_MAX}
       aria-label="Resize sidebar"
       onPointerDown={(e) => {
         e.preventDefault();
         dragging.current = true;
-        startX.current = e.clientX;
-        startW.current = sidebarWidth;
         document.body.style.cursor = "col-resize";
         document.body.style.userSelect = "none";
       }}
@@ -563,7 +540,6 @@ function SidebarResizeHandle({
         "flex items-center justify-center",
       )}
     >
-      {/* Hover / drag grip — ⋮ style */}
       <div
         className={cn(
           "flex h-12 w-1 flex-col items-center justify-center gap-[3px] rounded-full",
@@ -586,67 +562,81 @@ export function Sidebar({ me }: { me: Me }) {
     setSidebarCollapsed,
     sidebarWidth,
     setSidebarWidth,
+    sidebarRailWidth,
   } = useUI();
   const [resizing, setResizing] = useState(false);
   const density = sidebarDensity(sidebarWidth);
+  const showLabel = !sidebarCollapsed;
 
-  const handleResize = (w: number) => {
-    setResizing(true);
-    setSidebarWidth(w);
-  };
+  const onDragWidth = useCallback(
+    (width: number) => {
+      setResizing(true);
+      if (width < SIDEBAR_SNAP_COLLAPSE) {
+        setSidebarCollapsed(true);
+        return;
+      }
+      if (sidebarCollapsed) {
+        setSidebarCollapsed(false);
+      }
+      // Between snap and min → park at min expanded; otherwise clamp.
+      if (width < SIDEBAR_WIDTH_MIN) {
+        setSidebarWidth(SIDEBAR_WIDTH_MIN);
+        return;
+      }
+      setSidebarWidth(Math.min(SIDEBAR_WIDTH_MAX, Math.round(width)));
+    },
+    [setSidebarCollapsed, setSidebarWidth, sidebarCollapsed],
+  );
 
   useEffect(() => {
     if (!resizing) return;
-    const t = window.setTimeout(() => setResizing(false), 120);
+    const t = window.setTimeout(() => setResizing(false), 100);
     return () => window.clearTimeout(t);
-  }, [sidebarWidth, resizing]);
+  }, [sidebarRailWidth, resizing]);
+
+  // Layout width stays at the expanded size so icons don't shift while the rail folds.
+  const contentWidth = Math.max(sidebarWidth, SIDEBAR_WIDTH_DEFAULT);
 
   return (
     <motion.aside
       initial={false}
-      animate={{ width: sidebarCollapsed ? 0 : sidebarWidth }}
+      animate={{ width: sidebarRailWidth }}
       transition={
-        resizing
-          ? { duration: 0 }
-          : { duration: 0.2, ease: "easeInOut" }
+        resizing ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }
       }
       className={cn(
         "relative hidden h-full min-h-0 shrink-0 self-stretch md:block",
-        sidebarCollapsed ? "overflow-hidden" : "overflow-visible",
+        "overflow-visible",
       )}
       style={
         {
-          ["--sidebar-width" as string]: `${sidebarWidth}px`,
+          ["--sidebar-width" as string]: `${sidebarRailWidth}px`,
         } as React.CSSProperties
       }
     >
       <div
-        className={cn(
-          "dhund-sidebar absolute inset-y-0 left-0 flex min-h-0 flex-col overflow-hidden border-r border-sidebar-border",
-          sidebarCollapsed && "pointer-events-none",
-        )}
-        style={{ width: sidebarWidth }}
+        className="dhund-sidebar absolute inset-y-0 left-0 flex min-h-0 flex-col overflow-hidden border-r border-sidebar-border"
+        style={{ width: sidebarRailWidth }}
       >
-        <SidebarContents me={me} density={density} />
+        {/* Fixed left layout; rail clips from the right when collapsing. */}
+        <div className="h-full min-h-0" style={{ width: contentWidth }}>
+          <SidebarContents me={me} showLabel={showLabel} density={density} />
+        </div>
+
         <button
           type="button"
-          onClick={() => setSidebarCollapsed(true)}
-          title="Close sidebar (⌘B)"
-          className={cn(
-            "absolute top-3 z-10 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
-            density === "icons" ? "right-0.5" : "right-2",
-          )}
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          title={sidebarCollapsed ? "Expand sidebar (⌘B)" : "Collapse sidebar (⌘B)"}
+          className="absolute top-3 right-1.5 z-10 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
-          <PanelLeftClose className="size-4" />
+          {sidebarCollapsed ? (
+            <PanelLeftOpen className="size-4" />
+          ) : (
+            <PanelLeftClose className="size-4" />
+          )}
         </button>
-        {!sidebarCollapsed && (
-          <SidebarResizeHandle
-            onResize={(w) => {
-              setResizing(true);
-              handleResize(w);
-            }}
-          />
-        )}
+
+        <SidebarResizeHandle onDragWidth={onDragWidth} />
       </div>
     </motion.aside>
   );

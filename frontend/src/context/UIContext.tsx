@@ -3,12 +3,19 @@ import type { SearchMode } from "@/types/api";
 
 type ActiveView = "chat" | "library" | "projects" | "citations" | "memory" | "settings" | "paper";
 
+/** Icon rail when collapsed (VS Code / Cursor style). */
+export const SIDEBAR_COLLAPSED_WIDTH = 72;
+/** Expanded resize floor. */
 export const SIDEBAR_WIDTH_MIN = 240;
 export const SIDEBAR_WIDTH_DEFAULT = 280;
 export const SIDEBAR_WIDTH_MAX = 380;
-const SIDEBAR_WIDTH_KEY = "dhund.sidebarWidth";
+/** Dragging below this snaps to the collapsed rail. */
+export const SIDEBAR_SNAP_COLLAPSE = 120;
 
-function clampSidebarWidth(n: number): number {
+const SIDEBAR_WIDTH_KEY = "dhund.sidebarWidth";
+const SIDEBAR_COLLAPSED_KEY = "dhund.sidebarCollapsed";
+
+function clampExpandedWidth(n: number): number {
   return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(n)));
 }
 
@@ -18,17 +25,28 @@ function readStoredSidebarWidth(): number {
     if (!raw) return SIDEBAR_WIDTH_DEFAULT;
     const n = Number(raw);
     if (!Number.isFinite(n)) return SIDEBAR_WIDTH_DEFAULT;
-    return clampSidebarWidth(n);
+    return clampExpandedWidth(n);
   } catch {
     return SIDEBAR_WIDTH_DEFAULT;
+  }
+}
+
+function readStoredCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
   }
 }
 
 interface UIContextValue {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (v: boolean) => void;
+  /** Last expanded width (240–380). Not the collapsed rail width. */
   sidebarWidth: number;
   setSidebarWidth: (w: number) => void;
+  /** Layout width currently shown in the shell. */
+  sidebarRailWidth: number;
   rightPanelOpen: boolean;
   setRightPanelOpen: (v: boolean) => void;
   currentProjectId: number | null;
@@ -44,7 +62,7 @@ interface UIContextValue {
 const UIContext = createContext<UIContextValue | null>(null);
 
 export function UIProvider({ children }: { children: ReactNode }) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsedState] = useState(readStoredCollapsed);
   const [sidebarWidth, setSidebarWidthState] = useState(readStoredSidebarWidth);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(null);
@@ -56,8 +74,17 @@ export function UIProvider({ children }: { children: ReactNode }) {
     () => (localStorage.getItem("defSearch") as SearchMode) || "auto",
   );
 
+  const setSidebarCollapsed = (v: boolean) => {
+    setSidebarCollapsedState(v);
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  };
+
   const setSidebarWidth = (w: number) => {
-    const next = clampSidebarWidth(w);
+    const next = clampExpandedWidth(w);
     setSidebarWidthState(next);
     try {
       localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next));
@@ -75,6 +102,10 @@ export function UIProvider({ children }: { children: ReactNode }) {
     setDefaultSearchModeState(m);
   };
 
+  const sidebarRailWidth = sidebarCollapsed
+    ? SIDEBAR_COLLAPSED_WIDTH
+    : sidebarWidth;
+
   return (
     <UIContext.Provider
       value={{
@@ -82,6 +113,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
         setSidebarCollapsed,
         sidebarWidth,
         setSidebarWidth,
+        sidebarRailWidth,
         rightPanelOpen,
         setRightPanelOpen,
         currentProjectId,
