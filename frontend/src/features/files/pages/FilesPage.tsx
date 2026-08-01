@@ -318,7 +318,7 @@ export function FilesPage() {
   }
 
   return (
-    <PageContainer title="Library" description={statsLine} dense maxWidth="6xl">
+    <PageContainer description={statsLine} dense maxWidth="6xl">
       <div className="space-y-6">
         {hasLibrary && (
           <CollectionToolbar
