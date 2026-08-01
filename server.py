@@ -1489,6 +1489,38 @@ def login_required(f):
     return wrapper
 
 
+_LOGIN_ERRORS = {
+    "not_invited": "Access denied — this account is not invited to the closed beta.",
+    "oauth_email": "Could not read your Google account email.",
+    "oauth_failed": "Google sign-in failed or expired. Please try again.",
+    "oauth_busy": "Sign-in is temporarily busy. Wait a moment and try again.",
+    "login_failed": "Sign-in failed. Please try again.",
+}
+
+
+def _render_login_landing():
+    """Public Research OS landing + sign-in (login.html). Shared by / and /login."""
+    raw_error = request.args.get("error")
+    if raw_error and raw_error in _LOGIN_ERRORS:
+        error_msg = _LOGIN_ERRORS[raw_error]
+    elif raw_error and len(raw_error) > 24 and " " in raw_error:
+        error_msg = raw_error  # legacy full-sentence query params
+    elif raw_error:
+        error_msg = _LOGIN_ERRORS.get("login_failed")
+    else:
+        error_msg = None
+
+    return render_template(
+        "login.html",
+        active="signin",
+        oauth_ready=bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
+        closed_beta=CLOSED_BETA,
+        error=error_msg,
+        verified=request.args.get("verified") == "1",
+        app_base_url=APP_BASE_URL,
+    )
+
+
 @app.route("/login")
 def login_page():
     if "user_id" in session:
@@ -1529,34 +1561,7 @@ def login_page():
             db.close()
     # ─────────────────────────────────────────────────────────────────────────
 
-    # Map stable error codes from OAuth/magic-link redirects to user copy.
-    # Raw ?error= strings that already look like sentences are shown as-is.
-    _LOGIN_ERRORS = {
-        "not_invited": "Access denied — this account is not invited to the closed beta.",
-        "oauth_email": "Could not read your Google account email.",
-        "oauth_failed": "Google sign-in failed or expired. Please try again.",
-        "oauth_busy": "Sign-in is temporarily busy. Wait a moment and try again.",
-        "login_failed": "Sign-in failed. Please try again.",
-    }
-    raw_error = request.args.get("error")
-    if raw_error and raw_error in _LOGIN_ERRORS:
-        error_msg = _LOGIN_ERRORS[raw_error]
-    elif raw_error and len(raw_error) > 24 and " " in raw_error:
-        error_msg = raw_error  # legacy full-sentence query params
-    elif raw_error:
-        error_msg = _LOGIN_ERRORS.get("login_failed")
-    else:
-        error_msg = None
-
-    return render_template(
-        "login.html",
-        active="signin",
-        oauth_ready=bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
-        closed_beta=CLOSED_BETA,
-        error=error_msg,
-        verified=request.args.get("verified") == "1",
-        app_base_url=APP_BASE_URL,
-    )
+    return _render_login_landing()
 
 
 def _marketing_ctx(active: str, **extra):
@@ -1573,10 +1578,10 @@ def _serve_spa_index():
 
 @app.route("/")
 def root():
-    """Logged-out visitors see the marketing home; signed-in users get the SPA."""
+    """Signed-in users get the SPA; logged-out visitors get the login landing (retired marketing home)."""
     if "user_id" in session:
         return _serve_spa_index()
-    return render_template("marketing/home.html", **_marketing_ctx("home"))
+    return _render_login_landing()
 
 
 @app.route("/product")
