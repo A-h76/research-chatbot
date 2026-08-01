@@ -1,47 +1,98 @@
 import { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  FileText,
-  ImageIcon,
   Trash2,
-  CheckCircle2,
-  BookOpen,
-  BookMarked,
   Upload,
+  MessageSquare,
+  GitCompare,
+  FolderPlus,
+  ExternalLink,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { AiStateBadge, type AiStateResolved } from "@/features/pipeline";
+import type { AiStateResolved } from "@/features/pipeline";
 import { toast } from "@/components/common/Toast";
 import type { Project, UserFile } from "@/types/api";
 import { libraryBridgeApi } from "../libraryBridgeApi";
-import { ExtractEvidenceButton } from "@/features/evidence/components/ExtractEvidenceButton";
 
-const STATUS_ICONS = {
-  unread: BookOpen,
-  reading: BookMarked,
-  read: CheckCircle2,
-};
+const STUDY_HINTS = [
+  "rct",
+  "randomized",
+  "randomised",
+  "cohort",
+  "case-control",
+  "case report",
+  "meta-analysis",
+  "systematic review",
+  "review",
+  "cross-sectional",
+  "qualitative",
+  "in vitro",
+  "in vivo",
+  "observational",
+];
+
+function studyTypeLabel(file: UserFile): string | null {
+  for (const t of file.tags ?? []) {
+    const low = t.toLowerCase();
+    if (STUDY_HINTS.some((h) => low.includes(h))) return t;
+  }
+  return null;
+}
+
+type IntelChip = { id: string; label: string; on?: boolean };
+
+function intelligenceChips(
+  file: UserFile,
+  aiState?: AiStateResolved,
+): IntelChip[] {
+  const r = file.research_readiness;
+  const aid = aiState?.id;
+  const chatReady = r === "research_ready" || aid === "chat_ready";
+  const profile =
+    r === "analysed" ||
+    r === "indexed" ||
+    r === "research_ready" ||
+    (file.meta_status === "done" && r !== "metadata_only" && r !== "pdf_attached");
+  const evidence =
+    r === "indexed" ||
+    r === "research_ready" ||
+    aid === "evidence_ready" ||
+    aid === "graph_ready" ||
+    aid === "chat_ready";
+  const graph =
+    aid === "graph_ready" || aid === "chat_ready" || r === "research_ready";
+
+  return [
+    { id: "chat", label: "Chat Ready", on: chatReady },
+    { id: "profile", label: "Research Profile", on: profile },
+    { id: "evidence", label: "Evidence", on: evidence },
+    { id: "graph", label: "Knowledge Graph", on: graph },
+  ];
+}
 
 /**
- * D5 — Dense Library row (GitHub-like). Prefer over card grid.
+ * Dense Library row — corpus intelligence, not a document card.
  */
 export function FileCard({
   file,
   project,
   onDelete,
   aiState,
+  selected = false,
+  onToggleSelect,
 }: {
   file: UserFile;
   project?: Project;
   onDelete: () => void;
   aiState?: AiStateResolved;
+  selected?: boolean;
+  onToggleSelect?: (id: number) => void;
 }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rs = (file.reading_status ?? "unread") as "unread" | "reading" | "read";
-  const StatusIcon = STATUS_ICONS[rs];
   const isPaper = file.kind === "document";
   const readiness = file.research_readiness;
   const metadataOnly =
@@ -50,9 +101,10 @@ export function FileCard({
       file.has_pdf === false ||
       (!readiness && (file.size === 0 || !file.size)));
   const displayTitle = file.title || file.name;
-  const meta = [file.authors?.split(";")[0]?.trim(), file.year]
-    .filter(Boolean)
-    .join(" · ");
+  const authors = file.authors?.split(";")[0]?.trim();
+  const meta = [authors, file.year].filter(Boolean).join(" · ");
+  const study = studyTypeLabel(file);
+  const chips = isPaper ? intelligenceChips(file, aiState) : [];
 
   const attachPdf = async (pdf: File) => {
     try {
@@ -65,63 +117,85 @@ export function FileCard({
     }
   };
 
+  const open = () => {
+    if (isPaper) navigate(`/papers/${file.id}`);
+  };
+
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={() => {
-        if (isPaper) navigate(`/papers/${file.id}`);
-      }}
-      onKeyDown={(e) => {
-        if ((e.key === "Enter" || e.key === " ") && isPaper) {
-          e.preventDefault();
-          navigate(`/papers/${file.id}`);
-        }
-      }}
-      className="group flex w-full items-center gap-3 border-b border-border px-2 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring last:border-b-0"
+      className={cn(
+        "group relative flex w-full items-start gap-3 border-b border-border/60 px-1 py-3.5 text-left transition-colors last:border-b-0",
+        selected ? "bg-primary/[0.04]" : "hover:bg-muted/30",
+      )}
     >
-      <div
-        className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-md",
-          isPaper ? "bg-muted" : "bg-muted",
-        )}
-      >
-        {file.kind === "image" ? (
-          <ImageIcon className="size-4 text-muted-foreground" />
-        ) : (
-          <FileText className="size-4 text-muted-foreground" />
-        )}
-      </div>
+      {isPaper && onToggleSelect && (
+        <label className="mt-1 flex shrink-0 cursor-pointer items-center">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect(file.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="size-3.5 rounded border-border accent-primary"
+            aria-label={`Select ${displayTitle}`}
+          />
+        </label>
+      )}
 
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium leading-snug" title={displayTitle}>
+      <button
+        type="button"
+        onClick={open}
+        className="min-w-0 flex-1 text-left focus-visible:outline-none"
+      >
+        <p
+          className="truncate text-[13px] font-medium leading-snug text-foreground"
+          title={displayTitle}
+        >
           {displayTitle}
         </p>
-        <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
+        <p className="mt-1 truncate text-[12px] text-muted-foreground">
           {meta || (file.title && file.title !== file.name ? file.name : "No metadata yet")}
-          {project ? ` · ${project.emoji} ${project.name}` : ""}
+          {study ? (
+            <span className="text-muted-foreground/90"> · {study}</span>
+          ) : null}
+          {project ? (
+            <span className="text-muted-foreground/80">
+              {" "}
+              · {project.emoji} {project.name}
+            </span>
+          ) : null}
         </p>
-      </div>
 
-      <div className="flex shrink-0 items-center gap-2">
-        {isPaper && readiness === "research_ready" && file.project_id != null && (
-          <ExtractEvidenceButton
-            projectId={file.project_id}
-            fileId={file.id}
-            readiness={readiness}
-            stopPropagation
-            showProgress={false}
-            className="hidden sm:inline-flex"
-          />
+        {chips.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {chips.map((c) => (
+              <span
+                key={c.id}
+                className={cn(
+                  "rounded px-1.5 py-0.5 text-[10px] font-medium tracking-wide",
+                  c.on
+                    ? "bg-primary/10 text-primary"
+                    : "bg-muted/60 text-muted-foreground/70",
+                )}
+              >
+                {c.label}
+              </span>
+            ))}
+          </div>
         )}
-        {isPaper && readiness && readiness !== "research_ready" && (
-          <span
-            className="hidden rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline"
-            title={file.research_readiness_label || readiness}
-          >
-            {file.research_readiness_label || readiness.replace(/_/g, " ")}
-          </span>
-        )}
+      </button>
+
+      <div className="flex shrink-0 flex-col items-end gap-2 pt-0.5">
+        <span
+          className={cn(
+            "text-[11px] capitalize",
+            rs === "unread" && "font-medium text-foreground",
+            rs === "reading" && "text-amber-600 dark:text-amber-400",
+            rs === "read" && "text-muted-foreground",
+          )}
+        >
+          {rs}
+        </span>
+
         {metadataOnly && (
           <>
             <input
@@ -141,41 +215,94 @@ export function FileCard({
                 e.stopPropagation();
                 fileInputRef.current?.click();
               }}
-              className="hidden items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground sm:inline-flex"
+              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
               title="Attach PDF to analyse"
             >
               <Upload className="size-3" /> PDF
             </button>
           </>
         )}
-        {isPaper && <AiStateBadge state={aiState} metaStatus={file.meta_status} />}
-        {isPaper && (
-          <span
-            className="hidden items-center gap-1 text-[11px] text-muted-foreground sm:inline-flex"
-            title={rs}
-          >
-            <StatusIcon className="size-3" />
-            <span className="capitalize">{rs}</span>
-          </span>
-        )}
-        {file.tags?.length > 0 && (
-          <span className="hidden max-w-[8rem] truncate rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground md:inline">
-            {file.tags[0]}
-            {file.tags.length > 1 ? ` +${file.tags.length - 1}` : ""}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-destructive group-hover:opacity-100 focus:opacity-100"
-          title="Delete"
-        >
-          <Trash2 className="size-3.5" />
-        </button>
+
+        {/* Hover actions */}
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <IconBtn title="Open" onClick={open}>
+            <ExternalLink className="size-3.5" />
+          </IconBtn>
+          {isPaper && (
+            <IconBtn
+              title="Ask Dhund"
+              onClick={() => navigate(`/papers/${file.id}/chat`)}
+            >
+              <MessageSquare className="size-3.5" />
+            </IconBtn>
+          )}
+          {isPaper && (
+            <IconBtn
+              title="Compare"
+              onClick={() => {
+                try {
+                  sessionStorage.setItem(
+                    "dhund:compare-ids",
+                    JSON.stringify([file.id]),
+                  );
+                } catch {
+                  /* ignore */
+                }
+                navigate(`/research/compare?tab=compare&ids=${file.id}`);
+              }}
+            >
+              <GitCompare className="size-3.5" />
+            </IconBtn>
+          )}
+          {isPaper && (
+            <IconBtn
+              title="Add to collection"
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent("dhund:library-add-to-collection", {
+                    detail: { fileIds: [file.id] },
+                  }),
+                );
+              }}
+            >
+              <FolderPlus className="size-3.5" />
+            </IconBtn>
+          )}
+          <IconBtn title="Delete" danger onClick={onDelete}>
+            <Trash2 className="size-3.5" />
+          </IconBtn>
+        </div>
       </div>
     </div>
+  );
+}
+
+function IconBtn({
+  children,
+  title,
+  onClick,
+  danger,
+}: {
+  children: React.ReactNode;
+  title: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={cn(
+        "rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground",
+        danger && "hover:text-destructive",
+      )}
+    >
+      {children}
+    </button>
   );
 }

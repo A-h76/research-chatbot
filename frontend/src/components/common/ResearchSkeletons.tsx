@@ -71,22 +71,18 @@ export function LibraryHealthSkeleton({ className }: { className?: string }) {
       role="status"
       aria-busy="true"
       aria-label="Loading library health"
-      className={cn(
-        "flex flex-wrap items-center gap-4 rounded-lg border border-border bg-card px-3 py-3",
-        className,
-      )}
+      className={cn("border-b border-border/70 pb-5", className)}
     >
-      <Skeleton className="size-[64px] shrink-0 rounded-full" />
-      <div className="min-w-0 flex-1 space-y-2">
-        <Skeleton className="h-3 w-28" />
-        <Skeleton className="h-2.5 w-full max-w-md" />
-        <div className="flex gap-2 pt-1">
-          <Skeleton className="h-5 w-16 rounded-full" />
-          <Skeleton className="h-5 w-14 rounded-full" />
-          <Skeleton className="h-5 w-20 rounded-full" />
-        </div>
+      <Skeleton className="h-3.5 w-36" />
+      <Skeleton className="mt-2 h-3 w-56" />
+      <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-6 w-10" />
+            <Skeleton className="h-2.5 w-16" />
+          </div>
+        ))}
       </div>
-      <Skeleton className="hidden h-16 w-40 shrink-0 rounded-md sm:block" />
     </div>
   );
 }

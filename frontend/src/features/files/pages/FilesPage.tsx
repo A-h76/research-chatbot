@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -8,6 +8,13 @@ import { LibraryPapersSkeleton } from "@/components/common/ResearchSkeletons";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { FileCard } from "../components/FileCard";
 import { CollectionToolbar } from "../components/CollectionToolbar";
 import { LibrarySearchFilters, type LibraryFilterState } from "../components/LibrarySearchFilters";
@@ -26,8 +33,8 @@ import { useLibraryCollections } from "../hooks/useLibraryCollections";
 import { useDeleteFile, useFiles, useLibraryStats, useLibraryTags } from "../useFiles";
 import { useLibraryFacets } from "../useLibraryFacets";
 import { libraryBridgeApi } from "../libraryBridgeApi";
+import { collectionsApi } from "../collectionsApi";
 import { useProjects } from "@/features/projects/useProjects";
-import { useQueryClient } from "@tanstack/react-query";
 import { usePipelines } from "@/features/pipeline";
 import { useUI } from "@/context/UIContext";
 import { toast } from "@/components/common/Toast";
@@ -79,14 +86,14 @@ function ProjectScopeBanner() {
   const proj = projects.find((p) => p.id === currentProjectId);
   if (!proj) return null;
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-[13px]">
+    <div className="flex items-center gap-2 py-1 text-[13px]">
       <span className="text-base leading-none">{proj.emoji}</span>
       <span className="font-medium">{proj.name}</span>
       <span className="text-muted-foreground">— this project only</span>
       <button
         type="button"
         onClick={() => setCurrentProjectId(null)}
-        className="ml-auto flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
       >
         <X className="size-3" /> Show all
       </button>
@@ -94,7 +101,7 @@ function ProjectScopeBanner() {
   );
 }
 
-/** Library-first layout (PR1): stats · search · Upload · Import · papers. */
+/** Library — research corpus home (Places IA preserved). */
 export function FilesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -132,6 +139,9 @@ export function FilesPage() {
     const raw = searchParams.get("collection_id");
     return raw ? Number(raw) : null;
   });
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [addToCollectionIds, setAddToCollectionIds] = useState<number[] | null>(null);
+  const [pickCollectionId, setPickCollectionId] = useState<number | "">("");
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -170,6 +180,15 @@ export function FilesPage() {
       setSearchParams(next, { replace: true });
     }
   }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const onAdd = (e: Event) => {
+      const detail = (e as CustomEvent<{ fileIds: number[] }>).detail;
+      if (detail?.fileIds?.length) setAddToCollectionIds(detail.fileIds);
+    };
+    window.addEventListener("dhund:library-add-to-collection", onAdd);
+    return () => window.removeEventListener("dhund:library-add-to-collection", onAdd);
+  }, []);
 
   const params: LibraryListParams = {
     project_id: currentProjectId,
@@ -236,8 +255,8 @@ export function FilesPage() {
 
   const STATUS_TABS: { key: StatusFilter; label: string; count?: number }[] = [
     { key: "all", label: "All", count: facets?.total ?? stats?.total_papers },
-    { key: "reading", label: "Reading", count: facets?.reading_status?.reading ?? stats?.reading },
     { key: "unread", label: "Unread", count: facets?.reading_status?.unread ?? stats?.unread },
+    { key: "reading", label: "Reading", count: facets?.reading_status?.reading ?? stats?.reading },
     { key: "read", label: "Read", count: facets?.reading_status?.read ?? stats?.read },
   ];
   const recentSession = recentUploaded.slice(0, 8);
@@ -251,12 +270,12 @@ export function FilesPage() {
           ? `${collectionCount} collection${collectionCount === 1 ? "" : "s"}`
           : null,
         readyCount != null && readyCount > 0
-          ? `${readyCount} ready for analysis`
+          ? `${readyCount} chat-ready`
           : null,
       ]
         .filter(Boolean)
         .join(" · ")
-    : undefined;
+    : "Your research corpus";
 
   function onImported(pid?: number | null) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.files });
@@ -266,14 +285,41 @@ export function FilesPage() {
     if (pid) setCurrentProjectId(pid);
   }
 
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const selectedList = Array.from(selectedIds);
+
+  async function confirmAddToCollection() {
+    if (!addToCollectionIds?.length || pickCollectionId === "") return;
+    try {
+      const res = await collectionsApi.addPapers(
+        Number(pickCollectionId),
+        addToCollectionIds,
+      );
+      toast.success(
+        res.added
+          ? `Added ${res.added} paper${res.added === 1 ? "" : "s"} to collection`
+          : "Already in that collection",
+      );
+      void queryClient.invalidateQueries({ queryKey: ["library", "collections"] });
+      setAddToCollectionIds(null);
+      setPickCollectionId("");
+      setSelectedIds(new Set());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add to collection");
+    }
+  }
+
   return (
-    <PageContainer
-      title="Library"
-      description={statsLine}
-      dense
-      maxWidth="6xl"
-    >
-      <div className="space-y-4">
+    <PageContainer title="Library" description={statsLine} dense maxWidth="6xl">
+      <div className="space-y-6">
         {hasLibrary && (
           <CollectionToolbar
             q={q}
@@ -288,6 +334,28 @@ export function FilesPage() {
             onBibtex={() => sourcesRef.current?.openBibtex()}
             onZoteroImport={() => sourcesRef.current?.openZoteroImport()}
             onMendeleyImport={() => sourcesRef.current?.openMendeleyImport()}
+            selectedCount={selectedIds.size}
+            onClearSelection={() => setSelectedIds(new Set())}
+            onBulkAsk={() => {
+              const first = selectedList[0];
+              if (first) navigate(`/papers/${first}/chat`);
+              else navigate("/chat");
+            }}
+            onBulkCompare={() => {
+              if (selectedList.length < 2) return;
+              try {
+                sessionStorage.setItem(
+                  "dhund:compare-ids",
+                  JSON.stringify(selectedList),
+                );
+              } catch {
+                /* ignore */
+              }
+              navigate(
+                `/research/compare?tab=compare&ids=${selectedList.join(",")}`,
+              );
+            }}
+            onBulkAddToCollection={() => setAddToCollectionIds(selectedList)}
           />
         )}
         <ProjectScopeBanner />
@@ -299,7 +367,14 @@ export function FilesPage() {
 
         {hasLibrary && (
           <>
-            <LibraryHealthStrip projectId={currentProjectId} />
+            <LibraryHealthStrip
+              projectId={currentProjectId}
+              unreadCount={facets?.reading_status?.unread ?? stats?.unread}
+              onFilterNeedsReview={() => {
+                setStatus("unread");
+                setPage(0);
+              }}
+            />
             <LibraryDuplicatesPanel projectId={currentProjectId} />
           </>
         )}
@@ -310,13 +385,10 @@ export function FilesPage() {
               Your research library is empty
             </p>
             <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">
-              Upload PDFs to start an evidence-backed literature review.
+              Upload PDFs to build the corpus your research sessions draw from.
             </p>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-              <Button
-                disabled={isUploading}
-                onClick={() => setUploadOpen(true)}
-              >
+              <Button disabled={isUploading} onClick={() => setUploadOpen(true)}>
                 Upload papers
               </Button>
               <LibraryImportMenu
@@ -326,23 +398,19 @@ export function FilesPage() {
                 onMendeleyImport={() => sourcesRef.current?.openMendeleyImport()}
               />
             </div>
-            <p className="mt-4 text-[12px] text-muted-foreground">
-              Connect Zotero or Mendeley under{" "}
-              <span className="font-medium text-foreground">Integrations</span> in the
-              sidebar.
-            </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+          <div className="flex flex-col gap-8 sm:flex-row sm:items-start">
             <CollectionsPanel
               activeId={collectionId}
               totalPapers={paperCount}
               onSelect={(id) => {
                 setCollectionId(id);
                 setPage(0);
+                setSelectedIds(new Set());
               }}
             />
-            <div className="min-w-0 flex-1 space-y-3">
+            <div className="min-w-0 flex-1 space-y-4">
               {uploadItems.length > 0 && (
                 <LibraryUploadQueue items={uploadItems} onClearFinished={clearFinished} />
               )}
@@ -367,7 +435,7 @@ export function FilesPage() {
                 </div>
               )}
 
-              <div className="flex items-center gap-1 border-b border-border pb-1">
+              <div className="flex items-center gap-1 border-b border-border/70">
                 {STATUS_TABS.map(({ key, label, count }) => (
                   <button
                     key={key}
@@ -377,33 +445,26 @@ export function FilesPage() {
                       setPage(0);
                     }}
                     className={cn(
-                      "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors",
+                      "relative flex items-center gap-1.5 px-2.5 py-2 text-[13px] font-medium transition-colors",
                       status === key
-                        ? "bg-muted text-foreground"
+                        ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
                         : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     {label}
                     {count !== undefined && (
-                      <span
-                        className={cn(
-                          "rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
-                          status === key
-                            ? "bg-background text-foreground"
-                            : "bg-muted text-muted-foreground",
-                        )}
-                      >
+                      <span className="tabular-nums text-[11px] text-muted-foreground">
                         {count}
                       </span>
                     )}
                   </button>
                 ))}
-                <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="hidden sm:inline">Sort</span>
+                <div className="ml-auto flex items-center gap-2 pb-1 text-xs text-muted-foreground">
                   <select
                     value={sort}
                     onChange={(e) => setSort(e.target.value as SortKey)}
-                    className="rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                    className="bg-transparent py-1 text-xs outline-none"
+                    aria-label="Sort papers"
                   >
                     <option value="recent">Recently added</option>
                     <option value="title">Title</option>
@@ -449,7 +510,7 @@ export function FilesPage() {
                 <LibraryPapersSkeleton />
               ) : fileItems.length === 0 ? (
                 <EmptyState
-                  title="No papers match your search"
+                  title="No papers match"
                   description="Try different keywords or clear filters."
                   action={
                     <Button variant="outline" size="sm" onClick={clearFilters}>
@@ -461,14 +522,13 @@ export function FilesPage() {
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-[12px] text-muted-foreground tabular-nums">
-                      Showing {rangeStart}–{rangeEnd} of {total.toLocaleString()} paper
-                      {total !== 1 ? "s" : ""}
+                      {rangeStart}–{rangeEnd} of {total.toLocaleString()}
                       {hasFilters ? " matching" : ""}
                     </p>
                     {totalPages > 1 && (
                       <div className="flex items-center gap-1">
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
                           className="h-7 px-2"
                           disabled={page <= 0}
@@ -477,21 +537,23 @@ export function FilesPage() {
                           <ChevronLeft className="size-4" />
                         </Button>
                         <span className="px-2 text-xs tabular-nums text-muted-foreground">
-                          Page {page + 1} / {totalPages}
+                          {page + 1} / {totalPages}
                         </span>
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
                           className="h-7 px-2"
                           disabled={page >= totalPages - 1}
-                          onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                          onClick={() =>
+                            setPage((p) => Math.min(totalPages - 1, p + 1))
+                          }
                         >
                           <ChevronRight className="size-4" />
                         </Button>
                       </div>
                     )}
                   </div>
-                  <div className="overflow-hidden rounded-lg border border-border/80 bg-card">
+                  <div>
                     {fileItems.map((f) => (
                       <FileCard
                         key={f.id}
@@ -499,6 +561,8 @@ export function FilesPage() {
                         project={projects.find((p) => p.id === f.project_id)}
                         onDelete={() => setToDelete(f)}
                         aiState={pipelineById.get(f.id)?.aiState}
+                        selected={selectedIds.has(f.id)}
+                        onToggleSelect={toggleSelect}
                       />
                     ))}
                   </div>
@@ -517,6 +581,59 @@ export function FilesPage() {
         uploadItems={uploadItems}
         onClearFinished={clearFinished}
       />
+
+      <Dialog
+        open={addToCollectionIds != null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setAddToCollectionIds(null);
+            setPickCollectionId("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add to collection</DialogTitle>
+          </DialogHeader>
+          {collections.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Create a collection in the sidebar first.
+            </p>
+          ) : (
+            <select
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              value={pickCollectionId === "" ? "" : String(pickCollectionId)}
+              onChange={(e) =>
+                setPickCollectionId(e.target.value ? Number(e.target.value) : "")
+              }
+            >
+              <option value="">Choose collection…</option>
+              {collections.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.paper_count})
+                </option>
+              ))}
+            </select>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddToCollectionIds(null);
+                setPickCollectionId("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={pickCollectionId === "" || !addToCollectionIds?.length}
+              onClick={() => void confirmAddToCollection()}
+            >
+              Add
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={!!toDelete}
