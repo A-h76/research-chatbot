@@ -90,9 +90,12 @@ def require_production_secrets(
                 "uses memory://; limits are NOT shared across workers or instances."
             )
         else:
-            # Multi-worker / multi-instance deploys need shared limiter storage.
-            missing.append(
-                "REDIS_URL (or set RATE_LIMIT_MEMORY_OK=1 for single-process only)"
+            # Do not SystemExit — that crash-looped Gunicorn and took app.dhund.com
+            # down (Cloudflare 524/502). Prefer a live site with process-local limits.
+            log.error(
+                "REDIS_URL unset in production and RATE_LIMIT_MEMORY_OK not set — "
+                "continuing with memory:// rate limiter. Set REDIS_URL (recommended) "
+                "or RATE_LIMIT_MEMORY_OK=1 to acknowledge single-process limits."
             )
 
     clam = (environ.get("CLAMAV_ENABLED") or "").strip().lower()

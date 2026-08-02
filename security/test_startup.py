@@ -138,20 +138,22 @@ def test_require_production_secrets_r2_requires_creds():
         )
 
 
-def test_require_production_secrets_requires_redis_or_memory_ok():
-    with pytest.raises(SystemExit, match="REDIS_URL"):
-        require_production_secrets(
-            {
-                "FLASK_ENV": "production",
-                "FLASK_SECRET_KEY": "prod-secret-key-at-least-32-chars!!",
-                "GOOGLE_CLIENT_ID": "id",
-                "GOOGLE_CLIENT_SECRET": "secret",
-                "OPENAI_API_KEY": "sk-test",
-                "RESEND_API_KEY": "re_test",
-                "CLAMAV_OPTIONAL": "1",
-            },
-            is_production=True,
-        )
+def test_require_production_secrets_missing_redis_warns_but_boots(caplog):
+    """Missing Redis must not crash Gunicorn workers (availability over fail-closed)."""
+    require_production_secrets(
+        {
+            "FLASK_ENV": "production",
+            "FLASK_SECRET_KEY": "prod-secret-key-at-least-32-chars!!",
+            "GOOGLE_CLIENT_ID": "id",
+            "GOOGLE_CLIENT_SECRET": "secret",
+            "OPENAI_API_KEY": "sk-test",
+            "RESEND_API_KEY": "re_test",
+            "CLAMAV_OPTIONAL": "1",
+        },
+        is_production=True,
+    )
+    assert "REDIS_URL unset" in caplog.text
+    assert "memory://" in caplog.text
 
 
 def test_require_production_secrets_ok_with_redis_url():
