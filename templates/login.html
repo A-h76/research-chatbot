@@ -791,10 +791,14 @@
     line-height: 1.5;
   }
 
-  /* Research Ecosystem */
+  /* Research Ecosystem — floating logo chips */
+  .eco-intro {
+    max-width: 40rem;
+    margin-bottom: 1rem;
+  }
   .eco-note {
-    margin-top: 0.85rem;
-    font-size: 0.82rem;
+    margin: 1rem 0 0;
+    font-size: 0.84rem;
     color: var(--muted);
   }
   .eco-flow {
@@ -802,101 +806,151 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 0.55rem 0.35rem;
-    margin: 2.75rem 0 3.5rem;
-    padding: 1.35rem 1.25rem;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
+    gap: 0.65rem 0.4rem;
+    margin: 3rem 0 4.5rem;
   }
   .eco-flow-node {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.55rem 0.95rem;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: var(--paper);
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--ink-soft);
+    font-size: 0.84rem;
+    font-weight: 500;
+    color: var(--muted);
     letter-spacing: -0.01em;
   }
   .eco-flow-node.is-hub {
+    padding: 0.45rem 0.95rem;
+    border-radius: 999px;
     background: var(--teal);
-    border-color: var(--teal);
     color: #fff;
-    padding: 0.65rem 1.15rem;
-    font-size: 0.88rem;
+    font-weight: 700;
   }
   .eco-flow-arrow {
-    color: var(--muted);
-    font-size: 0.9rem;
-    opacity: 0.7;
+    color: var(--line-strong);
+    font-size: 0.95rem;
   }
-  .eco-cats {
+  .eco-sections {
     display: flex;
     flex-direction: column;
-    gap: 2.35rem;
+    gap: 3.75rem;
   }
-  .eco-cat {
-    display: grid;
-    grid-template-columns: 200px 1fr;
-    gap: 1.5rem 2rem;
-    align-items: start;
-    padding-top: 1.75rem;
+  .eco-section {
+    padding-top: 2.5rem;
     border-top: 1px solid var(--line);
   }
-  .eco-cat-head h3 {
-    font-size: 1rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    margin-bottom: 0.35rem;
-  }
-  .eco-cat-head p {
-    font-size: 0.82rem;
-    color: var(--muted);
-    line-height: 1.45;
-    max-width: 22ch;
-  }
-  .eco-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-    gap: 0.65rem;
-  }
-  .eco-item {
+  .eco-section-head {
     display: flex;
-    align-items: center;
+    flex-wrap: wrap;
+    align-items: baseline;
     justify-content: space-between;
-    gap: 0.45rem;
-    min-height: 3rem;
-    padding: 0.7rem 0.8rem;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: var(--paper);
-    font-size: 0.84rem;
-    font-weight: 600;
-    letter-spacing: -0.015em;
-    color: var(--ink);
+    gap: 0.75rem 2rem;
+    margin-bottom: 1.65rem;
   }
-  .eco-item.is-soon {
-    color: var(--ink-soft);
-    background: var(--surface);
-  }
-  .eco-badge {
-    flex-shrink: 0;
-    font-size: 0.62rem;
+  .eco-section-head h3 {
+    font-size: 1.2rem;
     font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    padding: 0.2rem 0.4rem;
-    border-radius: 999px;
+    letter-spacing: -0.03em;
+  }
+  .eco-section-head p {
+    font-size: 0.92rem;
+    color: var(--muted);
+    max-width: 36ch;
+  }
+  .eco-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+  }
+  .eco-chip {
+    --brand: var(--ink);
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 168px;
+    padding: 0.95rem 1.15rem;
+    border-radius: 20px;
+    border: 1px solid transparent;
+    background: var(--paper);
+    box-shadow:
+      0 1px 2px rgba(17, 24, 22, 0.04),
+      0 10px 28px rgba(17, 24, 22, 0.05);
+    cursor: default;
+    transition:
+      transform .22s ease,
+      box-shadow .22s ease,
+      border-color .22s ease,
+      background .22s ease;
+  }
+  .eco-chip:hover {
+    transform: translateY(-4px);
+    border-color: var(--teal);
+    box-shadow:
+      0 1px 2px rgba(17, 24, 22, 0.04),
+      0 18px 40px rgba(15, 110, 106, 0.12);
+  }
+  .eco-chip.is-soon {
+    background: color-mix(in srgb, var(--surface) 70%, var(--paper));
+    box-shadow: none;
+    border-color: var(--line);
+  }
+  .eco-chip.is-soon:hover {
+    background: var(--paper);
+  }
+  .eco-logo {
+    width: 1.55rem;
+    height: 1.55rem;
+    flex-shrink: 0;
+    display: block;
+    background-color: currentColor;
+    color: var(--ink-soft);
+    -webkit-mask: var(--icon) center / contain no-repeat;
+    mask: var(--icon) center / contain no-repeat;
+    transition: color .22s ease, transform .22s ease;
+  }
+  .eco-chip:hover .eco-logo {
+    color: var(--brand);
+    transform: scale(1.03);
+  }
+  .eco-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+    min-width: 0;
+  }
+  .eco-name {
+    font-size: 0.92rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    line-height: 1.2;
+  }
+  .eco-soon {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+  }
+  .eco-mark {
+    width: 1.55rem;
+    height: 1.55rem;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    font-size: 0.58rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    background: var(--surface-2);
+    color: var(--ink-soft);
+    transition: background .22s ease, color .22s ease, transform .22s ease;
+  }
+  .eco-chip:hover .eco-mark {
     background: var(--teal-soft);
     color: var(--teal-deep);
+    transform: scale(1.03);
   }
-  .eco-item.is-soon .eco-badge {
-    background: var(--surface-2);
-    color: var(--muted);
+  @media (prefers-reduced-motion: reduce) {
+    .eco-chip,
+    .eco-logo,
+    .eco-mark { transition: none; }
+    .eco-chip:hover { transform: none; }
   }
 
   /* Enterprise security */
@@ -1273,10 +1327,12 @@
     .nav-links { display: none; }
     .hero-top, .editorial-row, .feature, .feature.reverse,
     .signin-layout, .quotes, .pillars, .card-grid, .footer-grid,
-    .aha-grid, .write-mock, .eco-cat, .ent-grid {
+    .aha-grid, .write-mock, .ent-grid {
       grid-template-columns: 1fr;
     }
-    .eco-cat-head p { max-width: none; }
+    .eco-chip { min-width: calc(50% - 0.45rem); }
+    .eco-flow { margin: 2.25rem 0 3rem; }
+    .eco-sections { gap: 2.75rem; }
     .feature.reverse .feature-copy,
     .feature.reverse .feature-visual { order: unset; }
     .workspace { grid-template-columns: 1fr; }
@@ -1758,164 +1814,271 @@
 
     <!-- Research Ecosystem -->
     <section class="wrap block" id="ecosystem">
-      <div class="editorial-row reveal">
-        <div>
-          <p class="eyebrow">Research Ecosystem</p>
-          <h2 class="section-title">Everything researchers already use. Connected.</h2>
-        </div>
-        <p class="section-lead">
-          Dhund becomes the hub for your entire research workflow — sources in, evidence verified,
-          writing out — without forcing you to abandon the tools you trust.
+      <div class="eco-intro reveal">
+        <p class="eyebrow">Research ecosystem</p>
+        <h2 class="section-title">Built for your research ecosystem</h2>
+        <p class="section-lead" style="margin-top:0.85rem;max-width:42ch">
+          Dhund becomes the hub for your entire research workflow — connect the tools you already use,
+          verify evidence in one place, and write without breaking your stack.
         </p>
+        <p class="eco-note">Official brand marks via Simple Icons (CC0). Live connections are unmarked; roadmap partners show Coming soon. A few scholarly marks use letter badges until an official SVG is available.</p>
       </div>
-      <p class="eco-note reveal">Available today is unmarked. Roadmap items show Soon — we don’t claim what you can’t use yet.</p>
 
-      <div class="eco-flow reveal" aria-label="Research ecosystem workflow">
+      <div class="eco-flow reveal" aria-label="How Dhund sits in the research workflow">
         <span class="eco-flow-node">Academic sources</span>
         <span class="eco-flow-arrow" aria-hidden="true">→</span>
         <span class="eco-flow-node is-hub">Dhund</span>
         <span class="eco-flow-arrow" aria-hidden="true">→</span>
         <span class="eco-flow-node">Reference managers</span>
         <span class="eco-flow-arrow" aria-hidden="true">→</span>
-        <span class="eco-flow-node">Writing tools</span>
+        <span class="eco-flow-node">Writing</span>
         <span class="eco-flow-arrow" aria-hidden="true">→</span>
         <span class="eco-flow-node">Export</span>
       </div>
 
-      <div class="eco-cats reveal">
-        <div class="eco-cat">
-          <div class="eco-cat-head">
+      <div class="eco-sections">
+        <div class="eco-section reveal">
+          <div class="eco-section-head">
             <h3>Reference Managers</h3>
             <p>Bring the library you already maintain.</p>
           </div>
-          <div class="eco-grid">
-            <div class="eco-item">Zotero</div>
-            <div class="eco-item">Mendeley</div>
-            <div class="eco-item is-soon">EndNote <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Paperpile <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">ReadCube <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">JabRef <span class="eco-badge">Soon</span></div>
+          <div class="eco-chips">
+            <div class="eco-chip" style="--brand:#CC2936">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/zotero.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Zotero</span></span>
+            </div>
+            <div class="eco-chip" style="--brand:#A60000">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/mendeley.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Mendeley</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#ED6C06">
+              <span class="eco-mark">EN</span>
+              <span class="eco-meta"><span class="eco-name">EndNote</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#2D72D2">
+              <span class="eco-mark">PP</span>
+              <span class="eco-meta"><span class="eco-name">Paperpile</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#00A3E0">
+              <span class="eco-mark">RC</span>
+              <span class="eco-meta"><span class="eco-name">ReadCube</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#2C6EAF">
+              <span class="eco-mark">JR</span>
+              <span class="eco-meta"><span class="eco-name">JabRef</span><span class="eco-soon">Coming soon</span></span>
+            </div>
           </div>
         </div>
-
-        <div class="eco-cat">
-          <div class="eco-cat-head">
+        <div class="eco-section reveal">
+          <div class="eco-section-head">
             <h3>Academic Sources</h3>
             <p>Discover and enrich from scholarly networks.</p>
           </div>
-          <div class="eco-grid">
-            <div class="eco-item">OpenAlex</div>
-            <div class="eco-item">Crossref</div>
-            <div class="eco-item">Semantic Scholar</div>
-            <div class="eco-item is-soon">PubMed <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">arXiv <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Europe PMC <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">SSRN <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">IEEE Xplore <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">ACM DL <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Springer <span class="eco-badge">Soon</span></div>
+          <div class="eco-chips">
+            <div class="eco-chip" style="--brand:#EB6019">
+              <span class="eco-mark">OA</span>
+              <span class="eco-meta"><span class="eco-name">OpenAlex</span></span>
+            </div>
+            <div class="eco-chip" style="--brand:#3EB1C8">
+              <span class="eco-mark">XR</span>
+              <span class="eco-meta"><span class="eco-name">Crossref</span></span>
+            </div>
+            <div class="eco-chip" style="--brand:#1857B6">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/semanticscholar.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Semantic Scholar</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#326599">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/pubmed.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">PubMed</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#B31B1B">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/arxiv.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">arXiv</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#F15A29">
+              <span class="eco-mark">EP</span>
+              <span class="eco-meta"><span class="eco-name">Europe PMC</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#1B4F72">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/ssrn.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">SSRN</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#00629B">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/ieee.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">IEEE</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#1D78C1">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/acm.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">ACM</span><span class="eco-soon">Coming soon</span></span>
+            </div>
           </div>
         </div>
-
-        <div class="eco-cat">
-          <div class="eco-cat-head">
-            <h3>Citation &amp; Metadata</h3>
+        <div class="eco-section reveal">
+          <div class="eco-section-head">
+            <h3>Citation & Metadata</h3>
             <p>Standards that survive peer review.</p>
           </div>
-          <div class="eco-grid">
-            <div class="eco-item">BibTeX</div>
-            <div class="eco-item">RIS</div>
-            <div class="eco-item">DOI</div>
-            <div class="eco-item">APA</div>
-            <div class="eco-item">IEEE</div>
+          <div class="eco-chips">
+            <div class="eco-chip" style="--brand:#0F6E6A">
+              <span class="eco-mark">BIB</span>
+              <span class="eco-meta"><span class="eco-name">BibTeX</span></span>
+            </div>
+            <div class="eco-chip" style="--brand:#0F6E6A">
+              <span class="eco-mark">RIS</span>
+              <span class="eco-meta"><span class="eco-name">RIS</span></span>
+            </div>
+            <div class="eco-chip" style="--brand:#0F6E6A">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/doi.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">DOI</span></span>
+            </div>
+            <div class="eco-chip" style="--brand:#0F6E6A">
+              <span class="eco-mark">APA</span>
+              <span class="eco-meta"><span class="eco-name">APA</span></span>
+            </div>
+            <div class="eco-chip" style="--brand:#0F6E6A">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/ieee.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">IEEE</span></span>
+            </div>
+            <div class="eco-chip" style="--brand:#A6CE39">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/orcid.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">ORCID</span></span>
+            </div>
           </div>
         </div>
-
-        <div class="eco-cat">
-          <div class="eco-cat-head">
-            <h3>Export Formats</h3>
-            <p>Leave with grounded manuscripts.</p>
-          </div>
-          <div class="eco-grid">
-            <div class="eco-item">Markdown</div>
-            <div class="eco-item">DOCX</div>
-            <div class="eco-item">BibTeX</div>
-            <div class="eco-item">RIS</div>
-            <div class="eco-item">TXT</div>
-            <div class="eco-item is-soon">LaTeX <span class="eco-badge">Soon</span></div>
-          </div>
-        </div>
-
-        <div class="eco-cat">
-          <div class="eco-cat-head">
-            <h3>Writing &amp; Knowledge</h3>
+        <div class="eco-section reveal">
+          <div class="eco-section-head">
+            <h3>Writing & Knowledge</h3>
             <p>Draft where your team already writes.</p>
           </div>
-          <div class="eco-grid">
-            <div class="eco-item">Writing Studio</div>
-            <div class="eco-item">DOCX export</div>
-            <div class="eco-item is-soon">Google Docs <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Microsoft Word <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Overleaf <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Notion <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Obsidian <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Logseq <span class="eco-badge">Soon</span></div>
+          <div class="eco-chips">
+            <div class="eco-chip" style="--brand:#0F6E6A">
+              <span class="eco-mark">D</span>
+              <span class="eco-meta"><span class="eco-name">Writing Studio</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#4285F4">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/googledocs.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Google Docs</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#2B579A">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/microsoftword.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Microsoft Word</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#47A141">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/overleaf.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Overleaf</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#000000">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/notion.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Notion</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#7C3AED">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/obsidian.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Obsidian</span><span class="eco-soon">Coming soon</span></span>
+            </div>
           </div>
         </div>
-
-        <div class="eco-cat">
-          <div class="eco-cat-head">
+        <div class="eco-section reveal">
+          <div class="eco-section-head">
             <h3>Cloud Storage</h3>
             <p>Sync libraries from shared drives.</p>
           </div>
-          <div class="eco-grid">
-            <div class="eco-item is-soon">Google Drive <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Dropbox <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">OneDrive <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Box <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">SharePoint <span class="eco-badge">Soon</span></div>
+          <div class="eco-chips">
+            <div class="eco-chip is-soon" style="--brand:#4285F4">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/googledrive.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Google Drive</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#0061FF">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/dropbox.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Dropbox</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#0078D4">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/microsoftonedrive.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">OneDrive</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#0061D5">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/box.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Box</span><span class="eco-soon">Coming soon</span></span>
+            </div>
           </div>
         </div>
-
-        <div class="eco-cat">
-          <div class="eco-cat-head">
+        <div class="eco-section reveal">
+          <div class="eco-section-head">
             <h3>Collaboration</h3>
             <p>Keep labs aligned on verified evidence.</p>
           </div>
-          <div class="eco-grid">
-            <div class="eco-item">Projects</div>
-            <div class="eco-item">Shared evidence</div>
-            <div class="eco-item is-soon">Team workspaces <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Slack <span class="eco-badge">Soon</span></div>
+          <div class="eco-chips">
+            <div class="eco-chip" style="--brand:#0F6E6A">
+              <span class="eco-mark">PR</span>
+              <span class="eco-meta"><span class="eco-name">Projects</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#4A154B">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/slack.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Slack</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#6264A7">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/microsoftteams.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Microsoft Teams</span><span class="eco-soon">Coming soon</span></span>
+            </div>
           </div>
         </div>
-
-        <div class="eco-cat">
-          <div class="eco-cat-head">
+        <div class="eco-section reveal">
+          <div class="eco-section-head">
             <h3>AI Models</h3>
             <p>Model routing for research tasks.</p>
           </div>
-          <div class="eco-grid">
-            <div class="eco-item">OpenAI</div>
-            <div class="eco-item">Claude</div>
-            <div class="eco-item">Gemini</div>
-            <div class="eco-item is-soon">Grok <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">DeepSeek <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Mistral <span class="eco-badge">Soon</span></div>
+          <div class="eco-chips">
+            <div class="eco-chip" style="--brand:#10A37F">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/openai.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">OpenAI</span></span>
+            </div>
+            <div class="eco-chip" style="--brand:#D97757">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/anthropic.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Claude</span></span>
+            </div>
+            <div class="eco-chip" style="--brand:#8E75B2">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/googlegemini.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Gemini</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#1DA1F2">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/x.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Grok</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#4D6BFE">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/deepseek.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">DeepSeek</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#FF7000">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/mistralai.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Mistral</span><span class="eco-soon">Coming soon</span></span>
+            </div>
           </div>
         </div>
-
-        <div class="eco-cat">
-          <div class="eco-cat-head">
+        <div class="eco-section reveal">
+          <div class="eco-section-head">
             <h3>Developer Platform</h3>
             <p>Extend Dhund into your stack.</p>
           </div>
-          <div class="eco-grid">
-            <div class="eco-item">REST API</div>
-            <div class="eco-item is-soon">MCP <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Webhooks <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">Zapier <span class="eco-badge">Soon</span></div>
-            <div class="eco-item is-soon">n8n <span class="eco-badge">Soon</span></div>
+          <div class="eco-chips">
+            <div class="eco-chip" style="--brand:#0F6E6A">
+              <span class="eco-mark">API</span>
+              <span class="eco-meta"><span class="eco-name">Open API</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#111816">
+              <span class="eco-mark">MCP</span>
+              <span class="eco-meta"><span class="eco-name">MCP</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#FF4A00">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/zapier.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">Zapier</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#EA4B71">
+              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/n8n.svg")|tojson }})"></span>
+              <span class="eco-meta"><span class="eco-name">n8n</span><span class="eco-soon">Coming soon</span></span>
+            </div>
+            <div class="eco-chip is-soon" style="--brand:#0F6E6A">
+              <span class="eco-mark">WH</span>
+              <span class="eco-meta"><span class="eco-name">Webhooks</span><span class="eco-soon">Coming soon</span></span>
+            </div>
           </div>
         </div>
       </div>
