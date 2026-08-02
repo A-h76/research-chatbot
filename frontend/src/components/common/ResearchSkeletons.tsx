@@ -165,33 +165,25 @@ export function HomeResearchSkeleton({ className }: { className?: string }) {
       role="status"
       aria-busy="true"
       aria-label="Loading research home"
-      className={cn("space-y-6", className)}
+      className={cn("space-y-8 py-6", className)}
     >
-      <Stagger className="space-y-2 rounded-lg border border-border bg-card p-4">
-        <Skeleton className="h-3 w-24" />
-        <Skeleton className="h-5 w-2/3 max-w-md" />
-        <Skeleton className="h-3.5 w-1/2 max-w-sm" />
-        <div className="flex gap-2 pt-2">
-          <Skeleton className="h-8 w-28 rounded-md" />
-          <Skeleton className="h-8 w-24 rounded-md" />
+      <Stagger className="space-y-2">
+        <Skeleton className="h-7 w-56 max-w-full" />
+        <Skeleton className="h-3.5 w-72 max-w-full" />
+      </Stagger>
+
+      <Stagger delay={0.05} className="grid gap-3 lg:grid-cols-[1.35fr_1fr]">
+        <Skeleton className="h-52 w-full rounded-xl" />
+        <div className="space-y-2">
+          <Skeleton className="h-[4.5rem] w-full rounded-xl" />
+          <Skeleton className="h-[4.5rem] w-full rounded-xl" />
+          <Skeleton className="h-[4.5rem] w-full rounded-xl" />
         </div>
       </Stagger>
 
-      <Stagger delay={0.06} className="space-y-3">
-        <Skeleton className="h-3 w-32" />
-        <div className="rounded-lg border border-border bg-card p-4">
-          <Skeleton className="mb-3 h-[120px] w-full rounded-md" />
-          <div className="space-y-2">
-            <Skeleton className="h-10 w-full rounded-md" />
-            <Skeleton className="h-10 w-full rounded-md" />
-            <Skeleton className="h-10 w-full rounded-md" />
-          </div>
-        </div>
-      </Stagger>
-
-      <Stagger delay={0.1} className="space-y-2">
-        <Skeleton className="h-3 w-36" />
-        <Skeleton className="h-24 w-full rounded-lg" />
+      <Stagger delay={0.1} className="space-y-3">
+        <Skeleton className="h-4 w-36" />
+        <Skeleton className="h-40 w-full rounded-xl" />
       </Stagger>
     </div>
   );

@@ -614,7 +614,7 @@ export function CommandPalette() {
         <CommandInput
           value={query}
           onValueChange={setQuery}
-          placeholder="Search papers, projects, evidence, entities, citations…"
+          placeholder="Search papers, projects, notes..."
         />
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground">
           <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">

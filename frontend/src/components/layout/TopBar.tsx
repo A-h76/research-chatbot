@@ -137,7 +137,7 @@ export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void 
           aria-label="Open command palette"
         >
           <Search className="size-3.5" />
-          <span className="text-[12px]">Search Dhund</span>
+          <span className="text-[12px]">Search papers, projects, notes...</span>
           <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] text-muted-foreground">
             ⌘K
           </kbd>
