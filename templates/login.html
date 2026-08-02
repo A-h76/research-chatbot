@@ -791,6 +791,173 @@
     line-height: 1.5;
   }
 
+  /* Research Ecosystem */
+  .eco-note {
+    margin-top: 0.85rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+  .eco-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem 0.35rem;
+    margin: 2.75rem 0 3.5rem;
+    padding: 1.35rem 1.25rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+  }
+  .eco-flow-node {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.55rem 0.95rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+    letter-spacing: -0.01em;
+  }
+  .eco-flow-node.is-hub {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
+    padding: 0.65rem 1.15rem;
+    font-size: 0.88rem;
+  }
+  .eco-flow-arrow {
+    color: var(--muted);
+    font-size: 0.9rem;
+    opacity: 0.7;
+  }
+  .eco-cats {
+    display: flex;
+    flex-direction: column;
+    gap: 2.35rem;
+  }
+  .eco-cat {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 1.5rem 2rem;
+    align-items: start;
+    padding-top: 1.75rem;
+    border-top: 1px solid var(--line);
+  }
+  .eco-cat-head h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.35rem;
+  }
+  .eco-cat-head p {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.45;
+    max-width: 22ch;
+  }
+  .eco-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    gap: 0.65rem;
+  }
+  .eco-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
+    min-height: 3rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--paper);
+    font-size: 0.84rem;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+  .eco-item.is-soon {
+    color: var(--ink-soft);
+    background: var(--surface);
+  }
+  .eco-badge {
+    flex-shrink: 0;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.4rem;
+    border-radius: 999px;
+    background: var(--teal-soft);
+    color: var(--teal-deep);
+  }
+  .eco-item.is-soon .eco-badge {
+    background: var(--surface-2);
+    color: var(--muted);
+  }
+
+  /* Enterprise security */
+  .ent-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    margin-top: 2.25rem;
+  }
+  .ent-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1.05rem 1.1rem;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--paper);
+  }
+  .ent-check {
+    flex-shrink: 0;
+    width: 1.35rem;
+    height: 1.35rem;
+    margin-top: 0.05rem;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    background: var(--teal-soft);
+    color: var(--teal-deep);
+    font-size: 0.7rem;
+    font-weight: 700;
+  }
+  .ent-card.is-soon .ent-check {
+    background: var(--surface-2);
+    color: var(--muted);
+  }
+  .ent-card strong {
+    display: block;
+    font-size: 0.92rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    margin-bottom: 0.2rem;
+  }
+  .ent-card span {
+    font-size: 0.78rem;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+  .ent-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem 1.25rem;
+    margin-top: 1.5rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .ent-legend em {
+    font-style: normal;
+    font-weight: 700;
+    color: var(--teal-deep);
+  }
+
   /* Testimonials */
   .quotes {
     display: grid;
@@ -1106,9 +1273,10 @@
     .nav-links { display: none; }
     .hero-top, .editorial-row, .feature, .feature.reverse,
     .signin-layout, .quotes, .pillars, .card-grid, .footer-grid,
-    .aha-grid, .write-mock {
+    .aha-grid, .write-mock, .eco-cat, .ent-grid {
       grid-template-columns: 1fr;
     }
+    .eco-cat-head p { max-width: none; }
     .feature.reverse .feature-copy,
     .feature.reverse .feature-visual { order: unset; }
     .workspace { grid-template-columns: 1fr; }
@@ -1125,8 +1293,8 @@
       <nav class="nav-links" aria-label="Primary">
         <a href="#product">Product</a>
         <a href="#workflow">Workflow</a>
-        <a href="#workspace">Workspace</a>
-        <a href="#writing">Writing</a>
+        <a href="#ecosystem">Ecosystem</a>
+        <a href="#security">Security</a>
         <a href="#faq">FAQ</a>
       </nav>
       <div class="nav-actions">
@@ -1588,6 +1756,251 @@
       </div>
     </section>
 
+    <!-- Research Ecosystem -->
+    <section class="wrap block" id="ecosystem">
+      <div class="editorial-row reveal">
+        <div>
+          <p class="eyebrow">Research Ecosystem</p>
+          <h2 class="section-title">Everything researchers already use. Connected.</h2>
+        </div>
+        <p class="section-lead">
+          Dhund becomes the hub for your entire research workflow — sources in, evidence verified,
+          writing out — without forcing you to abandon the tools you trust.
+        </p>
+      </div>
+      <p class="eco-note reveal">Available today is unmarked. Roadmap items show Soon — we don’t claim what you can’t use yet.</p>
+
+      <div class="eco-flow reveal" aria-label="Research ecosystem workflow">
+        <span class="eco-flow-node">Academic sources</span>
+        <span class="eco-flow-arrow" aria-hidden="true">→</span>
+        <span class="eco-flow-node is-hub">Dhund</span>
+        <span class="eco-flow-arrow" aria-hidden="true">→</span>
+        <span class="eco-flow-node">Reference managers</span>
+        <span class="eco-flow-arrow" aria-hidden="true">→</span>
+        <span class="eco-flow-node">Writing tools</span>
+        <span class="eco-flow-arrow" aria-hidden="true">→</span>
+        <span class="eco-flow-node">Export</span>
+      </div>
+
+      <div class="eco-cats reveal">
+        <div class="eco-cat">
+          <div class="eco-cat-head">
+            <h3>Reference Managers</h3>
+            <p>Bring the library you already maintain.</p>
+          </div>
+          <div class="eco-grid">
+            <div class="eco-item">Zotero</div>
+            <div class="eco-item">Mendeley</div>
+            <div class="eco-item is-soon">EndNote <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Paperpile <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">ReadCube <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">JabRef <span class="eco-badge">Soon</span></div>
+          </div>
+        </div>
+
+        <div class="eco-cat">
+          <div class="eco-cat-head">
+            <h3>Academic Sources</h3>
+            <p>Discover and enrich from scholarly networks.</p>
+          </div>
+          <div class="eco-grid">
+            <div class="eco-item">OpenAlex</div>
+            <div class="eco-item">Crossref</div>
+            <div class="eco-item">Semantic Scholar</div>
+            <div class="eco-item is-soon">PubMed <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">arXiv <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Europe PMC <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">SSRN <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">IEEE Xplore <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">ACM DL <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Springer <span class="eco-badge">Soon</span></div>
+          </div>
+        </div>
+
+        <div class="eco-cat">
+          <div class="eco-cat-head">
+            <h3>Citation &amp; Metadata</h3>
+            <p>Standards that survive peer review.</p>
+          </div>
+          <div class="eco-grid">
+            <div class="eco-item">BibTeX</div>
+            <div class="eco-item">RIS</div>
+            <div class="eco-item">DOI</div>
+            <div class="eco-item">APA</div>
+            <div class="eco-item">IEEE</div>
+          </div>
+        </div>
+
+        <div class="eco-cat">
+          <div class="eco-cat-head">
+            <h3>Export Formats</h3>
+            <p>Leave with grounded manuscripts.</p>
+          </div>
+          <div class="eco-grid">
+            <div class="eco-item">Markdown</div>
+            <div class="eco-item">DOCX</div>
+            <div class="eco-item">BibTeX</div>
+            <div class="eco-item">RIS</div>
+            <div class="eco-item">TXT</div>
+            <div class="eco-item is-soon">LaTeX <span class="eco-badge">Soon</span></div>
+          </div>
+        </div>
+
+        <div class="eco-cat">
+          <div class="eco-cat-head">
+            <h3>Writing &amp; Knowledge</h3>
+            <p>Draft where your team already writes.</p>
+          </div>
+          <div class="eco-grid">
+            <div class="eco-item">Writing Studio</div>
+            <div class="eco-item">DOCX export</div>
+            <div class="eco-item is-soon">Google Docs <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Microsoft Word <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Overleaf <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Notion <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Obsidian <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Logseq <span class="eco-badge">Soon</span></div>
+          </div>
+        </div>
+
+        <div class="eco-cat">
+          <div class="eco-cat-head">
+            <h3>Cloud Storage</h3>
+            <p>Sync libraries from shared drives.</p>
+          </div>
+          <div class="eco-grid">
+            <div class="eco-item is-soon">Google Drive <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Dropbox <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">OneDrive <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Box <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">SharePoint <span class="eco-badge">Soon</span></div>
+          </div>
+        </div>
+
+        <div class="eco-cat">
+          <div class="eco-cat-head">
+            <h3>Collaboration</h3>
+            <p>Keep labs aligned on verified evidence.</p>
+          </div>
+          <div class="eco-grid">
+            <div class="eco-item">Projects</div>
+            <div class="eco-item">Shared evidence</div>
+            <div class="eco-item is-soon">Team workspaces <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Slack <span class="eco-badge">Soon</span></div>
+          </div>
+        </div>
+
+        <div class="eco-cat">
+          <div class="eco-cat-head">
+            <h3>AI Models</h3>
+            <p>Model routing for research tasks.</p>
+          </div>
+          <div class="eco-grid">
+            <div class="eco-item">OpenAI</div>
+            <div class="eco-item">Claude</div>
+            <div class="eco-item">Gemini</div>
+            <div class="eco-item is-soon">Grok <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">DeepSeek <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Mistral <span class="eco-badge">Soon</span></div>
+          </div>
+        </div>
+
+        <div class="eco-cat">
+          <div class="eco-cat-head">
+            <h3>Developer Platform</h3>
+            <p>Extend Dhund into your stack.</p>
+          </div>
+          <div class="eco-grid">
+            <div class="eco-item">REST API</div>
+            <div class="eco-item is-soon">MCP <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Webhooks <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">Zapier <span class="eco-badge">Soon</span></div>
+            <div class="eco-item is-soon">n8n <span class="eco-badge">Soon</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Enterprise Security -->
+    <section class="block-band" id="security">
+      <div class="wrap">
+        <div class="editorial-row reveal">
+          <div>
+            <p class="eyebrow">Enterprise Security</p>
+            <h2 class="section-title">Built for universities, labs, and R&amp;D teams.</h2>
+          </div>
+          <p class="section-lead">
+            High-stakes research needs more than a chatbot privacy blurb. Dhund is designed as an
+            operating system you can trust — with clear roadmap items for institutional controls.
+          </p>
+        </div>
+
+        <div class="ent-grid reveal">
+          <div class="ent-card is-soon">
+            <span class="ent-check" aria-hidden="true">·</span>
+            <div><strong>SOC 2 Type II</strong><span>Coming soon — formal attestation on the roadmap.</span></div>
+          </div>
+          <div class="ent-card is-soon">
+            <span class="ent-check" aria-hidden="true">·</span>
+            <div><strong>ISO 27001</strong><span>Coming soon — information security management.</span></div>
+          </div>
+          <div class="ent-card is-soon">
+            <span class="ent-check" aria-hidden="true">·</span>
+            <div><strong>GDPR</strong><span>Privacy controls live; formal program expanding.</span></div>
+          </div>
+          <div class="ent-card is-soon">
+            <span class="ent-check" aria-hidden="true">·</span>
+            <div><strong>CCPA</strong><span>Coming soon — consumer privacy commitments.</span></div>
+          </div>
+          <div class="ent-card">
+            <span class="ent-check" aria-hidden="true">✓</span>
+            <div><strong>Encryption in transit</strong><span>TLS for application traffic.</span></div>
+          </div>
+          <div class="ent-card">
+            <span class="ent-check" aria-hidden="true">✓</span>
+            <div><strong>Encryption at rest</strong><span>Object storage encrypted when configured.</span></div>
+          </div>
+          <div class="ent-card is-soon">
+            <span class="ent-check" aria-hidden="true">·</span>
+            <div><strong>Zero data training</strong><span>Coming soon — explicit no-training commitment in policy.</span></div>
+          </div>
+          <div class="ent-card is-soon">
+            <span class="ent-check" aria-hidden="true">·</span>
+            <div><strong>SAML SSO</strong><span>Coming soon — university and enterprise IdP.</span></div>
+          </div>
+          <div class="ent-card is-soon">
+            <span class="ent-check" aria-hidden="true">·</span>
+            <div><strong>SCIM</strong><span>Coming soon — automated user provisioning.</span></div>
+          </div>
+          <div class="ent-card is-soon">
+            <span class="ent-check" aria-hidden="true">·</span>
+            <div><strong>RBAC</strong><span>Coming soon — role-based lab access.</span></div>
+          </div>
+          <div class="ent-card is-soon">
+            <span class="ent-check" aria-hidden="true">·</span>
+            <div><strong>Audit logs</strong><span>Coming soon — exportable admin activity.</span></div>
+          </div>
+          <div class="ent-card is-soon">
+            <span class="ent-check" aria-hidden="true">·</span>
+            <div><strong>Data residency</strong><span>Coming soon — region selection for institutions.</span></div>
+          </div>
+          <div class="ent-card">
+            <span class="ent-check" aria-hidden="true">✓</span>
+            <div><strong>API access</strong><span>Authenticated REST APIs for product workflows.</span></div>
+          </div>
+          <div class="ent-card">
+            <span class="ent-check" aria-hidden="true">✓</span>
+            <div><strong>Account export &amp; delete</strong><span>Take your data — or remove it.</span></div>
+          </div>
+          <div class="ent-card">
+            <span class="ent-check" aria-hidden="true">✓</span>
+            <div><strong>Project-scoped evidence</strong><span>Writing stays gated on accepted sources.</span></div>
+          </div>
+        </div>
+        <p class="ent-legend reveal"><em>✓ Available</em> · Roadmap items are labeled Coming soon — not silent promises.</p>
+      </div>
+    </section>
+
     <!-- Testimonials -->
     <section class="wrap block" id="stories">
       <div class="editorial-row reveal" style="margin-bottom:1.5rem">
@@ -1752,8 +2165,8 @@
       <div class="footer-col">
         <h4>Product</h4>
         <a href="{{ url_for('marketing_product') }}">Overview</a>
-        <a href="{{ url_for('marketing_how_it_works') }}">How it works</a>
-        <a href="#ready">Start research</a>
+        <a href="#ecosystem">Ecosystem</a>
+        <a href="#security">Security</a>
         <a href="#signin">Sign in</a>
       </div>
       <div class="footer-col">
