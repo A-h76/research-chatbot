@@ -47,6 +47,8 @@ import {
   selectedEvidenceMarkerId,
 } from "@/features/writing/utils/citeDraftHelpers";
 import { ResearchProgressStage } from "@/features/writing/components/ResearchProgressStage";
+import { ResearchConfidenceStrip } from "@/features/writing/components/ResearchConfidenceStrip";
+import { ResearchReviewerPanel } from "@/features/writing/components/ResearchReviewerPanel";
 import { WritingOutlineRail } from "@/features/writing/components/WritingOutlineRail";
 import {
   downloadMarkdownFile,
@@ -1159,7 +1161,7 @@ function DraftTab() {
                     documentId={activeId}
                     liveReview={grounded.last.review}
                     refreshKey={reviewerRefresh}
-                    onFocusSection={(sectionId) => {
+                    onFocusSection={(sectionId: string) => {
                       document
                         .getElementById(`writing-section-${sectionId}`)
                         ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1225,7 +1227,7 @@ function DraftTab() {
               className="mt-2"
               documentId={activeId}
               refreshKey={reviewerRefresh}
-              onFocusSection={(sectionId) => {
+              onFocusSection={(sectionId: string) => {
                 document
                   .getElementById(`writing-section-${sectionId}`)
                   ?.scrollIntoView({ behavior: "smooth", block: "nearest" });

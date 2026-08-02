@@ -22,7 +22,7 @@ export function LibraryImportMenu({
   onMendeleyImport,
 }: {
   onUpload: () => void;
-  onBibtex: () => void;
+  onBibtex?: () => void;
   onZoteroImport?: () => void;
   onMendeleyImport?: () => void;
 }) {
@@ -50,10 +50,12 @@ export function LibraryImportMenu({
           <FileUp className="size-3.5" />
           Upload PDF
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onBibtex}>
-          <FileUp className="size-3.5" />
-          BibTeX / RIS
-        </DropdownMenuItem>
+        {onBibtex ? (
+          <DropdownMenuItem onClick={onBibtex}>
+            <FileUp className="size-3.5" />
+            BibTeX / RIS
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         {zoteroOn ? (
           <DropdownMenuItem onClick={() => onZoteroImport?.()}>
