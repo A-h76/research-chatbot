@@ -8,7 +8,6 @@ import {
   MessageSquare,
   PenLine,
   Plus,
-  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HomeResearchSkeleton } from "@/components/common/ResearchSkeletons";
