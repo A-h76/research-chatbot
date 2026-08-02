@@ -315,6 +315,107 @@ def fetch_items(
     return records
 
 
+def list_pdf_attachments(
+    access_token: str,
+    access_secret: str,
+    zotero_user_id: str,
+    item_key: str,
+) -> list[dict[str, str]]:
+    """Child PDF attachments for a top-level Zotero item.
+
+    Returns dicts with keys: key, filename, content_type.
+    """
+    item_key = (item_key or "").strip()
+    if not item_key:
+        return []
+    data = _api_get(
+        f"/users/{zotero_user_id}/items/{item_key}/children",
+        access_token,
+        access_secret,
+        params={"limit": 50, "format": "json"},
+    )
+    out: list[dict[str, str]] = []
+    for item in data or []:
+        d = item.get("data") or item
+        if (d.get("itemType") or "").lower() != "attachment":
+            continue
+        ctype = (d.get("contentType") or d.get("mimeType") or "").lower()
+        fname = (d.get("filename") or d.get("title") or "").strip()
+        link_mode = (d.get("linkMode") or "").lower()
+        # Prefer stored files; skip linked-URL-only when no contentType PDF.
+        is_pdf = "pdf" in ctype or fname.lower().endswith(".pdf")
+        if not is_pdf:
+            continue
+        if link_mode == "linked_url" and not ctype:
+            continue
+        key = str(d.get("key") or item.get("key") or "").strip()
+        if not key:
+            continue
+        out.append(
+            {
+                "key": key,
+                "filename": fname or f"{key}.pdf",
+                "content_type": ctype or "application/pdf",
+            }
+        )
+    return out
+
+
+def download_attachment_bytes(
+    access_token: str,
+    access_secret: str,
+    zotero_user_id: str,
+    attachment_key: str,
+    *,
+    max_bytes: int = 50 * 1024 * 1024,
+) -> bytes:
+    """Download attachment file bytes (follows S3 redirect)."""
+    attachment_key = (attachment_key or "").strip()
+    if not attachment_key:
+        raise ValueError("empty_attachment_key")
+    sess = _oauth1_session(token=access_token, token_secret=access_secret)
+    url = f"{ZOTERO_API}/users/{zotero_user_id}/items/{attachment_key}/file"
+    r = sess.get(url, timeout=120, allow_redirects=True)
+    r.raise_for_status()
+    data = r.content or b""
+    if len(data) > max_bytes:
+        raise ValueError(f"attachment_too_large:{len(data)}")
+    if not data:
+        raise ValueError("empty_attachment")
+    return data
+
+
+def pull_pdf_for_item(
+    access_token: str,
+    access_secret: str,
+    zotero_user_id: str,
+    item_key: str,
+    *,
+    max_bytes: int = 50 * 1024 * 1024,
+) -> dict[str, Any] | None:
+    """Download the first PDF attachment for a parent item, or None if missing."""
+    attachments = list_pdf_attachments(
+        access_token, access_secret, zotero_user_id, item_key
+    )
+    if not attachments:
+        return None
+    att = attachments[0]
+    raw = download_attachment_bytes(
+        access_token,
+        access_secret,
+        zotero_user_id,
+        att["key"],
+        max_bytes=max_bytes,
+    )
+    return {
+        "external_id": item_key,
+        "attachment_key": att["key"],
+        "filename": att["filename"],
+        "content_type": att["content_type"] or "application/pdf",
+        "data": raw,
+    }
+
+
 def parse_oauth_callback_args(args: dict) -> dict[str, str]:
     """Normalize Flask request.args for Zotero callback."""
     return {

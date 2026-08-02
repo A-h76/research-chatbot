@@ -17,6 +17,8 @@ boto3>=1.34
 redis>=5.0
 flask-jwt-extended>=4.7
 prometheus-client>=0.20
+# Optional error monitoring — initialised only when SENTRY_DSN is set.
+sentry-sdk[flask]>=2.0
 # Production WSGI server (Railway/Procfile). Bump comment forces Railpack cache refresh.
 gunicorn==23.0.0
 pytest>=8.0

@@ -53,6 +53,7 @@ function PaperBreadcrumb() {
   { prefix: "/research",          label: "Compare & Gaps" },
   { prefix: "/analysis",          label: "Compare & Gaps" },
   { prefix: "/settings",          label: "Settings" },
+  { prefix: "/admin",             label: "Admin" },
   { prefix: "/chat",              label: "Ask Dhund" },
   { prefix: "/search",            label: "Search" },
   { prefix: "/writing",           label: "Writing" },

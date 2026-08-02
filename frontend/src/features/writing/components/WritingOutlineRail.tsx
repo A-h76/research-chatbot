@@ -1,8 +1,10 @@
 /**
  * Left rail: literature-review outline → selects section type for grounded generate.
  */
+import { useState } from "react";
 import { History } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import {
   WRITING_SECTION_OPTIONS,
   type WritingSectionType,
@@ -22,6 +24,8 @@ type VersionItem = {
   version_no: number;
   source: string;
   created_at?: string | null;
+  title?: string | null;
+  content?: string | null;
 };
 
 type Props = {
@@ -39,6 +43,8 @@ export function WritingOutlineRail({
   onRestoreVersion,
   className,
 }: Props) {
+  const [pendingRestore, setPendingRestore] = useState<VersionItem | null>(null);
+
   return (
     <aside
       className={cn(
@@ -106,20 +112,31 @@ export function WritingOutlineRail({
           <History className="size-3.5" aria-hidden />
           Versions
         </div>
+        <p className="mb-1.5 px-1 text-[10px] text-muted-foreground">
+          Restore creates a new latest version — your current draft stays in history.
+        </p>
         <div className="max-h-40 overflow-auto">
           {versions.map((v) => (
             <button
               key={v.id}
               type="button"
-              onClick={() => onRestoreVersion?.(v.id)}
-              className="mb-1 flex w-full items-center justify-between rounded border border-border px-2 py-1 text-left text-[11px] hover:bg-muted/40"
+              onClick={() => setPendingRestore(v)}
+              className="mb-1 flex w-full flex-col gap-0.5 rounded border border-border px-2 py-1.5 text-left text-[11px] hover:bg-muted/40"
             >
-              <span>
-                v{v.version_no} · {v.source}
+              <span className="flex w-full items-center justify-between gap-2">
+                <span>
+                  v{v.version_no} · {v.source}
+                </span>
+                <span className="shrink-0 text-muted-foreground">
+                  {v.created_at ? new Date(v.created_at).toLocaleTimeString() : ""}
+                </span>
               </span>
-              <span className="text-muted-foreground">
-                {v.created_at ? new Date(v.created_at).toLocaleTimeString() : ""}
-              </span>
+              {v.title || v.content ? (
+                <span className="line-clamp-2 text-[10px] text-muted-foreground">
+                  {(v.title || "").trim() || "Untitled"}
+                  {v.content ? ` — ${v.content.trim().slice(0, 80)}` : ""}
+                </span>
+              ) : null}
             </button>
           ))}
           {!versions.length && (
@@ -127,6 +144,28 @@ export function WritingOutlineRail({
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingRestore != null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRestore(null);
+        }}
+        title="Restore this version?"
+        entityName={
+          pendingRestore
+            ? `v${pendingRestore.version_no} · ${pendingRestore.source}`
+            : "Version"
+        }
+        description="The editor will load this snapshot. A new latest version is created so you can undo by restoring again."
+        consequence="Unsaved local edits that were not autosaved will be replaced."
+        confirmLabel="Restore"
+        cancelLabel="Keep current"
+        onConfirm={async () => {
+          if (pendingRestore == null) return;
+          onRestoreVersion?.(pendingRestore.id);
+          setPendingRestore(null);
+        }}
+      />
     </aside>
   );
 }

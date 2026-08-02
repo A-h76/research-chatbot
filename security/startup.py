@@ -78,10 +78,22 @@ def require_production_secrets(
         missing.append("RESEND_API_KEY")
 
     if not (environ.get("REDIS_URL") or "").strip():
-        log.warning(
-            "REDIS_URL unset in production — Flask-Limiter falls back to memory:// "
-            "(limits are NOT shared across workers)."
-        )
+        redis_memory_ok = (environ.get("RATE_LIMIT_MEMORY_OK") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if redis_memory_ok:
+            log.warning(
+                "REDIS_URL unset in production (RATE_LIMIT_MEMORY_OK=1) — Flask-Limiter "
+                "uses memory://; limits are NOT shared across workers or instances."
+            )
+        else:
+            # Multi-worker / multi-instance deploys need shared limiter storage.
+            missing.append(
+                "REDIS_URL (or set RATE_LIMIT_MEMORY_OK=1 for single-process only)"
+            )
 
     clam = (environ.get("CLAMAV_ENABLED") or "").strip().lower()
     clam_on = clam in {"1", "true", "yes", "on"}
@@ -155,7 +167,8 @@ def resolve_limiter_storage_uri(
 
     Development: fall back to memory:// if Redis is missing or unreachable.
     Production with REDIS_URL set: fail closed if Redis cannot be pinged.
-    Production without REDIS_URL: memory:// with a warning (single-process only).
+    Production without REDIS_URL: memory:// only after RATE_LIMIT_MEMORY_OK
+    was acknowledged at ``require_production_secrets`` (single-process).
     """
     url = (redis_url or "").strip()
     if not url:

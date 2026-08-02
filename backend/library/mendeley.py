@@ -297,6 +297,84 @@ def fetch_documents_since(
     return records[:limit], newest
 
 
+def list_document_files(access_token: str, document_id: str) -> list[dict[str, str]]:
+    """Files attached to a Mendeley document (PDF preferred)."""
+    document_id = (document_id or "").strip()
+    if not document_id:
+        return []
+    data = _api_get(
+        "/files",
+        access_token,
+        accept="application/vnd.mendeley-file.1+json",
+        params={"document_id": document_id, "limit": 50},
+    )
+    out: list[dict[str, str]] = []
+    for item in data or []:
+        if not isinstance(item, dict):
+            continue
+        fid = str(item.get("id") or "").strip()
+        if not fid:
+            continue
+        ctype = (item.get("mime_type") or item.get("content_type") or "").lower()
+        fname = (item.get("file_name") or item.get("filename") or "").strip()
+        is_pdf = "pdf" in ctype or fname.lower().endswith(".pdf")
+        if not is_pdf:
+            continue
+        out.append(
+            {
+                "key": fid,
+                "filename": fname or f"{fid}.pdf",
+                "content_type": ctype or "application/pdf",
+            }
+        )
+    return out
+
+
+def download_file_bytes(
+    access_token: str,
+    file_id: str,
+    *,
+    max_bytes: int = 50 * 1024 * 1024,
+) -> bytes:
+    """Download Mendeley file bytes (follows 303 → S3)."""
+    file_id = (file_id or "").strip()
+    if not file_id:
+        raise ValueError("empty_file_id")
+    r = requests.get(
+        f"{MENDELEY_API}/files/{file_id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=120,
+        allow_redirects=True,
+    )
+    r.raise_for_status()
+    data = r.content or b""
+    if len(data) > max_bytes:
+        raise ValueError(f"file_too_large:{len(data)}")
+    if not data:
+        raise ValueError("empty_file")
+    return data
+
+
+def pull_pdf_for_document(
+    access_token: str,
+    document_id: str,
+    *,
+    max_bytes: int = 50 * 1024 * 1024,
+) -> dict[str, Any] | None:
+    files = list_document_files(access_token, document_id)
+    if not files:
+        return None
+    f = files[0]
+    raw = download_file_bytes(access_token, f["key"], max_bytes=max_bytes)
+    return {
+        "external_id": document_id,
+        "attachment_key": f["key"],
+        "filename": f["filename"],
+        "content_type": f["content_type"] or "application/pdf",
+        "data": raw,
+    }
+
+
 def fetch_documents(
     access_token: str,
     *,

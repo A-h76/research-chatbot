@@ -37,6 +37,7 @@ export const collectionsApi = {
 export async function removePapersFromCollection(id: number, fileIds: number[]) {
   const res = await fetch(`/api/library/collections/${id}/papers`, {
     method: "DELETE",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ file_ids: fileIds }),
   });

@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "@/components/common/Toast";
-import { ApiError } from "@/lib/apiClient";
+import { formatApiFailure } from "@/lib/apiErrors";
 import { evidenceApi } from "../api";
 import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
 
@@ -57,6 +57,7 @@ export type GroundedWritingSection = {
     confidence_band?: string;
   }>;
   evidence_ids: number[];
+  orphan_ids?: number[];
   bindings?: GroundedWritingBinding[];
   binding_count?: number;
   confidence: string;
@@ -71,6 +72,7 @@ export type WritingReview = {
   sections_passed: number;
   issue_count: number;
   name?: string;
+  reviewer_version?: string;
   metrics?: {
     grounding_pct: number;
     citation_coverage_pct: number;
@@ -81,6 +83,9 @@ export type WritingReview = {
     severity: string;
     section_id: string | null;
     message: string;
+    evidence_ids?: number[];
+    finding_id?: number;
+    status?: string;
   }>;
 };
 
@@ -100,6 +105,8 @@ export type WritingMetrics = {
 export type GroundedWritingResult = {
   status: "ok" | "blocked";
   blocked_reason: string | null;
+  /** False when Reviewer error codes block Accept/export (draft may still be inspectable). */
+  accept_allowed?: boolean;
   mode: string;
   section_type?: string;
   paragraph: string | null;
@@ -379,11 +386,7 @@ export function useGroundedWriting() {
     },
     onError: (err) => {
       setJobStatus(null);
-      if (err instanceof ApiError) {
-        toast.error(err.message || "Grounded generate failed");
-        return;
-      }
-      toast.error(err instanceof Error ? err.message : "Grounded generate failed");
+      toast.error(formatApiFailure(err, "Grounded generate failed"));
     },
   });
 

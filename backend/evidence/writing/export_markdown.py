@@ -1,6 +1,7 @@
-"""Literature Review Markdown export (Sprint C).
+"""Literature Review Markdown + BibTeX export (Sprint C / V1 #18).
 
 Body + Evidence Appendix + Bibliography + Generation metadata.
+Server-side export gate mirrors FE ``canExportGroundedLitReview``.
 """
 
 from __future__ import annotations
@@ -40,6 +41,39 @@ def _bindings_from_writing(writing: dict[str, Any]) -> list[dict[str, Any]]:
     return flat
 
 
+def review_has_severity_error(review: dict[str, Any] | None) -> bool:
+    if not review:
+        return False
+    return any(
+        str(i.get("severity") or "").lower() == "error"
+        for i in (review.get("issues") or [])
+    )
+
+
+def can_export_grounded_lit_review(
+    writing: dict[str, Any] | None,
+) -> tuple[bool, str | None]:
+    """Refuse lit-review export when grounding / Reviewer bar is not met (#18)."""
+    if not writing:
+        return False, "No grounded export payload — generate and accept a review first"
+    if writing.get("status") == "blocked":
+        return False, "Draft is blocked — insufficient evidence"
+    if writing.get("accept_allowed") is False:
+        return (
+            False,
+            "Research Reviewer blocked Accept/export — revise unbound or unsupported claims",
+        )
+    review = writing.get("review") or {}
+    if review_has_severity_error(review):
+        return False, "Research Reviewer has error-severity findings — fix before export"
+    if review.get("status") == "fail":
+        return False, "Research Reviewer failed — fix issues before export"
+    trace = compute_export_traceability(writing)
+    if not trace["meets_100"]:
+        return False, "Evidence traceability below 100% — every section needs bindings"
+    return True, None
+
+
 def compute_export_traceability(writing: dict[str, Any]) -> dict[str, Any]:
     """Every ok section must have ≥1 EvidenceObject binding (100% target)."""
     sections = [
@@ -48,7 +82,6 @@ def compute_export_traceability(writing: dict[str, Any]) -> dict[str, Any]:
         if s.get("status") == "ok" and (s.get("paragraph") or "").strip()
     ]
     if not sections and (writing.get("paragraph") or "").strip():
-        # Flat paragraph path
         n_bind = len(_bindings_from_writing(writing))
         ok = n_bind >= 1
         return {
@@ -71,6 +104,31 @@ def compute_export_traceability(writing: dict[str, Any]) -> dict[str, Any]:
         "traceability_pct": pct,
         "meets_100": total > 0 and linked == total,
     }
+
+
+def _bibliography_line(i: int, b: dict[str, Any]) -> str:
+    """Prefer paper metadata when present (FE parity); else claim + page."""
+    eid = b.get("evidence_id")
+    page = b.get("page")
+    title = str(b.get("paper_title") or "").strip()
+    authors = str(b.get("authors") or "").strip()
+    year = str(b.get("year") or "").strip()
+    venue = str(b.get("venue") or "").strip()
+    doi = str(b.get("doi") or "").strip()
+    claim = str(b.get("claim") or "").strip()
+    page_bit = f" (p. {page})" if page is not None else ""
+    if title or authors:
+        bits = [
+            authors or None,
+            f"({year})" if year else None,
+            title or None,
+            venue or None,
+            f"https://doi.org/{doi}" if doi else None,
+            f"[#{eid}]{page_bit}",
+        ]
+        return f"{i}. {'. '.join(x for x in bits if x)}"
+    claim_bit = claim or "(no claim text)"
+    return f"{i}. [#{eid}] {claim_bit}{page_bit}"
 
 
 def build_literature_review_markdown(
@@ -134,11 +192,7 @@ def build_literature_review_markdown(
         lines.append("")
     else:
         for i, b in enumerate(bindings, start=1):
-            eid = b.get("evidence_id")
-            page = b.get("page")
-            claim = (b.get("claim") or "").strip() or "(no claim text)"
-            page_bit = f", page {page}" if page is not None else ""
-            lines.append(f"{i}. [#{eid}] {claim}{page_bit}")
+            lines.append(_bibliography_line(i, b))
         lines.append("")
 
     lines.extend(
@@ -154,6 +208,8 @@ def build_literature_review_markdown(
             f"- citation_coverage: {_pct(metrics.get('citation_coverage', review_metrics.get('citation_coverage_pct')))}",
             f"- unsupported_claims: {metrics.get('unsupported_claims', review_metrics.get('unsupported_claims', 'n/a'))}",
             f"- research_reviewer: {review.get('status') or 'n/a'} (pass_rate={_pct(review.get('pass_rate'))})",
+            f"- reviewer_version: {review.get('reviewer_version') or 'n/a'}",
+            f"- reviewer_issue_count: {review.get('issue_count', len(review.get('issues') or []))}",
             f"- evidence_traceability_pct: {_pct(trace['traceability_pct'])}",
             f"- evidence_traceability_100: {'yes' if trace['meets_100'] else 'no'}",
             f"- unique_evidence_cited: {metrics.get('unique_evidence_cited', len(bindings))}",
@@ -162,3 +218,61 @@ def build_literature_review_markdown(
         ]
     )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def build_bibtex_from_writing(writing: dict[str, Any] | None) -> str:
+    """BibTeX from Evidence → Paper metadata (never invent literature)."""
+    bindings = _bindings_from_writing(writing or {})
+    if not bindings:
+        return ""
+
+    seen_files: set[int] = set()
+    entries: list[str] = []
+
+    for b in bindings:
+        fid_raw = b.get("file_id")
+        fid = int(fid_raw) if fid_raw is not None else None
+        if fid is not None:
+            if fid in seen_files:
+                continue
+            seen_files.add(fid)
+        authors = str(b.get("authors") or "").strip() or "Unknown"
+        title = str(b.get("paper_title") or "").strip() or f"Evidence {b.get('evidence_id')}"
+        year = str(b.get("year") or "").strip() or "nd"
+        venue = str(b.get("venue") or "").strip()
+        doi = str(b.get("doi") or "").strip()
+        eid = b.get("evidence_id")
+        first_author = authors.split(";")[0].split(",")[0].strip() or "anon"
+        key_base = "".join(c for c in first_author if c.isalnum()).lower() or "ref"
+        key = f"{key_base}{'' if year == 'nd' else year}_e{eid}"
+
+        fields = [
+            f"  author = {{{authors.replace(';', ' and ')}}}",
+            f"  title = {{{title}}}",
+            f"  year = {{{year}}}",
+        ]
+        if venue:
+            fields.append(f"  journal = {{{venue}}}")
+        if doi:
+            fields.append(f"  doi = {{{doi}}}")
+        fields.append(f"  note = {{Dhund evidence #{eid}}}")
+        entries.append("@article{" + key + ",\n" + ",\n".join(fields) + "\n}")
+
+    return "\n\n".join(entries) + "\n"
+
+
+def merge_persisted_review_into_writing(
+    writing: dict[str, Any],
+    review: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Apply latest persisted Reviewer run onto a client snapshot for gating."""
+    if not review:
+        return writing
+    out = dict(writing)
+    out["review"] = review
+    has_error = review_has_severity_error(review) or review.get("status") == "fail"
+    if writing.get("accept_allowed") is False:
+        out["accept_allowed"] = False
+    elif has_error:
+        out["accept_allowed"] = False
+    return out

@@ -30,6 +30,7 @@ import { ProjectResearchConsole } from "../components/ProjectResearchConsole";
 import { ProjectChatPanel } from "../components/ProjectChatPanel";
 import { useProjectHub } from "../useProjects";
 import { useUI } from "@/context/UIContext";
+import { ApiError } from "@/lib/apiClient";
 import { cn, formatDate } from "@/lib/utils";
 import type {
   ProjectHub,
@@ -417,9 +418,10 @@ export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const id = projectId ? Number(projectId) : null;
+  const parsed = projectId != null ? Number(projectId) : NaN;
+  const id = Number.isFinite(parsed) ? parsed : null;
 
-  const { data: hub, isLoading, isError, refetch } = useProjectHub(id);
+  const { data: hub, isLoading, isError, error, refetch, isFetching } = useProjectHub(id);
   const { setCurrentProjectId } = useUI();
   const [editOpen, setEditOpen] = useState(false);
 
@@ -499,6 +501,28 @@ export function ProjectDetailPage() {
     );
   }
 
+  const isNotFound =
+    id == null ||
+    (isError && error instanceof ApiError && error.status === 404) ||
+    (!isError && !hub);
+
+  if (isNotFound) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center space-y-3 px-6">
+          <FolderKanban className="mx-auto size-10 text-muted-foreground" />
+          <p className="text-sm font-medium">Project not found</p>
+          <p className="text-xs text-muted-foreground">
+            This project doesn’t exist or you don’t have access to it.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => navigate("/projects")}>
+            Back to projects
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (isError) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -509,27 +533,18 @@ export function ProjectDetailPage() {
             Check your connection and try again.
           </p>
           <div className="flex justify-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isFetching}
+              onClick={() => void refetch()}
+            >
               Retry
             </Button>
             <Button variant="ghost" size="sm" onClick={() => navigate("/projects")}>
               Back to projects
             </Button>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!hub) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center space-y-3">
-          <FolderKanban className="mx-auto size-10 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Project not found.</p>
-          <Button variant="outline" size="sm" onClick={() => navigate("/projects")}>
-            Back to projects
-          </Button>
         </div>
       </div>
     );

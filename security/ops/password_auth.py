@@ -528,6 +528,17 @@ class PasswordAuthService:
         finally:
             db.close()
 
+    def verify_password(self, user_id: int, password: str) -> bool:
+        """True when the user has a password and it matches (step-up / delete)."""
+        db = self.SessionLocal()
+        try:
+            user = db.get(self.User, user_id)
+            if not user or not getattr(user, "password_hash", None):
+                return False
+            return bool(check_password_hash(user.password_hash, password or ""))
+        finally:
+            db.close()
+
     def revoke_all_sessions(self, user_id: int) -> int:
         db = self.SessionLocal()
         try:

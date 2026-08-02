@@ -96,8 +96,11 @@ export function computeExportTraceability(writing: GroundedWritingResult): {
       meets_100: ok,
     };
   }
+  // Match backend export_markdown: linked only if bindings/ids present AND no orphans.
   const linked = sections.filter(
-    (s) => (s.bindings?.length || s.evidence_ids?.length || 0) > 0,
+    (s) =>
+      (s.bindings?.length || s.evidence_ids?.length || 0) > 0 &&
+      !(s.orphan_ids && s.orphan_ids.length > 0),
   ).length;
   const total = sections.length;
   const pctVal = total ? linked / total : 0;
@@ -107,6 +110,48 @@ export function computeExportTraceability(writing: GroundedWritingResult): {
     traceability_pct: pctVal,
     meets_100: total > 0 && linked === total,
   };
+}
+
+/** True when any Research Reviewer issue has severity=error (B-514). */
+export function reviewHasSeverityError(
+  review: GroundedWritingResult["review"] | null | undefined,
+): boolean {
+  return (review?.issues || []).some(
+    (i) => String(i.severity || "").toLowerCase() === "error",
+  );
+}
+
+/** V1: refuse lit-review export when grounding bar is not met. */
+export function canExportGroundedLitReview(writing: GroundedWritingResult | null | undefined): {
+  ok: boolean;
+  reason?: string;
+} {
+  if (!writing) {
+    return { ok: false, reason: "No grounded export snapshot — generate and accept a review first" };
+  }
+  if (writing.status === "blocked") {
+    return { ok: false, reason: "Draft is blocked — insufficient evidence" };
+  }
+  if (writing.accept_allowed === false) {
+    return {
+      ok: false,
+      reason: "Research Reviewer blocked Accept/export — revise unbound or unsupported claims",
+    };
+  }
+  if (reviewHasSeverityError(writing.review)) {
+    return {
+      ok: false,
+      reason: "Research Reviewer has error-severity findings — fix before export",
+    };
+  }
+  if (writing.review?.status === "fail") {
+    return { ok: false, reason: "Research Reviewer failed — fix issues before export" };
+  }
+  const trace = computeExportTraceability(writing);
+  if (!trace.meets_100) {
+    return { ok: false, reason: "Evidence traceability below 100% — every section needs bindings" };
+  }
+  return { ok: true };
 }
 
 export function buildLiteratureReviewMarkdown(opts: {
@@ -200,6 +245,8 @@ export function buildLiteratureReviewMarkdown(opts: {
     `- citation_coverage: ${pct(metrics?.citation_coverage ?? review?.metrics?.citation_coverage_pct)}`,
     `- unsupported_claims: ${metrics?.unsupported_claims ?? review?.metrics?.unsupported_claims ?? "n/a"}`,
     `- research_reviewer: ${review?.status || "n/a"} (pass_rate=${pct(review?.pass_rate)})`,
+    `- reviewer_version: ${review?.reviewer_version || "n/a"}`,
+    `- reviewer_issue_count: ${review?.issue_count ?? review?.issues?.length ?? "n/a"}`,
     `- evidence_traceability_pct: ${pct(trace.traceability_pct)}`,
     `- evidence_traceability_100: ${trace.meets_100 ? "yes" : "no"}`,
     `- unique_evidence_cited: ${metrics?.unique_evidence_cited ?? bindings.length}`,

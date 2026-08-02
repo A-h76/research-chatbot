@@ -196,6 +196,24 @@ export const evidenceApi = {
     },
   ) => api.post(`/api/documents/${documentId}/evidence-bindings`, body),
 
+  listBindings: (documentId: number) =>
+    api.get<{
+      items: Array<{
+        id: number;
+        document_id: number;
+        evidence_object_id: number;
+        block_id: string;
+        range_start?: number | null;
+        range_end?: number | null;
+        selected_text?: string;
+        relation?: string;
+      }>;
+      count: number;
+    }>(`/api/documents/${documentId}/evidence-bindings`),
+
+  deleteBinding: (bindingId: number) =>
+    api.delete<{ ok: boolean }>(`/api/evidence-bindings/${bindingId}`),
+
   review: (
     evidenceId: number,
     body: { status: string; reason?: string; reason_code?: string },
@@ -359,4 +377,25 @@ export const evidenceApi = {
       result: Record<string, unknown> | null;
       kind?: string;
     }>(`/api/research/jobs/${jobId}`),
+
+  /** A-401 — list durable Research Reviewer runs (newest first). */
+  listReviewerRuns: (documentId: number, opts?: { limit?: number }) => {
+    const p = new URLSearchParams();
+    if (opts?.limit != null) p.set("limit", String(opts.limit));
+    const qs = p.toString();
+    return api.get<import("@/features/writing/types/reviewer").ReviewerRunListResponse>(
+      `/api/documents/${documentId}/reviewer-runs${qs ? `?${qs}` : ""}`,
+    );
+  },
+
+  /** Newest reconstructable run + findings + review DTO. */
+  latestReviewerRun: (documentId: number) =>
+    api.get<import("@/features/writing/types/reviewer").ReviewerRunDTO>(
+      `/api/documents/${documentId}/reviewer-runs/latest`,
+    ),
+
+  getReviewerRun: (runId: number) =>
+    api.get<import("@/features/writing/types/reviewer").ReviewerRunDTO>(
+      `/api/reviewer-runs/${runId}`,
+    ),
 };

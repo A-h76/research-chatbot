@@ -19,6 +19,7 @@ import { MultiPaperAnalysisPage }   from "@/features/analysis/pages/MultiPaperAn
 import { SearchPage }               from "@/features/search/pages/SearchPage";
 import { WritingWorkspacePage }     from "@/features/writing/pages/WritingWorkspacePage";
 import { ProjectWritingRedirect }   from "@/features/writing/pages/ProjectWritingRedirect";
+import { AdminPage }                from "@/features/admin/pages/AdminPage";
 
 export const router = createBrowserRouter([
   { path: "/privacy",  element: <LegalPage slug="privacy" />, errorElement: <RouteErrorFallback /> },
@@ -58,6 +59,8 @@ export const router = createBrowserRouter([
       { path: "writing",                               element: <WritingWorkspacePage /> },
       { path: "settings",                              element: <SettingsPage /> },
       { path: "settings/:section",                     element: <SettingsPage /> },
+      { path: "admin",                                 element: <AdminPage /> },
+      { path: "admin/:section",                        element: <AdminPage /> },
       { path: "*",                                     element: <Navigate to="/" replace /> },
     ],
   },

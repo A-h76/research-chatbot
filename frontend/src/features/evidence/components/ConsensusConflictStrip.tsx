@@ -18,11 +18,16 @@ export type ConsensusConflictStripProps = {
     supporting?: number;
     contradicting?: number;
     neutral?: number;
+    supporting_ids?: number[];
+    contradicting_ids?: number[];
+    neutral_ids?: number[];
   } | null;
   conflict?: {
     has_conflict?: boolean;
     mediators?: string[];
     mediator_explanations?: Array<{ code: string; title: string; why: string }>;
+    supporting_ids?: number[];
+    contradicting_ids?: number[];
     links?: Array<{
       a_id: number;
       b_id: number;
@@ -37,6 +42,8 @@ export type ConsensusConflictStripProps = {
     };
     product_summary?: string | null;
   } | null;
+  /** When set, evidence ID chips become buttons (e.g. open Inspector). */
+  onEvidenceClick?: (evidenceId: number) => void;
   compact?: boolean;
   className?: string;
 };
@@ -53,6 +60,7 @@ export function ConsensusConflictStrip({
   status,
   consensus,
   conflict,
+  onEvidenceClick,
   compact = false,
   className,
 }: ConsensusConflictStripProps) {
@@ -61,6 +69,10 @@ export function ConsensusConflictStrip({
   const product = consensus?.product_label || mapOrdinalToProduct(consensus?.label);
   const whyLinks = (conflict?.links ?? []).filter((l) => (l.why && l.why.length > 0) || l.unexplained);
   const unexplained = conflict?.metrics?.unexplained_pair_count ?? 0;
+  const supportingIds =
+    consensus?.supporting_ids ?? conflict?.supporting_ids ?? [];
+  const contradictingIds =
+    consensus?.contradicting_ids ?? conflict?.contradicting_ids ?? [];
 
   return (
     <div
@@ -90,11 +102,33 @@ export function ConsensusConflictStrip({
             {product}
           </span>
           <span className="text-[10px] text-muted-foreground">
-            +{consensus?.supporting ?? 0} agree · −{consensus?.contradicting ?? 0} disagree · ~
+            +{consensus?.supporting ?? supportingIds.length} agree · −
+            {consensus?.contradicting ?? contradictingIds.length} disagree · ~
             {consensus?.neutral ?? 0} neutral
           </span>
           {consensus?.label ? (
             <span className="text-[10px] text-muted-foreground/70">({consensus.label})</span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {status === "ok" && (supportingIds.length > 0 || contradictingIds.length > 0) ? (
+        <div className="space-y-1">
+          {supportingIds.length > 0 ? (
+            <EvidenceIdRow
+              label="Agreeing"
+              ids={supportingIds}
+              tone="agree"
+              onEvidenceClick={onEvidenceClick}
+            />
+          ) : null}
+          {contradictingIds.length > 0 ? (
+            <EvidenceIdRow
+              label="Disagreeing"
+              ids={contradictingIds}
+              tone="disagree"
+              onEvidenceClick={onEvidenceClick}
+            />
           ) : null}
         </div>
       ) : null}
@@ -156,6 +190,58 @@ export function ConsensusConflictStrip({
 
       {status === "ok" && consensus && !conflict?.has_conflict && product === "Agree" ? (
         <p className="text-[10px] text-muted-foreground">No coded contradictions in this set.</p>
+      ) : null}
+    </div>
+  );
+}
+
+function EvidenceIdRow({
+  label,
+  ids,
+  tone,
+  onEvidenceClick,
+}: {
+  label: string;
+  ids: number[];
+  tone: "agree" | "disagree";
+  onEvidenceClick?: (evidenceId: number) => void;
+}) {
+  const shown = ids.slice(0, 12);
+  const rest = ids.length - shown.length;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <span className="text-[10px] text-muted-foreground">{label}:</span>
+      {shown.map((id) =>
+        onEvidenceClick ? (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onEvidenceClick(id)}
+            className={cn(
+              "rounded border px-1 py-0 text-[10px] font-medium hover:bg-muted/60",
+              tone === "agree"
+                ? "border-emerald-700/25 text-emerald-900 dark:text-emerald-200"
+                : "border-rose-700/25 text-rose-950 dark:text-rose-100",
+            )}
+          >
+            #{id}
+          </button>
+        ) : (
+          <span
+            key={id}
+            className={cn(
+              "rounded border px-1 py-0 text-[10px] font-medium",
+              tone === "agree"
+                ? "border-emerald-700/25 text-emerald-900 dark:text-emerald-200"
+                : "border-rose-700/25 text-rose-950 dark:text-rose-100",
+            )}
+          >
+            #{id}
+          </span>
+        ),
+      )}
+      {rest > 0 ? (
+        <span className="text-[10px] text-muted-foreground">+{rest} more</span>
       ) : null}
     </div>
   );

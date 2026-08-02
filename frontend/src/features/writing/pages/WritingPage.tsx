@@ -11,12 +11,6 @@ import {
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { WritingDeskSkeleton } from "@/components/common/ResearchSkeletons";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { useFiles } from "@/features/files/useFiles";
@@ -29,6 +23,13 @@ import { toast } from "@/components/common/Toast";
 import { cn } from "@/lib/utils";
 import type { WritingAction } from "@/types/api";
 import { trackWritingEvent } from "../utils/telemetry";
+import {
+  classifyAutosaveFailure,
+  shouldResumeAutosaveOnOnline,
+  shouldScheduleAutosave,
+  type WritingSaveState,
+} from "../utils/autosavePolicy";
+import { mapWritingError } from "../utils/errorMap";
 import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
 import { loadResearchPrefs } from "@/features/settings/lib/researchPrefs";
 import { EvidenceInspectorPanel } from "@/features/evidence/components/EvidenceInspectorPanel";
@@ -39,16 +40,20 @@ import {
   GroundedDraftVerify,
   persistGroundedBindings,
 } from "@/features/writing/components/GroundedDraftVerify";
-import { ResearchConfidenceStrip } from "@/features/writing/components/ResearchConfidenceStrip";
+import { CitationInsertPicker } from "@/features/writing/components/CitationInsertPicker";
+import {
+  insertAtCaret,
+  removeEvidenceMarker,
+  selectedEvidenceMarkerId,
+} from "@/features/writing/utils/citeDraftHelpers";
 import { ResearchProgressStage } from "@/features/writing/components/ResearchProgressStage";
 import { WritingOutlineRail } from "@/features/writing/components/WritingOutlineRail";
 import {
-  buildBibtexFromWriting,
-  buildLiteratureReviewMarkdown,
   downloadMarkdownFile,
   downloadTextFile,
   loadGroundedExportSnapshot,
   saveGroundedExportSnapshot,
+  canExportGroundedLitReview,
 } from "@/features/writing/utils/groundedMarkdownExport";
 
 const ACTIONS: { key: WritingAction; label: string; icon: React.ReactNode; desc: string }[] = [
@@ -109,15 +114,16 @@ function DraftTab() {
   const [warning, setWarning] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeAction, setActiveAction] = useState<WritingAction | null>(null);
-  const [saveState, setSaveState] = useState<
-    "idle" | "dirty" | "scheduled" | "saving" | "saved" | "conflict" | "error"
-  >("idle");
+  const [saveState, setSaveState] = useState<WritingSaveState>("idle");
   const [version, setVersion] = useState<number>(1);
   const [lifecycleView, setLifecycleView] = useState<"active" | "archived" | "deleted">("active");
   const retryTimeoutRef = useRef<number | null>(null);
   const [isOffline, setIsOffline] = useState<boolean>(!window.navigator.onLine);
   const [selectedText, setSelectedText] = useState("");
   const [evidenceRefresh, setEvidenceRefresh] = useState(0);
+  const [reviewerRefresh, setReviewerRefresh] = useState(0);
+  const [citePickerOpen, setCitePickerOpen] = useState(false);
+  const [citeHoverPreview, setCiteHoverPreview] = useState<string | null>(null);
   const [sectionType, setSectionType] = useState<WritingSectionType>("literature_review");
   const [groundedBaseline, setGroundedBaseline] = useState<string | null>(null);
   const [editsSinceInsert, setEditsSinceInsert] = useState(0);
@@ -146,7 +152,10 @@ function DraftTab() {
       writing_version: grounded.last.writing_version,
       savedAt: new Date().toISOString(),
     });
-  }, [grounded.last, activeId, draftTitle, input]);
+    setReviewerRefresh((n) => n + 1);
+    // Only when a new grounded result arrives — not on every manuscript keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: grounded.last identity
+  }, [grounded.last, activeId]);
 
   const docsQuery = useQuery({
     queryKey: ["writing", "documents", currentProjectId ?? "all", lifecycleView],
@@ -245,10 +254,11 @@ function DraftTab() {
     },
     onError: (err: unknown) => {
       const message = err instanceof Error ? err.message : "Autosave failed";
-      if (message.includes("version_conflict") || message.includes("409")) {
+      const kind = classifyAutosaveFailure(message);
+      if (kind === "conflict") {
         setSaveState("conflict");
         trackWritingEvent("autosave_conflict");
-        toast.error("Version conflict. Refresh and retry.");
+        toast.error(mapWritingError(err));
       } else {
         setSaveState("error");
         trackWritingEvent("autosave_failed");
@@ -277,7 +287,7 @@ function DraftTab() {
     const handleOnline = () => {
       setIsOffline(false);
       trackWritingEvent("writing_online");
-      if (saveState === "error" || saveState === "dirty") {
+      if (shouldResumeAutosaveOnOnline(saveState)) {
         setSaveState("scheduled");
       }
     };
@@ -292,7 +302,7 @@ function DraftTab() {
   useEffect(() => {
     if (currentProjectId == null) return;
     if (!activeDoc) return;
-    if (isOffline || saveState === "conflict") return;
+    if (!shouldScheduleAutosave({ isOffline, saveState })) return;
     if (draftTitle === (activeDoc.title || "") && input === (activeDoc.content || "")) return;
     setSaveState("scheduled");
     const handle = window.setTimeout(() => {
@@ -395,6 +405,27 @@ function DraftTab() {
     sectionIds?: string[];
   }) {
     if (!grounded.last || activeId == null || activeDoc == null) return;
+    if (grounded.last.status === "blocked" || grounded.last.accept_allowed === false) {
+      toast.error(
+        grounded.last.blocked_reason === "reviewer_failed"
+          ? "Accept blocked — fix Research Reviewer errors first"
+          : "Accept blocked — insufficient or ungrounded evidence",
+      );
+      return;
+    }
+    if (grounded.last.review?.status === "fail") {
+      const blocking = (grounded.last.review.issues || []).some(
+        (i) =>
+          i.severity === "error" &&
+          ["unbound_paragraph", "unsupported_claim", "orphan_citation", "empty_section"].includes(
+            i.code,
+          ),
+      );
+      if (blocking) {
+        toast.error("Accept blocked — Research Reviewer found grounding errors");
+        return;
+      }
+    }
     const nextPara = (opts?.paragraph || grounded.last.paragraph || "").trim();
     if (!nextPara) {
       toast.error("Nothing to accept into the manuscript");
@@ -458,6 +489,106 @@ function DraftTab() {
       sectionIds: [section.id],
     });
   }
+
+  function scheduleCiteAutosave(nextContent: string) {
+    if (activeId == null || activeDoc == null || activeDoc.status === "deleted") return;
+    setSaveState("saving");
+    autosave.mutate({
+      id: activeId,
+      title: draftTitle.trim() || "Untitled draft",
+      content: nextContent,
+      currentVersion: version,
+      idempotencyKey: buildAutosaveKey(activeId, version, draftTitle, nextContent),
+    });
+  }
+
+  async function handleCiteInsert(payload: {
+    insertText: string;
+    evidenceId: number | null;
+    citationId: number | null;
+    grounded: boolean;
+    preview?: string;
+  }) {
+    if (activeId == null) {
+      toast.error("Open a draft first");
+      return;
+    }
+    const el = editorRef.current;
+    const start = el?.selectionStart ?? input.length;
+    const end = el?.selectionEnd ?? start;
+    const { content: next, caret } = insertAtCaret(input, payload.insertText, start, end);
+    setInput(next);
+    scheduleCiteAutosave(next);
+    requestAnimationFrame(() => {
+      const ta = editorRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(caret, caret);
+    });
+
+    if (payload.evidenceId != null) {
+      try {
+        await evidenceApi.createBinding(activeId, {
+          evidence_object_id: payload.evidenceId,
+          block_id: "cite_insert",
+          selected_text: payload.insertText,
+          relation: "supports",
+        });
+      } catch {
+        toast.error("Citation inserted, but evidence binding failed to save");
+        return;
+      }
+    }
+
+    if (payload.grounded) {
+      toast.success(`Inserted grounded cite ${payload.insertText}`);
+    } else {
+      toast.success(
+        "Inserted library cite (no matching EvidenceObject — Reviewer won't validate it)",
+      );
+    }
+    if (payload.preview) setCiteHoverPreview(payload.preview);
+  }
+
+  async function removeSelectedCite() {
+    if (activeId == null) return;
+    const el = editorRef.current;
+    if (!el) return;
+    const eid = selectedEvidenceMarkerId(input, el.selectionStart, el.selectionEnd);
+    if (eid == null) {
+      toast.error("Select a [#id] citation marker to remove");
+      return;
+    }
+    const { content: next, removed } = removeEvidenceMarker(input, eid);
+    if (!removed) return;
+    setInput(next);
+    scheduleCiteAutosave(next);
+    try {
+      const listed = await evidenceApi.listBindings(activeId);
+      const targets = listed.items.filter((b) => b.evidence_object_id === eid);
+      await Promise.all(targets.map((b) => evidenceApi.deleteBinding(b.id)));
+    } catch {
+      toast.error("Removed from draft; binding cleanup failed");
+      return;
+    }
+    toast.success(`Removed [#${eid}]`);
+  }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
+      if (e.key.toLowerCase() !== "c") return;
+      if (activeId == null || currentProjectId == null) return;
+      const t = e.target as HTMLElement | null;
+      if (t && t.tagName !== "TEXTAREA" && t.tagName !== "INPUT" && !t.isContentEditable) {
+        // allow from page when writing desk focused
+      }
+      e.preventDefault();
+      setCitePickerOpen(true);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeId, currentProjectId]);
 
   /** ⌘K deep-links: ?action=lit-review · ?focus=evidence */
   useEffect(() => {
@@ -639,15 +770,54 @@ function DraftTab() {
       {saveState === "conflict" && (
         <div
           role="alert"
-          className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
         >
-          Another version was saved elsewhere. Refresh this document before continuing.
+          <span>
+            Another version was saved elsewhere. Reload the latest from the server
+            before continuing (local unsaved text will be replaced).
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 shrink-0 border-amber-400/60 bg-transparent text-[11px]"
+            onClick={async () => {
+              if (activeId == null || currentProjectId == null) return;
+              try {
+                const res = await writingApi.listDocuments(currentProjectId, {
+                  status: lifecycleView === "active" ? undefined : lifecycleView,
+                  includeArchived: lifecycleView !== "active",
+                  includeDeleted: lifecycleView === "deleted",
+                });
+                qc.setQueryData(
+                  ["writing", "documents", currentProjectId, lifecycleView],
+                  res,
+                );
+                await qc.invalidateQueries({
+                  queryKey: ["writing", "versions", activeId],
+                });
+                const latest = res.items.find((d) => d.id === activeId);
+                if (latest) {
+                  setDraftTitle(latest.title || "Untitled draft");
+                  setInput(latest.content || "");
+                  setVersion(latest.current_version || 1);
+                }
+                setSaveState("saved");
+                toast.success("Reloaded latest from server");
+              } catch {
+                toast.error("Could not reload document");
+              }
+            }}
+          >
+            <RefreshCw className="size-3" /> Reload latest
+          </Button>
         </div>
       )}
 
       <ResearchConfidenceStrip
         metrics={grounded.last?.metrics}
         review={grounded.last?.review}
+        reviewerVersion={grounded.last?.review?.reviewer_version}
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -687,6 +857,10 @@ function DraftTab() {
         <summary className="cursor-pointer text-[12px] font-medium text-muted-foreground">
           Style transforms (not evidence-backed)
         </summary>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Style-only edits do not cite EvidenceObjects. Use Write grounded draft for research-backed
+          prose.
+        </p>
         <div className="mt-2 flex flex-wrap items-center gap-1.5 pb-1">
           {ACTIONS.map(({ key, label, icon, desc }) => (
             <button
@@ -755,6 +929,74 @@ function DraftTab() {
             />
           ) : null}
 
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 text-[11px]"
+              disabled={activeId == null || currentProjectId == null || activeDoc?.status === "deleted"}
+              title="Insert citation (Ctrl+Shift+C)"
+              onClick={() => setCitePickerOpen(true)}
+            >
+              <Quote className="size-3" /> Cite
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 text-[11px]"
+              disabled={activeId == null || activeDoc?.status === "deleted"}
+              title="Remove selected [#id] marker and binding"
+              onClick={() => void removeSelectedCite()}
+            >
+              Remove cite
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 text-[11px]"
+              title="Jump to Evidence Inspector (uses caret [#id] or selection)"
+              onClick={() => {
+                const el = editorRef.current;
+                if (el) {
+                  const eid = selectedEvidenceMarkerId(
+                    input,
+                    el.selectionStart,
+                    el.selectionEnd,
+                  );
+                  if (eid != null) {
+                    setSelectedText(`[#${eid}]`);
+                    setCiteHoverPreview(`Evidence #${eid} — Inspector rail`);
+                  }
+                }
+                document
+                  .getElementById("writing-evidence-rail")
+                  ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+              }}
+            >
+              Inspect
+            </Button>
+            <span className="text-[10px] text-muted-foreground">Ctrl+Shift+C · [#id] = grounded</span>
+          </div>
+
+          {citePickerOpen && currentProjectId != null ? (
+            <CitationInsertPicker
+              open={citePickerOpen}
+              projectId={currentProjectId}
+              onClose={() => setCitePickerOpen(false)}
+              onInsert={handleCiteInsert}
+              className="mb-1"
+            />
+          ) : null}
+
+          {citeHoverPreview ? (
+            <p className="rounded-md border border-border bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
+              Preview: {citeHoverPreview}
+            </p>
+          ) : null}
+
           <div className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/80 bg-[#faf9f7] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] sm:p-5 dark:bg-[#121212]">
             <textarea
               ref={editorRef}
@@ -772,6 +1014,10 @@ function DraftTab() {
                 const start = el.selectionStart ?? 0;
                 const end = el.selectionEnd ?? 0;
                 if (end > start) setSelectedText(el.value.slice(start, end));
+                const eid = selectedEvidenceMarkerId(input, start, end);
+                if (eid != null) {
+                  setCiteHoverPreview(`Evidence #${eid} — use Inspect to open the Evidence rail`);
+                }
               }}
               onMouseUp={() => {
                 const el = editorRef.current;
@@ -779,6 +1025,12 @@ function DraftTab() {
                 const start = el.selectionStart ?? 0;
                 const end = el.selectionEnd ?? 0;
                 if (end > start) setSelectedText(el.value.slice(start, end));
+              }}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c") {
+                  e.preventDefault();
+                  setCitePickerOpen(true);
+                }
               }}
               placeholder="Manuscript — write or paste your literature review. Click Write literature review to draft from evidence."
               rows={18}
@@ -810,8 +1062,8 @@ function DraftTab() {
           ) : result ? (
             <div className="rounded-lg border border-border bg-card p-2">
               <div className="mb-1 flex items-center justify-between">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Style output
+                <p className="text-[11px] font-medium uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                  Style output · not evidence-backed
                 </p>
                 <div className="flex gap-1">
                   <Button
@@ -887,31 +1139,32 @@ function DraftTab() {
                     writing={grounded.last}
                     onRevise={runGroundedGenerate}
                     onAcceptSection={acceptGroundedSection}
+                    acceptAllowed={grounded.last.accept_allowed !== false}
+                    onInspectEvidence={(binding) => {
+                      const text = (binding.claim || binding.quote || "").trim();
+                      if (text) setSelectedText(text.slice(0, 2000));
+                      document
+                        .getElementById("writing-evidence-rail")
+                        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                    }}
                   />
-                  {grounded.last.review?.issues?.length ? (
-                    <Accordion className="mt-2 border-t border-border pt-1">
-                      <AccordionItem value="reviewer">
-                        <AccordionTrigger className="py-2 text-[12px]">
-                          Research Reviewer
-                          <span className="ml-2 text-[11px] font-normal text-muted-foreground">
-                            {grounded.last.review.issues.length} issue
-                            {grounded.last.review.issues.length === 1 ? "" : "s"}
-                          </span>
-                        </AccordionTrigger>
-                        <AccordionContent className="pb-2">
-                          <ul className="space-y-1 text-[11px] text-amber-800 dark:text-amber-200">
-                            {grounded.last.review.issues
-                              .filter((issue) => !issue.section_id)
-                              .map((issue, idx) => (
-                                <li key={`${issue.code}-${idx}`}>
-                                  [{issue.severity}] {issue.message}
-                                </li>
-                              ))}
-                          </ul>
-                        </AccordionContent>
-                      </AccordionItem>
-                    </Accordion>
+                  {grounded.last.accept_allowed === false ? (
+                    <p className="mt-2 text-[11px] font-medium text-amber-800 dark:text-amber-200">
+                      Accept disabled — Research Reviewer found grounding errors. Revise before
+                      inserting into the manuscript.
+                    </p>
                   ) : null}
+                  <ResearchReviewerPanel
+                    className="mt-2"
+                    documentId={activeId}
+                    liveReview={grounded.last.review}
+                    refreshKey={reviewerRefresh}
+                    onFocusSection={(sectionId) => {
+                      document
+                        .getElementById(`writing-section-${sectionId}`)
+                        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                    }}
+                  />
                   {grounded.last.warnings?.length ? (
                     <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-200">
                       {grounded.last.warnings.join(" ")}
@@ -927,6 +1180,7 @@ function DraftTab() {
                     <Button
                       size="sm"
                       className="h-7 text-[11px]"
+                      disabled={grounded.last.accept_allowed === false}
                       onClick={() => void acceptGroundedIntoManuscript()}
                     >
                       Accept into manuscript
@@ -966,6 +1220,18 @@ function DraftTab() {
               onBound={() => setEvidenceRefresh((n) => n + 1)}
             />
           </div>
+          {activeId != null && !grounded.last ? (
+            <ResearchReviewerPanel
+              className="mt-2"
+              documentId={activeId}
+              refreshKey={reviewerRefresh}
+              onFocusSection={(sectionId) => {
+                document
+                  .getElementById(`writing-section-${sectionId}`)
+                  ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+              }}
+            />
+          ) : null}
           </div>
         </div>
         </>
@@ -1019,56 +1285,60 @@ function ExportTab() {
     a.click();
   }
 
-  function exportLitReviewDoc(doc: { id: number; title?: string; content?: string }) {
+  async function exportLitReviewDoc(doc: { id: number; title?: string; content?: string }) {
     const snap = loadGroundedExportSnapshot(doc.id);
     const body = (doc.content || snap?.body || "").trim();
     if (!body) {
       toast.error("Draft is empty — generate and insert a grounded review first");
       return;
     }
-    const md = buildLiteratureReviewMarkdown({
-      title: doc.title || snap?.title || "Literature review",
-      body,
-      writing: snap?.writing ?? null,
-      writing_version: snap?.writing_version,
-    });
-    const safe = (doc.title || "literature-review")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 60);
-    const base = safe || "literature-review";
-    downloadMarkdownFile(`${base}-${doc.id}.md`, md);
-
-    const bib = buildBibtexFromWriting(snap?.writing ?? null);
-    const wantBib = loadResearchPrefs().exportBundle === "md_bib";
-    const wroteBib = wantBib && Boolean(bib.trim());
-    if (wroteBib) {
-      downloadTextFile(`${base}-${doc.id}.bib`, bib, "application/x-bibtex;charset=utf-8");
+    if (!snap?.writing) {
+      toast.error("No evidence snapshot — regenerate and Accept a grounded review first");
+      return;
     }
-
-    trackWritingEvent("grounded_export", {
-      document_id: doc.id,
-      has_evidence_appendix: Boolean(snap?.writing),
-      has_bibtex: wroteBib,
-    });
-    trackWorkflowEvent("export_completed", {
-      projectId: currentProjectId,
-      meta: {
+    const wantBib = loadResearchPrefs().exportBundle === "md_bib";
+    try {
+      const res = await writingApi.exportLitReview(doc.id, {
+        writing: snap.writing,
+        writing_version: snap.writing_version,
+        title: doc.title || snap.title || "Literature review",
+        body,
+        format: wantBib ? "markdown_bibtex" : "markdown",
+      });
+      const base = res.filename_base || `literature-review-${doc.id}`;
+      downloadMarkdownFile(`${base}.md`, res.markdown);
+      const wroteBib = Boolean(res.bibtex?.trim());
+      if (wroteBib && res.bibtex) {
+        downloadTextFile(`${base}.bib`, res.bibtex, "application/x-bibtex;charset=utf-8");
+      }
+      trackWritingEvent("grounded_export", {
         document_id: doc.id,
+        has_evidence_appendix: true,
         has_bibtex: wroteBib,
-        format: wroteBib ? "markdown_bibtex" : "markdown",
-      },
-    });
-    toast.success(
-      snap?.writing
-        ? wroteBib
+      });
+      trackWorkflowEvent("export_completed", {
+        projectId: currentProjectId,
+        meta: {
+          document_id: doc.id,
+          has_bibtex: wroteBib,
+          format: wroteBib ? "markdown_bibtex" : "markdown",
+          server_gated: true,
+        },
+      });
+      toast.success(
+        wroteBib
           ? "Exported Markdown + BibTeX (evidence → paper → citation)"
           : wantBib
             ? "Exported Markdown with appendix (no BibTeX metadata yet)"
-            : "Exported Markdown"
-        : "Exported Markdown (no evidence snapshot — regenerate to include appendix)",
-    );
+            : "Exported Markdown",
+      );
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === "object" && "message" in err
+          ? String((err as { message: string }).message)
+          : "Export failed";
+      toast.error(msg === "session_expired" ? "Session expired" : msg);
+    }
   }
 
   async function exportNotes(fmt: "md" | "txt" | "docx") {
@@ -1093,33 +1363,44 @@ function ExportTab() {
     subtitle,
     formats,
     onExport,
+    disabled,
+    disabledReason,
   }: {
     title: string;
     subtitle?: string;
     formats: { label: string; fmt: string }[];
     onExport: (fmt: string) => void;
+    disabled?: boolean;
+    disabledReason?: string;
   }) {
     return (
-      <div className="flex items-center justify-between gap-3 border-b border-border py-2 last:border-0">
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-medium">{title}</p>
-          {subtitle && (
-            <p className="truncate text-[11px] text-muted-foreground">{subtitle}</p>
-          )}
+      <div className="border-b border-border py-2 last:border-0">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-[13px] font-medium">{title}</p>
+            {subtitle && (
+              <p className="truncate text-[11px] text-muted-foreground">{subtitle}</p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {formats.map(({ label, fmt }) => (
+              <Button
+                key={fmt}
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 px-2 text-[11px]"
+                disabled={disabled}
+                title={disabled ? disabledReason : undefined}
+                onClick={() => onExport(fmt)}
+              >
+                <Download className="size-3" /> {label}
+              </Button>
+            ))}
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {formats.map(({ label, fmt }) => (
-            <Button
-              key={fmt}
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1 px-2 text-[11px]"
-              onClick={() => onExport(fmt)}
-            >
-              <Download className="size-3" /> {label}
-            </Button>
-          ))}
-        </div>
+        {disabled && disabledReason ? (
+          <p className="mt-1.5 text-[11px] text-amber-800 dark:text-amber-200">{disabledReason}</p>
+        ) : null}
       </div>
     );
   }
@@ -1145,6 +1426,11 @@ function ExportTab() {
         ) : (
           writingDocs.map((doc) => {
             const snap = loadGroundedExportSnapshot(doc.id);
+            const gate = canExportGroundedLitReview(snap?.writing);
+            const blocked = !snap?.writing || !gate.ok;
+            const reason = !snap?.writing
+              ? "Generate and Accept a grounded review on the Draft tab first"
+              : gate.reason;
             return (
               <ExportRow
                 key={doc.id}
@@ -1160,7 +1446,9 @@ function ExportTab() {
                     fmt: "md",
                   },
                 ]}
-                onExport={() => exportLitReviewDoc(doc)}
+                disabled={blocked}
+                disabledReason={reason}
+                onExport={() => void exportLitReviewDoc(doc)}
               />
             );
           })

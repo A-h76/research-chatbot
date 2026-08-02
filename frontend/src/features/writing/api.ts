@@ -63,6 +63,30 @@ export const writingApi = {
   exportNotes: () =>
     `/api/export/notes`,  // POST — handled inline in the page
 
+  /** Server-gated lit-review export (#18). */
+  exportLitReview: (
+    documentId: number,
+    body: {
+      writing: unknown;
+      format?: "markdown" | "markdown_bibtex";
+      writing_version?: string;
+      title?: string;
+      body?: string;
+    },
+  ) =>
+    api.post<{
+      ok: boolean;
+      markdown: string;
+      bibtex?: string | null;
+      filename_base: string;
+      traceability: {
+        paragraph_count: number;
+        paragraphs_with_evidence: number;
+        traceability_pct: number;
+        meets_100: boolean;
+      };
+    }>(`/api/writing/documents/${documentId}/export`, body),
+
   exportAnalysisUrl: (fileId: number, format: "md" | "txt" | "docx") =>
     `/api/export/analysis/${fileId}?format=${format}`,
 

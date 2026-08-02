@@ -22,6 +22,8 @@
 - `user_id` in server session; SPA boot via `GET /api/me`.
 - Logout clears session; JWT `session_version` mismatch → `401`.
 - Open signup by default. Optional `BETA_INVITE_ONLY=1` requires allowlist or invite token (`403 not_invited`).
+- **Account delete (V1):** `DELETE /api/account` requires step-up — `confirm: "DELETE"` plus password (if set) or matching `email` (OAuth/magic-only). See `security/ops/step_up.py`.
+- **Deploy checklist:** [`docs/auth-v1-deploy-checklist.md`](../auth-v1-deploy-checklist.md).
 
 ### 1.3 Protected application routes (Frontend)
 

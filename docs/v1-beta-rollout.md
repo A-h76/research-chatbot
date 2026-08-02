@@ -28,9 +28,11 @@ PAPER_CHAT_PIPELINE_ENABLED=false
 - [ ] Paper processing (worker + job completion)
 - [ ] RAG retrieval on a known paper
 - [ ] Database migrations applied
-- [ ] Background workers healthy (`GET /api/worker/health`)
+- [ ] Background workers healthy (`GET /api/worker/health` → `ok`) — checklist: [`upload-worker-v1-deploy-checklist.md`](./upload-worker-v1-deploy-checklist.md)
 - [ ] Streaming chat (general + paper)
 - [ ] Logging reachable for ops
+
+Dual upload/storage stacks are **accepted for V1** ([ADR-0014](./adr/0014-upload-storage-dual-stack-accepted-v1.md)); do not block rollout on unify.
 
 Exit: prod is healthy on the **legacy** Paper Chat path.
 

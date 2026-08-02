@@ -410,6 +410,12 @@ flag is needed** (e.g. rolling the queue-based upload path out gradually),
 not speculatively ahead of it. Schema is here so it's ready the day that
 happens.
 
+**Runtime (V1 #14):** `feature_flags/` package — `FeatureFlagService` reads/writes
+this table; known flags `discover_search` and `writing_intelligence` gate
+`/api/discover*` and `POST /api/evidence/writing`. Admin:
+`/api/admin/ops/feature-flags`. Missing rows use fail-open registry defaults;
+`enabled=false` is the kill switch; `rollout_pct` enables gradual cohorts.
+
 ---
 
 ## 3. Constraints — the ones worth calling out

@@ -83,6 +83,9 @@ def create_evidence_blueprint(
     writing_quality_mode: str = "balanced",
     PaperAnalysis: Any = None,
     WorkflowEvent: Any = None,
+    ai_gate: Any = None,
+    feature_flag_service: Any = None,
+    writing_intelligence_flag: str = "writing_intelligence",
 ) -> Blueprint:
     bp = Blueprint("evidence", __name__)
 
@@ -1215,6 +1218,22 @@ def create_evidence_blueprint(
         from backend.library.readiness import research_readiness
 
         uid = _uid()
+        if ai_gate is not None:
+            from security.ops.gate import AiAccessDenied
+
+            try:
+                ai_gate.preflight(
+                    uid,
+                    token_estimate=6_000,
+                    cost_estimate=0.06,
+                    operation="evidence_extract",
+                    project_id=project_id,
+                )
+            except AiAccessDenied as exc:
+                body = {"error": exc.code, "detail": exc.message}
+                if getattr(exc, "payload", None):
+                    body["quota"] = exc.payload
+                return jsonify(body), exc.http_status
         data = request.get_json(silent=True) or {}
         file_id = data.get("file_id")
         force = bool(data.get("force"))
@@ -1869,6 +1888,33 @@ def create_evidence_blueprint(
     def _run_writing_intelligence():
         """Writing Intelligence: full RI pipeline, generation last (grounded_v1 / RI-009)."""
         uid = _uid()
+        if feature_flag_service is not None:
+            if not feature_flag_service.is_enabled(writing_intelligence_flag, user_id=uid):
+                return (
+                    jsonify(
+                        {
+                            "error": "feature_disabled",
+                            "flag": writing_intelligence_flag,
+                            "detail": "Writing Intelligence is temporarily disabled.",
+                        }
+                    ),
+                    503,
+                )
+        if ai_gate is not None:
+            from security.ops.gate import AiAccessDenied
+
+            try:
+                ai_gate.preflight(
+                    uid,
+                    token_estimate=8_000,
+                    cost_estimate=0.08,
+                    operation="writing_intelligence",
+                )
+            except AiAccessDenied as exc:
+                body = {"error": exc.code, "detail": exc.message}
+                if getattr(exc, "payload", None):
+                    body["quota"] = exc.payload
+                return jsonify(body), exc.http_status
         data = request.get_json(silent=True) or {}
         started = time.perf_counter()
         db = SessionLocal()

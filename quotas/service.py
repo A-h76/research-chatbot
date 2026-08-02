@@ -148,13 +148,14 @@ class QuotaService:
         finally:
             db.close()
 
-    def increment_tokens(self, user_id, tokens_used):
+    def increment_tokens(self, user_id, tokens_used, *, skip_log: bool = False, action: str = "ai_query"):
         db = self.SessionLocal()
         try:
             user = self._get_user(db, user_id)
             self._ensure_reset(db, user)
             user.monthly_token_used = (user.monthly_token_used or 0) + tokens_used
-            db.add(self.UsageLog(user_id=user_id, action="ai_query", amount=tokens_used))
+            if not skip_log:
+                db.add(self.UsageLog(user_id=user_id, action=action[:30], amount=tokens_used))
             db.commit()
         finally:
             db.close()

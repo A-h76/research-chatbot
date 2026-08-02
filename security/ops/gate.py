@@ -4,50 +4,25 @@ from __future__ import annotations
 
 from typing import Any
 
-
-# Plan → monthly token + cost limits (USD). Extends QuotaService free defaults.
-# max_active_research: concurrent in-flight project-research jobs per user.
-# Closed beta targets ~5 researchers online together; keep per-user headroom.
-PLAN_LIMITS: dict[str, dict[str, Any]] = {
-    "free": {
-        "monthly_token_limit": 100_000,
-        "monthly_cost_limit": 3.0,
-        "max_projects": 5,
-        "max_research_day": 5,
-        "max_active_research": 5,
-    },
-    "beta": {
-        "monthly_token_limit": 1_000_000,
-        "monthly_cost_limit": 20.0,
-        "max_projects": 50,
-        "max_research_day": 50,
-        "max_active_research": 5,
-    },
-    "student": {
-        "monthly_token_limit": 10_000_000,
-        "monthly_cost_limit": 20.0,
-        "max_projects": 100,
-        "max_research_day": 50,
-        "max_active_research": 5,
-    },
-    "pro": {
-        "monthly_token_limit": 50_000_000,
-        "monthly_cost_limit": 100.0,
-        "max_projects": 500,
-        "max_research_day": 200,
-        "max_active_research": 8,
-    },
-}
+from quotas.policies import PLAN_LIMITS, plan_limits
 
 
 class AiAccessDenied(Exception):
     """Raised when AI must not run. ``code`` maps to API error strings."""
 
-    def __init__(self, message: str, code: str, *, http_status: int = 429):
+    def __init__(
+        self,
+        message: str,
+        code: str,
+        *,
+        http_status: int = 429,
+        payload: dict[str, Any] | None = None,
+    ):
         super().__init__(message)
         self.code = code
         self.http_status = http_status
         self.message = message
+        self.payload = payload or {}
 
 
 class AiAccessGate:
@@ -61,6 +36,7 @@ class AiAccessGate:
         events=None,
         select=None,
         allow_admin_bypass_kill_switch: bool = True,
+        entitlements=None,
     ):
         self.SessionLocal = SessionLocal
         self.User = User
@@ -69,9 +45,10 @@ class AiAccessGate:
         self.events = events
         self.select = select
         self.allow_admin_bypass_kill_switch = allow_admin_bypass_kill_switch
+        self.entitlements = entitlements
 
     def plan_limits(self, plan: str | None) -> dict[str, Any]:
-        return PLAN_LIMITS.get((plan or "beta").lower(), PLAN_LIMITS["beta"])
+        return plan_limits(plan)
 
     def _user(self, user_id: int):
         db = self.SessionLocal()
@@ -79,7 +56,6 @@ class AiAccessGate:
             user = db.get(self.User, user_id)
             if not user:
                 raise AiAccessDenied("User not found.", "not_found", http_status=404)
-            # Detach fields we need
             return {
                 "id": user.id,
                 "status": (getattr(user, "status", None) or "active").lower(),
@@ -101,15 +77,12 @@ class AiAccessGate:
     def _is_verified(user) -> bool:
         if bool(getattr(user, "email_verified", False)):
             return True
-        # Google / magic / dev prove email ownership at login; password users
-        # must complete verification.
         provider = (getattr(user, "auth_provider", None) or "google").lower()
         if provider in {"google", "magic", "dev"}:
             return True
         return False
 
     def assert_user_can_use_ai(self, user_id: int) -> dict:
-        """Status + verification — never allow unverified/suspended AI use."""
         u = self._user(user_id)
         if u["status"] in {"suspended", "deleted"}:
             raise AiAccessDenied(
@@ -152,7 +125,6 @@ class AiAccessGate:
             )
         if not status.get("paused"):
             return status
-        # Admins may continue when kill-switch bypass is on
         if user_id is not None and self.allow_admin_bypass_kill_switch:
             u = self._user(user_id)
             if u["is_admin"]:
@@ -173,14 +145,31 @@ class AiAccessGate:
     def assert_token_and_cost_quota(
         self, user_id: int, *, token_estimate: int = 500, cost_estimate: float = 0.0
     ) -> None:
-        u = self.assert_user_can_use_ai(user_id)
-        limits = self.plan_limits(u["plan"])
+        self.assert_user_can_use_ai(user_id)
+        if self.entitlements is not None:
+            from quotas.entitlements import EntitlementDenied
 
-        # Apply plan token ceiling onto user row lazily via QuotaService limits
+            try:
+                self.entitlements.authorize(
+                    user_id,
+                    "chat",
+                    token_estimate=token_estimate,
+                    cost_estimate=cost_estimate,
+                )
+            except EntitlementDenied as exc:
+                raise AiAccessDenied(
+                    exc.message,
+                    exc.code,
+                    http_status=exc.http_status,
+                    payload=exc.decision.user_payload(),
+                ) from exc
+            return
+
+        u = self._user(user_id)
+        limits = self.plan_limits(u["plan"])
         try:
             self.quota_service.check_token_quota(user_id, token_estimate)
         except Exception as exc:
-            # QuotaExceededError from quotas package
             kind = getattr(exc, "kind", "tokens")
             if self.events:
                 self.events.record(
@@ -219,15 +208,43 @@ class AiAccessGate:
         *,
         token_estimate: int = 500,
         cost_estimate: float = 0.0,
+        operation: str = "chat",
+        project_id: int | None = None,
     ) -> dict:
-        """Full pre-AI check. Returns user snapshot on success."""
+        """Full pre-AI check. Returns user snapshot (+ optional entitlement warning)."""
         self.assert_ai_enabled(user_id)
         u = self.assert_user_can_use_ai(user_id)
         self.assert_daily_budget(user_id)
-        self.assert_token_and_cost_quota(
-            user_id, token_estimate=token_estimate, cost_estimate=cost_estimate
-        )
-        return u
+
+        warning = None
+        if self.entitlements is not None:
+            from quotas.entitlements import EntitlementDenied
+
+            try:
+                decision = self.entitlements.authorize(
+                    user_id,
+                    operation,
+                    token_estimate=token_estimate,
+                    cost_estimate=cost_estimate,
+                    project_id=project_id,
+                )
+                if decision.warning:
+                    warning = decision.user_payload()
+            except EntitlementDenied as exc:
+                raise AiAccessDenied(
+                    exc.message,
+                    exc.code,
+                    http_status=exc.http_status,
+                    payload=exc.decision.user_payload(),
+                ) from exc
+        else:
+            self.assert_token_and_cost_quota(
+                user_id, token_estimate=token_estimate, cost_estimate=cost_estimate
+            )
+        out = dict(u)
+        if warning:
+            out["quota_warning"] = warning
+        return out
 
     def record_usage(
         self,
@@ -235,7 +252,21 @@ class AiAccessGate:
         *,
         tokens: int = 0,
         cost_usd: float = 0.0,
+        operation: str = "chat",
+        project_id: int | None = None,
     ) -> None:
+        if self.entitlements is not None and (tokens > 0 or cost_usd > 0):
+            try:
+                self.entitlements.consume(
+                    user_id,
+                    operation,
+                    tokens=tokens,
+                    cost_usd=cost_usd,
+                    project_id=project_id,
+                )
+                return
+            except Exception:
+                pass
         if tokens > 0:
             try:
                 self.quota_service.increment_tokens(user_id, tokens)
@@ -258,3 +289,6 @@ class AiAccessGate:
                 db.rollback()
             finally:
                 db.close()
+
+
+__all__ = ["AiAccessDenied", "AiAccessGate", "PLAN_LIMITS", "plan_limits"]

@@ -1845,250 +1845,35 @@
       </div>
 
       <div class="eco-sections">
+        {% set eco = ecosystem_catalog or {"categories": [], "providers": []} %}
+        {% for cat in eco.categories %}
+        {% set cat_providers = eco.providers | selectattr('category', 'equalto', cat.id) | list %}
+        {% if cat_providers %}
         <div class="eco-section reveal">
           <div class="eco-section-head">
-            <h3>Reference Managers</h3>
-            <p>Bring the library you already maintain.</p>
+            <h3>{{ cat.name }}</h3>
+            <p>{{ cat.description }}</p>
           </div>
           <div class="eco-chips">
-            <div class="eco-chip" style="--brand:#CC2936">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/zotero.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Zotero</span></span>
+            {% for p in cat_providers %}
+            <div class="eco-chip{% if p.availability != 'live' %} is-soon{% endif %}" style="--brand:{{ p.brand_color or '#0F6E6A' }}">
+              {% if p.logo %}
+              <img class="eco-logo" src="{{ url_for('static', filename=p.logo) }}" alt="" width="24" height="24" loading="lazy" decoding="async">
+              {% else %}
+              <span class="eco-mark">{{ p.mark or (p.name[:2] | upper) }}</span>
+              {% endif %}
+              <span class="eco-meta">
+                <span class="eco-name">{{ p.name }}</span>
+                {% if p.availability != 'live' %}
+                <span class="eco-soon">Coming soon</span>
+                {% endif %}
+              </span>
             </div>
-            <div class="eco-chip" style="--brand:#A60000">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/mendeley.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Mendeley</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#ED6C06">
-              <span class="eco-mark">EN</span>
-              <span class="eco-meta"><span class="eco-name">EndNote</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#2D72D2">
-              <span class="eco-mark">PP</span>
-              <span class="eco-meta"><span class="eco-name">Paperpile</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#00A3E0">
-              <span class="eco-mark">RC</span>
-              <span class="eco-meta"><span class="eco-name">ReadCube</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#2C6EAF">
-              <span class="eco-mark">JR</span>
-              <span class="eco-meta"><span class="eco-name">JabRef</span><span class="eco-soon">Coming soon</span></span>
-            </div>
+            {% endfor %}
           </div>
         </div>
-        <div class="eco-section reveal">
-          <div class="eco-section-head">
-            <h3>Academic Sources</h3>
-            <p>Discover and enrich from scholarly networks.</p>
-          </div>
-          <div class="eco-chips">
-            <div class="eco-chip" style="--brand:#EB6019">
-              <span class="eco-mark">OA</span>
-              <span class="eco-meta"><span class="eco-name">OpenAlex</span></span>
-            </div>
-            <div class="eco-chip" style="--brand:#3EB1C8">
-              <span class="eco-mark">XR</span>
-              <span class="eco-meta"><span class="eco-name">Crossref</span></span>
-            </div>
-            <div class="eco-chip" style="--brand:#1857B6">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/semanticscholar.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Semantic Scholar</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#326599">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/pubmed.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">PubMed</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#B31B1B">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/arxiv.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">arXiv</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#F15A29">
-              <span class="eco-mark">EP</span>
-              <span class="eco-meta"><span class="eco-name">Europe PMC</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#1B4F72">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/ssrn.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">SSRN</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#00629B">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/ieee.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">IEEE</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#1D78C1">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/acm.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">ACM</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-          </div>
-        </div>
-        <div class="eco-section reveal">
-          <div class="eco-section-head">
-            <h3>Citation & Metadata</h3>
-            <p>Standards that survive peer review.</p>
-          </div>
-          <div class="eco-chips">
-            <div class="eco-chip" style="--brand:#0F6E6A">
-              <span class="eco-mark">BIB</span>
-              <span class="eco-meta"><span class="eco-name">BibTeX</span></span>
-            </div>
-            <div class="eco-chip" style="--brand:#0F6E6A">
-              <span class="eco-mark">RIS</span>
-              <span class="eco-meta"><span class="eco-name">RIS</span></span>
-            </div>
-            <div class="eco-chip" style="--brand:#0F6E6A">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/doi.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">DOI</span></span>
-            </div>
-            <div class="eco-chip" style="--brand:#0F6E6A">
-              <span class="eco-mark">APA</span>
-              <span class="eco-meta"><span class="eco-name">APA</span></span>
-            </div>
-            <div class="eco-chip" style="--brand:#0F6E6A">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/ieee.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">IEEE</span></span>
-            </div>
-            <div class="eco-chip" style="--brand:#A6CE39">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/orcid.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">ORCID</span></span>
-            </div>
-          </div>
-        </div>
-        <div class="eco-section reveal">
-          <div class="eco-section-head">
-            <h3>Writing & Knowledge</h3>
-            <p>Draft where your team already writes.</p>
-          </div>
-          <div class="eco-chips">
-            <div class="eco-chip" style="--brand:#0F6E6A">
-              <span class="eco-mark">D</span>
-              <span class="eco-meta"><span class="eco-name">Writing Studio</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#4285F4">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/googledocs.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Google Docs</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#2B579A">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/microsoftword.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Microsoft Word</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#47A141">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/overleaf.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Overleaf</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#000000">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/notion.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Notion</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#7C3AED">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/obsidian.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Obsidian</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-          </div>
-        </div>
-        <div class="eco-section reveal">
-          <div class="eco-section-head">
-            <h3>Cloud Storage</h3>
-            <p>Sync libraries from shared drives.</p>
-          </div>
-          <div class="eco-chips">
-            <div class="eco-chip is-soon" style="--brand:#4285F4">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/googledrive.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Google Drive</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#0061FF">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/dropbox.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Dropbox</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#0078D4">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/microsoftonedrive.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">OneDrive</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#0061D5">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/box.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Box</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-          </div>
-        </div>
-        <div class="eco-section reveal">
-          <div class="eco-section-head">
-            <h3>Collaboration</h3>
-            <p>Keep labs aligned on verified evidence.</p>
-          </div>
-          <div class="eco-chips">
-            <div class="eco-chip" style="--brand:#0F6E6A">
-              <span class="eco-mark">PR</span>
-              <span class="eco-meta"><span class="eco-name">Projects</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#4A154B">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/slack.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Slack</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#6264A7">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/microsoftteams.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Microsoft Teams</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-          </div>
-        </div>
-        <div class="eco-section reveal">
-          <div class="eco-section-head">
-            <h3>AI Models</h3>
-            <p>Model routing for research tasks.</p>
-          </div>
-          <div class="eco-chips">
-            <div class="eco-chip" style="--brand:#10A37F">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/openai.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">OpenAI</span></span>
-            </div>
-            <div class="eco-chip" style="--brand:#D97757">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/anthropic.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Claude</span></span>
-            </div>
-            <div class="eco-chip" style="--brand:#8E75B2">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/googlegemini.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Gemini</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#1DA1F2">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/x.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Grok</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#4D6BFE">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/deepseek.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">DeepSeek</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#FF7000">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/mistralai.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Mistral</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-          </div>
-        </div>
-        <div class="eco-section reveal">
-          <div class="eco-section-head">
-            <h3>Developer Platform</h3>
-            <p>Extend Dhund into your stack.</p>
-          </div>
-          <div class="eco-chips">
-            <div class="eco-chip" style="--brand:#0F6E6A">
-              <span class="eco-mark">API</span>
-              <span class="eco-meta"><span class="eco-name">Open API</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#111816">
-              <span class="eco-mark">MCP</span>
-              <span class="eco-meta"><span class="eco-name">MCP</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#FF4A00">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/zapier.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">Zapier</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#EA4B71">
-              <img class="eco-logo" src="{{ url_for('static', filename='brands/n8n.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              <span class="eco-meta"><span class="eco-name">n8n</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-            <div class="eco-chip is-soon" style="--brand:#0F6E6A">
-              <span class="eco-mark">WH</span>
-              <span class="eco-meta"><span class="eco-name">Webhooks</span><span class="eco-soon">Coming soon</span></span>
-            </div>
-          </div>
-        </div>
+        {% endif %}
+        {% endfor %}
       </div>
     </section>
 

@@ -317,9 +317,9 @@ Minimal (verification/ranking only if needed); deterministic formatting first.
 - Deployment: flag-enabled rollout
 
 ### Acceptance Criteria
-- [ ] Insert/replace citations without draft corruption
-- [ ] Bibliography deterministic and reproducible
-- [ ] Style switch tested on real draft fixtures
+- [x] Insert/replace citations without draft corruption (Writing desk picker + caret helpers)
+- [x] Bibliography deterministic and reproducible (binder + export path; APA/IEEE/BibTeX manager)
+- [ ] Style switch tested on real draft fixtures (residual polish; manager styles exist)
 
 ---
 

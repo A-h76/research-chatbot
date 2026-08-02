@@ -7,6 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { evidenceApi } from "../api";
 import type { MatrixCell, MatrixRow } from "../types";
+import { ConsensusConflictStrip } from "./ConsensusConflictStrip";
+import { useProjectConsensusConflict } from "../hooks/useProjectConsensusConflict";
 
 function CellView({ cell }: { cell: MatrixCell }) {
   if (cell.status === "unknown" || !cell.value) {
@@ -47,6 +49,11 @@ export function EvidenceMatrixPanel({
       evidenceApi.matrix(projectId as number, {
         file_ids: fileIds?.length ? fileIds : undefined,
       }),
+    enabled,
+  });
+  const ri = useProjectConsensusConflict({
+    projectId,
+    fileIds,
     enabled,
   });
 
@@ -102,6 +109,12 @@ export function EvidenceMatrixPanel({
 
   return (
     <div className="space-y-3">
+      <ConsensusConflictStrip
+        status={ri.status}
+        consensus={ri.consensus}
+        conflict={ri.conflict}
+        compact
+      />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-muted-foreground">
           Paper × Method × Dataset × Findings × Limitations ·{" "}

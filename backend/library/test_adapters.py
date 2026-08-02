@@ -64,6 +64,81 @@ def test_phase1b_hooks_raise_on_file_adapters():
         adapter.import_files()
 
 
+def test_zotero_mendeley_support_file_import_and_sync():
+    z = get_adapter("zotero")
+    m = get_adapter("mendeley")
+    assert z.capabilities().incremental_sync is True
+    assert m.capabilities().incremental_sync is True
+    assert z.capabilities().file_import is True
+    assert m.capabilities().file_import is True
+
+
+def test_zotero_import_files_positive(monkeypatch):
+    from backend.library import zotero as zotero_mod
+
+    def _pull(tok, sec, uid, key, **kwargs):
+        if key != "ITEM1":
+            return None
+        return {
+            "external_id": key,
+            "attachment_key": "ATT1",
+            "filename": "paper.pdf",
+            "content_type": "application/pdf",
+            "data": b"%PDF-1.4 mock",
+        }
+
+    monkeypatch.setattr(zotero_mod, "pull_pdf_for_item", _pull)
+    adapter = get_adapter("zotero")
+    result = adapter.import_files(
+        access_token="t",
+        access_secret="s",
+        external_user_id="1",
+        item_keys=["ITEM1", "MISSING"],
+    )
+    assert result["provider"] == "zotero"
+    assert len(result["downloaded"]) == 1
+    assert result["downloaded"][0]["filename"] == "paper.pdf"
+    assert result["downloaded"][0]["data"].startswith(b"%PDF")
+    assert result["skipped"] == [{"external_id": "MISSING", "reason": "no_pdf"}]
+
+
+def test_zotero_import_files_skips_when_no_pdf(monkeypatch):
+    from backend.library import zotero as zotero_mod
+
+    monkeypatch.setattr(zotero_mod, "pull_pdf_for_item", lambda *a, **k: None)
+    adapter = get_adapter("zotero")
+    result = adapter.import_files(
+        access_token="t",
+        access_secret="s",
+        external_user_id="1",
+        item_keys=["NOPE"],
+    )
+    assert result["downloaded"] == []
+    assert result["skipped"] == [{"external_id": "NOPE", "reason": "no_pdf"}]
+
+
+def test_mendeley_import_files_positive(monkeypatch):
+    from backend.library import mendeley as mendeley_mod
+
+    monkeypatch.setattr(
+        mendeley_mod,
+        "pull_pdf_for_document",
+        lambda *a, **k: {
+            "external_id": "doc-1",
+            "attachment_key": "f1",
+            "filename": "m.pdf",
+            "content_type": "application/pdf",
+            "data": b"%PDF-mendeley",
+        },
+    )
+    result = get_adapter("mendeley").import_files(
+        access_token="tok", item_keys=["doc-1"]
+    )
+    assert result["provider"] == "mendeley"
+    assert len(result["downloaded"]) == 1
+    assert result["downloaded"][0]["data"] == b"%PDF-mendeley"
+
+
 def test_zotero_mendeley_support_incremental_sync():
     assert get_adapter("zotero").capabilities().incremental_sync is True
     assert get_adapter("mendeley").capabilities().incremental_sync is True

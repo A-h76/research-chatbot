@@ -21,7 +21,7 @@
 | Item | Why it exists | Resolution direction |
 |------|---------------|----------------------|
 | Legacy confirm-upload / thread analysis paths | Older product flows | Route all analysis through AnalysisPipelineService + worker |
-| `extract_metadata` LLM job still in HANDLERS | Transition period | Remove after queue drain (Phase 1.1 fills meta) |
+| `extract_metadata` LLM job still in HANDLERS | **Drain shim #17** (→ phase1) | Drop HANDLER after zero pending in prod |
 | `feature_flags` / unused `import_sessions` / `search_index` gaps | Schema ahead of product | Implement or drop |
 | Worker LLM overview vs Phase 1.6 AssembledPrompt unused by chat | Parallel product bets | Pick one research-prompt path |
 | `PipelineVersion` not on live Base | Migration/ORM drift | Register or remove FK usage |

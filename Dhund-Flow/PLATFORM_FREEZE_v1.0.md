@@ -96,3 +96,14 @@ Not allowed:
 - New workflows or product surfaces
 - New platform subsystems
 - Scope expansion beyond the declared release workflow
+
+---
+
+## V1 Evidence Platform close-out (2026-08-03)
+
+**V1 = frozen Evidence Platform contracts + extract quality + Compare UX on existing RI APIs — not new RI stages.**
+
+- Platform contracts remain frozen (`v0.2.0-rc1`); do not reopen ADR-0005 envelopes.
+- Extract-quality High backlog closed under Subsystem #6 (`EXTRACTION_QUALITY_BACKLOG.md`).
+- Compare / consensus / conflict UX uses existing `POST /api/evidence/consensus|conflict` and Matrix/Gaps/Graph surfaces — no RI-010+, Neo4j, or new stages in V1.
+- Continuous improvement (golden fixtures, auto-enqueue extract) stays tracked, non-blocking for Alpha.

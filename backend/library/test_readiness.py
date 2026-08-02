@@ -48,6 +48,67 @@ def test_readiness_research_ready_with_chunks():
     assert readiness_payload(uf, chunk_count=3)["research_readiness_label"] == "Research ready"
 
 
+def test_build_library_health_need_pdf_and_counts(tmp_path):
+    from sqlalchemy import Column, Integer, String, Text, create_engine, select
+    from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+    from backend.library.health import build_library_health
+
+    class Base(DeclarativeBase):
+        pass
+
+    class UserFile(Base):
+        __tablename__ = "files"
+        id = Column(Integer, primary_key=True)
+        user_id = Column(Integer)
+        kind = Column(String(40), default="document")
+        project_id = Column(Integer, nullable=True)
+        title = Column(String(500), default="")
+        name = Column(String(300), default="")
+        path = Column(String(500), default="")
+        size = Column(Integer, default=0)
+        meta_status = Column(String(20), default="done")
+        chunks = []
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'h.db'}")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    db = Session()
+    db.add_all(
+        [
+            UserFile(user_id=1, kind="document", title="Stub", path="", size=0, meta_status="done"),
+            UserFile(
+                user_id=1,
+                kind="document",
+                title="Ready",
+                path="r.pdf",
+                size=10,
+                meta_status="done",
+            ),
+            UserFile(
+                user_id=1,
+                kind="document",
+                title="Pending",
+                path="p.pdf",
+                size=10,
+                meta_status="pending",
+            ),
+        ]
+    )
+    db.commit()
+    # Monkey-patch chunks on ready file via instance after load
+    ready = db.execute(select(UserFile).where(UserFile.title == "Ready")).scalar_one()
+    ready.chunks = [1, 2]
+
+    health = build_library_health(db, UserFile, select, 1)
+    assert health["total"] == 3
+    assert health["need_pdf"] == 1
+    assert health["processing"] == 1
+    assert health["by_readiness"]["metadata_only"] == 1
+    assert health["research_ready"] >= 1
+    db.close()
+
+
 def test_find_duplicate_groups_by_doi(tmp_path):
     from sqlalchemy import Column, Integer, String, Text, create_engine, select
     from sqlalchemy.orm import DeclarativeBase, sessionmaker

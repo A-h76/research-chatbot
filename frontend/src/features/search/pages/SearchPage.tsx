@@ -16,6 +16,7 @@ import { useUI }         from "@/context/UIContext";
 import { cn }            from "@/lib/utils";
 import type { SearchResult, UserFile } from "@/types/api";
 import { discoverWorks, type OpenAlexWork } from "../discoverApi";
+import { formatApiFailure } from "@/lib/apiErrors";
 import { ResearchProgressStage } from "@/features/writing/components/ResearchProgressStage";
 
 const LIBRARY_ASK_STAGES = [
@@ -231,9 +232,10 @@ function DiscoverPanel({ query, projectId }: { query: string; projectId: number 
     return (
       <div className="py-12 text-center">
         <p className="text-sm text-muted-foreground">
-          {error instanceof Error && error.message
-            ? error.message
-            : "Discover is temporarily unavailable. Try again later."}
+          {formatApiFailure(
+            error,
+            "Discover is temporarily unavailable. Try again later.",
+          )}
         </p>
       </div>
     );

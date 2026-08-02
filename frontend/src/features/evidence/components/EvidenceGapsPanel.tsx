@@ -6,6 +6,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { evidenceApi } from "../api";
 import type { ResearchGap } from "../types";
 import { cn } from "@/lib/utils";
+import { ConsensusConflictStrip } from "./ConsensusConflictStrip";
+import { useProjectConsensusConflict } from "../hooks/useProjectConsensusConflict";
 
 const TYPE_LABEL: Record<ResearchGap["type"], string> = {
   thin_theme: "Thin theme",
@@ -23,6 +25,7 @@ export function EvidenceGapsPanel({ projectId }: { projectId: number | null }) {
     queryFn: () => evidenceApi.gaps(projectId as number),
     enabled,
   });
+  const ri = useProjectConsensusConflict({ projectId, enabled });
 
   if (!enabled) {
     return (
@@ -59,6 +62,12 @@ export function EvidenceGapsPanel({ projectId }: { projectId: number | null }) {
 
   return (
     <div className="space-y-3">
+      <ConsensusConflictStrip
+        status={ri.status}
+        consensus={ri.consensus}
+        conflict={ri.conflict}
+        compact
+      />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-muted-foreground">
           {data.metrics.gap_count} gaps · {data.metrics.paper_count} papers ·{" "}

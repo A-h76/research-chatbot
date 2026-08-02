@@ -372,7 +372,10 @@ export function CompareGapsWorkbench({
   const riCompare = useProjectConsensusConflict({
     projectId,
     fileIds: selected,
-    enabled: activeTab === "compare" && selected.length >= 2 && projectId != null,
+    enabled:
+      (activeTab === "compare" || activeTab === "gaps") &&
+      selected.length >= 2 &&
+      projectId != null,
   });
 
   const filtered = useMemo(() => {
@@ -515,11 +518,12 @@ export function CompareGapsWorkbench({
           : "Underexplored topics, open questions, thesis ideas — 2–10 analysed papers."}
       </p>
 
-      {activeTab === "compare" && selected.length >= 2 ? (
+      {(activeTab === "compare" || activeTab === "gaps") && selected.length >= 2 ? (
         <ConsensusConflictStrip
           status={riCompare.status}
           consensus={riCompare.consensus}
           conflict={riCompare.conflict}
+          compact={activeTab === "gaps"}
         />
       ) : null}
 

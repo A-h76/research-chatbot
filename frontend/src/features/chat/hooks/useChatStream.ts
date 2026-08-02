@@ -2,6 +2,9 @@ import { useCallback, useReducer, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import { iterateSSE } from "@/lib/sse";
+import { ApiError } from "@/lib/apiClient";
+import { formatApiFailure, quotaFromUnknown } from "@/lib/apiErrors";
+import type { QuotaPayload } from "@/features/settings/quotaMessaging";
 import { chatApi } from "../api";
 import type { Conversation, ConversationSummary, Message, Source } from "@/types/api";
 import type { SendPayload } from "../types";
@@ -19,6 +22,7 @@ interface StreamState {
   skill: string | undefined;
   isStreaming: boolean;
   error: string | null;
+  quota: QuotaPayload | null;
 }
 
 type Action =
@@ -34,7 +38,7 @@ type Action =
       warnings?: string[];
       skill?: string;
     }
-  | { type: "ERROR"; text: string }
+  | { type: "ERROR"; text: string; quota?: QuotaPayload | null }
   | { type: "STOPPED" };
 
 const initialState: StreamState = {
@@ -48,6 +52,7 @@ const initialState: StreamState = {
   skill: undefined,
   isStreaming: false,
   error: null,
+  quota: null,
 };
 
 function reducer(state: StreamState, action: Action): StreamState {
@@ -69,9 +74,16 @@ function reducer(state: StreamState, action: Action): StreamState {
         skill: action.skill,
         status: null,
         isStreaming: false,
+        quota: null,
       };
     case "ERROR":
-      return { ...state, error: action.text, status: null, isStreaming: false };
+      return {
+        ...state,
+        error: action.text,
+        quota: action.quota ?? null,
+        status: null,
+        isStreaming: false,
+      };
     case "STOPPED":
       return { ...state, status: null, isStreaming: false };
     default:
@@ -99,8 +111,13 @@ export function useChatStream(conversationId: number) {
       try {
         const res = await chatApi.streamChat(payload, controller.signal);
         if (!res.ok || !res.body) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || "Request failed");
+          const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+          const code = typeof body.error === "string" ? body.error : undefined;
+          throw new ApiError(String(body.detail || body.error || "Request failed"), res.status, {
+            code,
+            body,
+            quota: quotaFromUnknown(body),
+          });
         }
         for await (const { event, data } of iterateSSE(res.body)) {
           if (event === "delta") {
@@ -122,14 +139,12 @@ export function useChatStream(conversationId: number) {
             skill = typeof data.skill === "string" ? data.skill : undefined;
             if (data.title) {
               qc.setQueryData<Conversation>(queryKeys.conversation(conversationId), (old) =>
-                old ? { ...old, title: data.title } : old
+                old ? { ...old, title: data.title } : old,
               );
               qc.setQueryData<ConversationSummary[]>(queryKeys.conversations, (old) =>
-                old?.map((c) => (c.id === conversationId ? { ...c, title: data.title } : c))
+                old?.map((c) => (c.id === conversationId ? { ...c, title: data.title } : c)),
               );
             }
-            // Append the finished assistant turn to the cache so it replaces
-            // the live bubble seamlessly (no flicker before the refetch lands).
             const assistantMsg: Message = {
               id: optimisticAssistantId--,
               role: "assistant",
@@ -143,7 +158,7 @@ export function useChatStream(conversationId: number) {
               attachments: [],
             };
             qc.setQueryData<Conversation>(queryKeys.conversation(conversationId), (old) =>
-              old ? { ...old, messages: [...old.messages, assistantMsg] } : old
+              old ? { ...old, messages: [...old.messages, assistantMsg] } : old,
             );
             dispatch({
               type: "DONE",
@@ -155,18 +170,18 @@ export function useChatStream(conversationId: number) {
               skill,
             });
           } else if (event === "error") {
-            throw new Error(data.text);
+            const quota = quotaFromUnknown(data);
+            throw new ApiError(String(data.text || data.error || "Stream error"), 500, {
+              code: typeof data.error === "string" ? data.error : undefined,
+              body: data && typeof data === "object" ? (data as Record<string, unknown>) : undefined,
+              quota,
+            });
           }
         }
-        // Reconcile with the authoritative persisted messages (ids, sources,
-        // attachments) — mirrors the old app's `loadConvos().then(renderConvos)`.
         qc.invalidateQueries({ queryKey: queryKeys.conversation(conversationId) });
         qc.invalidateQueries({ queryKey: queryKeys.conversations });
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
-          // Keep the partial text as a client-only bubble (the server does not
-          // persist an aborted turn — it will vanish on next reload, matching
-          // the previous app's behavior).
           if (full) {
             const partial: Message = {
               id: optimisticAssistantId--,
@@ -176,18 +191,22 @@ export function useChatStream(conversationId: number) {
               attachments: [],
             };
             qc.setQueryData<Conversation>(queryKeys.conversation(conversationId), (old) =>
-              old ? { ...old, messages: [...old.messages, partial] } : old
+              old ? { ...old, messages: [...old.messages, partial] } : old,
             );
           }
           dispatch({ type: "STOPPED" });
         } else {
-          dispatch({ type: "ERROR", text: err instanceof Error ? err.message : String(err) });
+          dispatch({
+            type: "ERROR",
+            text: formatApiFailure(err, "Chat failed"),
+            quota: quotaFromUnknown(err),
+          });
         }
       } finally {
         abortRef.current = null;
       }
     },
-    [conversationId, qc]
+    [conversationId, qc],
   );
 
   const stop = useCallback(() => abortRef.current?.abort(), []);

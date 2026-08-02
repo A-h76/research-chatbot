@@ -55,12 +55,19 @@ def build_candidate(
     limitations: list[Any] | None = None,
     pipeline_version: str = PIPELINE_VERSION_DEFAULT,
     provenance_parts: dict[str, Any] | None = None,
+    provenance_extra: dict[str, Any] | None = None,
     source_kg_node_id: str = "",
     require_page: bool = True,
 ) -> CandidateEvidence:
     require_page_anchor(file_id=file_id, quote=quote, page=page)
     if require_page and page is None:
         raise ValueError("page-anchored evidence required; skip ungrounded candidate")
+    q = (quote or "").strip()
+    c = (claim or "").strip()
+    if not q:
+        raise ValueError("empty quote; skip candidate")
+    if not c or len(c) < 3:
+        raise ValueError("empty or trivial claim; skip candidate")
     band = confidence_band_from_grades(
         study_type=study_type,
         study_quality=study_quality,
@@ -69,12 +76,17 @@ def build_candidate(
         has_contradiction=has_contradiction,
     )
     parts = provenance_parts or {}
+    extra = dict(provenance_extra or {})
+    # Surface weak-claim signal for Inspector / Conflict without changing DTO schema.
+    if c.lower() == q.lower():
+        extra.setdefault("claim_equals_quote", True)
     provenance = build_provenance(
         pipeline_version=pipeline_version,
         document_understanding=parts.get("document_understanding", ""),
         evidence_grading=parts.get("evidence_grading", ""),
         knowledge_graph=parts.get("knowledge_graph", ""),
         extraction_prompt_version=parts.get("extraction_prompt_version", ""),
+        extra=extra or None,
     )
     return CandidateEvidence(
         file_id=file_id,
@@ -82,8 +94,8 @@ def build_candidate(
         char_start=char_start,
         char_end=char_end,
         section=section or "",
-        quote=quote.strip(),
-        claim=claim.strip(),
+        quote=q,
+        claim=c,
         study_type=study_type or "",
         study_quality=study_quality or "",
         supports=list(supports or []),
@@ -95,8 +107,8 @@ def build_candidate(
             page=page,
             char_start=char_start,
             char_end=char_end,
-            quote=quote,
-            claim=claim,
+            quote=q,
+            claim=c,
         ),
         provenance=provenance,
         source_kg_node_id=source_kg_node_id or "",

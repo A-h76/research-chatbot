@@ -10,10 +10,16 @@ import type { WritingMetrics, WritingReview } from "@/features/evidence/hooks/us
 type Props = {
   metrics?: WritingMetrics | null;
   review?: WritingReview | null;
+  reviewerVersion?: string | null;
   className?: string;
 };
 
-export function ResearchConfidenceStrip({ metrics, review, className }: Props) {
+export function ResearchConfidenceStrip({
+  metrics,
+  review,
+  reviewerVersion,
+  className,
+}: Props) {
   const coverage =
     metrics?.citation_coverage != null
       ? Math.round(metrics.citation_coverage * 100)
@@ -24,6 +30,7 @@ export function ResearchConfidenceStrip({ metrics, review, className }: Props) {
     metrics?.grounding_pct != null ? Math.round(metrics.grounding_pct * 100) : null;
   const unsupported = metrics?.unsupported_claims ?? null;
   const reviewerStatus = review?.status ?? metrics?.reviewer_status ?? null;
+  const versionLabel = reviewerVersion || review?.reviewer_version || null;
 
   const empty = coverage == null && grounding == null && unsupported == null && !reviewerStatus;
   const ringValue = coverage ?? grounding;
@@ -80,8 +87,12 @@ export function ResearchConfidenceStrip({ metrics, review, className }: Props) {
                     label="Research Reviewer"
                     value={
                       String(reviewerStatus).toLowerCase() === "pass"
-                        ? "Passed"
-                        : "Needs review"
+                        ? versionLabel
+                          ? `Passed · v${versionLabel}`
+                          : "Passed"
+                        : versionLabel
+                          ? `Needs review · v${versionLabel}`
+                          : "Needs review"
                     }
                     tone={
                       String(reviewerStatus).toLowerCase() === "pass" ? "ok" : "warn"
@@ -105,8 +116,12 @@ export function ResearchConfidenceStrip({ metrics, review, className }: Props) {
                   label="Research Reviewer"
                   value={
                     String(reviewerStatus).toLowerCase() === "pass"
-                      ? "Passed"
-                      : "Needs review"
+                      ? versionLabel
+                        ? `Passed · v${versionLabel}`
+                        : "Passed"
+                      : versionLabel
+                        ? `Needs review · v${versionLabel}`
+                        : "Needs review"
                   }
                   tone={
                     String(reviewerStatus).toLowerCase() === "pass" ? "ok" : "warn"

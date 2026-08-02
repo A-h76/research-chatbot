@@ -21,11 +21,25 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/components/common/Toast";
 import {
   libraryBridgeApi,
+  type LibrarySyncRun,
   type MendeleyFolder,
   type ZoteroCollection,
 } from "../libraryBridgeApi";
 import { LibraryImportDialog } from "./LibraryImportDialog";
 import { cn } from "@/lib/utils";
+
+async function pollSyncRun(runId: number, timeoutMs = 120_000): Promise<LibrarySyncRun> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const run = await libraryBridgeApi.syncRun(runId);
+    if (run.status === "ok") return run;
+    if (run.status === "error") {
+      throw new Error(run.error || "Sync failed");
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  throw new Error("Sync timed out — check sync history or try again");
+}
 
 export type ConnectLibraryPanelHandle = {
   openBibtex: () => void;
@@ -35,7 +49,7 @@ export type ConnectLibraryPanelHandle = {
 
 /**
  * Quiet Sources strip for connected managers (PR1).
- * Connect lives in Sidebar → Integrations; this only surfaces import/sync when connected
+ * Connect lives in Settings → Integrations; this only surfaces import/sync when connected
  * or when deep-linked to connect.
  */
 export const ConnectLibraryPanel = forwardRef<
@@ -57,7 +71,15 @@ export const ConnectLibraryPanel = forwardRef<
   const [createProject, setCreateProject] = useState(true);
   const [projectName, setProjectName] = useState("");
   const [busyKey, setBusyKey] = useState<
-    null | "zotero" | "mendeley" | "zotero-import" | "mendeley-import" | "zotero-sync" | "mendeley-sync"
+    | null
+    | "zotero"
+    | "mendeley"
+    | "zotero-import"
+    | "mendeley-import"
+    | "zotero-sync"
+    | "mendeley-sync"
+    | "zotero-pull"
+    | "mendeley-pull"
   >(null);
 
   const { data: connections } = useQuery({
@@ -226,13 +248,23 @@ export const ConnectLibraryPanel = forwardRef<
     setBusyKey("zotero-sync");
     try {
       const res = await libraryBridgeApi.zoteroSync();
-      toast.success(
-        `Zotero sync: ${res.created} new · ${res.updated} updated` +
-          (res.conflicts ? ` · ${res.conflicts} conflicts` : ""),
-      );
+      if (res.status === "queued" && res.sync_run_id != null) {
+        toast.success("Zotero sync queued…");
+        const final = await pollSyncRun(res.sync_run_id);
+        toast.success(
+          `Zotero sync: ${final.created} new · ${final.updated} updated` +
+            (final.conflicts ? ` · ${final.conflicts} conflicts` : ""),
+        );
+      } else {
+        toast.success(
+          `Zotero sync: ${res.created ?? 0} new · ${res.updated ?? 0} updated` +
+            (res.conflicts ? ` · ${res.conflicts} conflicts` : ""),
+        );
+      }
       void qc.invalidateQueries({ queryKey: ["files"] });
       void qc.invalidateQueries({ queryKey: ["library-connections"] });
       void qc.invalidateQueries({ queryKey: ["library-sync-runs"] });
+      void qc.invalidateQueries({ queryKey: ["library"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Zotero sync failed");
     } finally {
@@ -244,15 +276,59 @@ export const ConnectLibraryPanel = forwardRef<
     setBusyKey("mendeley-sync");
     try {
       const res = await libraryBridgeApi.mendeleySync();
-      toast.success(
-        `Mendeley sync: ${res.created} new · ${res.updated} updated` +
-          (res.conflicts ? ` · ${res.conflicts} conflicts` : ""),
-      );
+      if (res.status === "queued" && res.sync_run_id != null) {
+        toast.success("Mendeley sync queued…");
+        const final = await pollSyncRun(res.sync_run_id);
+        toast.success(
+          `Mendeley sync: ${final.created} new · ${final.updated} updated` +
+            (final.conflicts ? ` · ${final.conflicts} conflicts` : ""),
+        );
+      } else {
+        toast.success(
+          `Mendeley sync: ${res.created ?? 0} new · ${res.updated ?? 0} updated` +
+            (res.conflicts ? ` · ${res.conflicts} conflicts` : ""),
+        );
+      }
       void qc.invalidateQueries({ queryKey: ["files"] });
       void qc.invalidateQueries({ queryKey: ["library-connections"] });
       void qc.invalidateQueries({ queryKey: ["library-sync-runs"] });
+      void qc.invalidateQueries({ queryKey: ["library"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Mendeley sync failed");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const pullZoteroPdfs = async () => {
+    setBusyKey("zotero-pull");
+    try {
+      const res = await libraryBridgeApi.pullZoteroPdfs({ limit: 20 });
+      toast.success(
+        `Pulled ${res.pulled ?? 0} PDF${(res.pulled ?? 0) === 1 ? "" : "s"}` +
+          (res.queued ? ` · ${res.queued} queued for analysis` : ""),
+      );
+      void qc.invalidateQueries({ queryKey: ["files"] });
+      void qc.invalidateQueries({ queryKey: ["library"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "PDF pull failed");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const pullMendeleyPdfs = async () => {
+    setBusyKey("mendeley-pull");
+    try {
+      const res = await libraryBridgeApi.pullMendeleyPdfs({ limit: 20 });
+      toast.success(
+        `Pulled ${res.pulled ?? 0} PDF${(res.pulled ?? 0) === 1 ? "" : "s"}` +
+          (res.queued ? ` · ${res.queued} queued for analysis` : ""),
+      );
+      void qc.invalidateQueries({ queryKey: ["files"] });
+      void qc.invalidateQueries({ queryKey: ["library"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "PDF pull failed");
     } finally {
       setBusyKey(null);
     }
@@ -296,7 +372,7 @@ export const ConnectLibraryPanel = forwardRef<
               </button>
               <span className="text-muted-foreground">
                 {" "}
-                — or use Integrations in the sidebar
+                — or open Settings → Integrations
               </span>
             </p>
           ) : (
@@ -330,6 +406,20 @@ export const ConnectLibraryPanel = forwardRef<
                       <Loader2 className="size-3 animate-spin" />
                     ) : (
                       "Sync"
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-1.5 text-[11px]"
+                    disabled={busyKey === "zotero-pull"}
+                    onClick={() => void pullZoteroPdfs()}
+                    title="Pull PDFs from Zotero onto stubs missing a file"
+                  >
+                    {busyKey === "zotero-pull" ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      "Pull PDFs"
                     )}
                   </Button>
                   <Button
@@ -372,6 +462,20 @@ export const ConnectLibraryPanel = forwardRef<
                       <Loader2 className="size-3 animate-spin" />
                     ) : (
                       "Sync"
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-1.5 text-[11px]"
+                    disabled={busyKey === "mendeley-pull"}
+                    onClick={() => void pullMendeleyPdfs()}
+                    title="Pull PDFs from Mendeley onto stubs missing a file"
+                  >
+                    {busyKey === "mendeley-pull" ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      "Pull PDFs"
                     )}
                   </Button>
                   <Button

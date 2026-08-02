@@ -1,5 +1,7 @@
 /** OpenAlex Discover — thin fetch wrapper used by SearchPage. */
 
+import { ApiError } from "@/lib/apiClient";
+
 export interface OpenAlexWork {
   id: string;
   doi: string;
@@ -30,6 +32,13 @@ export async function discoverWorks(
     per_page: String(perPage),
   });
   const res = await fetch(`/api/discover?${params}`, { credentials: "include" });
-  if (!res.ok) throw new Error("discover_unavailable");
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const code = typeof body.error === "string" ? body.error : "discover_unavailable";
+    throw new ApiError(String(body.detail || body.error || "discover_unavailable"), res.status, {
+      code,
+      body,
+    });
+  }
   return res.json();
 }

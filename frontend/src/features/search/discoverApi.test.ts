@@ -49,8 +49,12 @@ describe("discoverWorks", () => {
     expect(result.page).toBe(1);
   });
 
-  it("throws discover_unavailable on non-2xx so the UI can show a soft failure", async () => {
-    mockFetchOnce(503, { error: "down" });
-    await expect(discoverWorks("crp", 1)).rejects.toThrow("discover_unavailable");
+  it("throws ApiError on non-2xx so the UI can show a soft failure", async () => {
+    mockFetchOnce(503, { error: "feature_disabled" });
+    await expect(discoverWorks("crp", 1)).rejects.toMatchObject({
+      message: "feature_disabled",
+      code: "feature_disabled",
+      status: 503,
+    });
   });
 });

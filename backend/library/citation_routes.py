@@ -77,6 +77,13 @@ def ieee_entry(c) -> str:
     return f"{author_str}, {title_part}{venue_part}{year_part}{doi_part}".strip()
 
 
+def parenthetical_cite(c) -> str:
+    """Short in-text cite for manuscript insert: (FirstAuthor, Year)."""
+    first = (c.authors or "Unknown").split(";")[0].split(",")[0].strip() or "Unknown"
+    year = (c.year or "n.d.").strip() or "n.d."
+    return f"({first}, {year})"
+
+
 def format_citation(c, fmt: str = "bibtex") -> str:
     if fmt == "apa":
         return apa_entry(c)
@@ -114,6 +121,7 @@ def create_citation_blueprint(
     resolve_owned_project_id,
     log_security_event,
     app_logger,
+    EvidenceObject=None,
 ):
     bp = Blueprint("citation_routes", __name__)
 
@@ -346,6 +354,107 @@ def create_citation_blueprint(
             db.add(c)
             db.commit()
             return jsonify({**_citation_to_dict(c), "existing": False}), 201
+        finally:
+            db.close()
+
+    @bp.route("/api/citations/<int:cid>/resolve-evidence", methods=["GET"])
+    @login_required
+    def resolve_citation_evidence(cid):
+        """Bridge manager Citation → accepted EvidenceObjects in a project (V1 insert)."""
+        uid = session["user_id"]
+        project_id_raw = request.args.get("project_id")
+        if project_id_raw is None or EvidenceObject is None:
+            return (
+                jsonify(
+                    {
+                        "error": "validation",
+                        "detail": "project_id required (and EvidenceObject wiring)",
+                    }
+                ),
+                422,
+            )
+        try:
+            project_id = int(project_id_raw)
+        except (TypeError, ValueError):
+            return jsonify({"error": "validation", "detail": "project_id must be an integer"}), 422
+
+        db = SessionLocal()
+        try:
+            c = db.get(Citation, cid)
+            if not c or c.user_id != uid:
+                return jsonify({"error": "not_found"}), 404
+            project_id, denied = resolve_owned_project_id(db, Project, project_id, uid)
+            if denied or project_id is None:
+                return jsonify({"error": "not_found"}), 404
+
+            doi = (c.doi or "").strip().lower()
+            title = (c.title or "").strip().lower()
+            file_ids: list[int] = []
+            if doi:
+                files = (
+                    db.execute(
+                        select_fn(UserFile).where(
+                            UserFile.user_id == uid,
+                            UserFile.project_id == project_id,
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                for uf in files:
+                    uf_doi = (getattr(uf, "doi", None) or "").strip().lower()
+                    if uf_doi and (uf_doi == doi or doi in uf_doi or uf_doi in doi):
+                        file_ids.append(int(uf.id))
+
+            rows = (
+                db.execute(
+                    select_fn(EvidenceObject)
+                    .where(
+                        EvidenceObject.user_id == uid,
+                        EvidenceObject.project_id == project_id,
+                        EvidenceObject.status == "accepted",
+                    )
+                    .order_by(EvidenceObject.updated_at.desc())
+                    .limit(80)
+                )
+                .scalars()
+                .all()
+            )
+            matched = []
+            for ev in rows:
+                score = 0
+                if file_ids and int(ev.file_id) in file_ids:
+                    score += 10
+                claim = (ev.claim or ev.quote or "").lower()
+                if title and title[:40] and title[:40] in claim:
+                    score += 3
+                if title and any(tok in claim for tok in title.split() if len(tok) > 4):
+                    score += 1
+                if score > 0:
+                    matched.append(
+                        {
+                            "evidence_id": int(ev.id),
+                            "file_id": int(ev.file_id),
+                            "claim": (ev.claim or "")[:300],
+                            "quote": (ev.quote or "")[:300],
+                            "page": ev.page,
+                            "score": score,
+                        }
+                    )
+            matched.sort(key=lambda r: (-r["score"], -r["evidence_id"]))
+            primary = matched[0]["evidence_id"] if matched else None
+            return jsonify(
+                {
+                    "citation_id": int(c.id),
+                    "project_id": int(project_id),
+                    "insert_text": f"[#{primary}]" if primary else parenthetical_cite(c),
+                    "parenthetical": parenthetical_cite(c),
+                    "evidence_id": primary,
+                    "evidence_ids": [m["evidence_id"] for m in matched],
+                    "matches": matched[:10],
+                    "grounded": primary is not None,
+                }
+            )
         finally:
             db.close()
 

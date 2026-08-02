@@ -49,6 +49,7 @@ def test_require_production_secrets_ok_with_minimum():
             "OPENAI_API_KEY": "sk-test",
             "RESEND_API_KEY": "re_test",
             "CLAMAV_OPTIONAL": "1",
+            "RATE_LIMIT_MEMORY_OK": "1",
         },
         is_production=True,
     )
@@ -64,6 +65,7 @@ def test_require_production_secrets_requires_openai():
                 "GOOGLE_CLIENT_SECRET": "secret",
                 "RESEND_API_KEY": "re_test",
                 "CLAMAV_OPTIONAL": "1",
+                "RATE_LIMIT_MEMORY_OK": "1",
             },
             is_production=True,
         )
@@ -79,6 +81,7 @@ def test_require_production_secrets_requires_clamav_or_optional():
                 "GOOGLE_CLIENT_SECRET": "secret",
                 "OPENAI_API_KEY": "sk-test",
                 "RESEND_API_KEY": "re_test",
+                "RATE_LIMIT_MEMORY_OK": "1",
             },
             is_production=True,
         )
@@ -94,6 +97,7 @@ def test_require_production_secrets_clamav_enabled_ok():
             "OPENAI_API_KEY": "sk-test",
             "RESEND_API_KEY": "re_test",
             "CLAMAV_ENABLED": "1",
+            "RATE_LIMIT_MEMORY_OK": "1",
         },
         is_production=True,
     )
@@ -109,6 +113,7 @@ def test_require_production_secrets_requires_resend():
                 "GOOGLE_CLIENT_SECRET": "secret",
                 "OPENAI_API_KEY": "sk-test",
                 "CLAMAV_OPTIONAL": "1",
+                "RATE_LIMIT_MEMORY_OK": "1",
             },
             is_production=True,
         )
@@ -125,11 +130,44 @@ def test_require_production_secrets_r2_requires_creds():
                 "OPENAI_API_KEY": "sk-test",
                 "RESEND_API_KEY": "re_test",
                 "CLAMAV_OPTIONAL": "1",
+                "RATE_LIMIT_MEMORY_OK": "1",
                 "STORAGE_PROVIDER": "r2",
                 "R2_BUCKET": "bucket",
             },
             is_production=True,
         )
+
+
+def test_require_production_secrets_requires_redis_or_memory_ok():
+    with pytest.raises(SystemExit, match="REDIS_URL"):
+        require_production_secrets(
+            {
+                "FLASK_ENV": "production",
+                "FLASK_SECRET_KEY": "prod-secret-key-at-least-32-chars!!",
+                "GOOGLE_CLIENT_ID": "id",
+                "GOOGLE_CLIENT_SECRET": "secret",
+                "OPENAI_API_KEY": "sk-test",
+                "RESEND_API_KEY": "re_test",
+                "CLAMAV_OPTIONAL": "1",
+            },
+            is_production=True,
+        )
+
+
+def test_require_production_secrets_ok_with_redis_url():
+    require_production_secrets(
+        {
+            "FLASK_ENV": "production",
+            "FLASK_SECRET_KEY": "prod-secret-key-at-least-32-chars!!",
+            "GOOGLE_CLIENT_ID": "id",
+            "GOOGLE_CLIENT_SECRET": "secret",
+            "OPENAI_API_KEY": "sk-test",
+            "RESEND_API_KEY": "re_test",
+            "CLAMAV_OPTIONAL": "1",
+            "REDIS_URL": "redis://localhost:6379/0",
+        },
+        is_production=True,
+    )
 
 
 def test_resolve_flask_secret_key_ephemeral_in_dev():
@@ -147,6 +185,7 @@ def test_resolve_limiter_storage_uri_memory_when_unset():
 
 
 def test_resolve_limiter_storage_uri_prod_without_redis_warns_but_memory(caplog):
+    """Allowed only after RATE_LIMIT_MEMORY_OK ack at require_production_secrets."""
     uri = resolve_limiter_storage_uri("", is_production=True)
     assert uri == "memory://"
 

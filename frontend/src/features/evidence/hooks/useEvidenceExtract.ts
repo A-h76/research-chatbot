@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/components/common/Toast";
-import { ApiError } from "@/lib/apiClient";
+import { formatApiFailure } from "@/lib/apiErrors";
 import { evidenceApi } from "../api";
 
 export type ExtractResult = {
@@ -56,11 +56,7 @@ export function useEvidenceExtract() {
       void qc.invalidateQueries({ queryKey: ["files"] });
     },
     onError: (err) => {
-      if (err instanceof ApiError) {
-        toast.error(err.message || "Evidence extraction failed");
-        return;
-      }
-      toast.error(err instanceof Error ? err.message : "Evidence extraction failed");
+      toast.error(formatApiFailure(err, "Evidence extraction failed"));
     },
   });
 }

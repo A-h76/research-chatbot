@@ -60,7 +60,11 @@ export function CollectionsPanel({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const roots = collections.filter((c) => !c.parent_id);
+  const roots = collections.filter((c) => {
+    if (!c.parent_id) return true;
+    // Orphan parents (broken parent_id) → surface as roots so they stay visible
+    return !collections.some((p) => p.id === c.parent_id);
+  });
   const childrenOf = (id: number) => collections.filter((c) => c.parent_id === id);
 
   function renderRow(c: LibraryCollection, depth = 0) {

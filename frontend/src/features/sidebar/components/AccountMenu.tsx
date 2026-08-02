@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Settings, LogOut, ChevronsUpDown, LifeBuoy } from "lucide-react";
+import { Settings, LogOut, ChevronsUpDown, LifeBuoy, Plug, Shield } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -52,9 +52,17 @@ export function AccountMenu({
           <p className="truncate text-xs text-muted-foreground">{me.email}</p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => navigate("/settings/integrations")}>
+          <Plug /> Integrations
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate("/settings")}>
           <Settings /> Settings
         </DropdownMenuItem>
+        {me.is_admin && (
+          <DropdownMenuItem onClick={() => navigate("/admin")}>
+            <Shield /> Admin
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onClick={() => navigate("/support")}>
           <LifeBuoy /> Help &amp; support
         </DropdownMenuItem>

@@ -14,7 +14,6 @@ SQLite dev fallback, and this process refuses to start against it.
 import json
 import logging
 import os
-import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -90,7 +89,6 @@ def _get_text_for_file(uf):
 from backend.ai.prompts import (
     ANALYSIS_ARRAY_FIELDS,
     ANALYSIS_MAX_CHARS,
-    META_EXCERPT_CHARS,
     PAPER_ANALYSIS_RESPONSE_FORMAT,
     ensure_default_prompts,
     medical_response_format,
@@ -140,7 +138,6 @@ def _handle_import(db, job):
         )
 
 
-_YEAR_RE = re.compile(r"(19|20)\d{2}")
 
 
 def _handle_phase1_analysis(db, job):
@@ -216,9 +213,12 @@ def _handle_phase1_analysis(db, job):
 
 
 def _handle_extract_metadata(db, job):
-    """DEPRECATED: prefer Phase 1.1 metadata via phase1_analysis.
+    """DEPRECATED drain shim (#17): no LLM — redirect leftover queue rows.
 
-    Kept for in-flight legacy queue jobs. Idempotent if meta_status already done.
+    Historical ``extract_metadata`` jobs may still sit ``pending`` after the
+    cutover to ``import → phase1_analysis → paper_analysis``. Completing them
+    as a no-op LLM path and enqueueing ``phase1_analysis`` empties the queue
+    without a one-shot SQL migrate. New uploads never enqueue this type.
     """
     from backend.analysis_pipeline.deprecation import warn_legacy
 
@@ -227,64 +227,12 @@ def _handle_extract_metadata(db, job):
     if not uf:
         raise RuntimeError(f"file {job.file_id} no longer exists")
 
-    text = _get_text_for_file(uf)
-    content_hash = uf.content_hash or _sha256(text)
-    if uf.content_hash == content_hash and uf.meta_status == "done":
+    # Already satisfied by Phase 1.1 or a prior legacy run — nothing to do.
+    if uf.meta_status == "done":
         return
 
-    uf.meta_status = "running"
-    db.commit()
-
-    try:
-        prompt_registry = PromptRegistry(db)
-        model_registry = ModelRegistry(db)
-        prompt, _prompt_version = prompt_registry.get_prompt(
-            "extract_metadata",
-            variables={"excerpt": text[:META_EXCERPT_CHARS], "max_chars": META_EXCERPT_CHARS},
-        )
-        result = ai_gateway.call(
-            model_registry=model_registry,
-            task="extract_metadata",
-            mode=DEFAULT_AI_MODE,
-            messages=[{"role": "user", "content": prompt}],
-            user_id=uf.user_id,
-            response_format={"type": "json_object"},
-        )
-        data = json.loads(result["content"])
-
-        uf = db.get(UserFile, job.file_id)  # re-fetch: another writer may have touched it
-        if not uf:
-            return
-        uf.content_hash = content_hash
-        uf.meta_status = "done"
-        title = data.get("title")
-        if title:
-            uf.title = str(title)[:500]
-        authors = data.get("authors")
-        if authors:
-            uf.authors = str(authors)[:1000]
-        year = data.get("year")
-        if year:
-            m = _YEAR_RE.search(str(year))
-            if m:
-                uf.year = m.group(0)
-        venue = data.get("venue")
-        if venue:
-            uf.venue = str(venue)[:300]
-        doi = data.get("doi")
-        if doi:
-            uf.doi = str(doi)[:200]
-        abstract = data.get("abstract")
-        if abstract:
-            uf.abstract = str(abstract)[:8000]
-        db.commit()
-    except Exception:
-        db.rollback()
-        uf = db.get(UserFile, job.file_id)
-        if uf:
-            uf.meta_status = "failed"
-            db.commit()
-        raise  # let run_job()'s own try/except apply retry/backoff
+    # Redirect metadata + Phase 1 engines onto the canonical chain.
+    _enqueue_job(db, uf.user_id, job.file_id, "phase1_analysis", job.upload_batch_id)
 
 
 def _handle_paper_analysis(db, job):
@@ -530,6 +478,25 @@ def _handle_literature_review(db, job):
     )
 
 
+def _handle_library_sync(db, job):
+    """Phase 1b — worker-backed Zotero/Mendeley incremental metadata sync."""
+    from backend.library.sync_job import run_library_sync_job
+
+    run_library_sync_job(
+        db,
+        job,
+        OutboxEvent=OutboxEvent,
+        select_fn=select,
+        SessionLocal=SessionLocal,
+        LibraryConnection=server.LibraryConnection,
+        LibrarySyncRun=server.LibrarySyncRun,
+        UserFile=UserFile,
+        Project=server.Project,
+        enrich_file_from_doi=getattr(server, "_enrich_file_from_doi", None),
+        secret_key=server.app.secret_key or "",
+    )
+
+
 HANDLERS = {
     "import": _handle_import,
     "extract_metadata": _handle_extract_metadata,
@@ -538,6 +505,7 @@ HANDLERS = {
     "evidence_extract": _handle_evidence_extract,
     "theme_map": _handle_theme_map,
     "literature_review": _handle_literature_review,
+    "library_sync": _handle_library_sync,
 }
 
 

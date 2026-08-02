@@ -62,7 +62,7 @@ export function LibraryImportMenu({
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem
-            onClick={() => void navigate("/library?provider=zotero#import")}
+            onClick={() => void navigate("/settings/integrations")}
           >
             <ZoteroIcon className="size-3.5" />
             Connect Zotero in Integrations
@@ -75,7 +75,7 @@ export function LibraryImportMenu({
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem
-            onClick={() => void navigate("/library?provider=mendeley#import")}
+            onClick={() => void navigate("/settings/integrations")}
           >
             <MendeleyIcon className="size-3.5" />
             Connect Mendeley in Integrations

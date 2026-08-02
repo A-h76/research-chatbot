@@ -20,6 +20,7 @@ import { BulkUploadProgress } from "@/features/files/components/BulkUploadProgre
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/components/common/Toast";
+import { formatApiFailure } from "@/lib/apiErrors";
 import { supportsReasoningEffort, supportsTemperature } from "@/lib/modelCapabilities";
 import type { ChatSettings, PendingFile } from "../types";
 import type { UserFile } from "@/types/api";
@@ -161,7 +162,7 @@ export function Composer({
         }
       } catch (err) {
         setPending((p) => p.filter((f) => f.id !== currentId));
-        toast.error(err instanceof Error ? err.message : "Upload failed");
+        toast.error(formatApiFailure(err, "Upload failed"));
       }
     }
 
@@ -195,7 +196,7 @@ export function Composer({
         // route is all-or-nothing, so no file in this drop was stored;
         // clear all of its pending rows, not just one.
         setPending((p) => p.filter((f) => !tempIds.includes(f.id)));
-        toast.error(err instanceof Error ? err.message : "Upload failed");
+        toast.error(formatApiFailure(err, "Upload failed"));
       }
     }
   };

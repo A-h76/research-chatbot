@@ -97,14 +97,31 @@ function ParagraphWithMarkers({
   );
 }
 
-function EvidenceCard({ binding }: { binding: GroundedWritingBinding }) {
+function EvidenceCard({
+  binding,
+  onInspect,
+}: {
+  binding: GroundedWritingBinding;
+  onInspect?: (binding: GroundedWritingBinding) => void;
+}) {
   return (
     <div className="rounded-md border border-border bg-background/80 p-2 text-[11px]">
-      <p className="font-medium text-foreground">
-        Evidence #{binding.evidence_id}
-        {binding.page != null ? ` · p.${binding.page}` : ""}
-        {binding.confidence_band ? ` · ${binding.confidence_band}` : ""}
-      </p>
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-medium text-foreground">
+          Evidence #{binding.evidence_id}
+          {binding.page != null ? ` · p.${binding.page}` : ""}
+          {binding.confidence_band ? ` · ${binding.confidence_band}` : ""}
+        </p>
+        {onInspect ? (
+          <button
+            type="button"
+            className="shrink-0 text-[10px] font-medium text-primary underline-offset-2 hover:underline"
+            onClick={() => onInspect(binding)}
+          >
+            Open in Inspector
+          </button>
+        ) : null}
+      </div>
       {binding.claim ? <p className="mt-1 text-muted-foreground">{binding.claim}</p> : null}
       {binding.quote ? (
         <p className="mt-1 border-l-2 border-emerald-700/40 pl-2 italic text-muted-foreground">
@@ -119,14 +136,18 @@ function SectionVerify({
   section,
   issues,
   accepted,
+  acceptAllowed,
   onAccept,
   onRevise,
+  onInspectEvidence,
 }: {
   section: GroundedWritingSection;
   issues: WritingReview["issues"];
   accepted: boolean;
+  acceptAllowed: boolean;
   onAccept: () => void;
   onRevise: () => void;
+  onInspectEvidence?: (binding: GroundedWritingBinding) => void;
 }) {
   const [hoverId, setHoverId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -135,6 +156,7 @@ function SectionVerify({
   const activeId = selectedId ?? hoverId;
   const activeBinding = activeId != null ? bindingMap.get(activeId) : undefined;
   const sectionIssues = issues.filter((i) => i.section_id === section.id);
+  const errorCount = sectionIssues.filter((i) => i.severity === "error").length;
 
   if (section.status !== "ok" || !section.paragraph) return null;
 
@@ -144,18 +166,22 @@ function SectionVerify({
         "rounded-md border p-3",
         accepted ? "border-emerald-700/40 bg-emerald-500/5" : "border-border bg-card/40",
       )}
+      data-section-id={section.id}
+      id={`writing-section-${section.id}`}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           {section.title || section.id}
           {section.confidence ? ` · ${section.confidence}` : ""}
           {accepted ? " · accepted" : ""}
+          {errorCount > 0 ? ` · ${errorCount} finding${errorCount === 1 ? "" : "s"}` : ""}
         </p>
         <div className="flex gap-1">
           <Button
             size="sm"
             variant={accepted ? "default" : "outline"}
             className="h-6 gap-1 px-2 text-[10px]"
+            disabled={!acceptAllowed || accepted}
             onClick={onAccept}
           >
             <Check className="size-3" /> Accept
@@ -187,7 +213,7 @@ function SectionVerify({
             <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               Evidence
             </p>
-            <EvidenceCard binding={activeBinding} />
+            <EvidenceCard binding={activeBinding} onInspect={onInspectEvidence} />
           </motion.div>
         ) : (section.bindings?.length ?? 0) > 0 ? (
           <motion.div
@@ -221,19 +247,25 @@ export function GroundedDraftVerify({
   writing,
   onRevise,
   onAcceptSection,
+  acceptAllowed = true,
+  onInspectEvidence,
 }: {
   writing: GroundedWritingResult;
   onRevise: () => void;
   /** Persist section into manuscript (Phase A.1 — Accept must save, not only toggle UI). */
   onAcceptSection?: (section: GroundedWritingSection) => void | Promise<void>;
+  /** When false, section Accept buttons are disabled (Reviewer fail-closed). */
+  acceptAllowed?: boolean;
+  onInspectEvidence?: (binding: GroundedWritingBinding) => void;
 }) {
   const sections = (writing.sections || []).filter((s) => s.status === "ok" && s.paragraph);
   const [accepted, setAccepted] = useState<Set<string>>(new Set());
   const [pendingId, setPendingId] = useState<string | null>(null);
   const issues = writing.review?.issues || [];
+  const allowed = acceptAllowed && writing.accept_allowed !== false;
 
   const handleAccept = async (section: GroundedWritingSection) => {
-    if (accepted.has(section.id)) return;
+    if (!allowed || accepted.has(section.id)) return;
     setPendingId(section.id);
     try {
       await onAcceptSection?.(section);
@@ -256,6 +288,7 @@ export function GroundedDraftVerify({
         {writing.writing_version || writing.mode
           ? ` · ${writing.mode || "grounded"} ${writing.writing_version || ""}`.trimEnd()
           : ""}
+        {!allowed ? " · accept disabled" : ""}
       </p>
       {writing.ri_context &&
       ((writing.ri_context.themes?.length ?? 0) > 0 ||
@@ -305,8 +338,10 @@ export function GroundedDraftVerify({
           section={sec}
           issues={issues}
           accepted={accepted.has(sec.id)}
+          acceptAllowed={allowed}
           onAccept={() => void handleAccept(sec)}
           onRevise={onRevise}
+          onInspectEvidence={onInspectEvidence}
         />
       ))}
       {pendingId ? (

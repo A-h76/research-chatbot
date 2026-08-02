@@ -6,6 +6,7 @@ import {
   GitCompare,
   MessageSquare,
   FolderPlus,
+  FolderMinus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LibraryImportMenu } from "./LibraryImportMenu";
@@ -30,6 +31,9 @@ export function CollectionToolbar({
   onBulkCompare,
   onBulkAsk,
   onBulkAddToCollection,
+  onBulkRemoveFromCollection,
+  needPdfFilter = false,
+  onClearNeedPdf,
   className,
 }: {
   q: string;
@@ -38,7 +42,7 @@ export function CollectionToolbar({
   onToggleFilters: () => void;
   isUploading?: boolean;
   onUpload: () => void;
-  onBibtex: () => void;
+  onBibtex?: () => void;
   onZoteroImport?: () => void;
   onMendeleyImport?: () => void;
   selectedCount?: number;
@@ -46,6 +50,9 @@ export function CollectionToolbar({
   onBulkCompare?: () => void;
   onBulkAsk?: () => void;
   onBulkAddToCollection?: () => void;
+  onBulkRemoveFromCollection?: () => void;
+  needPdfFilter?: boolean;
+  onClearNeedPdf?: () => void;
   className?: string;
 }) {
   const hasSelection = selectedCount > 0;
@@ -103,6 +110,21 @@ export function CollectionToolbar({
         </Button>
       </div>
 
+      {needPdfFilter ? (
+        <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          <span className="rounded border border-amber-600/40 bg-amber-500/5 px-2 py-1 text-amber-900 dark:text-amber-100">
+            Showing papers that need a PDF
+          </span>
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={onClearNeedPdf}
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
+
       {hasSelection && (
         <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted/40 px-3 py-2">
           <span className="text-[12px] font-medium tabular-nums text-foreground">
@@ -138,6 +160,17 @@ export function CollectionToolbar({
             <FolderPlus className="size-3.5" />
             Add to collection
           </Button>
+          {onBulkRemoveFromCollection ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 text-[12px]"
+              onClick={onBulkRemoveFromCollection}
+            >
+              <FolderMinus className="size-3.5" />
+              Remove from collection
+            </Button>
+          ) : null}
           <button
             type="button"
             className="ml-auto text-[12px] text-muted-foreground hover:text-foreground"

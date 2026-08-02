@@ -14,6 +14,7 @@ import {
   FlaskConical,
   BookOpen,
   MessageSquare,
+  Plug,
 } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import {
@@ -29,6 +30,7 @@ import {
 import { AccountSection } from "../sections/AccountSection";
 import { ResearchDefaultsSection } from "../sections/ResearchDefaultsSection";
 import { DataControlsSection } from "../sections/DataControlsSection";
+import { IntegrationsSection } from "../sections/IntegrationsSection";
 import { PromptsSection, TestAiSection } from "@/features/ai/sections/AiSections";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +45,13 @@ type SectionDef = {
 const SECTIONS: SectionDef[] = [
   { id: "account", label: "Account", icon: UserRound, render: AccountSection, group: "main" },
   { id: "appearance", label: "Appearance", icon: Palette, render: AppearanceSection, group: "main" },
+  {
+    id: "integrations",
+    label: "Integrations",
+    icon: Plug,
+    render: IntegrationsSection,
+    group: "main",
+  },
   {
     id: "research",
     label: "Research defaults",

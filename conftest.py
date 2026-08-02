@@ -19,6 +19,14 @@ run before every test file, avoids that class of bug entirely.
 import os
 import tempfile
 
+# Host shells sometimes export FLASK_ENV=production. Tests must not inherit
+# fail-closed production boot (REDIS_URL / ClamAV / OAuth secrets).
+for _prod_key in ("FLASK_ENV", "APP_ENV"):
+    if (os.environ.get(_prod_key) or "").strip().lower() == "production":
+        os.environ[_prod_key] = "testing"
+os.environ.setdefault("RATE_LIMIT_MEMORY_OK", "1")
+os.environ.setdefault("CLAMAV_OPTIONAL", "1")
+
 _tmp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 _tmp_db.close()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp_db.name}"

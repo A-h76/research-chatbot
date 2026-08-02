@@ -99,6 +99,7 @@ export interface LibraryListParams {
   venue?: string;
   import_source?: "zotero" | "mendeley" | "bibtex" | "ris" | "discover" | "upload" | "import";
   collection_id?: number | null;
+  need_pdf?: boolean;
   recent_days?: number;
   sort?: "recent" | "title" | "authors" | "year" | "reading_status" | "size";
   order?: "asc" | "desc";
@@ -152,6 +153,7 @@ function buildLibraryQuery(params: LibraryListParams): string {
   if (params.venue)          p.set("venue", params.venue);
   if (params.import_source)  p.set("import_source", params.import_source);
   if (params.collection_id != null) p.set("collection_id", String(params.collection_id));
+  if (params.need_pdf) p.set("need_pdf", "1");
   if (params.recent_days != null) p.set("recent_days", String(params.recent_days));
   if (params.sort)           p.set("sort", params.sort);
   if (params.order)          p.set("order", params.order);

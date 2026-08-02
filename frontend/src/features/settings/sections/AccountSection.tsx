@@ -3,6 +3,7 @@ import { LogOut, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { useMe, useUpdateProfile } from "@/features/profile/useMe";
 import { api } from "@/lib/apiClient";
 import { toast } from "@/components/common/Toast";
@@ -24,6 +25,7 @@ export function AccountSection() {
   const [passwordBusy, setPasswordBusy] = useState(false);
 
   const [logoutBusy, setLogoutBusy] = useState(false);
+  const [confirmLogoutAll, setConfirmLogoutAll] = useState(false);
 
   const hasPassword = Boolean(me?.has_password);
   const provider = me?.auth_provider || "password";
@@ -200,22 +202,14 @@ export function AccountSection() {
           <Shield className="size-4" /> Sessions
         </p>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          Sign out everywhere, including this device. You&apos;ll need to sign in again.
+          Revoke every active session and signed-in JWT (this device included).
+          Other browsers and apps must sign in again.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button
             variant="outline"
             disabled={logoutBusy}
-            onClick={async () => {
-              setLogoutBusy(true);
-              try {
-                await api.post("/api/auth/logout-all");
-                window.location.href = "/auth/sign-in";
-              } catch {
-                toast.error("Could not revoke sessions");
-                setLogoutBusy(false);
-              }
-            }}
+            onClick={() => setConfirmLogoutAll(true)}
           >
             Sign out all devices
           </Button>
@@ -224,6 +218,28 @@ export function AccountSection() {
           </Button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmLogoutAll}
+        onOpenChange={setConfirmLogoutAll}
+        title="Sign out everywhere?"
+        description="All devices and API tokens for this account will be revoked immediately."
+        consequence="You will be signed out on this device and must sign in again."
+        confirmLabel="Sign out all devices"
+        cancelLabel="Stay signed in"
+        destructive
+        onConfirm={async () => {
+          setLogoutBusy(true);
+          try {
+            await api.post("/api/auth/logout-all");
+            toast.success("All sessions revoked");
+            window.location.href = "/auth/sign-in";
+          } catch {
+            toast.error("Could not revoke sessions");
+            setLogoutBusy(false);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -25,17 +25,17 @@
 ## Deploy checklist (minimum)
 
 1. Postgres (worker requires it — SQLite is API-only)  
-2. Run migrations through **0033** (Writing + Evidence)  
+2. Run migrations through current Writing + Evidence set  
 3. `FLASK_SECRET_KEY` set (no random multi-process fallback in prod)  
 4. `DEV_AUTO_LOGIN` off — startup should refuse if left on in prod  
-5. `ALLOWED_EMAILS` / invite gates for closed beta  
+5. `BETA_INVITE_ONLY=1` + `ALLOWED_EMAILS` / Admin invites for closed beta — see [`docs/auth-v1-deploy-checklist.md`](../docs/auth-v1-deploy-checklist.md)  
 6. Object storage (R2/S3/local) configured  
 7. Optional Redis for multi-worker rate limit  
-8. Worker process + web process  
+8. Worker process + web process — smoke `GET /api/worker/health` → `ok` ([`docs/upload-worker-v1-deploy-checklist.md`](../docs/upload-worker-v1-deploy-checklist.md))  
 9. Confirm `/metrics` token or loopback-only  
 10. Smoke: login → library upload → Evidence extract → Writing Studio  
 
-Scripts / notes: `deploy/`, `scripts/`, `docs/testing-guide.md`
+Scripts / notes: `deploy/`, `scripts/`, `docs/testing-guide.md`, `docs/auth-v1-deploy-checklist.md`, `docs/upload-worker-v1-deploy-checklist.md`
 
 ---
 
@@ -88,7 +88,7 @@ Scripts / notes: `deploy/`, `scripts/`, `docs/testing-guide.md`
 - [ ] Deploy pipeline / Dependabot / pip-audit  
 - [ ] Sentry + product analytics  
 - [ ] Documented backup runbooks  
-- [ ] Step-up reauth for account deletion  
+- [x] Step-up reauth for account deletion (#16)  
 - [ ] Billing (SaaS-PK track)  
 - [ ] Horizontal scaling story beyond SKIP LOCKED workers  
 

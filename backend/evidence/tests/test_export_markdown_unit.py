@@ -75,11 +75,81 @@ def test_export_contains_body_appendix_bibliography_metadata():
     assert "### Evidence #1" in md
     assert "significant reduction" in md
     assert "## Bibliography" in md
-    assert "1. [#1] Drug X helps, page 4" in md
+    assert "1. [#1] Drug X helps (p. 4)" in md
     assert "## Generation metadata" in md
     assert "writing_version: 1.3.1" in md
     assert "evidence_traceability_100: yes" in md
     assert "research_reviewer: pass" in md
+
+
+def test_can_export_blocks_on_reviewer_error_severity():
+    from backend.evidence.writing.export_markdown import can_export_grounded_lit_review
+
+    writing = {
+        "status": "ok",
+        "accept_allowed": True,
+        "paragraph": "ok [#1].",
+        "sections": [
+            {
+                "id": "themes",
+                "status": "ok",
+                "paragraph": "ok [#1].",
+                "evidence_ids": [1],
+                "bindings": [{"evidence_id": 1, "claim": "c"}],
+                "orphan_ids": [],
+            }
+        ],
+        "review": {
+            "status": "fail",
+            "issues": [
+                {"code": "x", "severity": "error", "message": "blocking"},
+            ],
+        },
+    }
+    ok, reason = can_export_grounded_lit_review(writing)
+    assert ok is False
+    assert reason and "error-severity" in reason
+
+
+def test_can_export_allows_clean_draft():
+    from backend.evidence.writing.export_markdown import (
+        build_bibtex_from_writing,
+        can_export_grounded_lit_review,
+    )
+
+    writing = {
+        "status": "ok",
+        "accept_allowed": True,
+        "paragraph": "ok [#1].",
+        "sections": [
+            {
+                "id": "themes",
+                "status": "ok",
+                "paragraph": "ok [#1].",
+                "evidence_ids": [1],
+                "bindings": [
+                    {
+                        "evidence_id": 1,
+                        "file_id": 9,
+                        "claim": "c",
+                        "paper_title": "A Study",
+                        "authors": "Ada",
+                        "year": "2024",
+                        "doi": "10.1/x",
+                    }
+                ],
+                "orphan_ids": [],
+            }
+        ],
+        "review": {"status": "pass", "issues": []},
+    }
+    ok, reason = can_export_grounded_lit_review(writing)
+    assert ok is True
+    assert reason is None
+    bib = build_bibtex_from_writing(writing)
+    assert "@article{" in bib
+    assert "A Study" in bib
+    assert "10.1/x" in bib
 
 
 def test_traceability_fails_without_bindings():

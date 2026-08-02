@@ -19,14 +19,37 @@ def create_discover_blueprint(
     login_required,
     file_to_dict,
     app_logger,
+    feature_flag_service=None,
+    discover_flag: str = "discover_search",
 ):
     bp = Blueprint("discover_routes", __name__)
+
+    def _flag_blocked_payload():
+        """Return error dict if Discover is feature-flagged off, else None."""
+        if feature_flag_service is None:
+            return None
+        uid = session.get("user_id")
+        try:
+            uid_int = int(uid) if uid is not None else None
+        except (TypeError, ValueError):
+            uid_int = None
+        if feature_flag_service.is_enabled(discover_flag, user_id=uid_int):
+            return None
+        return {
+            "error": "feature_disabled",
+            "flag": discover_flag,
+            "message": "Discover is temporarily disabled.",
+        }
 
     @bp.route("/api/discover", methods=["GET"])
     @login_required
     def scholarly_discover():
         from backend.scholarly import provider_enabled
         from backend.scholarly.openalex import search_works
+
+        blocked = _flag_blocked_payload()
+        if blocked is not None:
+            return jsonify({**blocked, "results": []}), 503
 
         if not provider_enabled("openalex"):
             return (
@@ -90,6 +113,10 @@ def create_discover_blueprint(
     def scholarly_discover_import():
         from backend.scholarly import provider_enabled
         from backend.scholarly.crossref import enrich_file_from_doi
+
+        blocked = _flag_blocked_payload()
+        if blocked is not None:
+            return jsonify(blocked), 503
 
         if not provider_enabled("openalex"):
             return (

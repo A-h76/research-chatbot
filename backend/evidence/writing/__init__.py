@@ -6,7 +6,13 @@ Public stage entry remains backend.evidence.writing_intelligence.
 
 from .citation_binder import bind_citations_to_sections, flatten_bindings
 from .context_builder import build_section_contexts, build_structured_argument
-from .export_markdown import build_literature_review_markdown, compute_export_traceability
+from .export_markdown import (
+    build_bibtex_from_writing,
+    build_literature_review_markdown,
+    can_export_grounded_lit_review,
+    compute_export_traceability,
+    merge_persisted_review_into_writing,
+)
 from .metrics import compute_writing_metrics
 from .planner import SECTION_TYPES, plan_sections
 from .reviewer import review_grounded_draft
@@ -33,5 +39,8 @@ __all__ = [
     "review_grounded_draft",
     "compute_writing_metrics",
     "build_literature_review_markdown",
+    "build_bibtex_from_writing",
+    "can_export_grounded_lit_review",
     "compute_export_traceability",
+    "merge_persisted_review_into_writing",
 ]

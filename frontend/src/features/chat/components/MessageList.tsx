@@ -5,6 +5,8 @@ import { StatusLine } from "./StatusLine";
 import type { Message, Source } from "@/types/api";
 import { mapExplainableChat } from "@/features/papers/mappers/chat";
 import type { WorkspaceReference } from "@/features/papers/mappers/chat";
+import { QuotaNotice } from "@/features/settings/components/QuotaNotice";
+import type { QuotaPayload } from "@/features/settings/quotaMessaging";
 
 export interface LiveStream {
   text: string;
@@ -16,6 +18,7 @@ export interface LiveStream {
   skill?: string;
   isStreaming: boolean;
   error: string | null;
+  quota?: QuotaPayload | null;
 }
 
 const MemoUserMessage = memo(UserMessage);
@@ -137,9 +140,13 @@ export function MessageList({
           <div>
             {live.status && <StatusLine text={live.status} />}
             {live.error ? (
-              <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                ⚠ {live.error}
-              </div>
+              live.quota ? (
+                <QuotaNotice quota={live.quota} tone="error" />
+              ) : (
+                <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  {live.error}
+                </div>
+              )
             ) : (
               (live.text || live.isStreaming) && (
                 <AssistantMessage

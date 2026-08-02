@@ -101,88 +101,60 @@ def _mock_failing_registries(mocker, exc):
     return prompt_registry, model_registry
 
 
-# ------------------------------------------------------------ extract_metadata
-def test_extract_metadata_calls_prompt_registry_with_excerpt(db, uf, mocker):
-    prompt_registry, model_registry = _mock_registries(mocker, {"title": "A Test Paper"})
-    job = server.UploadJob(file_id=uf.id, user_id=uf.user_id, job_type="extract_metadata", status="running")
-    db.add(job)
-    db.commit()
-
-    worker._handle_extract_metadata(db, job)
-
-    prompt_registry.get_prompt.assert_called_once()
-    name = prompt_registry.get_prompt.call_args[0][0]
-    variables = prompt_registry.get_prompt.call_args.kwargs["variables"]
-    assert name == "extract_metadata"
-    assert "FAKE PAPER TEXT" in variables["excerpt"]
-
-
-def test_extract_metadata_calls_model_registry_with_user_id_and_json_mode(db, uf, mocker):
-    _, model_registry = _mock_registries(mocker, {"title": "X"})
-    job = server.UploadJob(file_id=uf.id, user_id=uf.user_id, job_type="extract_metadata", status="running")
-    db.add(job)
-    db.commit()
-
-    worker._handle_extract_metadata(db, job)
-
-    model_registry.call.assert_called_once()
-    call = model_registry.call.call_args
-    assert call.args[0] == server.UTILITY_MODEL
-    assert call.kwargs["user_id"] == uf.user_id
-    assert call.kwargs["response_format"] == {"type": "json_object"}
-
-
-def test_extract_metadata_writes_fields_to_userfile(db, uf, mocker):
-    _mock_registries(
-        mocker,
-        {
-            "title": "A Test Paper",
-            "authors": "Smith, J.; Doe, A.",
-            "year": "2023",
-            "venue": "Test Journal",
-            "doi": "10.1/test",
-            "abstract": "An abstract.",
-        },
+# ------------------------------------------------------------ extract_metadata (drain shim #17)
+def test_extract_metadata_handler_redirects_to_phase1(db, uf, mocker):
+    """Leftover extract_metadata jobs must not call the LLM — enqueue phase1."""
+    prompt_registry, model_registry = _mock_registries(mocker, {"title": "unused"})
+    job = server.UploadJob(
+        file_id=uf.id, user_id=uf.user_id, job_type="extract_metadata", status="running"
     )
-    job = server.UploadJob(file_id=uf.id, user_id=uf.user_id, job_type="extract_metadata", status="running")
     db.add(job)
     db.commit()
 
-    worker._handle_extract_metadata(db, job)
+    with pytest.warns(DeprecationWarning, match="extract_metadata"):
+        worker._handle_extract_metadata(db, job)
 
-    updated = db.get(server.UserFile, uf.id)
-    assert updated.title == "A Test Paper"
-    assert updated.authors == "Smith, J.; Doe, A."
-    assert updated.year == "2023"
-    assert updated.venue == "Test Journal"
-    assert updated.meta_status == "done"
+    prompt_registry.get_prompt.assert_not_called()
+    model_registry.call.assert_not_called()
+    phase1 = (
+        db.execute(
+            server.select(server.UploadJob).where(
+                server.UploadJob.file_id == uf.id,
+                server.UploadJob.job_type == "phase1_analysis",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(phase1) == 1
+    assert phase1[0].status == "pending"
 
 
-def test_extract_metadata_skips_when_already_done(db, uf, mocker):
-    uf.content_hash = worker._sha256("FAKE PAPER TEXT")
+def test_extract_metadata_handler_skips_when_meta_already_done(db, uf, mocker):
     uf.meta_status = "done"
     db.commit()
     _, model_registry = _mock_registries(mocker, {"title": "should not be reached"})
-    job = server.UploadJob(file_id=uf.id, user_id=uf.user_id, job_type="extract_metadata", status="running")
+    job = server.UploadJob(
+        file_id=uf.id, user_id=uf.user_id, job_type="extract_metadata", status="running"
+    )
     db.add(job)
     db.commit()
 
-    worker._handle_extract_metadata(db, job)
-
-    model_registry.call.assert_not_called()
-
-
-def test_extract_metadata_sets_failed_status_and_reraises_on_ai_error(db, uf, mocker):
-    _mock_failing_registries(mocker, ModelError("bad key", provider="openai", model="gpt-4o-mini"))
-    job = server.UploadJob(file_id=uf.id, user_id=uf.user_id, job_type="extract_metadata", status="running")
-    db.add(job)
-    db.commit()
-
-    with pytest.raises(ModelError):
+    with pytest.warns(DeprecationWarning, match="extract_metadata"):
         worker._handle_extract_metadata(db, job)
 
-    updated = db.get(server.UserFile, uf.id)
-    assert updated.meta_status == "failed"
+    model_registry.call.assert_not_called()
+    phase1 = (
+        db.execute(
+            server.select(server.UploadJob).where(
+                server.UploadJob.file_id == uf.id,
+                server.UploadJob.job_type == "phase1_analysis",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(phase1) == 0
 
 
 # ------------------------------------------------------------ paper_analysis

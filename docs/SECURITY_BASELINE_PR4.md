@@ -60,9 +60,9 @@ test_pr2_metrics.py, auth/test_magic_link.py
 
 ---
 
-## Residual / follow-ups
+- Residual / follow-ups
 - Review CSP reports in prod, then consider enforcing CSP  
-- Step-up reauth for account deletion (still open)  
+- ~~Step-up reauth for account deletion~~ → done (#16, `security/ops/step_up.py`)  
 - Optional `CSP report-uri` / report-to endpoint  
 
 ---

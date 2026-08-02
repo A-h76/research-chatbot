@@ -30,6 +30,7 @@ class LibrarySearchParams:
     kind: str | None = None
     reading_status: str | None = None
     meta_status: str | None = None
+    need_pdf: bool = False  # metadata-only stubs (no PDF path/size)
     tags: list[str] = field(default_factory=list)
     q: str | None = None
     title: str | None = None
@@ -98,6 +99,8 @@ def params_from_request(args, user_id: int) -> LibrarySearchParams:
         tags.append(parsed["tag"])
     sort = (args.get("sort") or "recent").strip().lower()
     order = (args.get("order") or "").strip().lower() or None
+    need_pdf_raw = (args.get("need_pdf") or "").strip().lower()
+    need_pdf = need_pdf_raw in {"1", "true", "yes"}
 
     return LibrarySearchParams(
         user_id=user_id,
@@ -106,6 +109,7 @@ def params_from_request(args, user_id: int) -> LibrarySearchParams:
         kind=(args.get("kind") or "").strip().lower() or None,
         reading_status=(args.get("reading_status") or "").strip().lower() or None,
         meta_status=(args.get("meta_status") or "").strip().lower() or None,
+        need_pdf=need_pdf,
         tags=tags,
         q=remainder or None,
         title=(args.get("title") or parsed.get("title") or "").strip() or None,
@@ -196,6 +200,13 @@ def build_filtered_query(UserFile, params: LibrarySearchParams):
 
     if params.meta_status in ("pending", "running", "done", "failed"):
         base = base.where(UserFile.meta_status == params.meta_status)
+
+    if params.need_pdf:
+        # Match research_readiness metadata_only / health.need_pdf
+        base = base.where(
+            or_(UserFile.path.is_(None), UserFile.path == ""),
+            or_(UserFile.size.is_(None), UserFile.size <= 0),
+        )
 
     for tag in params.tags:
         base = base.where(_tag_contains(UserFile, tag))

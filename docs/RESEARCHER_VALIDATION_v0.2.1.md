@@ -1,6 +1,6 @@
 # Researcher Validation Sprint — v0.2.1
 
-**Status:** Active  
+**Status:** Engineering Success Gate PASSED 2026-08-02 — see [`PRIVATE_ALPHA_SUCCESS_GATE_v1.md`](./PRIVATE_ALPHA_SUCCESS_GATE_v1.md). Human cohort invite ladder remains active for product scale.  
 **Parent:** [`BETA_EXECUTION_PLAN_v0.2.1.md`](./BETA_EXECUTION_PLAN_v0.2.1.md)  
 **Rule:** No new features. Observe → record friction → fix **only** smoke-path blockers → invite 20.
 

@@ -39,7 +39,21 @@ Day-to-day index of route names. **Authoritative request/response shapes for Evi
 | GET/POST/PATCH | `/api/projects`… | Session | `Project` |
 | GET/POST/DELETE | `/api/files`… | Session | `Paper` (alias file) |
 | POST | `/api/documents/upload` | JWT | `Paper` + job |
-| GET | `/api/library/connections` | Session | Connection status |
+| GET | `/api/usage` | Session | Entitlement usage summary (+ soft-warn) |
+| GET/PATCH | `/api/admin/ops/quotas/<user_id>` | Admin | Inspect / set limits / plan |
+| POST | `/api/admin/ops/quotas/<user_id>/reset` | Admin | Reset monthly usage |
+| GET/POST | `/api/admin/ops/quotas/disabled` | Admin | Temporarily disable quotas |
+| GET | `/api/admin/ops/quotas/analytics` | Admin | Consumption by operation / user |
+| GET | `/api/integrations/catalog/public` | Public | Live / Coming Soon for landing honesty |
+| GET | `/api/library/connections` | Session | Connection status (legacy; prefer catalog) |
+| GET | `/api/library/health` | Session | Readiness + need_pdf counts |
+| GET/POST | `/api/library/duplicates`… | Session | Duplicate groups + merge |
+| POST | `/api/library/files/<id>/attach` | Session | Attach PDF to stub |
+| POST | `/api/library/{zotero\|mendeley}/sync` | Session | **202** enqueue `library_sync` job (+ `sync:true` inline) |
+| POST | `/api/library/{zotero\|mendeley}/pull-pdfs` | Session | Pull PDFs from ref-mgr onto need_pdf stubs; enqueue `import` |
+| POST | `/api/library/files/<id>/pull-pdf` | Session | Pull PDF for one stub from linked provider |
+| GET | `/api/library/sync/runs`… | Session | Sync run history + poll by id |
+| CRUD | `/api/library/collections`… | Session | Collections + membership |
 | CRUD | `/api/writing/documents`… | Session | `WritingDocument` |
 | POST | `/api/search` | Session | `SearchResult[]` |
 

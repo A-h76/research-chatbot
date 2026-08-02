@@ -48,11 +48,14 @@ def create_library_bridge_blueprint(
     allowed_extensions=None,
     LibrarySyncRun=None,
     token_secret_key="",
+    UploadJob=None,
+    OutboxEvent=None,
 ):
     bp = Blueprint("library_bridge", __name__)
     # Prefer full import (extract + chunk + phase1); fall back to phase1-only.
     _enqueue_after_attach = enqueue_import or enqueue_phase1
     _tok_key = token_secret_key or ""
+    _can_enqueue_sync = UploadJob is not None and OutboxEvent is not None
 
     def _seal(plain: str) -> str:
         return seal_secret(plain, secret_key=_tok_key)
@@ -196,6 +199,7 @@ def create_library_bridge_blueprint(
                         "external_user_id": (z.external_user_id if z else "") or "",
                         "last_synced_at": z.last_synced_at.isoformat() if z and z.last_synced_at else None,
                         "incremental_sync": True,
+                        "file_import": True,
                         "missing_env": zotero_mod.zotero_missing_env(),
                     },
                     "mendeley": {
@@ -206,6 +210,7 @@ def create_library_bridge_blueprint(
                         "external_user_id": (m.external_user_id if m else "") or "",
                         "last_synced_at": m.last_synced_at.isoformat() if m and m.last_synced_at else None,
                         "incremental_sync": True,
+                        "file_import": True,
                         "missing_env": mendeley_mod.mendeley_missing_env(),
                     },
                     "formats": ["bibtex", "ris"],
@@ -675,14 +680,38 @@ def create_library_bridge_blueprint(
         return jsonify({**result, "parsed": len(records), "source": "mendeley"}), 201
 
     def _run_provider_sync(provider: str):
-        """Shared Phase 1b incremental sync for Zotero / Mendeley."""
+        """Enqueue Phase 1b incremental sync (worker-backed).
+
+        Body ``sync: true`` runs inline (tests / no worker).
+        Returns 202 + job_id / sync_run_id for async path.
+        """
+        from .sync import execute_provider_sync
+
         if sync_service is None:
             return jsonify({"error": "sync_not_configured"}), 503
         data = request.get_json(silent=True) or {}
         limit = int(data.get("limit") or 200)
+        inline = bool(data.get("sync"))
+        uid = _uid()
+
+        active = sync_service.has_active_run(uid, provider)
+        if active and not inline:
+            return (
+                jsonify(
+                    {
+                        "error": "sync_already_running",
+                        "detail": "A sync is already queued or running for this provider.",
+                        "sync_run_id": active["id"],
+                        "job_id": active.get("job_id"),
+                        "status": active["status"],
+                    }
+                ),
+                409,
+            )
+
         db = SessionLocal()
         try:
-            row = _get_connection(db, _uid(), provider)
+            row = _get_connection(db, uid, provider)
             if not row:
                 return jsonify({"error": "not_connected"}), 400
             cursor_before = row.sync_cursor or ""
@@ -703,64 +732,86 @@ def create_library_bridge_blueprint(
         finally:
             db.close()
 
-        run_id = sync_service.start_run(_uid(), connection_id, provider, cursor_before)
-        try:
-            adapter = get_adapter(provider)
-            payload = adapter.synchronize(sync_cursor=cursor_before, limit=limit, **token_kwargs)
-            records = payload.get("records") or []
-            cursor_after = payload.get("sync_cursor") or cursor_before
-            applied = sync_service.apply_sync_records(
-                _uid(),
-                records,
-                source_tag=f"from-{provider}",
-            )
-            if applied.get("error"):
-                sync_service.finish_run(
-                    run_id,
-                    status="error",
-                    error_text=applied.get("error", "sync_failed"),
-                    cursor_after=cursor_before,
-                )
-                return jsonify(applied), 500
-
-            db = SessionLocal()
+        # Inline path (tests / forced sync) — blocks HTTP like Phase 1b before.
+        if inline or not _can_enqueue_sync:
             try:
-                row = _get_connection(db, _uid(), provider)
-                if row:
-                    row.sync_cursor = cursor_after
-                    row.last_synced_at = datetime.now(timezone.utc)
-                    row.updated_at = datetime.now(timezone.utc)
-                    db.commit()
-            finally:
-                db.close()
+                result = execute_provider_sync(
+                    sync_service=sync_service,
+                    SessionLocal=SessionLocal,
+                    LibraryConnection=LibraryConnection,
+                    user_id=uid,
+                    provider=provider,
+                    connection_id=connection_id,
+                    cursor_before=cursor_before,
+                    token_kwargs=token_kwargs,
+                    limit=limit,
+                )
+                return jsonify(result)
+            except Exception as exc:
+                return jsonify({"error": f"{provider}_sync_failed", "detail": str(exc)[:200]}), 502
 
-            sync_service.finish_run(
-                run_id,
-                status="ok",
-                created=applied.get("created", 0),
-                updated=applied.get("updated", 0),
-                skipped=applied.get("skipped", 0),
-                conflicts=applied.get("conflicts", 0),
-                cursor_after=cursor_after,
-                detail={"fetched": payload.get("fetched", len(records))},
+        # Async: queue UploadJob + LibrarySyncRun (status=queued).
+        run_id = sync_service.start_run(
+            uid,
+            connection_id,
+            provider,
+            cursor_before,
+            status="queued",
+            detail={"phase": "queued"},
+        )
+        db = SessionLocal()
+        try:
+            job = UploadJob(
+                file_id=None,
+                user_id=uid,
+                job_type="library_sync",
+                status="pending",
             )
-            return jsonify(
-                {
-                    **applied,
-                    "provider": provider,
-                    "fetched": payload.get("fetched", len(records)),
-                    "sync_run_id": run_id,
-                    "last_synced_at": datetime.now(timezone.utc).isoformat(),
-                }
+            db.add(job)
+            db.flush()
+            payload = {
+                "type": "library_sync",
+                "provider": provider,
+                "connection_id": connection_id,
+                "sync_run_id": run_id,
+                "limit": limit,
+                "cursor_before": cursor_before,
+                # Tokens stay on LibraryConnection — worker reloads + unseals.
+            }
+            db.add(
+                OutboxEvent(
+                    aggregate_type="upload_job",
+                    aggregate_id=job.id,
+                    event_type="job.enqueued",
+                    payload=json.dumps(payload, ensure_ascii=False),
+                )
             )
+            db.commit()
+            job_id = job.id
         except Exception as exc:
+            db.rollback()
             sync_service.finish_run(
                 run_id,
                 status="error",
-                error_text=str(exc)[:500],
+                error_text=f"enqueue_failed: {exc}"[:500],
                 cursor_after=cursor_before,
             )
-            return jsonify({"error": f"{provider}_sync_failed", "detail": str(exc)[:200]}), 502
+            return jsonify({"error": "enqueue_failed", "detail": str(exc)[:200]}), 500
+        finally:
+            db.close()
+
+        sync_service.patch_run_detail(run_id, {"job_id": job_id, "phase": "queued"})
+        return (
+            jsonify(
+                {
+                    "status": "queued",
+                    "provider": provider,
+                    "job_id": job_id,
+                    "sync_run_id": run_id,
+                }
+            ),
+            202,
+        )
 
     @bp.route("/api/library/zotero/sync", methods=["POST"])
     @login_required
@@ -785,6 +836,16 @@ def create_library_bridge_blueprint(
         except (TypeError, ValueError):
             limit = 20
         return jsonify({"items": sync_service.list_runs(_uid(), provider=provider, limit=limit)})
+
+    @bp.route("/api/library/sync/runs/<int:run_id>", methods=["GET"])
+    @login_required
+    def get_sync_run(run_id: int):
+        if sync_service is None:
+            return jsonify({"error": "sync_not_configured"}), 503
+        row = sync_service.get_run(_uid(), run_id)
+        if not row:
+            return jsonify({"error": "not_found"}), 404
+        return jsonify(row)
 
     @bp.route("/api/library/health", methods=["GET"])
     @login_required
@@ -1001,6 +1062,124 @@ def create_library_bridge_blueprint(
             return jsonify({"error": "attach_failed", "detail": str(exc)[:200]}), 500
         finally:
             db.close()
+
+    def _token_kwargs_for_row(db, row, provider: str) -> dict:
+        if provider == "zotero":
+            toks = _oauth_plain(row)
+            return {
+                "access_token": toks["access_token"],
+                "access_secret": toks["access_secret"],
+                "external_user_id": row.external_user_id,
+            }
+        toks = _oauth_plain(row)
+        token = (toks["access_token"] or "").strip()
+        if token:
+            return {"access_token": token}
+        refresh = (toks["refresh_token"] or "").strip()
+        if not refresh:
+            raise RuntimeError("mendeley_not_connected")
+        refreshed = mendeley_mod.refresh_access_token(refresh)
+        _store_oauth(
+            row,
+            access_token=refreshed.get("access_token") or "",
+            refresh_token=refreshed.get("refresh_token") or refresh,
+        )
+        row.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return {"access_token": _oauth_plain(row)["access_token"] or ""}
+
+    def _run_provider_pull_pdfs(provider: str, *, file_ids=None, limit=20):
+        from .file_pull import pull_pdfs_for_provider
+
+        if storage is None or not upload_dir:
+            return jsonify({"error": "storage_not_configured"}), 503
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), provider)
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            try:
+                token_kwargs = _token_kwargs_for_row(db, row, provider)
+            except Exception as exc:
+                return jsonify({"error": "auth_failed", "detail": str(exc)[:200]}), 401
+            result = pull_pdfs_for_provider(
+                db=db,
+                UserFile=UserFile,
+                select_fn=select_fn,
+                provider=provider,
+                user_id=_uid(),
+                token_kwargs=token_kwargs,
+                storage=storage,
+                upload_dir=upload_dir,
+                enqueue_import=_enqueue_after_attach,
+                file_ids=file_ids,
+                limit=limit,
+                max_file_mb=max_file_mb or 50,
+            )
+            db.commit()
+            return jsonify(result), 200 if result.get("ok") else 400
+        except Exception as exc:
+            db.rollback()
+            return jsonify({"error": "pull_failed", "detail": str(exc)[:200]}), 500
+        finally:
+            db.close()
+
+    @bp.route("/api/library/zotero/pull-pdfs", methods=["POST"])
+    @login_required
+    @_rate("20 per hour")
+    def zotero_pull_pdfs():
+        data = request.get_json(silent=True) or {}
+        raw_ids = data.get("file_ids") or []
+        file_ids = []
+        for x in raw_ids if isinstance(raw_ids, list) else []:
+            try:
+                file_ids.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        limit = int(data.get("limit") or (len(file_ids) if file_ids else 20))
+        return _run_provider_pull_pdfs("zotero", file_ids=file_ids or None, limit=limit)
+
+    @bp.route("/api/library/mendeley/pull-pdfs", methods=["POST"])
+    @login_required
+    @_rate("20 per hour")
+    def mendeley_pull_pdfs():
+        data = request.get_json(silent=True) or {}
+        raw_ids = data.get("file_ids") or []
+        file_ids = []
+        for x in raw_ids if isinstance(raw_ids, list) else []:
+            try:
+                file_ids.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        limit = int(data.get("limit") or (len(file_ids) if file_ids else 20))
+        return _run_provider_pull_pdfs("mendeley", file_ids=file_ids or None, limit=limit)
+
+    @bp.route("/api/library/files/<int:fid>/pull-pdf", methods=["POST"])
+    @login_required
+    @_rate("30 per hour")
+    def pull_pdf_for_file(fid: int):
+        """Pull PDF from the connected ref-mgr for one metadata stub."""
+        db = SessionLocal()
+        try:
+            uf = db.get(UserFile, fid)
+            if not uf or uf.user_id != _uid():
+                return jsonify({"error": "not_found"}), 404
+            provider = (getattr(uf, "external_provider", None) or "").strip().lower()
+            if provider not in {"zotero", "mendeley"}:
+                return (
+                    jsonify(
+                        {
+                            "error": "not_ref_mgr",
+                            "detail": "This paper is not linked to Zotero or Mendeley.",
+                        }
+                    ),
+                    400,
+                )
+            if not (getattr(uf, "external_item_id", None) or "").strip():
+                return jsonify({"error": "missing_external_id"}), 400
+        finally:
+            db.close()
+        return _run_provider_pull_pdfs(provider, file_ids=[fid], limit=1)
 
     @bp.route("/api/library/facets", methods=["GET"])
     @login_required

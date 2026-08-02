@@ -17,6 +17,9 @@ def create_writing_export_blueprint(
     Conversation,
     select_fn,
     login_required,
+    WritingDocument=None,
+    ReviewerRun=None,
+    ReviewerFinding=None,
 ):
     bp = Blueprint("writing_export_routes", __name__)
 
@@ -201,5 +204,136 @@ def create_writing_export_blueprint(
             fname = f"chat-{cid}.md"
 
         return send_file(io.BytesIO(blob), mimetype=mime, as_attachment=True, download_name=fname)
+
+    @bp.route("/api/writing/documents/<int:document_id>/export", methods=["POST"])
+    @login_required
+    def export_grounded_lit_review(document_id: int):
+        """Server-gated lit-review export (#18): MD (+ optional BibTeX) with Reviewer gate.
+
+        Body: ``{ writing, format?, writing_version?, title?, body? }``
+        ``format``: ``markdown`` (default) or ``markdown_bibtex``.
+        """
+        if WritingDocument is None:
+            return jsonify({"error": "not_configured"}), 503
+
+        from backend.evidence.writing.export_markdown import (
+            build_bibtex_from_writing,
+            build_literature_review_markdown,
+            can_export_grounded_lit_review,
+            compute_export_traceability,
+            merge_persisted_review_into_writing,
+        )
+        from backend.evidence.writing.reviewer_persistence import serialize_run
+
+        uid = session["user_id"]
+        data = request.get_json(silent=True) or {}
+        writing = data.get("writing")
+        if not isinstance(writing, dict):
+            return (
+                jsonify(
+                    {
+                        "error": "writing_required",
+                        "detail": "Body must include the grounded writing snapshot.",
+                    }
+                ),
+                400,
+            )
+
+        fmt = str(data.get("format") or "markdown").strip().lower()
+        want_bib = fmt in {"markdown_bibtex", "md_bib", "md+bib"}
+
+        db = SessionLocal()
+        try:
+            doc = db.execute(
+                select_fn(WritingDocument).where(
+                    WritingDocument.id == int(document_id),
+                    WritingDocument.user_id == uid,
+                )
+            ).scalar_one_or_none()
+            if not doc:
+                return jsonify({"error": "not_found"}), 404
+
+            # Merge latest persisted Reviewer run when available (B-514).
+            if ReviewerRun is not None and ReviewerFinding is not None:
+                run = (
+                    db.execute(
+                        select_fn(ReviewerRun)
+                        .where(
+                            ReviewerRun.document_id == int(document_id),
+                            ReviewerRun.user_id == uid,
+                        )
+                        .order_by(ReviewerRun.created_at.desc(), ReviewerRun.id.desc())
+                        .limit(1)
+                    )
+                    .scalars()
+                    .first()
+                )
+                if run is not None:
+                    findings = (
+                        db.execute(
+                            select_fn(ReviewerFinding)
+                            .where(ReviewerFinding.run_id == int(run.id))
+                            .order_by(ReviewerFinding.id.asc())
+                        )
+                        .scalars()
+                        .all()
+                    )
+                    payload = serialize_run(run, findings=list(findings))
+                    writing = merge_persisted_review_into_writing(
+                        writing, payload.get("review")
+                    )
+
+            ok, reason = can_export_grounded_lit_review(writing)
+            if not ok:
+                return (
+                    jsonify(
+                        {
+                            "error": "export_blocked",
+                            "detail": reason or "Export blocked by Research Reviewer",
+                            "reason": reason,
+                        }
+                    ),
+                    403,
+                )
+
+            title = str(data.get("title") or getattr(doc, "title", None) or "Literature review")
+            body = str(data.get("body") if data.get("body") is not None else (doc.content or ""))
+            if not body.strip():
+                return (
+                    jsonify(
+                        {
+                            "error": "empty_draft",
+                            "detail": "Draft is empty — generate and insert a grounded review first",
+                        }
+                    ),
+                    400,
+                )
+
+            writing_version = data.get("writing_version")
+            md = build_literature_review_markdown(
+                title=title,
+                body=body,
+                writing=writing,
+                writing_version=str(writing_version) if writing_version else None,
+            )
+            bib = build_bibtex_from_writing(writing) if want_bib else ""
+            safe = "".join(
+                c if c.isalnum() or c in "-_" else "-"
+                for c in title.lower().replace(" ", "-")
+            ).strip("-")[:60] or "literature-review"
+            base = f"{safe}-{document_id}"
+            trace = compute_export_traceability(writing)
+            return jsonify(
+                {
+                    "ok": True,
+                    "markdown": md,
+                    "bibtex": bib if (want_bib and bib.strip()) else None,
+                    "filename_base": base,
+                    "traceability": trace,
+                    "document_id": document_id,
+                }
+            )
+        finally:
+            db.close()
 
     return bp

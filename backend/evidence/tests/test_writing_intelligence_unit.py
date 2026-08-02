@@ -73,6 +73,7 @@ def test_build_writing_ok_and_blocked():
     )
     assert ok["status"] == "ok"
     assert ok["paragraph"]
+    assert ok.get("accept_allowed") is True
     assert ok["citations"][0]["evidence_id"] == 1
     assert "Evidence Layer" in ok["disclaimer"]
 
@@ -85,6 +86,48 @@ def test_build_writing_ok_and_blocked():
     )
     assert blocked["status"] == "blocked"
     assert blocked["paragraph"] is None
+    assert blocked.get("accept_allowed") is False
+
+
+def test_review_fail_disables_accept_but_keeps_draft_visible():
+    """Ungrounded prose → reviewer fail → accept_allowed false (Verify still has content)."""
+
+    def bad_composer(**_kwargs):
+        # Citations present so section status=ok; prose has no [#id] → unsupported_claim.
+        return (
+            "This invented claim has no citation markers at all.",
+            [
+                {
+                    "evidence_id": 1,
+                    "claim": "Real supporting claim about outcomes",
+                    "quote": "q",
+                    "page": 1,
+                    "file_id": 9,
+                    "confidence_band": "high",
+                }
+            ],
+            ["test_unbound"],
+        )
+
+    objects = [_obj(1, claim="Real supporting claim about outcomes")]
+    out = build_writing_intelligence(
+        query={
+            "query_text": "outcomes",
+            "section_type": "support_sentence",
+            "anchors": {},
+            "scope": {},
+        },
+        objects=objects,
+        reasoning={"sufficiency": "sufficient", "summary_code": "strong"},
+        consensus={"label": "strong", "supporting_ids": [1], "contradicting_ids": []},
+        conflict={"has_conflict": False, "mediators": []},
+        composer=bad_composer,
+    )
+    assert out["paragraph"]
+    assert out["status"] == "ok"
+    assert out.get("accept_allowed") is False
+    assert out.get("blocked_reason") == "reviewer_failed"
+    assert out["review"]["status"] == "fail"
 
 
 def test_apply_writing_stage_envelope():

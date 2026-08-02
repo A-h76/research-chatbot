@@ -280,19 +280,111 @@ class LibrarySyncService:
             "conflict_items": conflicts[:50],
         }
 
-    def start_run(self, user_id: int, connection_id: int | None, provider: str, cursor_before: str) -> int:
+    def start_run(
+        self,
+        user_id: int,
+        connection_id: int | None,
+        provider: str,
+        cursor_before: str,
+        *,
+        status: str = "running",
+        detail: dict | None = None,
+    ) -> int:
         db = self.SessionLocal()
         try:
             run = self.LibrarySyncRun(
                 user_id=user_id,
                 connection_id=connection_id,
                 provider=provider,
-                status="running",
+                status=status or "running",
                 cursor_before=cursor_before or "",
+                detail_json=json.dumps(detail or {})[:8000],
             )
             db.add(run)
             db.commit()
             return run.id
+        finally:
+            db.close()
+
+    def patch_run_detail(self, run_id: int, patch: dict, *, status: str | None = None) -> None:
+        db = self.SessionLocal()
+        try:
+            run = db.get(self.LibrarySyncRun, run_id)
+            if not run:
+                return
+            try:
+                current = json.loads(run.detail_json or "{}")
+            except json.JSONDecodeError:
+                current = {}
+            if not isinstance(current, dict):
+                current = {}
+            current.update(patch)
+            run.detail_json = json.dumps(current)[:8000]
+            if status:
+                run.status = status
+            db.commit()
+        finally:
+            db.close()
+
+    def has_active_run(self, user_id: int, provider: str) -> dict | None:
+        """Return the latest queued/running sync for this provider, if any."""
+        db = self.SessionLocal()
+        try:
+            row = (
+                db.execute(
+                    self.select(self.LibrarySyncRun)
+                    .where(
+                        self.LibrarySyncRun.user_id == user_id,
+                        self.LibrarySyncRun.provider == provider,
+                        self.LibrarySyncRun.status.in_(("queued", "running")),
+                    )
+                    .order_by(self.LibrarySyncRun.started_at.desc())
+                    .limit(1)
+                )
+                .scalars()
+                .first()
+            )
+            if not row:
+                return None
+            detail: dict = {}
+            try:
+                detail = json.loads(row.detail_json or "{}")
+            except json.JSONDecodeError:
+                detail = {}
+            return {
+                "id": row.id,
+                "status": row.status,
+                "job_id": detail.get("job_id"),
+                "provider": row.provider,
+            }
+        finally:
+            db.close()
+
+    def get_run(self, user_id: int, run_id: int) -> dict | None:
+        db = self.SessionLocal()
+        try:
+            row = db.get(self.LibrarySyncRun, run_id)
+            if not row or row.user_id != user_id:
+                return None
+            detail: dict = {}
+            try:
+                detail = json.loads(row.detail_json or "{}")
+            except json.JSONDecodeError:
+                detail = {}
+            return {
+                "id": row.id,
+                "provider": row.provider,
+                "status": row.status,
+                "started_at": row.started_at.isoformat() if row.started_at else None,
+                "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+                "created": row.created_count or 0,
+                "updated": row.updated_count or 0,
+                "skipped": row.skipped_count or 0,
+                "conflicts": row.conflict_count or 0,
+                "error": row.error_text or "",
+                "job_id": detail.get("job_id"),
+                "detail": detail,
+            }
         finally:
             db.close()
 
@@ -340,6 +432,11 @@ class LibrarySyncService:
             )
             out = []
             for r in rows:
+                detail: dict = {}
+                try:
+                    detail = json.loads(r.detail_json or "{}")
+                except json.JSONDecodeError:
+                    detail = {}
                 out.append(
                     {
                         "id": r.id,
@@ -352,8 +449,117 @@ class LibrarySyncService:
                         "skipped": r.skipped_count or 0,
                         "conflicts": r.conflict_count or 0,
                         "error": r.error_text or "",
+                        "job_id": detail.get("job_id"),
                     }
                 )
             return out
         finally:
             db.close()
+
+
+def execute_provider_sync(
+    *,
+    sync_service: LibrarySyncService,
+    SessionLocal,
+    LibraryConnection,
+    user_id: int,
+    provider: str,
+    connection_id: int,
+    cursor_before: str,
+    token_kwargs: dict,
+    limit: int = 200,
+    run_id: int | None = None,
+    job_id: int | None = None,
+) -> dict:
+    """Adapter fetch + apply + cursor update (worker or inline).
+
+    Never invents PDFs. Raises on adapter failure so the worker can retry.
+    """
+    from .adapters import get_adapter
+
+    if run_id is None:
+        run_id = sync_service.start_run(
+            user_id,
+            connection_id,
+            provider,
+            cursor_before,
+            status="running",
+            detail={"job_id": job_id} if job_id else None,
+        )
+    else:
+        sync_service.patch_run_detail(
+            run_id,
+            {"job_id": job_id, "phase": "fetching"} if job_id else {"phase": "fetching"},
+            status="running",
+        )
+
+    try:
+        adapter = get_adapter(provider)
+        payload = adapter.synchronize(sync_cursor=cursor_before, limit=limit, **token_kwargs)
+        records = payload.get("records") or []
+        cursor_after = payload.get("sync_cursor") or cursor_before
+        sync_service.patch_run_detail(
+            run_id,
+            {
+                "phase": "applying",
+                "fetched": payload.get("fetched", len(records)),
+            },
+        )
+        applied = sync_service.apply_sync_records(
+            user_id,
+            records,
+            source_tag=f"from-{provider}",
+        )
+        if applied.get("error"):
+            sync_service.finish_run(
+                run_id,
+                status="error",
+                error_text=applied.get("error", "sync_failed"),
+                cursor_after=cursor_before,
+                detail={"job_id": job_id, "phase": "error"},
+            )
+            raise RuntimeError(applied.get("error", "sync_failed"))
+
+        db = SessionLocal()
+        try:
+            row = db.get(LibraryConnection, connection_id)
+            if row and row.user_id == user_id:
+                row.sync_cursor = cursor_after
+                row.last_synced_at = datetime.now(timezone.utc)
+                row.updated_at = datetime.now(timezone.utc)
+                db.commit()
+        finally:
+            db.close()
+
+        detail = {
+            "job_id": job_id,
+            "phase": "done",
+            "fetched": payload.get("fetched", len(records)),
+        }
+        sync_service.finish_run(
+            run_id,
+            status="ok",
+            created=applied.get("created", 0),
+            updated=applied.get("updated", 0),
+            skipped=applied.get("skipped", 0),
+            conflicts=applied.get("conflicts", 0),
+            cursor_after=cursor_after,
+            detail=detail,
+        )
+        return {
+            **applied,
+            "provider": provider,
+            "fetched": payload.get("fetched", len(records)),
+            "sync_run_id": run_id,
+            "last_synced_at": datetime.now(timezone.utc).isoformat(),
+            "job_id": job_id,
+        }
+    except Exception as exc:
+        sync_service.finish_run(
+            run_id,
+            status="error",
+            error_text=str(exc)[:500],
+            cursor_after=cursor_before,
+            detail={"job_id": job_id, "phase": "error"},
+        )
+        raise

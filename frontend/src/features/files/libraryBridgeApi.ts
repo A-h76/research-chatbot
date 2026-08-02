@@ -10,6 +10,7 @@ export interface LibraryConnections {
     external_user_id: string;
     last_synced_at?: string | null;
     incremental_sync?: boolean;
+    file_import?: boolean;
     missing_env?: string[];
   };
   mendeley: {
@@ -20,6 +21,7 @@ export interface LibraryConnections {
     external_user_id?: string;
     last_synced_at?: string | null;
     incremental_sync?: boolean;
+    file_import?: boolean;
     missing_env?: string[];
   };
   formats: string[];
@@ -121,16 +123,19 @@ export const libraryBridgeApi = {
     limit?: number;
   }) => api.post<LibraryImportResult>("/api/library/mendeley/import", body),
 
-  zoteroSync: (body: { limit?: number } = {}) =>
+  zoteroSync: (body: { limit?: number; sync?: boolean } = {}) =>
     api.post<LibrarySyncResult>("/api/library/zotero/sync", body),
 
-  mendeleySync: (body: { limit?: number } = {}) =>
+  mendeleySync: (body: { limit?: number; sync?: boolean } = {}) =>
     api.post<LibrarySyncResult>("/api/library/mendeley/sync", body),
 
   syncRuns: (provider?: string) => {
     const q = provider ? `?provider=${encodeURIComponent(provider)}` : "";
     return api.get<{ items: LibrarySyncRun[] }>(`/api/library/sync/runs${q}`);
   },
+
+  syncRun: (runId: number) =>
+    api.get<LibrarySyncRun>(`/api/library/sync/runs/${runId}`),
 
   attachPdf: async (fileId: number, file: File) => {
     const fd = new FormData();
@@ -140,6 +145,15 @@ export const libraryBridgeApi = {
       fd,
     );
   },
+
+  pullPdf: (fileId: number) =>
+    api.post<LibraryPullPdfsResult>(`/api/library/files/${fileId}/pull-pdf`, {}),
+
+  pullZoteroPdfs: (body: { file_ids?: number[]; limit?: number } = {}) =>
+    api.post<LibraryPullPdfsResult>("/api/library/zotero/pull-pdfs", body),
+
+  pullMendeleyPdfs: (body: { file_ids?: number[]; limit?: number } = {}) =>
+    api.post<LibraryPullPdfsResult>("/api/library/mendeley/pull-pdfs", body),
 
   health: (projectId?: number | null) => {
     const q =
@@ -215,12 +229,14 @@ export interface LibraryMergeResult {
 
 export interface LibrarySyncResult {
   ok?: boolean;
-  created: number;
-  updated: number;
-  skipped: number;
-  conflicts: number;
+  status?: string;
+  created?: number;
+  updated?: number;
+  skipped?: number;
+  conflicts?: number;
   fetched?: number;
   sync_run_id?: number;
+  job_id?: number;
   last_synced_at?: string;
   provider?: string;
   error?: string;
@@ -238,4 +254,18 @@ export interface LibrarySyncRun {
   skipped: number;
   conflicts: number;
   error: string;
+  job_id?: number | null;
+}
+
+export interface LibraryPullPdfsResult {
+  ok?: boolean;
+  provider?: string;
+  pulled?: number;
+  queued?: number;
+  considered?: number;
+  skipped?: Array<{ external_id?: string; reason?: string }>;
+  errors?: Array<{ external_id?: string; error?: string; file_id?: number }>;
+  results?: Array<{ ok?: boolean; file_id?: number; queued?: boolean }>;
+  detail?: string;
+  error?: string;
 }

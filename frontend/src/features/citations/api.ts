@@ -42,6 +42,25 @@ export const citationsApi = {
   /** Crossref-verified formatting when DOI is present; else local AI-style. */
   format: (id: number, style: CitationFormat = "apa") =>
             api.get<FormattedCitation>(`/api/citations/${id}/format?style=${style}`),
+  /** Resolve manager citation → accepted EvidenceObject in project (for grounded insert). */
+  resolveEvidence: (id: number, projectId: number) =>
+    api.get<{
+      citation_id: number;
+      project_id: number;
+      insert_text: string;
+      parenthetical: string;
+      evidence_id: number | null;
+      evidence_ids: number[];
+      grounded: boolean;
+      matches: Array<{
+        evidence_id: number;
+        file_id: number;
+        claim: string;
+        quote: string;
+        page?: number | null;
+        score: number;
+      }>;
+    }>(`/api/citations/${id}/resolve-evidence?project_id=${projectId}`),
   exportUrl: (format: CitationFormat = "bibtex", projectId?: number | null) => {
     const p = new URLSearchParams({ format });
     if (projectId != null) p.set("project_id", String(projectId));

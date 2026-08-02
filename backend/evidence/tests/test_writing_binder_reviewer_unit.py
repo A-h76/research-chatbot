@@ -45,6 +45,43 @@ def test_binder_resolves_markers_and_flags_orphans():
     assert flatten_bindings(out)[0]["evidence_id"] == 1
 
 
+def test_binder_rebounds_misaligned_marker_to_overlapping_claim():
+    """Wrong allowed id for a sentence should rebind to best claim overlap."""
+    sections = [
+        {
+            "id": "themes",
+            "status": "ok",
+            "paragraph": "Drug X reduces HbA1c in adults with diabetes [#2].",
+            "citations": [],
+            "evidence_ids": [1, 2],
+        }
+    ]
+    objects = [
+        {
+            "id": 1,
+            "file_id": 9,
+            "page": 1,
+            "claim": "Drug X reduces HbA1c in adults with diabetes",
+            "quote": "reduces HbA1c",
+            "confidence_band": "high",
+        },
+        {
+            "id": 2,
+            "file_id": 9,
+            "page": 2,
+            "claim": "Placebo arm showed no glycemic change",
+            "quote": "no glycemic change",
+            "confidence_band": "high",
+        },
+    ]
+    out = bind_citations_to_sections(sections=sections, objects=objects)
+    para = out[0]["paragraph"]
+    assert "[#1]" in para
+    assert "[#2]" not in para
+    assert out[0]["evidence_ids"] == [1]
+    assert any("Rebound" in w for w in (out[0].get("warnings") or []))
+
+
 def test_reviewer_passes_bound_marked_sections():
     sections = [
         {

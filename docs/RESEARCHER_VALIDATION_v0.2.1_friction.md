@@ -3,11 +3,11 @@
 **Rule:** Fix only rows with Decision = `fix-before-20` (workflow blockers).  
 Everything else → `defer` or `waive`. No new features.
 
-Living list — append from session logs.
+Living list — append from session logs and engineering vertical smoke.
 
 | ID | Observation | Freq (n/N) | Severity | Decision | Owner | Status | Sessions |
 |----|-------------|------------|----------|----------|-------|--------|----------|
-| F-001 | _(example)_ Generate blocked with no guidance to Accept evidence | | blocker | fix-before-20 | | open | |
+| F-001 | Generate Lit Review blocked (`no_supporting_evidence`) after Accept when EvidenceObjects have empty `supports[]` (common extract without KG edges) | eng vertical | blocker | fix-before-20 | eng | **done** 2026-08-02 — `classify_stance` claim-bearing default + projector outcome stamp | vertical E2E |
 | F-002 | | | | | | | |
 | F-003 | | | | | | | |
 | F-004 | | | | | | | |

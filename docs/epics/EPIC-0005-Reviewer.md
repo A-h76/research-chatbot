@@ -61,7 +61,9 @@ Make the **Research Reviewer** a first-class, trustworthy surface: findings with
 
 ## Exit criteria
 
-- [ ] Users can see and act on findings before export  
-- [ ] Version stamped  
+- [x] Users can see and act on findings before export  
+- [x] Version stamped  
 - [x] Persistence shipped (`reviewer_runs` / `reviewer_findings`, reconstruct APIs, `ReviewCompleted`)
-- [ ] Distinct copy: “Research Reviewer” vs “Evidence review”
+- [x] Distinct copy: “Research Reviewer” vs “Evidence review”
+
+**V1 closed 2026-08-02:** B-511–B-514 + A-505 (`reviewer_version` / `issue_count` in export metadata).

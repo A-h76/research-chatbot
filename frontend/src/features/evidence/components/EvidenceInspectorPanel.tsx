@@ -33,8 +33,25 @@ const REJECT_REASONS = [
   "Weak methodology",
   "Small sample / low quality",
   "Duplicate claim",
+  "Claim equals quote",
+  "Missing study type",
   "Other",
 ] as const;
+
+function weakCandidateHints(evidence: EvidenceObjectDTO): string[] {
+  const hints: string[] = [];
+  const claim = (evidence.claim || "").trim();
+  const quote = (evidence.quote || "").trim();
+  if (!claim) hints.push("Empty claim");
+  else if (claim.toLowerCase() === quote.toLowerCase()) hints.push("Claim equals quote");
+  if (!evidence.study_type?.trim()) hints.push("Missing study type");
+  if ((evidence.confidence_band || "").toLowerCase() === "low") hints.push("Low confidence");
+  const prov = evidence.provenance;
+  if (prov && typeof prov === "object" && prov.claim_equals_quote === true) {
+    if (!hints.includes("Claim equals quote")) hints.push("Claim equals quote");
+  }
+  return hints;
+}
 
 export function EvidenceInspectorPanel({
   result,
@@ -318,6 +335,7 @@ function EvidenceObjectCard({
   const [whyMode, setWhyMode] = useState<"accept" | "reject" | null>(null);
   const [reason, setReason] = useState("");
   const presets = whyMode === "reject" ? REJECT_REASONS : ACCEPT_REASONS;
+  const hints = evidence.status === "candidate" ? weakCandidateHints(evidence) : [];
 
   return (
     <li className="rounded-md border border-border bg-card p-2.5 text-[12px]">
@@ -335,6 +353,18 @@ function EvidenceObjectCard({
           {evidence.relation}
         </span>
       </div>
+      {hints.length > 0 ? (
+        <div className="mb-1.5 flex flex-wrap gap-1">
+          {hints.map((h) => (
+            <span
+              key={h}
+              className="rounded border border-amber-600/30 bg-amber-500/5 px-1.5 py-0.5 text-[10px] text-amber-900 dark:text-amber-100"
+            >
+              {h}
+            </span>
+          ))}
+        </div>
+      ) : null}
       <p className="line-clamp-2 text-muted-foreground">&ldquo;{evidence.quote}&rdquo;</p>
       <p className="mt-1.5 text-[11px] text-muted-foreground">
         {evidence.file_title || `File ${evidence.file_id}`}

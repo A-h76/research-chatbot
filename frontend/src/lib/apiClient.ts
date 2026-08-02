@@ -1,8 +1,26 @@
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Machine code from JSON `error` when present (e.g. feature_disabled). */
+  code?: string;
+  /** Raw JSON body for structured fields (quota, detail, …). */
+  body?: Record<string, unknown>;
+  /** Parsed entitlement payload when BE attached `quota`. */
+  quota?: import("@/features/settings/quotaMessaging").QuotaPayload | null;
+
+  constructor(
+    message: string,
+    status: number,
+    opts?: {
+      code?: string;
+      body?: Record<string, unknown>;
+      quota?: import("@/features/settings/quotaMessaging").QuotaPayload | null;
+    },
+  ) {
     super(message);
     this.status = status;
+    this.code = opts?.code;
+    this.body = opts?.body;
+    this.quota = opts?.quota ?? null;
   }
 }
 
@@ -16,6 +34,26 @@ function handleUnauthorized() {
   window.dispatchEvent(new CustomEvent("soro:session-expired"));
 }
 
+function parseQuota(body: Record<string, unknown>) {
+  const q = body.quota;
+  if (q && typeof q === "object") {
+    return q as import("@/features/settings/quotaMessaging").QuotaPayload;
+  }
+  const err = String(body.error || "");
+  if (
+    err === "token_quota_exceeded" ||
+    err === "cost_quota_exceeded" ||
+    err === "storage_quota_exceeded"
+  ) {
+    return {
+      error: err,
+      message: String(body.detail || body.message || "Usage limit reached."),
+      label: err.includes("storage") ? "Storage" : "AI usage",
+    };
+  }
+  return null;
+}
+
 async function request<T>(url: string, opts: RequestInit = {}): Promise<T> {
   const isForm = opts.body instanceof FormData;
   const res = await fetch(url, {
@@ -26,9 +64,15 @@ async function request<T>(url: string, opts: RequestInit = {}): Promise<T> {
     handleUnauthorized();
     throw new ApiError("session_expired", 401);
   }
-  const body = await res.json().catch(() => ({}));
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    throw new ApiError(body.detail || body.error || "request_failed", res.status);
+    const code = typeof body.error === "string" ? body.error : undefined;
+    const message = String(body.detail || body.error || body.message || "request_failed");
+    throw new ApiError(message, res.status, {
+      code,
+      body,
+      quota: parseQuota(body),
+    });
   }
   return body as T;
 }
@@ -46,7 +90,11 @@ export const api = {
     }),
   patch: <T>(url: string, body?: unknown) =>
     request<T>(url, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
-  delete: <T>(url: string) => request<T>(url, { method: "DELETE" }),
+  delete: <T>(url: string, body?: unknown) =>
+    request<T>(url, {
+      method: "DELETE",
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
   // token is for JWT-only routes (e.g. /api/documents/upload) — everything
   // else here rides the session cookie, no token needed.
   postForm: <T>(url: string, form: FormData, token?: string) =>

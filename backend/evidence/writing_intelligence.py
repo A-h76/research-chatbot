@@ -35,6 +35,22 @@ DISCLAIMER = (
 _BLOCK_INSUFFICIENT = "insufficient_evidence"
 _BLOCK_OPPOSED = "opposed_evidence"
 _BLOCK_NO_SUPPORT = "no_supporting_evidence"
+_BLOCK_REVIEW_FAIL = "reviewer_failed"
+
+# Contested consensus: warn-and-generate (V1 policy). Do not block solely for contested.
+
+
+def _review_blocks_accept(review: dict[str, Any] | None) -> bool:
+    """Block Accept when any Reviewer issue has severity=error (B-514)."""
+    if not review:
+        return False
+    if review.get("status") != "fail" and not (review.get("issues") or []):
+        return False
+    for issue in review.get("issues") or []:
+        if str(issue.get("severity") or "").lower() == "error":
+            return True
+    # Fail status with no issues still blocks (defensive).
+    return review.get("status") == "fail"
 
 
 def _by_id(objects: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
@@ -245,6 +261,7 @@ def build_writing_intelligence(
     payload: dict[str, Any] = {
         "status": status,
         "blocked_reason": blocked_reason,
+        "accept_allowed": status == "ok",
         "mode": WRITING_MODE,
         "writing_version": WRITING_VERSION,
         "section_type": section_type or "support_sentence",
@@ -264,6 +281,7 @@ def build_writing_intelligence(
     }
 
     if status == "blocked":
+        payload["accept_allowed"] = False
         payload["warnings"] = [
             "Generation blocked: Research Intelligence did not find adequate supporting evidence."
         ]
@@ -306,6 +324,7 @@ def build_writing_intelligence(
     if not ok_sections:
         payload["status"] = "blocked"
         payload["blocked_reason"] = _BLOCK_NO_SUPPORT
+        payload["accept_allowed"] = False
         payload["plan"] = plan
         payload["sections"] = sections
         payload["review"] = review_grounded_draft(
@@ -372,6 +391,16 @@ def build_writing_intelligence(
         if issue.get("severity") == "warning":
             warnings.append(str(issue.get("message") or ""))
 
+    accept_allowed = True
+    if _review_blocks_accept(review):
+        # Keep status=ok so Verify UX remains visible; block Accept/export via flag.
+        accept_allowed = False
+        payload["blocked_reason"] = _BLOCK_REVIEW_FAIL
+        warnings.append(
+            "Accept blocked: Research Reviewer found unbound, unsupported, or orphan citations. "
+            "Revise the draft before inserting into the manuscript."
+        )
+
     payload["paragraph"] = paragraph
     payload["sections"] = sections
     payload["plan"] = plan
@@ -379,6 +408,7 @@ def build_writing_intelligence(
     payload["citations"] = citations
     payload["bibliography"] = bibliography
     payload["review"] = review
+    payload["accept_allowed"] = accept_allowed
     payload["warnings"] = [w for w in warnings if w]
     payload["metrics"] = compute_writing_metrics(
         sections=sections,

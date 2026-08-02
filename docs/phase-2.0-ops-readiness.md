@@ -55,7 +55,7 @@ Run as admin / facilitator before the first invite.
 
 - [ ] App reachable at production URL (dhund.com or agreed host)
 - [ ] Login works (Google / magic link / your auth path)
-- [ ] `GET /api/worker/health` → healthy (jobs can complete)
+- [ ] `GET /api/worker/health` → healthy (jobs can complete) — see [`upload-worker-v1-deploy-checklist.md`](./upload-worker-v1-deploy-checklist.md)
 - [ ] Frontend build is current (Library Health strip visible on `/library`)
 
 ### Library path (one throwaway account)
@@ -73,8 +73,10 @@ Run as admin / facilitator before the first invite.
 
 ### Invites
 
-- [ ] Create invite via `POST /api/admin/ops/invites` (or admin UI if you have one)
+- [ ] Create invite via Admin → Invites (`/admin/invites`) or `POST /api/admin/ops/invites`
 - [ ] Accept invite on a second email → lands in app
+- [ ] Confirm `BETA_INVITE_ONLY=1` + no `DEV_AUTO_LOGIN` per [`auth-v1-deploy-checklist.md`](./auth-v1-deploy-checklist.md)
+- [ ] Security baseline ops pass: [`security-baseline-v1-deploy-checklist.md`](./security-baseline-v1-deploy-checklist.md) (ClamAV, Redis limiter, optional Sentry)
 - [ ] Optional: `GET /api/admin/ops/beta-metrics?days=14` returns without error
 
 ### During the validation week (reuse, don’t dashboard)

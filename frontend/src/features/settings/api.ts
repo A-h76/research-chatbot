@@ -17,5 +17,7 @@ export function downloadExport(format: ExportFormat, conversationId?: number) {
 export const settingsApi = {
   deleteAllChats: () =>
     api.post<{ ok: boolean; deleted: number }>("/api/conversations/delete", { all: true }),
-  deleteAccount: () => api.delete<{ ok: boolean }>("/api/account"),
+  /** Step-up reauth: password accounts send password; OAuth-only send matching email. */
+  deleteAccount: (body: { confirm: "DELETE"; password?: string; email?: string }) =>
+    api.delete<{ ok: boolean }>("/api/account", body),
 };

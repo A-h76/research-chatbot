@@ -36,10 +36,12 @@ import {
   ClipboardList,
   PenLine,
   Layers,
+  Shield,
 } from "lucide-react";
 import { useAllFiles } from "@/features/files/useFiles";
 import { useProjects } from "@/features/projects/useProjects";
 import { useConversations } from "@/features/chat/hooks/useConversation";
+import { useMe } from "@/features/profile/useMe";
 import { useUI } from "@/context/UIContext";
 import type { ConversationSummary, Project, UserFile } from "@/types/api";
 
@@ -164,6 +166,7 @@ export function CommandPalette() {
   const { data: files = [] } = useAllFiles();
   const { data: projects = [] } = useProjects();
   const { data: conversations = [] } = useConversations();
+  const { data: me } = useMe();
 
   const scope = useMemo(
     () => resolveScope(location.pathname, currentProjectId),
@@ -392,14 +395,32 @@ export function CommandPalette() {
         id: "settings",
         label: "Settings",
         hint: "Jump",
-        keywords: "settings account preferences integrations",
+        keywords: "settings account preferences",
         icon: Settings,
         show: true,
         run: () => go("/settings"),
       },
+      {
+        id: "admin",
+        label: "Admin",
+        hint: "Jump",
+        keywords: "admin ops kill switch invites beta metrics",
+        icon: Shield,
+        show: Boolean(me?.is_admin),
+        run: () => go("/admin"),
+      },
+      {
+        id: "integrations",
+        label: "Integrations",
+        hint: "Jump",
+        keywords: "integrations zotero mendeley connect oauth catalog",
+        icon: Settings,
+        show: true,
+        run: () => go("/settings/integrations"),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [me?.is_admin],
   );
 
   const knowledge: Cmd[] = useMemo(

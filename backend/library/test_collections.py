@@ -172,3 +172,16 @@ def test_get_or_create_external_idempotent():
     b = coll.get_or_create_external(1, name="Machine Learning", external_id="Z1", source="zotero")
     assert a["id"] == b["id"]
     assert b["name"] == "Machine Learning"
+
+
+def test_update_rejects_parent_cycle():
+    _, coll, _ = _services()
+    a = coll.create_collection(1, "A")
+    b = coll.create_collection(1, "B", parent_id=a["id"])
+    # A → B already; setting A.parent = B would cycle
+    assert coll.update_collection(1, a["id"], parent_id=b["id"]) is None
+    still = coll.get_collection(1, a["id"])
+    assert still["parent_id"] is None
+    # Self-parent still rejected
+    assert coll.update_collection(1, b["id"], parent_id=b["id"]) is None
+

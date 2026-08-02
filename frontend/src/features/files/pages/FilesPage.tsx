@@ -33,7 +33,7 @@ import { useLibraryCollections } from "../hooks/useLibraryCollections";
 import { useDeleteFile, useFiles, useLibraryStats, useLibraryTags } from "../useFiles";
 import { useLibraryFacets } from "../useLibraryFacets";
 import { libraryBridgeApi } from "../libraryBridgeApi";
-import { collectionsApi } from "../collectionsApi";
+import { collectionsApi, removePapersFromCollection } from "../collectionsApi";
 import { useProjects } from "@/features/projects/useProjects";
 import { usePipelines } from "@/features/pipeline";
 import { useUI } from "@/context/UIContext";
@@ -139,6 +139,7 @@ export function FilesPage() {
     const raw = searchParams.get("collection_id");
     return raw ? Number(raw) : null;
   });
+  const [needPdf, setNeedPdf] = useState(() => searchParams.get("need_pdf") === "1");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [addToCollectionIds, setAddToCollectionIds] = useState<number[] | null>(null);
   const [pickCollectionId, setPickCollectionId] = useState<number | "">("");
@@ -157,6 +158,8 @@ export function FilesPage() {
           else next.delete("sort");
           if (collectionId != null) next.set("collection_id", String(collectionId));
           else next.delete("collection_id");
+          if (needPdf) next.set("need_pdf", "1");
+          else next.delete("need_pdf");
           const offset = page * PAGE_SIZE;
           if (offset > 0) next.set("offset", String(offset));
           else next.delete("offset");
@@ -168,7 +171,7 @@ export function FilesPage() {
       );
     }, 250);
     return () => window.clearTimeout(t);
-  }, [q, status, filters, sort, page, collectionId, setSearchParams]);
+  }, [q, status, filters, sort, page, collectionId, needPdf, setSearchParams]);
 
   useEffect(() => {
     const provider = searchParams.get("provider");
@@ -202,6 +205,7 @@ export function FilesPage() {
     import_source: filters.import_source,
     recent_days: filters.recent_days,
     collection_id: collectionId,
+    need_pdf: needPdf || undefined,
     sort,
     kind: "document",
     limit: PAGE_SIZE,
@@ -230,6 +234,7 @@ export function FilesPage() {
   function clearFilters() {
     setQ("");
     setStatus("all");
+    setNeedPdf(false);
     setFilters({});
     setSort("recent");
     setCollectionId(null);
@@ -239,6 +244,7 @@ export function FilesPage() {
   const hasFilters = Boolean(
     q ||
       status !== "all" ||
+      needPdf ||
       collectionId != null ||
       filters.author ||
       filters.doi ||
@@ -336,6 +342,11 @@ export function FilesPage() {
             onMendeleyImport={() => sourcesRef.current?.openMendeleyImport()}
             selectedCount={selectedIds.size}
             onClearSelection={() => setSelectedIds(new Set())}
+            needPdfFilter={needPdf}
+            onClearNeedPdf={() => {
+              setNeedPdf(false);
+              setPage(0);
+            }}
             onBulkAsk={() => {
               const first = selectedList[0];
               if (first) navigate(`/papers/${first}/chat`);
@@ -356,6 +367,28 @@ export function FilesPage() {
               );
             }}
             onBulkAddToCollection={() => setAddToCollectionIds(selectedList)}
+            onBulkRemoveFromCollection={
+              collectionId != null
+                ? async () => {
+                    try {
+                      const res = await removePapersFromCollection(
+                        collectionId,
+                        selectedList,
+                      );
+                      toast.success(
+                        `Removed ${res.removed} paper${res.removed === 1 ? "" : "s"} from collection`,
+                      );
+                      setSelectedIds(new Set());
+                      void queryClient.invalidateQueries({ queryKey: ["library"] });
+                      void queryClient.invalidateQueries({ queryKey: ["files"] });
+                    } catch (e) {
+                      toast.error(
+                        e instanceof Error ? e.message : "Could not remove from collection",
+                      );
+                    }
+                  }
+                : undefined
+            }
           />
         )}
         <ProjectScopeBanner />
@@ -371,7 +404,8 @@ export function FilesPage() {
               projectId={currentProjectId}
               unreadCount={facets?.reading_status?.unread ?? stats?.unread}
               onFilterNeedsReview={() => {
-                setStatus("unread");
+                setNeedPdf(true);
+                setStatus("all");
                 setPage(0);
               }}
             />

@@ -31,6 +31,8 @@ def create_ops_blueprint(
     limiter=None,
     oauth_ready=False,
     closed_beta=False,
+    entitlement_service=None,
+    feature_flag_service=None,
 ):
     bp = Blueprint("ops", __name__)
 
@@ -132,7 +134,10 @@ def create_ops_blueprint(
     @login_required
     def get_usage():
         uid = session["user_id"]
-        summary = quota_service.get_usage_summary(uid)
+        if entitlement_service is not None:
+            summary = entitlement_service.get_usage_for_user(uid)
+        else:
+            summary = quota_service.get_usage_summary(uid)
         snap = settings_service.snapshot()
         summary["ai"] = {
             "disabled_globally": snap["ai_disabled"],
@@ -146,7 +151,7 @@ def create_ops_blueprint(
                 "plan": u["plan"],
             }
         except Exception:
-            summary["cost"] = {}
+            summary.setdefault("cost", {})
         return jsonify(summary)
 
     @bp.route("/api/auth/logout-all", methods=["POST"])
@@ -421,5 +426,150 @@ def create_ops_blueprint(
     @admin_required
     def admin_ops_health():
         return jsonify({"ok": True, "ai": settings_service.snapshot()})
+
+    # ── Entitlement / quota admin (#13) ─────────────────────────────────
+    @bp.route("/api/admin/ops/quotas/<int:user_id>", methods=["GET"])
+    @login_required
+    @admin_required
+    def admin_get_user_quota(user_id: int):
+        if entitlement_service is None:
+            return jsonify(quota_service.get_usage_summary(user_id))
+        return jsonify(entitlement_service.get_usage_for_user(user_id))
+
+    @bp.route("/api/admin/ops/quotas/<int:user_id>", methods=["PATCH"])
+    @login_required
+    @admin_required
+    def admin_patch_user_quota(user_id: int):
+        if entitlement_service is None:
+            return jsonify({"error": "entitlements_not_configured"}), 503
+        data = request.get_json(silent=True) or {}
+        try:
+            snap = entitlement_service.admin_set_limits(
+                user_id,
+                monthly_token_limit=data.get("monthly_token_limit"),
+                monthly_cost_limit=data.get("monthly_cost_limit"),
+                storage_limit_bytes=data.get("storage_limit_bytes"),
+                plan=data.get("plan"),
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+        event_store.record(
+            "quota_admin_override",
+            user_id=session["user_id"],
+            target_user_id=user_id,
+            fields=list(data.keys()),
+        )
+        return jsonify({"ok": True, "usage": snap})
+
+    @bp.route("/api/admin/ops/quotas/<int:user_id>/reset", methods=["POST"])
+    @login_required
+    @admin_required
+    def admin_reset_user_quota(user_id: int):
+        if entitlement_service is None:
+            return jsonify({"error": "entitlements_not_configured"}), 503
+        try:
+            snap = entitlement_service.admin_reset_usage(user_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+        event_store.record(
+            "quota_admin_reset",
+            user_id=session["user_id"],
+            target_user_id=user_id,
+        )
+        return jsonify({"ok": True, "usage": snap})
+
+    @bp.route("/api/admin/ops/quotas/disabled", methods=["GET", "POST"])
+    @login_required
+    @admin_required
+    def admin_quotas_disabled():
+        if entitlement_service is None:
+            return jsonify({"error": "entitlements_not_configured"}), 503
+        if request.method == "GET":
+            return jsonify({"quotas_disabled": entitlement_service.quotas_disabled()})
+        data = request.get_json(silent=True) or {}
+        disabled = bool(data.get("disabled"))
+        entitlement_service.set_quotas_disabled(
+            disabled, updated_by=session.get("user_id")
+        )
+        event_store.record(
+            "quotas_disabled_toggled",
+            user_id=session.get("user_id"),
+            disabled=disabled,
+        )
+        return jsonify({"ok": True, "quotas_disabled": disabled})
+
+    @bp.route("/api/admin/ops/quotas/analytics", methods=["GET"])
+    @login_required
+    @admin_required
+    def admin_quota_analytics():
+        if entitlement_service is None:
+            return jsonify({"error": "entitlements_not_configured"}), 503
+        days = min(max(int(request.args.get("days") or 30), 1), 365)
+        return jsonify(entitlement_service.analytics(days=days))
+
+    # ── Feature flags (#14) ─────────────────────────────────────────────
+    @bp.route("/api/admin/ops/feature-flags", methods=["GET"])
+    @login_required
+    @admin_required
+    def admin_list_feature_flags():
+        if feature_flag_service is None:
+            return jsonify({"error": "feature_flags_not_configured"}), 503
+        return jsonify({"flags": feature_flag_service.list_flags()})
+
+    @bp.route("/api/admin/ops/feature-flags/<flag_name>", methods=["GET"])
+    @login_required
+    @admin_required
+    def admin_get_feature_flag(flag_name: str):
+        if feature_flag_service is None:
+            return jsonify({"error": "feature_flags_not_configured"}), 503
+        user_id = request.args.get("user_id", type=int)
+        row = feature_flag_service.get_flag(flag_name, user_id=user_id)
+        enabled = feature_flag_service.is_enabled(flag_name, user_id=user_id)
+        return jsonify(
+            {
+                "flag": row,
+                "evaluated": {"flag_name": flag_name, "user_id": user_id, "enabled": enabled},
+            }
+        )
+
+    @bp.route("/api/admin/ops/feature-flags/<flag_name>", methods=["PUT", "PATCH"])
+    @login_required
+    @admin_required
+    def admin_set_feature_flag(flag_name: str):
+        if feature_flag_service is None:
+            return jsonify({"error": "feature_flags_not_configured"}), 503
+        data = request.get_json(silent=True) or {}
+        if "enabled" not in data:
+            return jsonify({"error": "enabled_required", "message": "Body must include enabled"}), 400
+        user_id = data.get("user_id")
+        if user_id is not None:
+            try:
+                user_id = int(user_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "invalid_user_id"}), 400
+        rollout_pct = data.get("rollout_pct", data.get("rolloutPct"))
+        if rollout_pct is not None:
+            try:
+                rollout_pct = int(rollout_pct)
+            except (TypeError, ValueError):
+                return jsonify({"error": "invalid_rollout_pct"}), 400
+        try:
+            row = feature_flag_service.set_flag(
+                flag_name,
+                enabled=bool(data["enabled"]),
+                user_id=user_id,
+                rollout_pct=rollout_pct,
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        event_store.record(
+            "feature_flag_set",
+            user_id=session.get("user_id"),
+            flag_name=flag_name,
+            enabled=bool(data["enabled"]),
+            target_user_id=user_id,
+            rollout_pct=rollout_pct,
+        )
+        return jsonify({"ok": True, "flag": row})
 
     return bp

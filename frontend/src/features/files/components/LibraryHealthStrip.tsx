@@ -35,12 +35,8 @@ export function LibraryHealthStrip({
   if (isLoading) return <LibraryHealthSkeleton />;
   if (!data || data.total === 0) return null;
 
-  const profiles =
-    (data.by_readiness.analysed ?? 0) +
-    (data.by_readiness.indexed ?? 0) +
-    (data.by_readiness.research_ready ?? 0);
-  const evidenceCoverage =
-    (data.by_readiness.indexed ?? 0) + (data.by_readiness.research_ready ?? 0);
+  const profiles = data.by_readiness.analysed ?? 0;
+  const evidenceCoverage = data.by_readiness.research_ready ?? 0;
   const needingReview =
     (data.need_pdf ?? 0) +
     (data.processing ?? 0) +

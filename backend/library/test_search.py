@@ -118,6 +118,43 @@ def test_search_by_doi_and_author():
     db.close()
 
 
+def test_search_need_pdf_stubs_only():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    db = Session()
+    db.add_all(
+        [
+            UserFile(
+                user_id=1,
+                kind="document",
+                title="Stub",
+                name="s",
+                path="",
+                size=0,
+                meta_status="done",
+            ),
+            UserFile(
+                user_id=1,
+                kind="document",
+                title="Has PDF",
+                name="p",
+                path="x.pdf",
+                size=12,
+                meta_status="done",
+            ),
+        ]
+    )
+    db.commit()
+
+    total, rows = search_library(
+        db, UserFile, LibrarySearchParams(user_id=1, need_pdf=True, limit=50)
+    )
+    assert total == 1
+    assert rows[0].title == "Stub"
+    db.close()
+
+
 def test_search_import_source_and_year():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)

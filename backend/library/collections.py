@@ -153,6 +153,17 @@ class CollectionService:
                     parent = self._owned(db, user_id, parent_id)
                     if not parent:
                         return None
+                    # Reject cycles: parent must not be this node or a descendant.
+                    walk_id = parent_id
+                    seen: set[int] = {collection_id}
+                    while walk_id is not None:
+                        if walk_id in seen:
+                            return None
+                        seen.add(walk_id)
+                        ancestor = self._owned(db, user_id, walk_id)
+                        if not ancestor:
+                            break
+                        walk_id = ancestor.parent_id
                 row.parent_id = parent_id
             if sort_order is not None:
                 row.sort_order = sort_order

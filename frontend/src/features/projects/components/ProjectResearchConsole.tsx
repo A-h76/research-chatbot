@@ -28,8 +28,8 @@ const RESEARCH_ERROR_MESSAGES: Record<string, string> = {
   not_found: "This project couldn’t be found.",
   research_failed: "Research couldn’t finish. Please try again.",
   ai_disabled: "AI is temporarily disabled by the operator. Try again later.",
-  token_quota_exceeded: "Monthly AI token quota exceeded.",
-  cost_quota_exceeded: "Monthly AI cost limit exceeded.",
+  token_quota_exceeded: "You've reached your monthly AI token limit.",
+  cost_quota_exceeded: "You've reached your monthly AI cost limit.",
   daily_budget_exceeded: "Daily AI budget exceeded. Try again tomorrow.",
   email_unverified: "Verify your email before using AI.",
 };

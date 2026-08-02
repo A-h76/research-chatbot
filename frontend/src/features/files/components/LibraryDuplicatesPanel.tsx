@@ -1,7 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { libraryBridgeApi } from "../libraryBridgeApi";
 import { toast } from "@/components/common/Toast";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { queryKeys } from "@/lib/queryKeys";
+
+type DupGroup = {
+  reason: string;
+  key: string;
+  keep_id: number;
+  file_ids: number[];
+  titles: string[];
+  has_pdf: boolean[];
+};
 
 export function LibraryDuplicatesPanel({
   projectId,
@@ -9,6 +20,7 @@ export function LibraryDuplicatesPanel({
   projectId?: number | null;
 }) {
   const qc = useQueryClient();
+  const [pending, setPending] = useState<DupGroup | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ["library", "duplicates", projectId ?? "all"],
     queryFn: () => libraryBridgeApi.duplicates(projectId),
@@ -16,13 +28,14 @@ export function LibraryDuplicatesPanel({
   });
 
   const merge = useMutation({
-    mutationFn: (g: { keep_id: number; file_ids: number[] }) =>
+    mutationFn: (g: DupGroup) =>
       libraryBridgeApi.mergeDuplicates({
         keep_id: g.keep_id,
         merge_ids: g.file_ids.filter((id) => id !== g.keep_id),
       }),
     onSuccess: (res) => {
       toast.success(`Merged ${res.merged_ids?.length ?? 0} duplicate(s)`);
+      setPending(null);
       void qc.invalidateQueries({ queryKey: ["library"] });
       void qc.invalidateQueries({ queryKey: queryKeys.files });
     },
@@ -60,7 +73,7 @@ export function LibraryDuplicatesPanel({
             <button
               type="button"
               disabled={merge.isPending}
-              onClick={() => merge.mutate(g)}
+              onClick={() => setPending(g)}
               className="shrink-0 rounded border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
             >
               Merge
@@ -68,6 +81,25 @@ export function LibraryDuplicatesPanel({
           </li>
         ))}
       </ul>
+
+      <ConfirmDialog
+        open={pending != null}
+        onOpenChange={(o) => {
+          if (!o) setPending(null);
+        }}
+        title="Merge duplicates?"
+        description={
+          pending
+            ? `Keep “${pending.titles[0] || "Untitled"}” and merge ${
+                pending.file_ids.length - 1
+              } other cop${pending.file_ids.length - 1 === 1 ? "y" : "ies"}. Metadata fills gaps; the PDF-bearing record is preferred.`
+            : ""
+        }
+        confirmLabel="Merge"
+        onConfirm={() => {
+          if (pending) merge.mutate(pending);
+        }}
+      />
     </div>
   );
 }

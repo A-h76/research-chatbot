@@ -9,6 +9,8 @@ export interface Me {
   auth_provider?: string;
   has_password?: boolean;
   onboarding_completed?: boolean;
+  /** Closed-beta operator — gates /admin SPA (backend still enforces @admin_required). */
+  is_admin?: boolean;
   onboarding?: {
     research_role?: string;
     research_fields?: string[];

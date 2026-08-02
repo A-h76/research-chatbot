@@ -60,7 +60,13 @@ from sqlalchemy import text as sqltext
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 import storage
-from quotas import QuotaService, create_usage_log_model
+from quotas import QuotaService, create_usage_log_model, EntitlementService
+from feature_flags import (
+    FeatureFlagService,
+    create_feature_flag_model,
+    FLAG_DISCOVER_SEARCH,
+    FLAG_WRITING_INTELLIGENCE,
+)
 
 # ------------------------------------------------------------------ config
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
@@ -144,6 +150,11 @@ require_production_secrets(os.environ, is_production=IS_PRODUCTION)
 
 app = Flask(__name__)
 app.secret_key = resolve_flask_secret_key(os.environ, is_production=IS_PRODUCTION)
+
+# Optional Sentry — no-op unless SENTRY_DSN is set (see docs/security-baseline-v1-deploy-checklist.md).
+from security.sentry_init import init_sentry
+
+init_sentry(os.environ, flask_app=app)
 # Railway/Render terminate TLS at the edge and forward X-Forwarded-Proto/Host.
 # Without ProxyFix, url_for(_external=True) and OAuth redirects become http://…
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -734,6 +745,10 @@ class StorageUsage(Base):
 
 UsageLog = create_usage_log_model(Base)
 quota_service = QuotaService(SessionLocal, User, StorageUsage, UsageLog, select)
+# EntitlementService is constructed after SystemSettingsService (ops) below.
+
+FeatureFlag = create_feature_flag_model(Base)
+# FeatureFlagService constructed after ops settings (same block as entitlements).
 
 
 class ImportSession(Base):
@@ -1473,6 +1488,13 @@ _LOGIN_ERRORS = {
 }
 
 
+def _ecosystem_catalog_for_landing():
+    """Same SoT as Settings Integrations / public catalog API."""
+    from backend.ecosystem.catalog import public_catalog
+
+    return public_catalog()
+
+
 def _render_login_landing():
     """Public Research OS landing + sign-in (login.html). Shared by / and /login."""
     raw_error = request.args.get("error")
@@ -1493,6 +1515,7 @@ def _render_login_landing():
         error=error_msg,
         verified=request.args.get("verified") == "1",
         app_base_url=APP_BASE_URL,
+        ecosystem_catalog=_ecosystem_catalog_for_landing(),
     )
 
 
@@ -2059,6 +2082,17 @@ _ops_password = PasswordAuthService(
     noreply_from=NOREPLY_EMAIL_FROM,
     invite_service=_ops_invites,
 )
+entitlement_service = EntitlementService(
+    SessionLocal=SessionLocal,
+    User=User,
+    StorageUsage=StorageUsage,
+    UsageLog=UsageLog,
+    select=select,
+    quota_service=quota_service,
+    settings=_ops_settings,
+    events=_ops_events,
+)
+feature_flag_service = FeatureFlagService(SessionLocal, FeatureFlag, select)
 ai_gate = AiAccessGate(
     SessionLocal=SessionLocal,
     User=User,
@@ -2066,6 +2100,7 @@ ai_gate = AiAccessGate(
     quota_service=quota_service,
     events=_ops_events,
     select=select,
+    entitlements=entitlement_service,
 )
 _beta_metrics = BetaMetricsService(
     SessionLocal,
@@ -2213,6 +2248,8 @@ app.register_blueprint(
         password_auth=_ops_password,
         ai_gate=ai_gate,
         quota_service=quota_service,
+        entitlement_service=entitlement_service,
+        feature_flag_service=feature_flag_service,
         beta_metrics=_beta_metrics,
         email_service=email_service,
         app_base_url=APP_BASE_URL,
@@ -2297,6 +2334,21 @@ app.register_blueprint(
         allowed_extensions=None,  # attach route defaults to PDF
         LibrarySyncRun=LibrarySyncRun,
         token_secret_key=app.secret_key,
+        UploadJob=UploadJob,
+        OutboxEvent=OutboxEvent,
+    )
+)
+
+from backend.ecosystem import create_integrations_catalog_blueprint
+
+app.register_blueprint(
+    create_integrations_catalog_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        LibraryConnection=LibraryConnection,
+        LibrarySyncRun=LibrarySyncRun,
+        select_fn=select,
+        login_required=login_required,
     )
 )
 
@@ -3153,8 +3205,8 @@ def extract_metadata(file_id: int, text: str, content_hash: str) -> None:
 
 
 def extract_metadata_sync(file_id: int, text: str, content_hash: str) -> None:
-    """DEPRECATED: synchronous legacy metadata path for tests only."""
-    _apply_metadata(file_id, text, content_hash)
+    """DEPRECATED: same as extract_metadata — enqueue phase1_analysis only."""
+    extract_metadata(file_id, text, content_hash)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -3682,6 +3734,7 @@ def _log_chat_cost(user_id, model, usage):
             user_id,
             tokens=prompt_tokens + completion_tokens,
             cost_usd=cost,
+            operation="chat",
         )
     except Exception:
         logging.getLogger(__name__).warning("chat quota increment failed", exc_info=True)
@@ -3722,6 +3775,7 @@ def api_me():
                 "has_password": bool(getattr(user, "password_hash", None)),
                 "onboarding_completed": bool(getattr(user, "onboarding_completed_at", None)),
                 "onboarding": _onboarding_payload(user),
+                "is_admin": bool(getattr(user, "is_admin", False)),
             }
         )
     finally:
@@ -4338,6 +4392,8 @@ app.register_blueprint(
         login_required=login_required,
         file_to_dict=_file_to_dict,
         app_logger=app.logger,
+        feature_flag_service=feature_flag_service,
+        discover_flag=FLAG_DISCOVER_SEARCH,
     )
 )
 
@@ -4522,6 +4578,9 @@ app.register_blueprint(
         get_model_registry=get_model_registry,
         PaperAnalysis=PaperAnalysis,
         WorkflowEvent=WorkflowEvent,
+        ai_gate=ai_gate,
+        feature_flag_service=feature_flag_service,
+        writing_intelligence_flag=FLAG_WRITING_INTELLIGENCE,
     )
 )
 
@@ -4579,6 +4638,7 @@ app.register_blueprint(
         resolve_owned_project_id=resolve_owned_project_id,
         log_security_event=log_security_event,
         app_logger=app.logger,
+        EvidenceObject=EvidenceObject,
     )
 )
 
@@ -4881,12 +4941,54 @@ def _download(payload, filename, mimetype):
 @login_required
 @limiter.limit("5 per hour")
 def delete_account():
+    """Permanently delete the signed-in account — requires step-up reauth (#16).
+
+    Body (JSON):
+      - confirm: must be the literal string "DELETE"
+      - password: required when the account has a password
+      - email: required (must match) when the account has no password (OAuth/magic)
+    """
+    from security.ops.step_up import STEP_UP_ERROR_DETAIL, authorize_account_delete
+    from werkzeug.security import check_password_hash
+
     uid = session["user_id"]
+    body = request.get_json(silent=True) or {}
     db = SessionLocal()
     try:
         user = db.get(User, uid)
         if not user:
             return jsonify({"error": "not_found"}), 404
+
+        has_password = bool(getattr(user, "password_hash", None))
+        password_matches = None
+        if has_password:
+            password_matches = check_password_hash(
+                user.password_hash, str(body.get("password") or "")
+            )
+
+        ok, reason = authorize_account_delete(
+            has_password=has_password,
+            user_email=user.email or "",
+            body=body,
+            password_matches=password_matches,
+        )
+        if not ok:
+            status = 403 if reason == "wrong_password" else 400
+            log_security_event(
+                "account_delete_denied",
+                user=uid,
+                reason=reason,
+            )
+            return (
+                jsonify(
+                    {
+                        "error": reason,
+                        "detail": STEP_UP_ERROR_DETAIL.get(reason, reason),
+                    }
+                ),
+                status,
+            )
+
         # Files (chunks + on-disk blobs)
         for uf in db.execute(select(UserFile).where(UserFile.user_id == uid)).scalars().all():
             _remove_file_row(db, uf)
@@ -5071,12 +5173,13 @@ def chat():
             user_id,
             token_estimate=estimate_chat_tokens(user_message),
             cost_estimate=0.01,
+            operation="chat",
         )
     except AiAccessDenied as exc:
-        return (
-            jsonify({"error": exc.code, "detail": exc.message}),
-            exc.http_status,
-        )
+        body = {"error": exc.code, "detail": exc.message}
+        if getattr(exc, "payload", None):
+            body["quota"] = exc.payload
+        return jsonify(body), exc.http_status
 
     db = SessionLocal()
     try:
@@ -5734,6 +5837,9 @@ app.register_blueprint(
         Conversation=Conversation,
         select_fn=select,
         login_required=login_required,
+        WritingDocument=WritingDocument,
+        ReviewerRun=ReviewerRun,
+        ReviewerFinding=ReviewerFinding,
     )
 )
 

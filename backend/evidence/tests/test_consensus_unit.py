@@ -36,6 +36,17 @@ def test_classify_from_arrays_and_binding_override():
     )
 
 
+def test_classify_claim_bearing_without_supports_array():
+    """Alpha path: accepted extract often has empty supports[] until KG edges exist."""
+    assert (
+        classify_stance(_obj(1, claim="Drug X reduces HbA1c", quote="…by 0.8%")) == "supporting"
+    )
+    assert classify_stance(_obj(2)) == "neutral"
+    assert (
+        classify_stance(_obj(3, claim="X", contradicts=["opposing finding"])) == "contradicting"
+    )
+
+
 def test_consensus_label_matrix():
     assert consensus_label(supporting=0, contradicting=0) == "none"
     assert consensus_label(supporting=0, contradicting=3) == "opposed"

@@ -27,7 +27,10 @@ def classify_stance(
     Preference order:
     1. Binding / explicit relation (supports|contradicts|related)
     2. Non-empty contradicts / supports arrays on the object
-    3. Neutral
+    3. Claim-bearing object with no contradicts → supporting
+       (extract often yields empty supports[] until KG edges exist;
+       Alpha path Accept → Generate must not stall as all-neutral)
+    4. Neutral
     """
     rel = (binding_relation or obj.get("relation") or "").strip().lower()
     if rel == "supports":
@@ -49,6 +52,10 @@ def classify_stance(
     if n_sup > 0 and n_con > 0:
         # Contested object surface — count toward contradicting for safety
         return "contradicting" if n_con >= n_sup else "supporting"
+
+    claim = (obj.get("claim") or obj.get("quote") or "").strip()
+    if claim:
+        return "supporting"
     return "neutral"
 
 

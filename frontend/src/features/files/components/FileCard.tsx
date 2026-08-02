@@ -108,14 +108,44 @@ export function FileCard({
 
   const attachPdf = async (pdf: File) => {
     try {
-      await libraryBridgeApi.attachPdf(file.id, pdf);
-      toast.success("PDF attached — analysis queued");
+      const res = await libraryBridgeApi.attachPdf(file.id, pdf);
+      if (res.queued) {
+        toast.success("PDF attached — analysis queued");
+      } else {
+        toast.success("PDF attached — open the paper to start analysis if it does not begin");
+      }
       void qc.invalidateQueries({ queryKey: ["files"] });
       void qc.invalidateQueries({ queryKey: ["library"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not attach PDF");
     }
   };
+
+  const pullFromRefMgr = async () => {
+    try {
+      const res = await libraryBridgeApi.pullPdf(file.id);
+      if (res.pulled && res.pulled > 0) {
+        toast.success(
+          res.queued
+            ? "PDF pulled from library — analysis queued"
+            : "PDF pulled from library",
+        );
+      } else if (res.skipped?.length) {
+        toast.error("No PDF attachment found in Zotero/Mendeley for this paper");
+      } else {
+        toast.error(res.detail || res.error || "Could not pull PDF");
+      }
+      void qc.invalidateQueries({ queryKey: ["files"] });
+      void qc.invalidateQueries({ queryKey: ["library"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not pull PDF");
+    }
+  };
+
+  const canPullRefMgr =
+    metadataOnly &&
+    (file.external_provider === "zotero" || file.external_provider === "mendeley") &&
+    Boolean(file.external_item_id);
 
   const open = () => {
     if (isPaper) navigate(`/papers/${file.id}`);
@@ -209,6 +239,19 @@ export function FileCard({
                 e.target.value = "";
               }}
             />
+            {canPullRefMgr ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void pullFromRefMgr();
+                }}
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                title={`Pull PDF from ${file.external_provider === "mendeley" ? "Mendeley" : "Zotero"}`}
+              >
+                <Upload className="size-3" /> Pull
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={(e) => {

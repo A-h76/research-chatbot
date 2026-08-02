@@ -25,7 +25,7 @@ Allowed without lifting the freeze: bugfixes to existing controls, config/ops ha
 |------|--------|--------|
 | AI Gateway governance | ✅ | `backend/ai/gateway.py`, `docs/AI_POLICY_v1.0.md`, registry validate-on-boot |
 | Platform / product governance | ✅ | `PLATFORM_FREEZE_v1.0`, `PRODUCT_DECISIONS`, release criteria |
-| Rate limiting | ✅ | Flask-Limiter + Redis (prod preferred); chat/upload/auth/RAG limits |
+| Rate limiting | ✅ | Flask-Limiter + Redis required in prod (or `RATE_LIMIT_MEMORY_OK=1` single-process ack) |
 | Input validation (high-risk writes) | ✅ | `security/request_validation.py` (+ chat length caps) |
 | Secrets management | ✅ | Prod fail-closed `security/startup.py`; no commit of `.env` |
 | CSP | ✅ | Enforced in prod; `CSP_REPORT_ONLY=1` rollback |
@@ -88,10 +88,14 @@ Implementation: `security/headers.py` via `after_request` in `server.py`.
 
 1. Production: `CLAMAV_ENABLED=1` (or accept risk with `CLAMAV_OPTIONAL=1`)  
 2. Confirm HTTPS termination (HSTS + `Secure` cookies)  
-3. `REDIS_URL` set so rate limits are shared across workers  
+3. `REDIS_URL` set so rate limits are shared across workers (or `RATE_LIMIT_MEMORY_OK=1` for single-process only)  
 4. Rotate any secrets that ever left `.env`  
 5. Smoke: login → upload PDF → RAG/search → writing path; if SPA breaks, set `CSP_REPORT_ONLY=1`  
 6. Re-connect Zotero/Mendeley after deploy so tokens are sealed  
+7. Closed beta: `BETA_INVITE_ONLY=1` + no `DEV_AUTO_LOGIN`  
+8. Optional: `SENTRY_DSN` before open Alpha — see [`security-baseline-v1-deploy-checklist.md`](./security-baseline-v1-deploy-checklist.md)
+
+Full operator checklist: [`security-baseline-v1-deploy-checklist.md`](./security-baseline-v1-deploy-checklist.md).
 
 ---
 

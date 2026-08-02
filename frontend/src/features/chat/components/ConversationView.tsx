@@ -117,6 +117,7 @@ export function ConversationView({ conversationId }: { conversationId: number })
           skill: stream.skill,
           isStreaming: stream.isStreaming,
           error: stream.error,
+          quota: stream.quota,
         }
       : null;
 

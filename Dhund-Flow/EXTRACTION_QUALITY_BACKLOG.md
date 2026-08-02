@@ -1,6 +1,6 @@
 # Evidence Extraction — quality backlog
 
-**Status:** Continuous improvement (not architecture)  
+**Status:** V1 High items closed (Subsystem #6, 2026-08-02); residual = continuous improvement  
 **Layer:** Evidence Extraction Pipeline (upstream of frozen Evidence Platform)  
 **Rule:** Improve precision/recall and metadata; do not reopen Platform contracts (ADR-0005).
 
@@ -10,14 +10,14 @@ RI productization depends on a populated corpus of **accepted** EvidenceObjects.
 
 ## Backlog
 
-| Item | Why | Priority |
-|------|-----|----------|
-| Better claim detection / normalisation from Phase 1 projections | Fewer empty quotes; cleaner claims | High |
-| Richer facets for conflict mediators (population / dosage / method / outcome in provenance) | Improves Conflict stage coding | High |
-| Additional study-type coverage in projectors | Ranking / consensus quality | Medium |
-| Precision/recall golden fixtures per domain | Measurable extraction quality | Medium |
-| Review UX hints (why candidate is weak) | Faster accept/reject | Medium |
-| Auto-enqueue extract after Research Ready | Fewer manual Extract clicks | Low (product) |
+| Item | Why | Priority | V1 |
+|------|-----|----------|----|
+| Better claim detection / normalisation from Phase 1 projections | Fewer empty quotes; cleaner claims | High | ✅ `phase_projector.v1.1` — `normalize_claim`, skip trivial, `claim_equals_quote` flag |
+| Richer facets for conflict mediators (population / dosage / method / outcome in provenance) | Improves Conflict stage coding | High | ✅ Facets from KG props + PICO stamped into provenance |
+| Additional study-type coverage in projectors | Ranking / consensus quality | Medium | ✅ Partial — alias table (RCT / cohort / meta / …); expand as domains need |
+| Precision/recall golden fixtures per domain | Measurable extraction quality | Medium | Tracked — not blocking Alpha |
+| Review UX hints (why candidate is weak) | Faster accept/reject | Medium | ✅ Inspector weak chips + reject presets |
+| Auto-enqueue extract after Research Ready | Fewer manual Extract clicks | Low (product) | Tracked — not blocking Alpha |
 
 ---
 

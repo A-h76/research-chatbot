@@ -14,7 +14,9 @@ class MendeleyAdapter(ImportAdapter):
     name: ClassVar[str] = "mendeley"
 
     def capabilities(self) -> AdapterCapabilities:
-        return AdapterCapabilities(oauth=True, folder_list=True, incremental_sync=True)
+        return AdapterCapabilities(
+            oauth=True, folder_list=True, incremental_sync=True, file_import=True
+        )
 
     def configured(self) -> bool:
         return mendeley_mod.mendeley_configured()
@@ -53,4 +55,37 @@ class MendeleyAdapter(ImportAdapter):
             "sync_cursor": json.dumps({"modified_since": newest}),
             "since": modified_since or "",
             "fetched": len(records),
+        }
+
+    def import_files(self, **context: Any) -> dict[str, Any]:
+        item_keys = context.get("item_keys") or []
+        if isinstance(item_keys, str):
+            item_keys = [item_keys]
+        single = (context.get("external_id") or context.get("item_key") or "").strip()
+        if single and single not in item_keys:
+            item_keys = list(item_keys) + [single]
+        max_bytes = int(context.get("max_bytes") or 50 * 1024 * 1024)
+        downloaded: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+        errors: list[dict[str, str]] = []
+        token = context["access_token"]
+        for key in item_keys:
+            key = str(key or "").strip()
+            if not key:
+                continue
+            try:
+                hit = mendeley_mod.pull_pdf_for_document(
+                    token, key, max_bytes=max_bytes
+                )
+                if hit:
+                    downloaded.append(hit)
+                else:
+                    skipped.append({"external_id": key, "reason": "no_pdf"})
+            except Exception as exc:
+                errors.append({"external_id": key, "error": str(exc)[:200]})
+        return {
+            "downloaded": downloaded,
+            "skipped": skipped,
+            "errors": errors,
+            "provider": "mendeley",
         }
