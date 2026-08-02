@@ -267,10 +267,45 @@
     });
   }
 
+  function initFlowTabs() {
+    var tabs = document.querySelectorAll(".flow-tab[data-flow]");
+    var panels = document.querySelectorAll("[data-flow-panel]");
+    if (!tabs.length || !panels.length) return;
+
+    tabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        var key = tab.getAttribute("data-flow");
+        tabs.forEach(function (t) {
+          var on = t === tab;
+          t.classList.toggle("is-on", on);
+          t.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        panels.forEach(function (panel) {
+          panel.classList.toggle(
+            "is-on",
+            panel.getAttribute("data-flow-panel") === key
+          );
+        });
+      });
+    });
+  }
+
+  function initTopbarScroll() {
+    var bar = document.querySelector(".topbar");
+    if (!bar) return;
+    function update() {
+      bar.classList.toggle("is-scrolled", window.scrollY > 8);
+    }
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+  }
+
   function boot() {
     initThemeToggle();
     initReveal();
     initEvidenceDemo();
+    initFlowTabs();
+    initTopbarScroll();
     initMagicLink();
   }
 
