@@ -8,7 +8,12 @@ from sqlalchemy import create_engine, text
 
 load_dotenv()
 url = (os.environ.get("DATABASE_URL") or "sqlite:///chat_dev.db").replace("postgres://", "postgresql://", 1)
-engine = create_engine(url, pool_pre_ping=True)
+_kw = {"pool_pre_ping": True}
+if url.startswith("postgresql"):
+    _kw["connect_args"] = {
+        "connect_timeout": int(os.environ.get("DB_CONNECT_TIMEOUT", "10")),
+    }
+engine = create_engine(url, **_kw)
 
 
 def split_sql_statements(sql):

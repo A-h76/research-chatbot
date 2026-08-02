@@ -155,6 +155,14 @@ app.secret_key = resolve_flask_secret_key(os.environ, is_production=IS_PRODUCTIO
 from security.sentry_init import init_sentry
 
 init_sentry(os.environ, flask_app=app)
+
+
+@app.route("/api/health")
+def api_health():
+    """Liveness — no DB. Used by Railway/Cloudflare probes; must stay cheap."""
+    return jsonify({"ok": True, "service": "web"}), 200
+
+
 # Railway/Render terminate TLS at the edge and forward X-Forwarded-Proto/Host.
 # Without ProxyFix, url_for(_external=True) and OAuth redirects become http://…
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -471,14 +479,25 @@ def get_models(force=False):
 
 # ------------------------------------------------------------------ database
 Base = declarative_base()
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
+# Fail fast on unreachable Postgres — default TCP waits produced Cloudflare 524
+# (origin accepts the socket, gunicorn workers never finish importing server.py).
+_ENGINE_KWARGS: dict = {
+    "pool_pre_ping": True,
     # Closed-beta target: several researchers online together.
-    pool_size=int(os.environ.get("DB_POOL_SIZE", "10")),
-    max_overflow=int(os.environ.get("DB_MAX_OVERFLOW", "20")),
-)
+    "pool_size": int(os.environ.get("DB_POOL_SIZE", "10")),
+    "max_overflow": int(os.environ.get("DB_MAX_OVERFLOW", "20")),
+}
+if DATABASE_URL.startswith("postgresql"):
+    _ENGINE_KWARGS["connect_args"] = {
+        "connect_timeout": int(os.environ.get("DB_CONNECT_TIMEOUT", "10")),
+    }
+engine = create_engine(DATABASE_URL, **_ENGINE_KWARGS)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+
+# Production schema comes from migrations/*.sql (entrypoint + run_migrations.py).
+# Running ORM create_all/ensure_columns at import on every Gunicorn worker can
+# hang the process before any HTTP handler is registered.
+_ORM_BOOTSTRAP_SCHEMA = (not IS_PRODUCTION) or DATABASE_URL.startswith("sqlite")
 
 
 class User(Base):
@@ -1268,7 +1287,9 @@ LibrarySyncRun = create_library_sync_run_model(Base)
 # a fact a reader has to already know. It's what makes this call safe to
 # run after migrations/*.sql already created these same tables: it only
 # creates what's missing, never re-creates or errors on what exists.
-Base.metadata.create_all(engine, checkfirst=True)
+# Skipped in production Postgres — entrypoint already ran run_migrations.py.
+if _ORM_BOOTSTRAP_SCHEMA:
+    Base.metadata.create_all(engine, checkfirst=True)
 
 
 def ensure_columns():
@@ -1454,7 +1475,13 @@ def ensure_columns():
             pass
 
 
-ensure_columns()
+if _ORM_BOOTSTRAP_SCHEMA:
+    ensure_columns()
+else:
+    logging.getLogger(__name__).info(
+        "Skipping ORM create_all/ensure_columns in production "
+        "(schema owned by migrations/*.sql)."
+    )
 
 # ------------------------------------------------------------------ auth
 oauth = OAuth(app)
@@ -2034,8 +2061,9 @@ from backend.ai.model_registry import CostLedgerEntry as _CostLedgerEntry
 from backend.ai.model_registry import _Base as _ai_model_base
 from backend.ai.prompt_registry import _Base as _ai_prompt_base
 
-_ai_prompt_base.metadata.create_all(engine, checkfirst=True)
-_ai_model_base.metadata.create_all(engine, checkfirst=True)
+if _ORM_BOOTSTRAP_SCHEMA:
+    _ai_prompt_base.metadata.create_all(engine, checkfirst=True)
+    _ai_model_base.metadata.create_all(engine, checkfirst=True)
 
 _cost_ledger = CostLedger(_CostLedgerEntry)
 
