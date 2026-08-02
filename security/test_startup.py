@@ -190,13 +190,15 @@ def test_resolve_limiter_storage_uri_prod_without_redis_warns_but_memory(caplog)
     assert uri == "memory://"
 
 
-def test_resolve_limiter_storage_uri_prod_unreachable_fails_closed(mocker):
+def test_resolve_limiter_storage_uri_prod_unreachable_falls_back(mocker):
     mocker.patch(
         "redis.from_url",
         side_effect=ConnectionError("refused"),
     )
-    with pytest.raises(SystemExit, match="unreachable"):
+    assert (
         resolve_limiter_storage_uri("redis://localhost:6379/0", is_production=True)
+        == "memory://"
+    )
 
 
 def test_resolve_limiter_storage_uri_dev_unreachable_falls_back(mocker):

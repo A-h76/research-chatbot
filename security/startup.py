@@ -166,9 +166,10 @@ def resolve_limiter_storage_uri(
     """Use Redis for Flask-Limiter when REDIS_URL is set and reachable.
 
     Development: fall back to memory:// if Redis is missing or unreachable.
-    Production with REDIS_URL set: fail closed if Redis cannot be pinged.
     Production without REDIS_URL: memory:// only after RATE_LIMIT_MEMORY_OK
     was acknowledged at ``require_production_secrets`` (single-process).
+    Production with REDIS_URL unreachable: fall back to memory:// and log
+    an error (prefer a live site over Cloudflare 524 crash-loops).
     """
     url = (redis_url or "").strip()
     if not url:
@@ -189,10 +190,12 @@ def resolve_limiter_storage_uri(
             client.close()
         return url
     except Exception as exc:
-        if is_production:
-            raise SystemExit(
-                f"REDIS_URL is set but Redis is unreachable ({exc}). "
-                "Fix Redis or unset REDIS_URL for a single-process memory limiter."
-            ) from exc
-        log.warning("REDIS_URL unreachable (%s); using memory:// rate limiter", exc)
+        # Prefer a live app with process-local limits over Cloudflare 524 /
+        # crash-loop when Redis is briefly unreachable after deploy.
+        log.error(
+            "REDIS_URL is set but Redis is unreachable (%s) — "
+            "falling back to memory:// rate limiter (limits NOT shared "
+            "across workers). Fix Redis ASAP.",
+            exc,
+        )
         return "memory://"

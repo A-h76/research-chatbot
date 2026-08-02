@@ -65,7 +65,8 @@ workers and horizontally scaled web processes.
 | Single-process only | `RATE_LIMIT_MEMORY_OK=1` (no Redis) | Boot allowed; **memory://** — not safe with >1 worker/instance |
 
 Production **refuses boot** if `REDIS_URL` is unset and `RATE_LIMIT_MEMORY_OK` is unset.
-If `REDIS_URL` is set but unreachable → fail closed (existing behavior).
+If `REDIS_URL` is set but unreachable → boot continues with **memory://** and an error log
+(availability over crash-loop; fix Redis promptly for shared limits).
 
 - [ ] Production has reachable `REDIS_URL` **or** explicit `RATE_LIMIT_MEMORY_OK=1`
 - [ ] If scaling web replicas / `WEB_CONCURRENCY` > 1 → Redis is **mandatory**
