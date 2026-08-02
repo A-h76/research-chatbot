@@ -899,15 +899,23 @@
     height: 1.55rem;
     flex-shrink: 0;
     display: block;
-    background-color: currentColor;
-    color: var(--ink-soft);
-    -webkit-mask: var(--icon) center / contain no-repeat;
-    mask: var(--icon) center / contain no-repeat;
-    transition: color .22s ease, transform .22s ease;
+    object-fit: contain;
+    opacity: 0.9;
+    transition: transform .22s ease, opacity .22s ease, filter .22s ease;
   }
   .eco-chip:hover .eco-logo {
-    color: var(--brand);
+    opacity: 1;
     transform: scale(1.03);
+  }
+  :root[data-theme="dark"] .eco-logo {
+    filter: invert(1);
+    opacity: 0.92;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .eco-logo {
+      filter: invert(1);
+      opacity: 0.92;
+    }
   }
   .eco-meta {
     display: flex;
@@ -1844,11 +1852,11 @@
           </div>
           <div class="eco-chips">
             <div class="eco-chip" style="--brand:#CC2936">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/zotero.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/zotero.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Zotero</span></span>
             </div>
             <div class="eco-chip" style="--brand:#A60000">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/mendeley.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/mendeley.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Mendeley</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#ED6C06">
@@ -1884,15 +1892,15 @@
               <span class="eco-meta"><span class="eco-name">Crossref</span></span>
             </div>
             <div class="eco-chip" style="--brand:#1857B6">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/semanticscholar.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/semanticscholar.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Semantic Scholar</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#326599">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/pubmed.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/pubmed.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">PubMed</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#B31B1B">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/arxiv.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/arxiv.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">arXiv</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#F15A29">
@@ -1900,15 +1908,15 @@
               <span class="eco-meta"><span class="eco-name">Europe PMC</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#1B4F72">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/ssrn.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/ssrn.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">SSRN</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#00629B">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/ieee.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/ieee.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">IEEE</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#1D78C1">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/acm.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/acm.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">ACM</span><span class="eco-soon">Coming soon</span></span>
             </div>
           </div>
@@ -1928,7 +1936,7 @@
               <span class="eco-meta"><span class="eco-name">RIS</span></span>
             </div>
             <div class="eco-chip" style="--brand:#0F6E6A">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/doi.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/doi.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">DOI</span></span>
             </div>
             <div class="eco-chip" style="--brand:#0F6E6A">
@@ -1936,11 +1944,11 @@
               <span class="eco-meta"><span class="eco-name">APA</span></span>
             </div>
             <div class="eco-chip" style="--brand:#0F6E6A">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/ieee.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/ieee.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">IEEE</span></span>
             </div>
             <div class="eco-chip" style="--brand:#A6CE39">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/orcid.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/orcid.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">ORCID</span></span>
             </div>
           </div>
@@ -1956,23 +1964,23 @@
               <span class="eco-meta"><span class="eco-name">Writing Studio</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#4285F4">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/googledocs.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/googledocs.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Google Docs</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#2B579A">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/microsoftword.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/microsoftword.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Microsoft Word</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#47A141">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/overleaf.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/overleaf.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Overleaf</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#000000">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/notion.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/notion.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Notion</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#7C3AED">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/obsidian.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/obsidian.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Obsidian</span><span class="eco-soon">Coming soon</span></span>
             </div>
           </div>
@@ -1984,19 +1992,19 @@
           </div>
           <div class="eco-chips">
             <div class="eco-chip is-soon" style="--brand:#4285F4">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/googledrive.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/googledrive.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Google Drive</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#0061FF">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/dropbox.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/dropbox.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Dropbox</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#0078D4">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/microsoftonedrive.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/microsoftonedrive.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">OneDrive</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#0061D5">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/box.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/box.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Box</span><span class="eco-soon">Coming soon</span></span>
             </div>
           </div>
@@ -2012,11 +2020,11 @@
               <span class="eco-meta"><span class="eco-name">Projects</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#4A154B">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/slack.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/slack.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Slack</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#6264A7">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/microsoftteams.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/microsoftteams.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Microsoft Teams</span><span class="eco-soon">Coming soon</span></span>
             </div>
           </div>
@@ -2028,27 +2036,27 @@
           </div>
           <div class="eco-chips">
             <div class="eco-chip" style="--brand:#10A37F">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/openai.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/openai.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">OpenAI</span></span>
             </div>
             <div class="eco-chip" style="--brand:#D97757">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/anthropic.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/anthropic.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Claude</span></span>
             </div>
             <div class="eco-chip" style="--brand:#8E75B2">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/googlegemini.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/googlegemini.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Gemini</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#1DA1F2">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/x.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/x.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Grok</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#4D6BFE">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/deepseek.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/deepseek.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">DeepSeek</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#FF7000">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/mistralai.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/mistralai.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Mistral</span><span class="eco-soon">Coming soon</span></span>
             </div>
           </div>
@@ -2068,11 +2076,11 @@
               <span class="eco-meta"><span class="eco-name">MCP</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#FF4A00">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/zapier.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/zapier.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">Zapier</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#EA4B71">
-              <span class="eco-logo" aria-hidden="true" style="--icon: url({{ url_for("static", filename="brands/n8n.svg")|tojson }})"></span>
+              <img class="eco-logo" src="{{ url_for('static', filename='brands/n8n.svg') }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               <span class="eco-meta"><span class="eco-name">n8n</span><span class="eco-soon">Coming soon</span></span>
             </div>
             <div class="eco-chip is-soon" style="--brand:#0F6E6A">
