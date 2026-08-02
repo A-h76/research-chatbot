@@ -8,7 +8,8 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM python:3.13-slim-bookworm
+# Match CI-ish LTS runtime; avoid 3.13 builder OOM/edge wheels on Railway.
+FROM python:3.12-slim-bookworm
 WORKDIR /app
 
 RUN apt-get update \
@@ -18,8 +19,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-# Cache-bust: align with Railway Python 3.13 + ensure PyYAML installs (2026-07-29).
-RUN pip install --no-cache-dir -r requirements.txt
+# Prod-only deps (tests/lint live in requirements-dev.txt). Cache-bust 2026-08-03.
+RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
 COPY . .
 COPY --from=frontend /frontend/dist ./frontend/dist
