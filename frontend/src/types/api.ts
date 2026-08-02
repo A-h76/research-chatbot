@@ -6,6 +6,8 @@ export interface Me {
   custom_instructions: string;
   default_model: string;
   beta_mode?: boolean;
+  auth_provider?: string;
+  has_password?: boolean;
   onboarding_completed?: boolean;
   onboarding?: {
     research_role?: string;

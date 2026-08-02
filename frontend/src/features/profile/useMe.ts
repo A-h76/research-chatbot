@@ -18,3 +18,24 @@ export function useUpdateInstructions() {
     },
   });
 }
+
+export function useUpdateProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name?: string; custom_instructions?: string }) =>
+      profileApi.updateProfile(data),
+    onSuccess: (_data, vars) => {
+      qc.setQueryData<Me>(queryKeys.me, (old) =>
+        old
+          ? {
+              ...old,
+              ...(vars.name !== undefined ? { name: vars.name } : {}),
+              ...(vars.custom_instructions !== undefined
+                ? { custom_instructions: vars.custom_instructions }
+                : {}),
+            }
+          : old
+      );
+    },
+  });
+}

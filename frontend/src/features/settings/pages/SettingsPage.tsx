@@ -5,6 +5,7 @@ import {
   Cpu,
   KeyRound,
   UserCog,
+  UserRound,
   Brain,
   Shield,
   Info,
@@ -25,6 +26,7 @@ import {
   AboutSection,
   ChatDefaultsSection,
 } from "../sections/Sections";
+import { AccountSection } from "../sections/AccountSection";
 import { ResearchDefaultsSection } from "../sections/ResearchDefaultsSection";
 import { DataControlsSection } from "../sections/DataControlsSection";
 import { PromptsSection, TestAiSection } from "@/features/ai/sections/AiSections";
@@ -39,6 +41,7 @@ type SectionDef = {
 };
 
 const SECTIONS: SectionDef[] = [
+  { id: "account", label: "Account", icon: UserRound, render: AccountSection, group: "main" },
   { id: "appearance", label: "Appearance", icon: Palette, render: AppearanceSection, group: "main" },
   {
     id: "research",

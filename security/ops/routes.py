@@ -265,6 +265,52 @@ def create_ops_blueprint(
             return jsonify({"error": reason}), code
         return jsonify({"ok": True, "detail": "Check your new inbox to confirm the change."})
 
+    @bp.route("/auth/change-password", methods=["POST"])
+    @login_required
+    @_rate("10 per hour")
+    def change_password():
+        try:
+            data = parse_json_object(request.get_json(silent=True), allow_empty=False)
+            reject_unknown_fields(data, {"current_password", "password", "new_password", "confirm_password"})
+            new_password = require_string(
+                data,
+                "new_password" if "new_password" in data else "password",
+                max_len=200,
+                min_len=10,
+                strip=False,
+            )
+            confirm = data.get("confirm_password")
+            if confirm is not None and str(confirm) != new_password:
+                return jsonify({"error": "password_mismatch", "detail": "Passwords do not match."}), 400
+            current = str(data.get("current_password") or "")
+        except RequestValidationError as exc:
+            return exc.to_response()
+
+        uid = session["user_id"]
+        if current:
+            ok, reason, ver = password_auth.change_password(uid, current, new_password)
+            if reason == "no_password":
+                ok, reason, ver = password_auth.set_password(uid, new_password)
+        else:
+            ok, reason, ver = password_auth.set_password(uid, new_password)
+            if not ok and reason == "already_has_password":
+                ok, reason, ver = False, "current_required", None
+
+        if not ok:
+            status = 400
+            detail = {
+                "wrong_password": "Current password is incorrect.",
+                "current_required": "Current password is required.",
+                "no_password": "No password on this account — omit current_password to set one.",
+                "already_has_password": "Account already has a password — provide current_password.",
+                "same_password": "New password must be different from the current one.",
+                "invalid_input": "Password must be at least 10 characters.",
+            }.get(reason, reason)
+            return jsonify({"error": reason, "detail": detail}), status
+        if ver is not None:
+            session["session_version"] = ver
+        return jsonify({"ok": True, "detail": "Password updated."})
+
     @bp.route("/api/onboarding/complete", methods=["POST"])
     @login_required
     def onboarding_complete():

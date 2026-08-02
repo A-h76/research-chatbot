@@ -128,69 +128,26 @@ export function PersonalizationSection() {
   const { data: me } = useMe();
   const updateInstructions = useUpdateInstructions();
   const [value, setValue] = useState(me?.custom_instructions ?? "");
-  const [newEmail, setNewEmail] = useState("");
-  const [emailBusy, setEmailBusy] = useState(false);
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-3">
-        <div className="grid gap-1.5">
-          <Label>Custom instructions — applied to every chat</Label>
-          <Textarea
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder="e.g. I'm writing a master's thesis on machine learning. Prefer formal tone, APA style."
-            className="min-h-32"
-          />
-        </div>
-        <Button
-          className="self-end"
-          onClick={async () => {
-            await updateInstructions.mutateAsync(value);
-            toast.success("Saved — applies to all new messages");
-          }}
-        >
-          Save instructions
-        </Button>
+    <div className="flex flex-col gap-3">
+      <div className="grid gap-1.5">
+        <Label>Custom instructions — applied to every chat</Label>
+        <Textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="e.g. I'm writing a master's thesis on machine learning. Prefer formal tone, APA style."
+          className="min-h-32"
+        />
       </div>
-
-      <div className="rounded-xl border border-border bg-muted/30 p-5">
-        <p className="text-sm font-medium text-foreground">Email</p>
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          Current address: <span className="text-foreground">{me?.email}</span>
-        </p>
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
-          <div className="min-w-0 flex-1 grid gap-1.5">
-            <Label htmlFor="new-email">New email</Label>
-            <input
-              id="new-email"
-              type="email"
-              value={newEmail}
-              onChange={(e) => setNewEmail(e.target.value)}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-primary/30"
-              placeholder="you@university.edu"
-            />
-          </div>
-          <Button
-            variant="outline"
-            disabled={emailBusy || !newEmail.trim()}
-            onClick={async () => {
-              setEmailBusy(true);
-              try {
-                const { api } = await import("@/lib/apiClient");
-                await api.post("/auth/change-email", { new_email: newEmail.trim() });
-                toast.success("Check your new inbox to confirm the change");
-                setNewEmail("");
-              } catch {
-                toast.error("Could not start email change");
-              } finally {
-                setEmailBusy(false);
-              }
-            }}
-          >
-            Change email
-          </Button>
-        </div>
-      </div>
+      <Button
+        className="self-end"
+        onClick={async () => {
+          await updateInstructions.mutateAsync(value);
+          toast.success("Saved — applies to all new messages");
+        }}
+      >
+        Save instructions
+      </Button>
     </div>
   );
 }

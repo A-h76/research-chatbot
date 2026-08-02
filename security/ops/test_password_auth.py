@@ -142,3 +142,44 @@ def test_password_reset_sends_changed_email():
     ok, _ = svc.reset_password(token, "newpassword99")
     assert ok
     assert any(s["template"] == "password_changed" for s in mail.sent)
+
+
+def test_change_password_while_logged_in():
+    svc, mail, Session = _svc()
+    user, _ = svc.register(name="D", email="d@ox.ac.uk", password="password1234")
+    verify = next(s for s in mail.sent if s.get("template") == "verify_email")
+    svc.verify_email(verify["ctx"]["link"].split("token=")[-1])
+    mail.sent.clear()
+
+    ok, reason, ver = svc.change_password(user["id"], "wrong", "newpassword99")
+    assert not ok and reason == "wrong_password"
+
+    ok, reason, ver = svc.change_password(user["id"], "password1234", "newpassword99")
+    assert ok and reason == "ok"
+    assert ver == 1
+    assert any(s["template"] == "password_changed" for s in mail.sent)
+
+    logged, err = svc.login("d@ox.ac.uk", "newpassword99")
+    assert err is None and logged["id"] == user["id"]
+
+
+def test_set_password_for_oauth_user():
+    svc, mail, Session = _svc()
+    db = Session()
+    try:
+        row = User(email="g@ox.ac.uk", name="G", auth_provider="google", email_verified=1, status="active")
+        db.add(row)
+        db.commit()
+        uid = row.id
+    finally:
+        db.close()
+
+    ok, reason, ver = svc.set_password(uid, "password1234")
+    assert ok and reason == "ok" and ver == 1
+    logged, err = svc.login("g@ox.ac.uk", "password1234")
+    assert err is None
+    db = Session()
+    try:
+        assert db.get(User, uid).auth_provider == "password"
+    finally:
+        db.close()

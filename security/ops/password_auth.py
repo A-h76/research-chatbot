@@ -264,7 +264,7 @@ class PasswordAuthService:
             user = db.execute(
                 select(self.User).where(self.User.email == email)
             ).scalar_one_or_none()
-            if not user or not getattr(user, "password_hash", None):
+            if not user:
                 return
             raw = secrets.token_urlsafe(32)
             db.add(
@@ -324,6 +324,72 @@ class PasswordAuthService:
                 cta_url=f"{self.app_base_url}/auth/sign-in",
             )
             return True, "ok"
+        finally:
+            db.close()
+
+    def change_password(
+        self, user_id: int, current_password: str, new_password: str
+    ) -> tuple[bool, str, int | None]:
+        """Update password for a logged-in user. Returns (ok, reason, session_version)."""
+        if not new_password or len(new_password) < 10:
+            return False, "invalid_input", None
+        if not current_password:
+            return False, "current_required", None
+        db = self.SessionLocal()
+        try:
+            user = db.get(self.User, user_id)
+            if not user:
+                return False, "not_found", None
+            if not getattr(user, "password_hash", None):
+                return False, "no_password", None
+            if not check_password_hash(user.password_hash, current_password):
+                return False, "wrong_password", None
+            if check_password_hash(user.password_hash, new_password):
+                return False, "same_password", None
+            user.password_hash = generate_password_hash(new_password)
+            user.session_version = int(getattr(user, "session_version", 0) or 0) + 1
+            ver = user.session_version
+            email = user.email
+            name = user.name or ""
+            db.commit()
+            self._track("password_changed", user_id=user.id)
+            self._emit(
+                EmailEvent.PASSWORD_CHANGED,
+                to=email,
+                name=name,
+                cta_url=f"{self.app_base_url}/auth/sign-in",
+            )
+            return True, "ok", ver
+        finally:
+            db.close()
+
+    def set_password(self, user_id: int, new_password: str) -> tuple[bool, str, int | None]:
+        """First-time password for OAuth / magic-link accounts (no existing hash)."""
+        if not new_password or len(new_password) < 10:
+            return False, "invalid_input", None
+        db = self.SessionLocal()
+        try:
+            user = db.get(self.User, user_id)
+            if not user:
+                return False, "not_found", None
+            if getattr(user, "password_hash", None):
+                return False, "already_has_password", None
+            user.password_hash = generate_password_hash(new_password)
+            if (getattr(user, "auth_provider", None) or "") in {"google", "magic", "dev", ""}:
+                user.auth_provider = "password"
+            user.session_version = int(getattr(user, "session_version", 0) or 0) + 1
+            ver = user.session_version
+            email = user.email
+            name = user.name or ""
+            db.commit()
+            self._track("password_set", user_id=user.id)
+            self._emit(
+                EmailEvent.PASSWORD_CHANGED,
+                to=email,
+                name=name,
+                cta_url=f"{self.app_base_url}/auth/sign-in",
+            )
+            return True, "ok", ver
         finally:
             db.close()
 

@@ -3718,6 +3718,8 @@ def api_me():
                 "custom_instructions": user.custom_instructions or "",
                 "default_model": DEFAULT_MODEL,
                 "beta_mode": CLOSED_BETA,
+                "auth_provider": getattr(user, "auth_provider", None) or "password",
+                "has_password": bool(getattr(user, "password_hash", None)),
                 "onboarding_completed": bool(getattr(user, "onboarding_completed_at", None)),
                 "onboarding": _onboarding_payload(user),
             }
@@ -3735,8 +3737,12 @@ def update_profile():
         u = db.get(User, session["user_id"])
         if "custom_instructions" in data:
             u.custom_instructions = str(data["custom_instructions"])[:4000]
+        if "name" in data:
+            name = str(data["name"] or "").strip()[:200]
+            if name:
+                u.name = name
         db.commit()
-        return jsonify({"ok": True})
+        return jsonify({"ok": True, "name": u.name, "email": u.email})
     finally:
         db.close()
 

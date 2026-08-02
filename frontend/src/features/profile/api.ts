@@ -5,4 +5,6 @@ export const profileApi = {
   me: () => api.get<Me>("/api/me"),
   updateInstructions: (custom_instructions: string) =>
     api.patch<{ ok: boolean }>("/api/profile", { custom_instructions }),
+  updateProfile: (data: { name?: string; custom_instructions?: string }) =>
+    api.patch<{ ok: boolean; name?: string; email?: string }>("/api/profile", data),
 };
