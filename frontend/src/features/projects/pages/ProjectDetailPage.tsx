@@ -184,7 +184,7 @@ function GettingStartedChecklist({
     <section className="rounded-xl border border-primary/25 bg-accent-soft/40 p-4">
       <h2 className="text-sm font-semibold">Getting started</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Closed beta workflow — complete these steps to unlock project research.
+        Research workflow — complete these steps to unlock project research.
       </p>
       <ol className="mt-4 space-y-3">
         {steps.map((step, i) => (

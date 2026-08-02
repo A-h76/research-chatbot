@@ -1,89 +1,20 @@
 {% extends "landing_base.html" %}
-{% block title %}Early Access — Dhund{% endblock %}
-{% block description %}Request early access to Dhund closed beta for researchers and labs.{% endblock %}
+{% block title %}Get started — Dhund{% endblock %}
+{% block description %}Create a Dhund account and start your literature review workspace.{% endblock %}
 {% block content %}
-<div class="wrap page" style="display:grid;grid-template-columns:1.05fr 0.95fr;gap:1.5rem;align-items:start">
-  <div class="reveal">
-    <header class="page-hero" style="padding-top:0">
-      <p class="eyebrow">Closed beta</p>
-      <h1>Request Early Access</h1>
-      <p class="support">Intentional seats — not an open waitlist dump.</p>
-      <p class="lead">Currently in closed beta. We’re looking for people who will stress real literature review workflows.</p>
-    </header>
-    <ul class="expect-list">
-      <li><span class="tick">•</span> MSc students</li>
-      <li><span class="tick">•</span> PhD researchers</li>
-      <li><span class="tick">•</span> Supervisors</li>
-      <li><span class="tick">•</span> Research labs</li>
-    </ul>
-    <p style="color:var(--muted);font-size:0.95rem">
-      Tell us your field and stage. If a seat opens that fits, we’ll follow up.
-      Already invited? <a href="{{ url_for('login_page') }}" style="color:var(--teal-deep);text-decoration:underline;text-underline-offset:2px">Sign in</a>.
+<div class="wrap-narrow page">
+  <header class="page-hero reveal">
+    <p class="eyebrow">Get started</p>
+    <h1>Open your research workspace</h1>
+    <p class="support">Papers → evidence → writing → export.</p>
+    <p class="lead">
+      Create a free account with email and password, or continue with Google.
+      Magic link sign-in is also available.
     </p>
-  </div>
-
-  <div class="panel reveal">
-    <h2>Apply for a seat</h2>
-    <p class="sub">We’ll respond if your research workflow is a fit for this beta cohort.</p>
-    <form id="access-form" onsubmit="return sendAccessRequest(event)">
-      <div class="field">
-        <label for="access-email">Email</label>
-        <input id="access-email" type="email" name="email" placeholder="you@university.edu" required autocomplete="email">
-      </div>
-      <div class="field">
-        <label for="access-message">What are you researching?</label>
-        <textarea id="access-message" name="message" placeholder="Field, stage (lit review / thesis / lab), and what you need from an evidence-backed writing workflow…" required minlength="5"></textarea>
-      </div>
-      <button type="submit" class="access-btn" id="access-btn">Request Early Access</button>
-      <p id="access-msg" style="margin-top:0.75rem;font-size:0.86rem;display:none"></p>
-    </form>
+  </header>
+  <div class="panel reveal" style="display:flex;flex-wrap:wrap;gap:0.75rem">
+    <a class="btn btn-primary" href="/auth/sign-up">Create account</a>
+    <a class="btn btn-ghost" href="/auth/sign-in">Sign in</a>
   </div>
 </div>
-<style>
-  @media (max-width: 860px) {
-    .wrap.page { grid-template-columns: 1fr !important; }
-  }
-</style>
-{% endblock %}
-{% block scripts %}
-<script>
-  async function sendAccessRequest(e) {
-    e.preventDefault();
-    var btn = document.getElementById('access-btn');
-    var msg = document.getElementById('access-msg');
-    var email = document.getElementById('access-email').value.trim();
-    var message = document.getElementById('access-message').value.trim();
-    btn.disabled = true;
-    msg.style.display = 'none';
-    try {
-      var res = await fetch('/api/support', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: email,
-          category: 'beta',
-          subject: 'Early access request',
-          message: message
-        })
-      });
-      var data = await res.json().catch(function () { return {}; });
-      msg.style.display = 'block';
-      if (res.ok) {
-        msg.style.color = 'var(--ok)';
-        msg.textContent = 'Thanks — we received your request' + (data.ticket ? ' (#' + data.ticket + ')' : '') + '.';
-        document.getElementById('access-form').reset();
-      } else {
-        msg.style.color = 'var(--danger)';
-        msg.textContent = data.detail || 'Could not send request. Try again.';
-      }
-    } catch (err) {
-      msg.style.display = 'block';
-      msg.style.color = 'var(--danger)';
-      msg.textContent = 'Network error — try again.';
-    } finally {
-      btn.disabled = false;
-    }
-    return false;
-  }
-</script>
 {% endblock %}

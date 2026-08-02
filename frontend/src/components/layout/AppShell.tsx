@@ -5,8 +5,7 @@ import { TopBar } from "./TopBar";
 import { CommandPalette } from "./CommandPalette";
 import { AskDhundFab } from "./AskDhundFab";
 import { RightPanel } from "@/features/right-panel/components/RightPanel";
-import { BetaBanner } from "@/components/common/BetaBanner";
-import { BetaWelcomeModal } from "@/components/common/BetaWelcomeModal";
+import { OnboardingWizard } from "@/features/onboarding/OnboardingWizard";
 import { useUI } from "@/context/UIContext";
 import { isTypingTarget } from "@/lib/keyboard";
 import type { Me } from "@/types/api";
@@ -35,7 +34,6 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
       <Sidebar me={me} />
       <MobileDrawer me={me} open={mobileOpen} onOpenChange={setMobileOpen} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <BetaBanner me={me} />
         <TopBar onOpenMobileDrawer={() => setMobileOpen(true)} />
         <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 outline-none">
           {children}
@@ -44,7 +42,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
       <RightPanel />
       <CommandPalette />
       <AskDhundFab />
-      <BetaWelcomeModal me={me} />
+      {!me.onboarding_completed && <OnboardingWizard me={me} />}
     </div>
   );
 }

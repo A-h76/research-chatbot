@@ -14,7 +14,7 @@
       Dhund links every claim to sources you imported, reviewed, and accepted.
     </p>
     <div class="hero-actions">
-      <a class="btn btn-primary" href="{{ url_for('marketing_early_access') }}">Request Early Access</a>
+      <a class="btn btn-primary" href="/auth/sign-up">Create account</a>
       <a class="btn btn-ghost" href="{{ url_for('marketing_how_it_works') }}">See the workflow</a>
     </div>
     <div class="pipeline-strip" aria-label="Research workflow">
@@ -59,10 +59,10 @@
       <h3>Research</h3>
       <p>Guides on literature reviews, evidence-backed writing, and why AI hallucinates in research.</p>
     </a>
-    <a class="card" href="{{ url_for('marketing_early_access') }}">
+    <a class="card" href="/auth/sign-up">
       <div class="card-icon">04</div>
-      <h3>Early Access</h3>
-      <p>Closed beta for MSc students, PhD researchers, supervisors, and labs.</p>
+      <h3>Get started</h3>
+      <p>Create an account and continue your literature review in one research workspace.</p>
     </a>
   </div>
 </section>
@@ -71,11 +71,11 @@
   <div class="cta-band reveal">
     <div>
       <strong style="display:block;font-size:1.15rem;margin-bottom:0.35rem">Ready to work from evidence?</strong>
-      <p>Request early access, or sign in if you already have an invite.</p>
+      <p>Create an account, or sign in if you already have one.</p>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:0.6rem">
-      <a class="btn btn-primary" href="{{ url_for('marketing_early_access') }}">Request Early Access</a>
-      <a class="btn btn-ghost" href="{{ url_for('login_page') }}" style="border-color:rgba(255,255,255,0.35);color:#fff;background:transparent">Sign In</a>
+      <a class="btn btn-primary" href="/auth/sign-up">Create account</a>
+      <a class="btn btn-ghost" href="/auth/sign-in" style="border-color:rgba(255,255,255,0.35);color:#fff;background:transparent">Sign In</a>
     </div>
   </div>
 </section>

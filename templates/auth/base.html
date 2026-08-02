@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Dhund{% endblock %}</title>
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="{{ url_for('static', filename='landing-theme.js') }}"></script>
+<style>
+  :root {
+    --ink: #14201f;
+    --muted: #5a6b69;
+    --line: #d8e3e1;
+    --teal: #0F766E;
+    --teal-deep: #0a524f;
+    --teal-soft: #e6f3f2;
+    --bg: #f4f7f6;
+    --paper: #ffffff;
+    --ok: #1f6b4a;
+    --danger: #9b2c2c;
+    --radius: 14px;
+    --shadow: 0 24px 60px rgba(20, 32, 31, 0.08);
+    --font: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    --serif: "Newsreader", Georgia, serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e8eeed; --muted: #9aaba8; --line: #2a3836; --teal: #14a39c;
+      --teal-deep: #4fdbc8; --teal-soft: #0d2f2d; --bg: #0c1211; --paper: #141c1b;
+      --shadow: 0 24px 60px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8eeed; --muted: #9aaba8; --line: #2a3836; --teal: #14a39c;
+    --teal-deep: #4fdbc8; --teal-soft: #0d2f2d; --bg: #0c1211; --paper: #141c1b;
+    --shadow: 0 24px 60px rgba(0,0,0,.4);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: var(--font);
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(15,118,110,.12), transparent 55%),
+      radial-gradient(900px 500px at 100% 0%, rgba(15,118,110,.08), transparent 50%),
+      var(--bg);
+  }
+  a { color: var(--teal); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .shell {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 32px 16px;
+  }
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    box-shadow: var(--shadow);
+    padding: 36px 32px 28px;
+    animation: rise .45s ease both;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+  .brand {
+    font-family: var(--serif);
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    margin: 0 0 4px;
+  }
+  .eyebrow {
+    margin: 0 0 28px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  h1 {
+    font-size: 22px;
+    letter-spacing: -0.02em;
+    margin: 0 0 8px;
+  }
+  .lede {
+    margin: 0 0 24px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 6px;
+  }
+  .field { margin-bottom: 14px; }
+  input[type="email"], input[type="password"], input[type="text"] {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    border-radius: 12px;
+    padding: 12px 14px;
+    font: inherit;
+    font-size: 15px;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px rgba(15,118,110,.18);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    border: 0;
+    border-radius: 12px;
+    padding: 12px 16px;
+    font: inherit;
+    font-weight: 600;
+    font-size: 15px;
+    cursor: pointer;
+    transition: transform .12s ease, opacity .12s ease;
+  }
+  .btn:disabled { opacity: .6; cursor: not-allowed; }
+  .btn:not(:disabled):hover { transform: translateY(-1px); }
+  .btn-primary { background: var(--teal); color: #fff; }
+  .btn-secondary {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .stack { display: grid; gap: 10px; margin-top: 8px; }
+  .divider {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 12px;
+    align-items: center;
+    margin: 18px 0;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .divider::before, .divider::after {
+    content: "";
+    height: 1px;
+    background: var(--line);
+  }
+  .msg {
+    display: none;
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .msg.show { display: block; }
+  .msg.error { background: rgba(155,44,44,.1); color: var(--danger); }
+  .msg.ok { background: rgba(31,107,74,.12); color: var(--ok); }
+  .footer-links {
+    margin-top: 22px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .hint { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+  .theme-btn {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 999px;
+    padding: 8px 12px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .success-mark {
+    width: 48px; height: 48px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: rgba(15,118,110,.12); color: var(--teal);
+    font-size: 22px; font-weight: 700; margin-bottom: 16px;
+  }
+</style>
+{% block head %}{% endblock %}
+</head>
+<body>
+  <button type="button" class="theme-btn" id="theme-toggle" aria-label="Toggle theme">Theme</button>
+  <main class="shell">
+    <div class="card">
+      <p class="brand">Dhund</p>
+      <p class="eyebrow">Research Operating System</p>
+      {% block body %}{% endblock %}
+    </div>
+  </main>
+  <script src="{{ url_for('static', filename='auth.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

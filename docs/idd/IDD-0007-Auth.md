@@ -13,21 +13,31 @@
 
 | Mechanism | How | Client |
 |-----------|-----|--------|
-| Session cookie | Google OAuth, magic link, password ops, dev login | SPA default |
+| Session cookie | Google OAuth, magic link, email/password, dev login | SPA default |
 | Bearer JWT | `GET /api/auth/jwt` then `Authorization: Bearer` | Upload, bulk, pipeline, RAG |
-| Marketing | Unauthenticated | Jinja pages only |
+| Marketing + auth UI | Unauthenticated | Jinja (`/`, `/auth/*`) |
 
 ### 1.2 Session rules
 
 - `user_id` in server session; SPA boot via `GET /api/me`.
 - Logout clears session; JWT `session_version` mismatch → `401`.
-- Closed beta: invite allowlist; denied signup → `403` with clear detail.
+- Open signup by default. Optional `BETA_INVITE_ONLY=1` requires allowlist or invite token (`403 not_invited`).
 
 ### 1.3 Protected application routes (Frontend)
 
 All SPA routes under `RootLayout` require successful `/api/me` except legal/support if exposed without shell.
 
-Hard redirect to `/login` on auth failure.
+Hard redirect to `/auth/sign-in` (legacy `/login` redirects there) on auth failure.
+
+### 1.4 Auth pages
+
+`/auth/sign-in`, `/auth/sign-up`, `/auth/forgot-password`, `/auth/reset-password`,
+`/auth/verify-email`, `/auth/email-confirmed`, `/auth/account-created`, `/auth/password-updated`.
+
+### 1.5 Onboarding
+
+`users.onboarding_completed_at` + `onboarding_json`. SPA shows a one-time wizard when
+`onboarding_completed` is false; `POST /api/onboarding/complete` persists prefs.
 
 ---
 
@@ -37,7 +47,6 @@ Hard redirect to `/login` on auth failure.
 |------|-------------|
 | `anonymous` | Marketing only |
 | `user` | Standard researcher |
-| `beta_user` | Invited closed beta (same permissions as user unless gated) |
 | `admin` | Ops (`is_admin`) — invites, metrics, kill switches |
 
 No multi-user project roles in v1 (single owner).

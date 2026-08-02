@@ -1,0 +1,45 @@
+{% extends "auth/base.html" %}
+{% block title %}Sign in · Dhund{% endblock %}
+{% block body %}
+  <h1>Sign in</h1>
+  <p class="lede">Continue your literature review and research workspace.</p>
+
+  <div id="auth-msg" class="msg {% if error %}error show{% elif verified %}ok show{% endif %}" role="status">
+    {% if verified %}Email verified. You can sign in now.{% elif error %}{{ error }}{% endif %}
+  </div>
+
+  <form id="password-login-form" class="stack" novalidate>
+    <div class="field">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" required />
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required minlength="10" />
+    </div>
+    <button class="btn btn-primary" type="submit" id="password-login-btn">Sign in</button>
+  </form>
+
+  <p class="footer-links" style="margin-top:12px;">
+    <a href="/auth/forgot-password">Forgot password?</a>
+  </p>
+
+  <div class="divider">or</div>
+
+  {% if oauth_ready %}
+  <a class="btn btn-secondary" href="/auth/google">Continue with Google</a>
+  {% endif %}
+
+  <form id="magic-form" class="stack" style="margin-top:10px;" novalidate>
+    <div class="field">
+      <label for="magic-email">Magic link email</label>
+      <input id="magic-email" name="email" type="email" autocomplete="email" />
+    </div>
+    <button class="btn btn-secondary" type="submit" id="magic-btn">Continue with Magic Link</button>
+  </form>
+  <p id="magic-msg" class="msg" role="status"></p>
+
+  <p class="footer-links">
+    New here? <a href="/auth/sign-up">Create account</a>
+  </p>
+{% endblock %}

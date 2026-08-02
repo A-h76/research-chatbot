@@ -1,6 +1,7 @@
 import { Check, FileText, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useMe } from "@/features/profile/useMe";
 import type { UserFile } from "@/types/api";
 
 /** Calm editorial graphic — research workflow, not a fake UI widget. */
@@ -253,6 +254,11 @@ export function ProjectsEmptyState({
 }) {
   const hasPapers = papers.length > 0;
   const selectedCount = selectedIds.size;
+  const { data: me } = useMe();
+  const focus =
+    me?.onboarding?.institution?.trim() ||
+    me?.onboarding?.research_focus?.trim() ||
+    (me?.onboarding?.research_fields || []).join(", ");
 
   return (
     <div className="mx-auto flex max-w-lg flex-col items-center py-10 text-center sm:py-14">
@@ -264,8 +270,9 @@ export function ProjectsEmptyState({
         No projects yet
       </h2>
       <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
-        Start a research effort — gather papers, extract evidence, write with
-        citations, and export when you&apos;re ready.
+        {focus
+          ? `Continue “${focus}” — gather papers, extract evidence, write with citations, and export when you’re ready.`
+          : "Start a research effort — gather papers, extract evidence, write with citations, and export when you’re ready."}
       </p>
 
       {hasPapers && (

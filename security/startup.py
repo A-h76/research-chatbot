@@ -75,21 +75,7 @@ def require_production_secrets(
         missing.append("OPENAI_API_KEY")
 
     if not (environ.get("RESEND_API_KEY") or "").strip():
-        log.warning(
-            "RESEND_API_KEY unset in production — transactional email "
-            "(magic link, password reset) will log to console only."
-        )
-
-    # Closed beta: refuse open signup in production.
-    allowed = (environ.get("ALLOWED_EMAILS") or "").strip()
-    invite_only = (environ.get("BETA_INVITE_ONLY") or "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    if not allowed and not invite_only:
-        missing.append("ALLOWED_EMAILS or BETA_INVITE_ONLY")
+        missing.append("RESEND_API_KEY")
 
     if not (environ.get("REDIS_URL") or "").strip():
         log.warning(

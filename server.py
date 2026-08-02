@@ -75,15 +75,15 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 # NEVER set this in production.
 DEV_AUTO_LOGIN = os.environ.get("DEV_AUTO_LOGIN", "")
 ALLOWED_EMAILS = [e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()]
-# Closed beta: when true (or when ALLOWED_EMAILS is non-empty), unknown emails
-# cannot sign up. Production startup requires ALLOWED_EMAILS or this flag.
+# Optional lockdown: when true, only allowlisted or invited emails may sign up.
+# Open signup is the default for production.
 BETA_INVITE_ONLY = (os.environ.get("BETA_INVITE_ONLY", "") or "").strip().lower() in {
     "1",
     "true",
     "yes",
     "on",
 }
-CLOSED_BETA = BETA_INVITE_ONLY or bool(ALLOWED_EMAILS) or (
+CLOSED_BETA = BETA_INVITE_ONLY or (
     os.environ.get("CLOSED_BETA", "").strip().lower() in {"1", "true", "yes", "on"}
 )
 
@@ -109,12 +109,18 @@ MAX_FILE_MB = int(os.environ.get("MAX_FILE_MB", "25"))
 REDIS_URL = os.environ.get("REDIS_URL", "")
 JOB_STATUS_CACHE_TTL_SECONDS = 3600
 
-# Transactional email (provider-agnostic; Resend today). Falls back to console
-# logging in development when no API key is configured.
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-EMAIL_FROM = os.environ.get("EMAIL_FROM", "Dhund <onboarding@resend.dev>")
-SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "")  # where tickets are routed
-APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000")
+# Transactional email — single source of truth in backend.config.email
+from backend.config.email import (
+    APP_BASE_URL,
+    AUTH_EMAIL_FROM,
+    EMAIL_FROM,
+    NOREPLY_EMAIL_FROM,
+    NOTIFICATIONS_EMAIL_FROM,
+    PUBLIC_SITE_URL,
+    RESEND_API_KEY,
+    SUPPORT_EMAIL,
+)
+
 IS_PRODUCTION = (
     os.environ.get("FLASK_ENV", "").lower() == "production" or os.environ.get("APP_ENV", "").lower() == "production"
 )
@@ -199,62 +205,16 @@ def log_security_event(event, **fields):
 
 
 # ------------------------------------------------------------------ email service
-class EmailService:
-    """Provider-agnostic transactional email. Swap the backend by changing the
-    env config, not call sites. In dev (no RESEND_API_KEY) emails are logged to
-    the console instead of being sent."""
+from backend.services.email import EmailEvent, TransactionalEmailService
 
-    def __init__(self, api_key, sender):
-        self.api_key = api_key
-        self.sender = sender
-        self.enabled = bool(api_key)
-
-    def send(self, to, subject, html, text=None, reply_to=None):
-        """Returns True if handed off to the provider (or logged in dev)."""
-        recipients = [to] if isinstance(to, str) else list(to)
-        if not self.enabled:
-            email_log.info(
-                "[dev email - not sent]\n  to: %s\n  subject: %s\n  body:\n%s",
-                ", ".join(recipients),
-                subject,
-                _redact_email_secrets(text or _html_to_text(html)),
-            )
-            return True
-        payload = {
-            "from": self.sender,
-            "to": recipients,
-            "subject": subject,
-            "html": html,
-        }
-        if text:
-            payload["text"] = text
-        if reply_to:
-            payload["reply_to"] = reply_to
-        try:
-            import requests
-
-            resp = requests.post(
-                "https://api.resend.com/emails",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-                timeout=15,
-            )
-            if resp.status_code >= 400:
-                email_log.error("Resend error %s: %s", resp.status_code, resp.text[:300])
-                return False
-            return True
-        except Exception as e:
-            email_log.error("email send failed: %s", e)
-            return False
+# Keep EmailService name for older call sites / tests.
+EmailService = TransactionalEmailService
 
 
 def _html_to_text(html):
-    import re
+    from backend.services.email.renderer import html_to_text
 
-    return re.sub(r"<[^>]+>", "", html or "").strip()
+    return html_to_text(html)
 
 
 def _redact_email_secrets(body: str) -> str:
@@ -267,7 +227,7 @@ def _redact_email_secrets(body: str) -> str:
     return text
 
 
-email_service = EmailService(RESEND_API_KEY, EMAIL_FROM)
+email_service = TransactionalEmailService.from_env()
 
 
 # ------------------------------------------------------------------ rate limiting + CSRF
@@ -554,6 +514,14 @@ class User(Base):
     monthly_cost_used = Column(Float, default=0.0)
     monthly_cost_limit = Column(Float, default=20.0)
     last_login_at = Column(DateTime, nullable=True)
+    onboarding_completed_at = Column(DateTime, nullable=True)
+    research_role = Column(String(40), nullable=True)
+    research_fields = Column(Text, nullable=True)  # comma-separated field ids
+    institution = Column(String(200), nullable=True)
+    research_goal = Column(String(40), nullable=True)
+    experience_level = Column(String(20), nullable=True)
+    # Legacy; prefer structured columns above
+    onboarding_json = Column(Text, nullable=True)
 
 
 class Project(Base):
@@ -1273,7 +1241,7 @@ from backend.library.models import (
 SystemSetting = create_system_settings_model(Base)
 SecurityEvent = create_security_event_model(Base)
 InviteToken = create_invite_token_model(Base)
-EmailVerificationToken, PasswordResetToken = create_email_token_models(Base)
+EmailVerificationToken, PasswordResetToken, EmailChangeToken = create_email_token_models(Base)
 MagicLinkToken = create_magic_link_token_model(Base)
 LibraryConnection = create_library_connection_model(Base)
 LibraryCollection, LibraryCollectionPaper = create_library_collection_models(Base)
@@ -1376,6 +1344,13 @@ def ensure_columns():
         "ALTER TABLE users ADD COLUMN monthly_cost_used FLOAT DEFAULT 0",
         "ALTER TABLE users ADD COLUMN monthly_cost_limit FLOAT DEFAULT 20",
         "ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN onboarding_completed_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN research_role VARCHAR(40)",
+        "ALTER TABLE users ADD COLUMN research_fields TEXT",
+        "ALTER TABLE users ADD COLUMN institution VARCHAR(200)",
+        "ALTER TABLE users ADD COLUMN research_goal VARCHAR(40)",
+        "ALTER TABLE users ADD COLUMN experience_level VARCHAR(20)",
+        "ALTER TABLE users ADD COLUMN onboarding_json TEXT",
         "ALTER TABLE model_registry_cost_ledger ADD COLUMN estimated_cost FLOAT",
         "ALTER TABLE model_registry_cost_ledger ADD COLUMN currency VARCHAR(8) DEFAULT 'USD'",
         # ── Scholarly provider integrations (migration 0018) ─────────────
@@ -1490,7 +1465,7 @@ def login_required(f):
 
 
 _LOGIN_ERRORS = {
-    "not_invited": "Access denied — this account is not invited to the closed beta.",
+    "not_invited": "Access denied — this account is not allowed to sign in.",
     "oauth_email": "Could not read your Google account email.",
     "oauth_failed": "Google sign-in failed or expired. Please try again.",
     "oauth_busy": "Sign-in is temporarily busy. Wait a moment and try again.",
@@ -1561,7 +1536,12 @@ def login_page():
             db.close()
     # ─────────────────────────────────────────────────────────────────────────
 
-    return _render_login_landing()
+    # Preserve legacy query params on the new auth UI.
+    qs = request.query_string.decode("utf-8") if request.query_string else ""
+    target = "/auth/sign-in"
+    if qs:
+        target = f"{target}?{qs}"
+    return redirect(target)
 
 
 def _marketing_ctx(active: str, **extra):
@@ -1749,6 +1729,10 @@ def auth_callback():
         session["jwt"] = {"access": access, "refresh": refresh}
         mark_session_login(session)
         _record_user_login(user.id)
+        try:
+            _ops_events.record("google_login", user_id=user.id, email=email)
+        except Exception:
+            pass
     except Exception:
         logging.getLogger(__name__).exception("OAuth user upsert failed")
         try:
@@ -2067,9 +2051,13 @@ _ops_password = PasswordAuthService(
     User,
     EmailVerificationToken,
     PasswordResetToken,
+    EmailChangeToken=EmailChangeToken,
     email_service=email_service,
     app_base_url=APP_BASE_URL,
     events=_ops_events,
+    auth_from=AUTH_EMAIL_FROM,
+    noreply_from=NOREPLY_EMAIL_FROM,
+    invite_service=_ops_invites,
 )
 ai_gate = AiAccessGate(
     SessionLocal=SessionLocal,
@@ -2099,7 +2087,7 @@ def _signup_allowed(email: str) -> tuple[bool, str]:
         email,
         allowed_emails=ALLOWED_EMAILS,
         invite_service=_ops_invites,
-        require_invite=BETA_INVITE_ONLY or bool(ALLOWED_EMAILS),
+        require_invite=BETA_INVITE_ONLY,
     )
 
 
@@ -2234,6 +2222,8 @@ app.register_blueprint(
         create_jwt=create_jwt,
         record_last_login_fn=_record_user_login,
         limiter=limiter,
+        oauth_ready=bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
+        closed_beta=CLOSED_BETA,
     )
 )
 
@@ -3698,6 +3688,21 @@ def _log_chat_cost(user_id, model, usage):
 
 
 # ------------------------------------------------------------------ API: profile / models
+def _onboarding_payload(user) -> dict:
+    fields_raw = getattr(user, "research_fields", None) or ""
+    fields = [f for f in str(fields_raw).split(",") if f]
+    return {
+        "research_role": getattr(user, "research_role", None) or "",
+        "research_fields": fields,
+        "institution": getattr(user, "institution", None) or "",
+        "research_goal": getattr(user, "research_goal", None) or "",
+        "experience_level": getattr(user, "experience_level", None) or "",
+        # Convenience aliases for launchpad copy
+        "research_focus": getattr(user, "institution", None) or "",
+        "goal": getattr(user, "research_goal", None) or "",
+    }
+
+
 @app.route("/api/me")
 @login_required
 def api_me():
@@ -3713,6 +3718,8 @@ def api_me():
                 "custom_instructions": user.custom_instructions or "",
                 "default_model": DEFAULT_MODEL,
                 "beta_mode": CLOSED_BETA,
+                "onboarding_completed": bool(getattr(user, "onboarding_completed_at", None)),
+                "onboarding": _onboarding_payload(user),
             }
         )
     finally:

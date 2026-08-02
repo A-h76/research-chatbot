@@ -1,0 +1,11 @@
+{% extends "email/base.html" %}
+{% block title %}You've been invited to Dhund{% endblock %}
+{% block content %}
+  <p style="margin:0 0 16px 0;">You&apos;ve been invited to Dhund.</p>
+  <p style="margin:0 0 16px 0;">Your organization invited you to collaborate in a research workspace.</p>
+  <p style="margin:0 0 16px 0;">Sign in with <strong style="color:#f4f7fb;">{{ email }}</strong> using Google, magic link, or email and password.</p>
+  <p style="margin:24px 0;">
+    <a href="{{ signup_url }}" style="display:inline-block;background:#0F766E;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:10px;">Accept invitation</a>
+  </p>
+  <p style="margin:0;font-size:13px;color:#8b9bb4;">This invite expires in {{ days | default(7) }} days.</p>
+{% endblock %}

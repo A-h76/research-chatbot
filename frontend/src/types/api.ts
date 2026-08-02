@@ -6,6 +6,16 @@ export interface Me {
   custom_instructions: string;
   default_model: string;
   beta_mode?: boolean;
+  onboarding_completed?: boolean;
+  onboarding?: {
+    research_role?: string;
+    research_fields?: string[];
+    institution?: string;
+    research_goal?: string;
+    experience_level?: string;
+    research_focus?: string;
+    goal?: string;
+  };
 }
 
 export interface ModelsResponse {

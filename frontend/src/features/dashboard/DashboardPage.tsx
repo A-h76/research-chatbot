@@ -18,6 +18,7 @@ import { useProjectHub } from "@/features/projects/useProjects";
 import { evidenceApi } from "@/features/evidence/api";
 import { writingApi } from "@/features/writing/api";
 import { useDashboard } from "./useDashboard";
+import { useMe } from "@/features/profile/useMe";
 import { cn } from "@/lib/utils";
 import type { DashboardPaperBrief } from "./api";
 import type { WritingDocument } from "@/types/api";
@@ -91,8 +92,35 @@ function deriveStage(opts: {
 export function DashboardPage() {
   const navigate = useNavigate();
   const { currentProjectId } = useUI();
+  const { data: me } = useMe();
   const { data, isLoading } = useDashboard();
   const { data: hub } = useProjectHub(currentProjectId);
+  const focusLabel =
+    me?.onboarding?.institution?.trim() ||
+    me?.onboarding?.research_focus?.trim() ||
+    "";
+  const fieldLabels = (me?.onboarding?.research_fields || [])
+    .map((id) =>
+      (
+        {
+          ai: "Artificial Intelligence",
+          medicine: "Medicine",
+          physics: "Physics",
+          economics: "Economics",
+          biology: "Biology",
+          chemistry: "Chemistry",
+          cs: "Computer Science",
+          engineering: "Engineering",
+          social: "Social Sciences",
+          other: "Other",
+        } as Record<string, string>
+      )[id] || id,
+    )
+    .slice(0, 3);
+  const researchFocusLine =
+    fieldLabels.length > 0 ? fieldLabels.join(" · ") : focusLabel;
+  const firstName = (me?.name || "").trim().split(/\s+/)[0] || "";
+  const goal = me?.onboarding?.research_goal || me?.onboarding?.goal || "";
 
   const { data: themes } = useQuery({
     queryKey: ["launchpad", "themes", currentProjectId],
@@ -325,19 +353,56 @@ export function DashboardPage() {
         ) : !data ? (
           <p className="text-sm text-muted-foreground">Could not load home.</p>
         ) : data.library.total_papers === 0 ? (
-          <div className="py-12 text-center">
+          <div className="py-10">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Active research
+              Research OS
             </p>
-            <p className="mt-2 text-[22px] font-semibold tracking-tight">
-              Start your research
-            </p>
-            <p className="mx-auto mt-2 max-w-sm text-[14px] text-muted-foreground">
-              Import a paper. Dhund opens a research workspace — not a blank chat.
-            </p>
-            <Button className="mt-5 gap-2" onClick={() => navigate("/library#import")}>
-              <Upload className="size-4" /> Import research
-            </Button>
+            <h1 className="mt-2 text-[24px] font-semibold tracking-tight">
+              {firstName ? `Welcome back, ${firstName}` : "Welcome to Dhund"}
+            </h1>
+            {researchFocusLine ? (
+              <p className="mt-2 text-[14px] text-muted-foreground">
+                Research focus · {researchFocusLine}
+              </p>
+            ) : (
+              <p className="mt-2 text-[14px] text-muted-foreground">
+                Your personalized research workspace.
+              </p>
+            )}
+            <div className="mt-6 grid gap-2 sm:grid-cols-2">
+              {[
+                {
+                  title: "Upload your first paper",
+                  href: "/library#import",
+                  hint: "Start the evidence pipeline",
+                },
+                {
+                  title: "Create a literature review",
+                  href: "/projects?new=1",
+                  hint: goal === "lit_review" ? "Matches your goal" : "Organise papers → writing",
+                },
+                {
+                  title: "Start a research project",
+                  href: "/projects?new=1",
+                  hint: "Questions, evidence, writing",
+                },
+                {
+                  title: "Explore the library",
+                  href: "/library",
+                  hint: "Browse collections and imports",
+                },
+              ].map((item) => (
+                <button
+                  key={item.title}
+                  type="button"
+                  onClick={() => navigate(item.href)}
+                  className="rounded-xl border border-border bg-card px-4 py-3.5 text-left transition-colors hover:bg-muted/40"
+                >
+                  <p className="text-[13px] font-medium text-foreground">{item.title}</p>
+                  <p className="mt-0.5 text-[12px] text-muted-foreground">{item.hint}</p>
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="space-y-6">
@@ -347,8 +412,15 @@ export function DashboardPage() {
                 Active research
               </p>
               <h1 className="mt-1 text-[22px] font-semibold tracking-tight text-foreground sm:text-[24px]">
-                Continue where you left off.
+                {firstName
+                  ? `Continue where you left off, ${firstName}.`
+                  : "Continue where you left off."}
               </h1>
+              {researchFocusLine ? (
+                <p className="mt-1 text-[13px] text-muted-foreground">
+                  Research focus · {researchFocusLine}
+                </p>
+              ) : null}
             </header>
 
             {/* Today's priority — subtle */}

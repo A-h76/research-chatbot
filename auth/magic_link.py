@@ -137,17 +137,24 @@ def create_magic_link_blueprint(
 
         token = issue_token(email)
         verify_url = f"{APP_BASE_URL}/auth/magic-link?token={token}"
-        html = (
-            f"<p>Click below to sign in — this link expires in 15 minutes.</p>"
-            f'<p><a href="{verify_url}">Sign in</a></p>'
-            f"<p>If you didn't request this, you can ignore this email.</p>"
-        )
-        email_service.send(
-            to=email,
-            subject="Your sign-in link",
-            html=html,
-            text=f"Sign in: {verify_url}",
-        )
+        handle = getattr(email_service, "handle", None)
+        if handle:
+            from backend.services.email import EmailEvent
+
+            email_service.handle(
+                EmailEvent.MAGIC_LINK_REQUESTED,
+                to=email,
+                link=verify_url,
+            )
+        elif getattr(email_service, "send_magic_link", None):
+            email_service.send_magic_link(to=email, link=verify_url)
+        else:
+            email_service.send(
+                to=email,
+                subject="Your Dhund sign-in link",
+                html=f'<p><a href="{verify_url}">Sign in</a></p>',
+                text=f"Sign in: {verify_url}",
+            )
         return generic_response
 
     @bp.route("/verify", methods=["POST"])
@@ -226,6 +233,7 @@ def create_magic_link_blueprint(
             mark_session_login(session)
             if record_last_login_fn:
                 record_last_login_fn(user.id)
+            log_security_event("magic_link_login", email=email, user_id=user.id)
 
             return jsonify(
                 {

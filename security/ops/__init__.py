@@ -1,4 +1,4 @@
-"""Closed-beta ops: AI gate, kill switch, invites, security events, password foundations.
+"""Ops: AI gate, kill switch, invites, security events, password auth.
 
 Never ``import server`` — factories take injected SessionLocal / models.
 """

@@ -1,26 +1,26 @@
 {% extends "landing_base.html" %}
 {% block title %}Pricing — Dhund{% endblock %}
-{% block description %}Dhund pricing will open after closed beta.{% endblock %}
+{% block description %}Dhund pricing for researchers and labs.{% endblock %}
 {% block content %}
 <div class="wrap-narrow page">
   <header class="page-hero reveal">
     <p class="eyebrow">Pricing</p>
-    <h1>Coming after beta</h1>
-    <p class="support">We’re not selling seats yet.</p>
+    <h1>Simple plans for research teams</h1>
+    <p class="support">Start free. Scale when your library and writing volume grow.</p>
     <p class="lead">
-      Dhund is in closed beta. Pricing will open when the Research OS workflow is ready for broader research teams —
+      Dhund is open for researchers. Pricing details will expand as lab and institution plans launch —
       Library through Export, with evidence-linked writing you can defend.
     </p>
   </header>
   <div class="panel reveal">
-    <h2>What to expect later</h2>
-    <p class="sub">High-level direction — not a price list.</p>
+    <h2>What to expect</h2>
+    <p class="sub">High-level direction — not a locked price list.</p>
     <ul class="mock-list" style="margin-bottom:1.25rem">
       <li><span class="tick">·</span><span>Plans for individual researchers and labs</span></li>
       <li><span class="tick">·</span><span>Clear limits around library size and writing volume</span></li>
       <li><span class="tick">·</span><span>No surprise “prompt credits” for core evidence workflows</span></li>
     </ul>
-    <a class="btn btn-primary" href="{{ url_for('marketing_early_access') }}">Request Early Access</a>
+    <a class="btn btn-primary" href="/auth/sign-up">Create account</a>
   </div>
 </div>
 {% endblock %}

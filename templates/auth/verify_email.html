@@ -1,0 +1,18 @@
+{% extends "auth/base.html" %}
+{% block title %}Verify email · Dhund{% endblock %}
+{% block body %}
+  <div class="success-mark">✉</div>
+  <h1>Check your inbox</h1>
+  <p class="lede">
+    {% if email %}
+      We sent a verification link to <strong>{{ email }}</strong>.
+    {% else %}
+      Check your inbox to verify your email.
+    {% endif %}
+  </p>
+  {% if request.args.get('error') %}
+  <div class="msg error show">Verification failed ({{ request.args.get('error') }}). Request a new link by signing up again or contacting support.</div>
+  {% endif %}
+  <p class="lede" style="margin-top:8px;">After verifying, you can sign in and open your research workspace.</p>
+  <a class="btn btn-primary" href="/auth/sign-in">Back to sign in</a>
+{% endblock %}

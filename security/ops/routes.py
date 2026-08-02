@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, redirect, request, session
+from flask import Blueprint, jsonify, redirect, render_template, request, session
 
 from security.request_validation import (
     RequestValidationError,
@@ -29,6 +29,8 @@ def create_ops_blueprint(
     create_jwt=None,
     record_last_login_fn=None,
     limiter=None,
+    oauth_ready=False,
+    closed_beta=False,
 ):
     bp = Blueprint("ops", __name__)
 
@@ -39,6 +41,91 @@ def create_ops_blueprint(
             return limiter.limit(spec)(fn)
 
         return deco
+
+    def _auth_ctx(**extra):
+        return {
+            "oauth_ready": oauth_ready,
+            "closed_beta": closed_beta,
+            "app_base_url": app_base_url,
+            **extra,
+        }
+
+    # ── Auth pages (Jinja) ──────────────────────────────────────────────
+    @bp.route("/auth/sign-in", methods=["GET"])
+    def auth_sign_in_page():
+        if "user_id" in session:
+            return redirect("/")
+        return render_template(
+            "auth/sign_in.html",
+            **_auth_ctx(
+                error=request.args.get("error"),
+                verified=request.args.get("verified") == "1",
+            ),
+        )
+
+    @bp.route("/auth/sign-up", methods=["GET"])
+    def auth_sign_up_page():
+        if "user_id" in session:
+            return redirect("/")
+        return render_template("auth/sign_up.html", **_auth_ctx())
+
+    @bp.route("/auth/forgot-password", methods=["GET"])
+    def auth_forgot_page():
+        if "user_id" in session:
+            return redirect("/")
+        return render_template("auth/forgot_password.html", **_auth_ctx())
+
+    @bp.route("/auth/reset-password", methods=["GET"])
+    def auth_reset_page():
+        token = request.args.get("token") or ""
+        return render_template(
+            "auth/reset_password.html",
+            **_auth_ctx(token=token),
+        )
+
+    @bp.route("/auth/verify-email", methods=["GET", "POST"])
+    @_rate("20 per hour")
+    def verify_email():
+        token = request.args.get("token") or (request.get_json(silent=True) or {}).get("token") or ""
+        # Waiting state (no token) — after signup
+        if request.method == "GET" and not token:
+            return render_template(
+                "auth/verify_email.html",
+                **_auth_ctx(email=request.args.get("email") or ""),
+            )
+
+        ok, reason = password_auth.verify_email(str(token))
+        if request.method == "GET":
+            if ok:
+                return redirect("/auth/email-confirmed")
+            return redirect(f"/auth/verify-email?error={reason}")
+        if not ok:
+            return jsonify({"error": reason}), 400
+        return jsonify({"ok": True})
+
+    @bp.route("/auth/email-confirmed", methods=["GET"])
+    def auth_email_confirmed():
+        return render_template("auth/email_confirmed.html", **_auth_ctx())
+
+    @bp.route("/auth/account-created", methods=["GET"])
+    def auth_account_created():
+        return render_template(
+            "auth/account_created.html",
+            **_auth_ctx(email=request.args.get("email") or ""),
+        )
+
+    @bp.route("/auth/password-updated", methods=["GET"])
+    def auth_password_updated():
+        return render_template("auth/password_updated.html", **_auth_ctx())
+
+    @bp.route("/auth/confirm-email-change", methods=["GET"])
+    def auth_confirm_email_change_page():
+        token = request.args.get("token") or ""
+        ok, reason = password_auth.confirm_email_change(str(token))
+        return render_template(
+            "auth/email_change_result.html",
+            **_auth_ctx(ok=ok, reason=reason),
+        )
 
     # ── User usage ──────────────────────────────────────────────────────
     @bp.route("/api/usage", methods=["GET"])
@@ -51,7 +138,6 @@ def create_ops_blueprint(
             "disabled_globally": snap["ai_disabled"],
             "daily": snap["daily"],
         }
-        # Attach cost rollup from gate user snapshot
         try:
             u = ai_gate._user(uid)
             summary["cost"] = {
@@ -71,19 +157,21 @@ def create_ops_blueprint(
         session.clear()
         return jsonify({"ok": True})
 
-    # ── Password auth ───────────────────────────────────────────────────
+    # ── Password auth APIs ──────────────────────────────────────────────
     @bp.route("/auth/register", methods=["POST"])
     @_rate("5 per minute")
     def register():
         try:
             data = parse_json_object(request.get_json(silent=True), allow_empty=False)
-            reject_unknown_fields(data, {"name", "email", "password"})
+            reject_unknown_fields(data, {"name", "email", "password", "confirm_password"})
             email = require_string(data, "email", max_len=320)
             name = require_string(data, "name", max_len=200, required=False)
             password = require_string(data, "password", max_len=200, min_len=10, strip=False)
+            confirm = data.get("confirm_password")
+            if confirm is not None and str(confirm) != password:
+                return jsonify({"error": "password_mismatch", "detail": "Passwords do not match."}), 400
         except RequestValidationError as exc:
             return exc.to_response()
-        # Closed-beta gate — same rule as Google/magic
         if hasattr(password_auth, "signup_allowed_fn") and password_auth.signup_allowed_fn:
             ok, reason = password_auth.signup_allowed_fn(email)
             if not ok:
@@ -98,20 +186,14 @@ def create_ops_blueprint(
             return jsonify({"error": "email_taken"}), 409
         if err:
             return jsonify({"error": err, "detail": "Name, email, and password (10+ chars) required."}), 400
-        return jsonify({"ok": True, "user": payload, "detail": "Check your email to verify your account."}), 201
-
-    @bp.route("/auth/verify-email", methods=["GET", "POST"])
-    @_rate("20 per hour")
-    def verify_email():
-        token = request.args.get("token") or (request.get_json(silent=True) or {}).get("token") or ""
-        ok, reason = password_auth.verify_email(str(token))
-        if request.method == "GET":
-            if ok:
-                return redirect("/login?verified=1")
-            return redirect(f"/login?verify_error={reason}")
-        if not ok:
-            return jsonify({"error": reason}), 400
-        return jsonify({"ok": True})
+        return jsonify(
+            {
+                "ok": True,
+                "user": payload,
+                "detail": "Check your inbox to verify your email.",
+                "redirect": f"/auth/verify-email?email={payload['email']}",
+            }
+        ), 201
 
     @bp.route("/auth/password-login", methods=["POST"])
     @_rate("5 per minute")
@@ -152,10 +234,44 @@ def create_ops_blueprint(
     @_rate("10 per hour")
     def reset_password():
         data = request.get_json(silent=True) or {}
+        password = str(data.get("password") or "")
+        confirm = data.get("confirm_password")
+        if confirm is not None and str(confirm) != password:
+            return jsonify({"error": "password_mismatch"}), 400
         ok, reason = password_auth.reset_password(
             str(data.get("token") or ""),
-            str(data.get("password") or ""),
+            password,
         )
+        if not ok:
+            return jsonify({"error": reason}), 400
+        return jsonify({"ok": True, "redirect": "/auth/password-updated"})
+
+    @bp.route("/auth/change-email", methods=["POST"])
+    @login_required
+    @_rate("5 per hour")
+    def change_email():
+        try:
+            data = parse_json_object(request.get_json(silent=True), allow_empty=False)
+            reject_unknown_fields(data, {"email", "new_email"})
+            if "new_email" in data:
+                new_email = require_string(data, "new_email", max_len=320)
+            else:
+                new_email = require_string(data, "email", max_len=320)
+        except RequestValidationError as exc:
+            return exc.to_response()
+        ok, reason = password_auth.request_email_change(session["user_id"], new_email)
+        if not ok:
+            code = 409 if reason == "email_taken" else 400
+            return jsonify({"error": reason}), code
+        return jsonify({"ok": True, "detail": "Check your new inbox to confirm the change."})
+
+    @bp.route("/api/onboarding/complete", methods=["POST"])
+    @login_required
+    def onboarding_complete():
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            data = {}
+        ok, reason = password_auth.complete_onboarding(session["user_id"], data)
         if not ok:
             return jsonify({"error": reason}), 400
         return jsonify({"ok": True})
@@ -217,23 +333,32 @@ def create_ops_blueprint(
         if not email or "@" not in email:
             return jsonify({"error": "email_required"}), 400
         raw = invite_service.create_invite(email, created_by=session["user_id"])
-        signup_url = f"{app_base_url.rstrip('/')}/login"
+        signup_url = f"{app_base_url.rstrip('/')}/auth/sign-up"
         sent = False
         if email_service and data.get("send_email", True):
-            html = (
-                f"<p>You've been invited to the Dhund closed beta.</p>"
-                f"<p>Sign in with Google or magic link using <b>{email}</b>:</p>"
-                f'<p><a href="{signup_url}">{signup_url}</a></p>'
-                f"<p>This invite expires in 14 days.</p>"
-            )
-            sent = bool(
-                email_service.send(
-                    to=email,
-                    subject="You're invited to Dhund (closed beta)",
-                    html=html,
-                    text=f"Sign in at {signup_url} with {email}",
+            handle = getattr(email_service, "handle", None)
+            if handle:
+                from backend.services.email import EmailEvent
+
+                sent = bool(
+                    handle(
+                        EmailEvent.INVITED,
+                        to=email,
+                        signup_url=signup_url,
+                        days=7,
+                    )
                 )
-            )
+            elif getattr(email_service, "send_invite", None):
+                sent = bool(email_service.send_invite(to=email, signup_url=signup_url, days=7))
+            else:
+                sent = bool(
+                    email_service.send(
+                        to=email,
+                        subject="You've been invited to Dhund",
+                        html=f"<p>You've been invited to Dhund.</p><p><a href=\"{signup_url}\">{signup_url}</a></p>",
+                        text=f"Sign in at {signup_url} with {email}",
+                    )
+                )
         return jsonify({"ok": True, "email": email, "token": raw, "email_sent": sent}), 201
 
     @bp.route("/api/admin/ops/beta-metrics", methods=["GET"])
@@ -249,13 +374,6 @@ def create_ops_blueprint(
     @login_required
     @admin_required
     def admin_ops_health():
-        snap = settings_service.snapshot()
-        return jsonify(
-            {
-                "ok": True,
-                "ai_disabled": snap["ai_disabled"],
-                "daily": snap["daily"],
-            }
-        )
+        return jsonify({"ok": True, "ai": settings_service.snapshot()})
 
     return bp

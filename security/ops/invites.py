@@ -1,4 +1,4 @@
-"""Closed-beta invite tokens + allowlist helpers."""
+"""Invite tokens + optional allowlist helpers (open signup by default)."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def hash_token(raw: str) -> str:
 
 
 class InviteService:
-    def __init__(self, SessionLocal, InviteToken, *, now_fn=None, ttl_days: int = 14):
+    def __init__(self, SessionLocal, InviteToken, *, now_fn=None, ttl_days: int = 7):
         self.SessionLocal = SessionLocal
         self.InviteToken = InviteToken
         self._now = now_fn or (lambda: datetime.now(timezone.utc))
@@ -134,7 +134,11 @@ def signup_allowed(
     invite_service: InviteService | None,
     require_invite: bool,
 ) -> tuple[bool, str]:
-    """Closed-beta gate. Returns (ok, reason)."""
+    """Signup gate. Open by default; invite-only only when require_invite=True.
+
+    ALLOWED_EMAILS is an optional VIP allowlist (always permitted), not a
+    hard deny for everyone else.
+    """
     email = (email or "").strip().lower()
     if not email:
         return False, "missing_email"
@@ -145,9 +149,7 @@ def signup_allowed(
     if invite_service and invite_service.email_is_invited(email):
         return True, "invite"
 
-    if require_invite or allowed_emails:
-        # Allowlist configured or invite-only mode → deny unknown emails
+    if require_invite:
         return False, "not_invited"
 
-    # Open signup (dev only — production should set ALLOWED_EMAILS / BETA_INVITE_ONLY)
     return True, "open"

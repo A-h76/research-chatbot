@@ -1,0 +1,13 @@
+{% extends "auth/base.html" %}
+{% block title %}Email change · Dhund{% endblock %}
+{% block body %}
+  {% if ok %}
+  <div class="success-mark">✓</div>
+  <h1>Email updated</h1>
+  <p class="lede">Your email address was confirmed. Sign in again if your session was refreshed.</p>
+  {% else %}
+  <h1>Could not confirm email</h1>
+  <p class="lede">This confirmation link is invalid or expired{% if reason %} ({{ reason }}){% endif %}.</p>
+  {% endif %}
+  <a class="btn btn-primary" href="/auth/sign-in">Sign in</a>
+{% endblock %}

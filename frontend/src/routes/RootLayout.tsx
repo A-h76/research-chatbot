@@ -11,7 +11,7 @@ export function RootLayout() {
   useEffect(() => {
     if (isLoading || me) return;
     // Full navigation — /login is a Flask template route, not a React route.
-    window.location.replace("/login");
+    window.location.replace("/auth/sign-in");
   }, [isLoading, isError, me]);
 
   if (isLoading) {
@@ -29,7 +29,7 @@ export function RootLayout() {
         role="status"
       >
         <p className="text-[13px] text-muted-foreground">Redirecting to sign in…</p>
-        <Button variant="outline" size="sm" onClick={() => { window.location.href = "/login"; }}>
+        <Button variant="outline" size="sm" onClick={() => { window.location.href = "/auth/sign-in"; }}>
           Sign in
         </Button>
       </div>

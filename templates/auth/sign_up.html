@@ -1,0 +1,37 @@
+{% extends "auth/base.html" %}
+{% block title %}Create account · Dhund{% endblock %}
+{% block body %}
+  <h1>Create your account</h1>
+  <p class="lede">Start organizing papers, evidence, and writing in one workspace.</p>
+  <div id="auth-msg" class="msg" role="status"></div>
+
+  <form id="sign-up-form" class="stack" novalidate>
+    <div class="field">
+      <label for="name">Full name</label>
+      <input id="name" name="name" type="text" autocomplete="name" required maxlength="200" />
+    </div>
+    <div class="field">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" required />
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="new-password" required minlength="10" />
+      <p class="hint">At least 10 characters.</p>
+    </div>
+    <div class="field">
+      <label for="confirm_password">Confirm password</label>
+      <input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" required minlength="10" />
+    </div>
+    <button class="btn btn-primary" type="submit" id="sign-up-btn">Create account</button>
+  </form>
+
+  <div class="divider">or</div>
+  {% if oauth_ready %}
+  <a class="btn btn-secondary" href="/auth/google">Continue with Google</a>
+  {% endif %}
+
+  <p class="footer-links">
+    Already have an account? <a href="/auth/sign-in">Sign in</a>
+  </p>
+{% endblock %}

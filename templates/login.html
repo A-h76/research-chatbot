@@ -1108,14 +1108,11 @@
           </p>
         </details>
         <details class="faq-item">
-          <summary>Who is closed beta for?</summary>
+          <summary>Who is Dhund for?</summary>
           <p>
-            Invite-only for researchers running real literature reviews — MSc/PhD students, supervisors, and labs.
-            {% if closed_beta %}
-            Need access? <a href="{{ url_for('marketing_early_access') }}" style="color:var(--teal-deep);text-decoration:underline;text-underline-offset:2px">Request Early Access</a>.
-            {% else %}
-            You can sign in below if your account is enabled.
-            {% endif %}
+            Researchers running real literature reviews — MSc/PhD students, supervisors, and labs.
+            <a href="/auth/sign-up" style="color:var(--teal-deep);text-decoration:underline;text-underline-offset:2px">Create an account</a>
+            to get started.
           </p>
         </details>
       </div>
@@ -1128,28 +1125,18 @@
           <p class="eyebrow">Sign in</p>
           <h2>Continue to your research workspace</h2>
           <p>
-            {% if closed_beta %}
-            Closed beta is invite-only. Use the email on your invite.
-            {% else %}
             Open projects, inspect evidence, and write with citations bound to sources you accepted.
-            {% endif %}
           </p>
-          {% if closed_beta %}
           <p style="font-size:0.9rem">
-            Need an invite?
-            <a href="{{ url_for('marketing_early_access') }}" style="color:var(--teal-deep);font-weight:600;text-decoration:underline;text-underline-offset:2px">Request Early Access</a>.
+            New here?
+            <a href="/auth/sign-up" style="color:var(--teal-deep);font-weight:600;text-decoration:underline;text-underline-offset:2px">Create an account</a>.
           </p>
-          {% endif %}
         </div>
 
         <div class="auth-card reveal">
           <span class="brand-mark" style="margin:0 auto 1rem" aria-hidden="true">D</span>
           <h2>Sign in</h2>
-          {% if closed_beta %}
-          <p class="sub">Closed beta — invite-only research workspace</p>
-          {% else %}
           <p class="sub">Continue to your research workspace</p>
-          {% endif %}
 
           {% if error %}
           <div class="err">{{ error }}</div>
@@ -1159,13 +1146,11 @@
           <div class="ok">Email verified — you can sign in now.</div>
           {% endif %}
 
-          {% if closed_beta %}
-          <div class="beta-note">
-            Access is limited to invited researchers. Sign in with the email on your invite.
-            Need access? <a href="{{ url_for('marketing_early_access') }}">Request Early Access</a>.
-          </div>
-          {% endif %}
-
+          <p class="sub" style="margin-bottom:1rem">
+            Prefer the full auth experience?
+            <a href="/auth/sign-in" style="color:var(--teal-deep);font-weight:600">Open sign in</a>
+            or <a href="/auth/sign-up" style="color:var(--teal-deep);font-weight:600">create an account</a>.
+          </p>
           {% if oauth_ready %}
             <a class="gbtn" href="/auth/google">
               <svg viewBox="0 0 24 24" aria-hidden="true">

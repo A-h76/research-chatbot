@@ -1,0 +1,10 @@
+{% extends "email/base.html" %}
+{% block title %}Your Dhund sign-in link{% endblock %}
+{% block content %}
+  <p style="margin:0 0 16px 0;">Hi{{ ", " + name if name else "" }},</p>
+  <p style="margin:0 0 16px 0;">Use this secure link to sign in to Dhund. It works once and expires soon.</p>
+  <p style="margin:24px 0;">
+    <a href="{{ link }}" style="display:inline-block;background:#0F766E;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:10px;">Continue to Dhund</a>
+  </p>
+  <p style="margin:0;font-size:13px;color:#8b9bb4;">If you did not request this, you can ignore this email.</p>
+{% endblock %}

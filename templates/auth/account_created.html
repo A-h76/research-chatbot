@@ -1,0 +1,10 @@
+{% extends "auth/base.html" %}
+{% block title %}Account created · Dhund{% endblock %}
+{% block body %}
+  <div class="success-mark">✓</div>
+  <h1>Account created</h1>
+  <p class="lede">
+    {% if email %}Check <strong>{{ email }}</strong> to verify your email.{% else %}Check your inbox to verify your email.{% endif %}
+  </p>
+  <a class="btn btn-primary" href="/auth/verify-email{% if email %}?email={{ email|urlencode }}{% endif %}">Continue</a>
+{% endblock %}

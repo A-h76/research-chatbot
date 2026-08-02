@@ -357,8 +357,8 @@
         <a href="{{ url_for('marketing_pricing') }}" class="{{ 'is-active' if active == 'pricing' else '' }}">Pricing</a>
       </nav>
       <div class="nav-actions">
-        <a class="nav-signin" href="{{ url_for('login_page') }}">Sign In</a>
-        <a class="nav-cta" href="{{ url_for('marketing_early_access') }}">Early Access</a>
+        <a class="nav-signin" href="/auth/sign-in">Sign In</a>
+        <a class="nav-cta" href="/auth/sign-up">Get started</a>
       </div>
     </div>
   </header>
@@ -374,8 +374,8 @@
         <a href="{{ url_for('marketing_product') }}">Product</a>
         <a href="{{ url_for('marketing_how_it_works') }}">How it Works</a>
         <a href="{{ url_for('marketing_research') }}">Research</a>
-        <a href="{{ url_for('marketing_early_access') }}">Early Access</a>
-        <a href="{{ url_for('login_page') }}">Sign In</a>
+        <a href="/auth/sign-up">Get started</a>
+        <a href="/auth/sign-in">Sign In</a>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
       </div>

@@ -142,7 +142,8 @@ def test_signup_allowed_allowlist_and_invite():
         invite_service=inv,
         require_invite=True,
     )[0]
-    assert not signup_allowed(
+    # Allowlist is VIP-only — does not deny others when invite-only is off.
+    assert signup_allowed(
         "stranger@example.com",
         allowed_emails=["a@b.com"],
         invite_service=inv,
@@ -153,6 +154,12 @@ def test_signup_allowed_allowlist_and_invite():
         allowed_emails=["a@b.com"],
         invite_service=inv,
         require_invite=False,
+    )[0]
+    assert not signup_allowed(
+        "stranger@example.com",
+        allowed_emails=["a@b.com"],
+        invite_service=inv,
+        require_invite=True,
     )[0]
     assert inv.consume_invite_for_email("alice@ox.ac.uk", raw)
 
