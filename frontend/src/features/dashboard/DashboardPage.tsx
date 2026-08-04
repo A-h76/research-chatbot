@@ -22,6 +22,7 @@ import { HomeHeroUpload } from "./components/HomeHeroUpload";
 import { HomeSecondaryActions } from "./components/HomeSecondaryActions";
 import { GettingStartedChecklist } from "./components/GettingStartedChecklist";
 import { HomeRecentList, HomeSectionLabel } from "./components/HomeRecentList";
+import { ResearchOsHeroFlow } from "@/features/research-flow";
 import {
   buildGettingStarted,
   deriveHomeStage,
@@ -266,6 +267,13 @@ export function DashboardPage() {
             </div>
 
             <GettingStartedChecklist items={checklist} />
+
+            <section className="rounded-xl border border-border bg-card/60 p-3 sm:p-4">
+              <h2 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                How Dhund works
+              </h2>
+              <ResearchOsHeroFlow className="mt-1" />
+            </section>
           </div>
         ) : (
           <div className="space-y-7 py-2">

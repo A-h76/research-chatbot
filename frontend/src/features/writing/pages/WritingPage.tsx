@@ -21,6 +21,7 @@ import { useClipboard } from "@/hooks/useClipboard";
 import { writingApi } from "../api";
 import { toast } from "@/components/common/Toast";
 import { cn } from "@/lib/utils";
+import { AiExecutionBeamInspector } from "@/features/research-flow";
 import type { WritingAction } from "@/types/api";
 import { trackWritingEvent } from "../utils/telemetry";
 import {
@@ -1173,6 +1174,25 @@ function DraftTab() {
                     </p>
                   ) : null}
                   <p className="mt-2 text-[10px] text-muted-foreground">{grounded.last.disclaimer}</p>
+                  {(grounded.last.ai_execution || grounded.last.draft_metadata?.ai_execution) && (
+                    <AiExecutionBeamInspector
+                      className="mt-3"
+                      compact
+                      execution={
+                        (grounded.last.ai_execution ||
+                          grounded.last.draft_metadata?.ai_execution) as {
+                          research_job?: string;
+                          capability?: string;
+                          execution_policy?: string;
+                          provider?: string;
+                          model?: string;
+                          prompt_version?: string;
+                          router_version?: string;
+                          execution_id?: string;
+                        }
+                      }
+                    />
+                  )}
                   {editsSinceInsert > 0 ? (
                     <p className="mt-1 text-[10px] text-muted-foreground">
                       Char edits since insert: {editsSinceInsert}

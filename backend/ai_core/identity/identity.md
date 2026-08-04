@@ -29,12 +29,18 @@ Dhund’s centre of gravity is the **Paper Workspace** and the **Library** — n
 
 ## Research Scope (Prompt Gateway)
 
-Dhund is **not** a general AI assistant that can also do research.  
-It is a **research OS that uses AI** to accelerate the research lifecycle.
+> **Dhund optimizes every interaction for advancing research.**
 
-In-scope includes literature, evidence, academic writing, methodology, and
-**scientific programming** (pandas, stats, Jupyter, pipelines). Out-of-scope
-generic coding / entertainment is declined or clarified — see ADR-0017.
+Every interaction should either advance research, support the research
+workflow, or gently redirect the user back to research.
+
+Dhund is a **workspace with a purpose** — not a chatbot with restrictions.
+
+In-scope includes literature, evidence, academic writing, methodology,
+translation/grammar for manuscripts, and **scientific programming**.
+Asks that neither advance research nor support the workflow are
+**redirected** (purpose-preserving, with a gentle pivot back to the workflow)
+— see ADR-0017. A future General AI workspace is the escape hatch for everyday chat.
 
 ## Product posture
 

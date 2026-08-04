@@ -14,6 +14,7 @@ import { appendUserMessage, removeLastAssistant } from "../lib/optimistic";
 import type { ChatSettings, PendingFile, SendPayload } from "../types";
 import type { Attachment, SearchMode } from "@/types/api";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { normalizeReasoningEffort, supportsTemperature } from "@/lib/modelCapabilities";
 
 /** D6 T3 — demoted global / project inquiry conversation. */
 export function ConversationView({ conversationId }: { conversationId: number }) {
@@ -59,8 +60,8 @@ export function ConversationView({ conversationId }: { conversationId: number })
   const settings: ChatSettings = {
     model: conv.model,
     searchMode,
-    temperature: conv.temperature,
-    reasoningEffort: conv.reasoning_effort,
+    temperature: supportsTemperature(conv.model) ? conv.temperature : null,
+    reasoningEffort: normalizeReasoningEffort(conv.model, conv.reasoning_effort),
     memoryEnabled: conv.memory_enabled,
     skill,
   };
@@ -69,7 +70,17 @@ export function ConversationView({ conversationId }: { conversationId: number })
     if (partial.searchMode !== undefined) setSearchMode(partial.searchMode);
     if (partial.skill !== undefined) setSkill(partial.skill);
     const body: Record<string, unknown> = {};
-    if (partial.model !== undefined) body.model = partial.model;
+    if (partial.model !== undefined) {
+      body.model = partial.model;
+      // Pro rejects low effort + temperature — clear/clamp when switching models.
+      if (!supportsTemperature(partial.model) && conv.temperature != null) {
+        body.temperature = null;
+      }
+      const clamped = normalizeReasoningEffort(partial.model, conv.reasoning_effort);
+      if (clamped !== conv.reasoning_effort) {
+        body.reasoning_effort = clamped;
+      }
+    }
     if (partial.temperature !== undefined) body.temperature = partial.temperature;
     if (partial.reasoningEffort !== undefined) body.reasoning_effort = partial.reasoningEffort;
     if (partial.memoryEnabled !== undefined) body.memory_enabled = partial.memoryEnabled;

@@ -5,7 +5,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { REASONING_EFFORTS } from "@/lib/constants";
+import { allowedReasoningEfforts } from "@/lib/modelCapabilities";
 import { cn } from "@/lib/utils";
 
 type Effort = "low" | "medium" | "high" | null;
@@ -13,10 +13,14 @@ type Effort = "low" | "medium" | "high" | null;
 export function ReasoningEffortControl({
   value,
   onChange,
+  model,
 }: {
   value: Effort;
   onChange: (v: Effort) => void;
+  /** When set, hides effort levels the model rejects (e.g. Pro + low). */
+  model?: string;
 }) {
+  const efforts = allowedReasoningEfforts(model || "");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -33,7 +37,7 @@ export function ReasoningEffortControl({
         <DropdownMenuCheckboxItem checked={value === null} onClick={() => onChange(null)}>
           Default
         </DropdownMenuCheckboxItem>
-        {REASONING_EFFORTS.map((e) => (
+        {efforts.map((e) => (
           <DropdownMenuCheckboxItem key={e} checked={value === e} onClick={() => onChange(e)} className="capitalize">
             {e}
           </DropdownMenuCheckboxItem>

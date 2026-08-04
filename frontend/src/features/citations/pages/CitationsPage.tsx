@@ -13,6 +13,7 @@ import { useUI } from "@/context/UIContext";
 import { toast } from "@/components/common/Toast";
 import { cn } from "@/lib/utils";
 import type { Citation, CitationFormat } from "@/types/api";
+import { BibtexIcon } from "@/features/sidebar/components/BrandIcons";
 
 const FORMAT_TABS: { key: CitationFormat; label: string }[] = [
   { key: "apa", label: "APA 7" },
@@ -88,12 +89,13 @@ export function CitationsPage() {
                 type="button"
                 onClick={() => setFormat(key)}
                 className={cn(
-                  "rounded px-2.5 py-1 text-[12px] font-medium transition-colors",
+                  "inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[12px] font-medium transition-colors",
                   format === key
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
+                {key === "bibtex" ? <BibtexIcon className="size-3.5" /> : null}
                 {label}
               </button>
             ))}

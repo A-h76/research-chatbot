@@ -1,103 +1,146 @@
 # ADR-0017: Research Scope Policy — Prompt Gateway
 
-Status: accepted  
+Status: accepted (frozen v1.0 — complete)  
 Date: 2026-08-04
 
 ## Context
 
 Dhund is a **Research Operating System**, not a general-purpose ChatGPT clone.
-Allowing every prompt (e.g. “write Python to add two numbers”) trains users to
-treat Dhund as a generic assistant and dilutes product identity.
+The failure mode is not “answering a joke” once — it is training users to treat
+Dhund as a generic assistant until the product identity dissolves.
 
-The question is not “Can the model write code?” — it can. The question is
-**Should Dhund allow this request in this workspace?**
+Competitors that answer birthday poems and jokes inside a research project are
+usually making a deliberate **Philosophy A** choice (general AI + research
+features). Dhund chooses **Philosophy B**: **a workspace with a purpose** —
+not a chatbot with restrictions.
 
-This mirrors UFTR and the AI Capability Router: resolve behind a platform
-boundary; keep the system inspectable; strengthen the research lifecycle.
+## Decision — doctrine (binding)
 
-## Decision
+> **Dhund optimizes every interaction for advancing research.**
 
-### Product doctrine
+Every interaction should either:
 
-> **Dhund is not a general AI assistant that can do research.**  
-> **Dhund is a research operating system that uses AI to accelerate every stage
-> of the research lifecycle.**
+* **advance research**,
+* **support the research workflow**, or
+* **gently redirect the user back to research**.
+
+Freeze wording:
+
+> **Every AI interaction inside a Research Workspace must either advance the
+> research directly or support the research workflow. Requests that do neither
+> are redirected to a General AI workspace (if available) or answered with a
+> purpose-preserving redirect — not framed as censorship.**
+
+The gate asks **“Does this move the research forward?”** (workflow relevance),
+not merely **“Is this about research?”**
+
+| Prompt | Advances / supports workflow? | Verdict |
+|--------|------------------------------|---------|
+| Summarize this paper | ✅ | ALLOW |
+| Translate this abstract | ✅ | ALLOW |
+| Improve grammar | ✅ | ALLOW |
+| Write reviewer response | ✅ | ALLOW |
+| Explain Kaplan–Meier | ✅ | ALLOW |
+| Generate Python for RNA-seq | ✅ | ALLOW |
+| Tell me a joke | ❌ | REDIRECT |
+| Plan my vacation | ❌ | REDIRECT |
+| Write a birthday poem | ❌ | REDIRECT |
 
 ### Prompt Gateway (binding)
 
 ```text
 User prompt
       ↓
-Prompt Gateway (Research Scope)
+Research Scope Gate          ← first platform boundary
       ↓
-ALLOW | CLARIFY | DECLINE
+ALLOW | CLARIFY | REDIRECT   ← public outcomes
       ↓ (ALLOW)
-Capability Router → Provider → Model
+Research Job → Capability Router → … → AI Ledger
 ```
 
-**First-ship enforcement: soft decline / clarify** — polite identity-preserving
-response **without** calling the LLM for clear off-scope asks. Not a hard HTTP
-error. Env: `RESEARCH_SCOPE_ENFORCEMENT=soft_decline|off` (default `soft_decline`).
+| Verdict | Meaning | LLM? |
+|---------|---------|------|
+| **ALLOW** | Advances research or supports the workflow | Yes |
+| **CLARIFY** | Ambiguous — likely research if framed | No (ask for context) |
+| **REDIRECT** | Better suited to General AI; pivot back to workflow | No |
 
-### What belongs (ALLOW)
+**Internal only:** `SYSTEM` — auth, uploads, connector OAuth, billing, settings,
+background jobs. These paths **must not** enter the research classifier
+(`system_scope_decision(...)` / skip the gate). Never user-facing.
 
-Requests that contribute to the research lifecycle, including:
+**First-ship enforcement:** soft redirect / clarify without calling the LLM.
+Env: `RESEARCH_SCOPE_ENFORCEMENT=soft_redirect|off` (default `soft_redirect`;
+legacy `soft_decline` accepted as alias).
 
-- Literature discovery, paper understanding, evidence synthesis
-- Academic writing, citation, peer review, publication prep
-- Methodology, statistics, experimental design
-- **Research programming**: pandas/NumPy/R/MATLAB/SPSS, bioinformatics,
-  Jupyter, visualization, ML experiments, reproducibility / sequencing pipelines
-- LaTeX, ANOVA explanation, experiment CSV analysis
+Redirect copy is **purposeful + productive** (not “Access denied”):
 
-### What does not (DECLINE)
+> This workspace is dedicated to academic research… If you're taking a break,
+> I'm still here when you're ready to continue your literature review, analyze
+> a paper, improve your manuscript, or verify evidence.
 
-- Generic coding homework / LeetCode / interview prep
-- Consumer apps (Discord bots, Minecraft plugins, websites-for-fun)
-- Entertainment, shopping, unrelated casual chat
-- Anything that does not advance research work
+### Hard product rule
 
-### Ambiguous coding (CLARIFY)
+> **By default, every conversation inside a research project is research-scoped.**
 
-Short “write Python…” with no research cues — especially when a project is open —
-gets a **workspace-aware clarification** (is this for your research analysis /
-plots / reproducibility?) instead of generating homework code.
+**Future escape hatch:** a separate **General AI** workspace where anything goes.
+
+### Relevance score (workflow relevance)
+
+Heuristics emit optional `relevance_score` (0–100). Intended bands:
+
+| Score | Outcome |
+|------:|---------|
+| > 70 | ALLOW |
+| 40–70 | CLARIFY |
+| < 40 | REDIRECT |
+
+A future lightweight classifier can replace phrase lists without changing the
+public ALLOW / CLARIFY / REDIRECT API.
+
+### Same design principle as sibling primitives
+
+| Primitive | Pattern |
+|-----------|---------|
+| **UFTR** | Can’t obtain PDF → explain why → offer alternatives (not “Failed.”) |
+| **Research Scope** | Not research → redirect → stay purposeful (not “Access denied.”) |
+| **Capability Router** | Need deep synthesis → resolve provider → execute (not “Pick Claude.”) |
+
+> **Hide implementation complexity, expose honest outcomes, and keep the user
+> moving through the research workflow.**
 
 ### Layers (platform stack)
 
-1. Intent / scope classification (this ADR)  
-2. Policy engine (workspace / mode permissions — evolve)  
-3. Tool permissions (web, code exec — evolve)  
-4. Project isolation (existing authz)  
-5. Grounding (Evidence / Writing — existing)
-
-Capability Router (ADR-0016) runs **after** ALLOW.
+1. Research Scope Gate (this ADR)  
+2. Research Job  
+3. Capability Router (ADR-0016)  
+4. Prompt / Model Registry → Gateway → Validation → AI Ledger  
 
 ### Non-goals
 
-- Absolute ban on all programming
-- Replacing researcher judgment
-- Turning every chat into Evidence Chat permissions on day one
+- Absolute ban on all programming  
+- Hostile “request declined” / censorship framing  
+- Running auth/upload/billing through the research classifier  
+- Replacing researcher judgment  
 
 ## Alternatives considered
 
 | Option | Why not |
 |--------|---------|
 | Soft nudge but still answer off-scope | Weak identity; still feels like ChatGPT |
-| Hard block (4xx) | Hostile UX; identity message never lands |
-| LLM-only “be researchy” system prompt | Unreliable; still burns tokens on homework |
+| Hard block (4xx) / “declined” | Hostile UX; feels like censorship |
+| LLM-only “be researchy” system prompt | Unreliable; still burns tokens on jokes |
 
 ## Consequences
 
 - Chat `/api/chat` runs Research Scope before model calls.
-- Decline/clarify replies are saved as assistant messages with provenance
-  `scope_gate`.
-- Identity doctrine markdown updated to match.
+- Redirect/clarify replies are saved with `scope_gate` provenance
+  (includes `relevance_score` when set).
+- Identity doctrine matches this ADR.
 - Living contract: [`docs/contracts/research-scope-contract.md`](../contracts/research-scope-contract.md).
 
 ## Cost / Security / Observability / Extensibility
 
-- **Cost:** Off-scope prompts no longer hit frontier models.  
-- **Security:** First policy layer of the Prompt Gateway.  
-- **Observability:** Decision logged on the reply (verdict + reason codes).  
-- **Extensibility:** Swap heuristic classifier for a small model later via DI.
+- **Cost:** Off-topic prompts no longer hit frontier models.  
+- **Security:** Reduces accidental tool use on consumer asks.  
+- **Observability:** Gate provenance + relevance_score.  
+- **Extensibility:** Swap heuristics for a scored classifier; keep public verdicts.

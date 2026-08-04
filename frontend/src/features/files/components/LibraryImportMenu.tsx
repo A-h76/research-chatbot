@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, FileUp, Hash, Link2 } from "lucide-react";
+import { ChevronDown, FileUp, Hash } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,7 +9,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { libraryBridgeApi } from "../libraryBridgeApi";
-import { MendeleyIcon, ZoteroIcon } from "@/features/sidebar/components/BrandIcons";
+import {
+  BibtexIcon,
+  MendeleyIcon,
+  OpenAlexIcon,
+  RisIcon,
+  ZoteroIcon,
+} from "@/features/sidebar/components/BrandIcons";
 import { cn } from "@/lib/utils";
 
 /**
@@ -61,7 +67,10 @@ export function LibraryImportMenu({
         </DropdownMenuItem>
         {onBibtex ? (
           <DropdownMenuItem onClick={onBibtex}>
-            <FileUp className="size-3.5" />
+            <span className="inline-flex items-center gap-0.5">
+              <BibtexIcon className="size-3.5" />
+              <RisIcon className="size-3.5" />
+            </span>
             BibTeX / RIS
           </DropdownMenuItem>
         ) : null}
@@ -133,7 +142,7 @@ export function LibraryImportMenu({
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => void navigate("/search?mode=discover&q=10.")}>
-          <Link2 className="size-3.5" />
+          <OpenAlexIcon className="size-3.5" />
           Import DOI
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => void navigate("/search?mode=discover&provider=pubmed")}>

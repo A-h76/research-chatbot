@@ -1,12 +1,14 @@
 """Research Scope / Prompt Gateway — Research OS identity gate.
 
-Version: 0.1
+Version: 1.0 (frozen)
 ADR: docs/adr/0017-research-scope-policy.md
 Contract: docs/contracts/research-scope-contract.md
 
-Feature chat must call ``evaluate_research_scope`` before the LLM for
-general inquiry. ALLOW continues to Capability Router / model path.
-DECLINE / CLARIFY return identity-preserving copy without calling the model.
+Doctrine: Dhund optimizes every interaction for advancing research.
+
+Feature chat calls ``evaluate_research_scope`` before the LLM.
+ALLOW continues to Capability Router / model path.
+REDIRECT / CLARIFY return purpose-preserving copy without calling the model.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from backend.ai.research_scope.types import (
     RS_VERSION,
     ScopeDecision,
     ScopeVerdict,
+    system_scope_decision,
 )
 
 __all__ = [
@@ -26,4 +29,5 @@ __all__ = [
     "ScopeDecision",
     "evaluate_research_scope",
     "enforcement_mode",
+    "system_scope_decision",
 ]

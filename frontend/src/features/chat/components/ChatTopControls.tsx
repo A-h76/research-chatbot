@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreHorizontal, Trash2, FolderMinus } from "lucide-react";
+import { MoreHorizontal, Trash2, FolderMinus, Route } from "lucide-react";
 import { ShareChatButton } from "./ShareChatButton";
 import { ModelPickerPopover } from "./ModelPickerPopover";
 import {
@@ -11,10 +11,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useProjects } from "@/features/projects/useProjects";
 import { useDeleteConversation, useUpdateConversation } from "../hooks/useConversation";
 import { useNavigate, Link } from "react-router-dom";
 import { toast } from "@/components/common/Toast";
+import { AiExecutionBeamInspector } from "@/features/research-flow";
 import type { ChatSettings } from "../types";
 import type { Conversation } from "@/types/api";
 
@@ -47,6 +49,28 @@ export function ChatTopControls({
       )}
       <span className="min-w-0 truncate text-[13px] font-medium">{conversation.title}</span>
       <div className="ml-auto flex items-center gap-1">
+        <Popover>
+          <PopoverTrigger
+            className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+            title="AI execution path"
+          >
+            <Route className="size-4" />
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-[min(92vw,28rem)] p-0">
+            <AiExecutionBeamInspector
+              compact
+              execution={{
+                research_job: conversation.file_id ? "analyze_paper" : "chat",
+                capability: "scientific_reasoning",
+                execution_policy: "balanced",
+                provider: "openai",
+                model: settings.model,
+                prompt_version: "chat@live",
+                router_version: "1.0",
+              }}
+            />
+          </PopoverContent>
+        </Popover>
         <ModelPickerPopover value={settings.model} onChange={(m) => onSettingsChange({ model: m })} compact />
         <ShareChatButton />
         <DropdownMenu>

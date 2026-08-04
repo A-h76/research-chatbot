@@ -316,6 +316,7 @@ export function Composer({
           )}
           {showReasoning && (
             <ReasoningEffortControl
+              model={settings.model}
               value={settings.reasoningEffort}
               onChange={(v) => onSettingsChange({ reasoningEffort: v })}
             />

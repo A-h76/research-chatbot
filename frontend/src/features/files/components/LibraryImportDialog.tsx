@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/components/common/Toast";
 import { libraryBridgeApi, type LibraryFormat } from "../libraryBridgeApi";
+import { BibtexIcon, RisIcon } from "@/features/sidebar/components/BrandIcons";
 
 export function LibraryImportDialog({
   open,
@@ -77,12 +78,17 @@ export function LibraryImportDialog({
                   key={f}
                   type="button"
                   onClick={() => setFormat(f)}
-                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
                     format === f
                       ? "border-primary bg-accent-soft text-foreground"
                       : "border-border text-muted-foreground"
                   }`}
                 >
+                  {f === "bibtex" ? (
+                    <BibtexIcon className="size-3.5" />
+                  ) : (
+                    <RisIcon className="size-3.5" />
+                  )}
                   {f === "bibtex" ? "BibTeX (.bib)" : "RIS (.ris)"}
                 </button>
               ))}

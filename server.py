@@ -443,12 +443,17 @@ _model_cache = {"ts": 0.0, "models": []}
 _model_lock = threading.Lock()
 
 # Model-capability guards for the temperature / reasoning-effort controls.
-# Reasoning-only "o"-series models reject `temperature`; reasoning effort is
-# only accepted by the "o"-series and gpt-5 families. Re-verify against
-# current OpenAI docs if these ever misbehave — single named constants so
-# it's a one-line fix.
+# Reasoning models (o-series + gpt-5 family) reject `temperature` — OpenAI
+# returns 400 if it is sent. Use `reasoning_effort` instead for those models.
+# gpt-5.5-pro (and similar Pro SKUs) do not support Responses streaming —
+# chat must use a non-stream call and synthesize SSE for the client.
+# Re-verify against current OpenAI docs if these ever misbehave — single named
+# constants so it's a one-line fix.
 REASONING_EFFORT_PREFIXES = ("o1", "o3", "o4", "gpt-5")
-NO_TEMPERATURE_PREFIXES = ("o1", "o3", "o4")
+NO_TEMPERATURE_PREFIXES = ("o1", "o3", "o4", "gpt-5")
+NO_STREAMING_PREFIXES = ("gpt-5.5-pro", "gpt-5.4-pro")
+# Pro reasoning SKUs reject ``low``; OpenAI allows medium | high | xhigh.
+PRO_REASONING_EFFORTS = frozenset({"medium", "high", "xhigh"})
 
 
 def supports_reasoning_effort(model):
@@ -457,6 +462,43 @@ def supports_reasoning_effort(model):
 
 def supports_temperature(model):
     return not model.startswith(NO_TEMPERATURE_PREFIXES)
+
+
+def supports_streaming(model):
+    return not (model or "").startswith(NO_STREAMING_PREFIXES)
+
+
+def normalize_reasoning_effort(model, effort):
+    """Clamp effort to values the selected model accepts; None means default."""
+    if not effort:
+        return None
+    e = str(effort).strip().lower()
+    if (model or "").startswith(NO_STREAMING_PREFIXES) or (model or "").endswith("-pro"):
+        # Only clamp known Pro aliases that reject ``low``.
+        if (model or "").startswith(("gpt-5.5-pro", "gpt-5.4-pro", "gpt-5.2-pro")):
+            if e == "low" or e not in PRO_REASONING_EFFORTS:
+                return "medium"
+            return e
+    if e not in ("low", "medium", "high", "xhigh"):
+        return None
+    return e
+
+
+def _responses_output_text(resp) -> str:
+    """Best-effort plain text from a non-stream Responses API result."""
+    direct = getattr(resp, "output_text", None)
+    if isinstance(direct, str) and direct:
+        return direct
+    parts: list[str] = []
+    for item in getattr(resp, "output", None) or []:
+        if getattr(item, "type", "") != "message":
+            continue
+        for block in getattr(item, "content", None) or []:
+            if getattr(block, "type", "") in ("output_text", "text"):
+                t = getattr(block, "text", None)
+                if isinstance(t, str) and t:
+                    parts.append(t)
+    return "".join(parts)
 
 
 def get_models(force=False):
@@ -5380,8 +5422,8 @@ def chat():
         try:
             last_query = user_message or (history[-1]["content"] if history else "")
 
-            # Prompt Gateway — Research Scope (ADR-0017). Soft decline/clarify
-            # without calling the LLM for clear off-scope asks.
+            # Prompt Gateway — Research Scope (ADR-0017). Soft redirect/clarify
+            # without calling the LLM for asks that don't advance research.
             from backend.ai.research_scope import evaluate_research_scope
 
             scope_decision = evaluate_research_scope(
@@ -5662,18 +5704,21 @@ def chat():
                     tools.append(TOOL_WEB_SEARCH)
 
             for _round in range(4):
+                use_stream = supports_streaming(model)
                 kwargs = dict(
                     model=model,
                     instructions=system_prompt,
                     input=input_items,
-                    stream=True,
                     store=False,
                     tools=tools,
                 )
+                if use_stream:
+                    kwargs["stream"] = True
                 if temperature is not None and supports_temperature(model):
                     kwargs["temperature"] = temperature
-                if reasoning_effort and supports_reasoning_effort(model):
-                    kwargs["reasoning"] = {"effort": reasoning_effort}
+                effort = normalize_reasoning_effort(model, reasoning_effort)
+                if effort and supports_reasoning_effort(model):
+                    kwargs["reasoning"] = {"effort": effort}
 
                 final = None
                 # Stage 1 (flag true): model invocation via AIExecutor — no
@@ -5683,8 +5728,15 @@ def chat():
                     if temperature is not None and supports_temperature(model):
                         stream_kwargs["temperature"] = temperature
                     reasoning = None
-                    if reasoning_effort and supports_reasoning_effort(model):
-                        reasoning = {"effort": reasoning_effort}
+                    if effort and supports_reasoning_effort(model):
+                        reasoning = {"effort": effort}
+                    if not use_stream:
+                        yield sse(
+                            "status",
+                            {
+                                "text": "Running Pro model — this can take a few minutes…",
+                            },
+                        )
                     for event in paper_executor.stream_round(
                         paper_plan,
                         input_items=input_items,
@@ -5702,22 +5754,35 @@ def chat():
                         elif et == "response.failed":
                             raise RuntimeError(event.error_message or "response failed")
                 else:
-                    stream = client.responses.create(**kwargs)
-                    for event in stream:
-                        et = getattr(event, "type", "")
-                        if et == "response.output_text.delta":
-                            full_text += event.delta
-                            yield sse("delta", {"text": event.delta})
-                        elif et == "response.completed":
-                            final = event.response
-                        elif et == "response.failed":
-                            raise RuntimeError(
-                                getattr(
-                                    getattr(event.response, "error", None),
-                                    "message",
-                                    "response failed",
+                    if not use_stream:
+                        yield sse(
+                            "status",
+                            {
+                                "text": "Running Pro model — this can take a few minutes…",
+                            },
+                        )
+                        final = client.responses.create(**kwargs)
+                        chunk = _responses_output_text(final)
+                        if chunk:
+                            full_text += chunk
+                            yield sse("delta", {"text": chunk})
+                    else:
+                        stream = client.responses.create(**kwargs)
+                        for event in stream:
+                            et = getattr(event, "type", "")
+                            if et == "response.output_text.delta":
+                                full_text += event.delta
+                                yield sse("delta", {"text": event.delta})
+                            elif et == "response.completed":
+                                final = event.response
+                            elif et == "response.failed":
+                                raise RuntimeError(
+                                    getattr(
+                                        getattr(event.response, "error", None),
+                                        "message",
+                                        "response failed",
+                                    )
                                 )
-                            )
 
                 _log_chat_cost(user_id, model, getattr(final, "usage", None))
 
@@ -5853,6 +5918,11 @@ def chat():
                 msg = "Your OpenAI account is out of credit."
             elif "does not exist" in msg or "model_not_found" in msg:
                 msg = f"Model '{model}' isn't available — pick another from the dropdown."
+            elif "temperature" in msg.lower() and "not supported" in msg.lower():
+                msg = (
+                    f"Model '{model}' doesn't support temperature — "
+                    "clear the temperature control or switch model."
+                )
             elif "image" in msg.lower() and "support" in msg.lower():
                 msg = f"Model '{model}' doesn't support images — " "switch to a vision model like gpt-4o or gpt-5."
             yield sse("error", {"text": msg})

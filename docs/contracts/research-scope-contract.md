@@ -1,92 +1,108 @@
 # Research Scope Policy — platform contract
 
 **Service:** Prompt Gateway / Research Scope  
-**Version:** 0.1  
-**Status:** Accepted (ADR-0017) — soft_decline first ship  
+**Version:** 1.0  
+**Status:** Frozen complete (ADR-0017)  
 **Package:** `backend.ai.research_scope`
 
 ## Doctrine
 
-Dhund is a **research operating system**, not a general AI assistant.
+> **Dhund optimizes every interaction for advancing research.**
+
+Every interaction should either:
+
+* advance research,
+* support the research workflow, or
+* gently redirect the user back to research.
+
+Dhund is a **workspace with a purpose**, not a chatbot with restrictions.
 
 ```text
 User
   → Prompt Gateway (scope)
-  → ALLOW | CLARIFY | DECLINE
+  → ALLOW | CLARIFY | REDIRECT
   → (ALLOW) Capability Router → Model
 ```
 
 ## Primary API
 
 ```python
-from backend.ai.research_scope import evaluate_research_scope
+from backend.ai.research_scope import evaluate_research_scope, system_scope_decision
 
 decision = evaluate_research_scope(
     user_message,
-    project_name="Osteoarthritis",   # optional
+    project_name="Osteoarthritis",
     paper_scoped=False,
     research_skill="ask",
 )
 
-if decision.verdict == "decline":
+if decision.verdict == "redirect":
     # stream decision.user_message; do not call the LLM
     ...
 elif decision.verdict == "clarify":
-    # stream clarification; do not call the LLM
     ...
-# else ALLOW → existing chat / Capability Router path
+# else ALLOW → Capability Router / model path
+
+# Non-chat platform paths — never classify as research prompts:
+# system_scope_decision("upload")  # auth, OAuth, billing, jobs, settings
 ```
 
 ## Verdicts
 
-| Verdict | Meaning | LLM called? |
-|---------|---------|-------------|
-| `allow` | In research lifecycle (incl. scientific programming) | Yes |
-| `clarify` | Ambiguous coding / vague ask — ask if research-related | No (first ship) |
-| `decline` | Clear off-scope | No |
+| Verdict | Public? | Meaning | LLM? |
+|---------|---------|---------|------|
+| `allow` | yes | Advances research or supports workflow | Yes |
+| `clarify` | yes | Ambiguous — ask for research context | No |
+| `redirect` | yes | Better suited to General AI; pivot to workflow | No |
+| `system` | **no** | Auth / upload / OAuth / billing / jobs | N/A (skip gate) |
+
+## Relevance score (workflow relevance)
+
+`ScopeDecision.relevance_score` ∈ 0–100 — “does this move research forward?”
+
+| Score | Intended outcome |
+|------:|------------------|
+| > 70 | allow |
+| 40–70 | clarify |
+| < 40 | redirect |
 
 ## In-scope examples (ALLOW)
 
 - Literature / paper / evidence / writing / reviewer / methodology
-- “Explain ANOVA”, “draft LaTeX”, “BibTeX”
-- “pandas to analyze this experiment CSV”, “plot ROC”, “RNA-seq pipeline”
-- Jupyter / reproducibility / statistical scripts
+- Translate abstract, improve grammar, manuscript polish
+- ANOVA / Kaplan–Meier / Bayesian / mixed-effects explanation
+- Research coding: pandas, RNA-seq, experiment CSV, Jupyter, reproducibility
 
-## Out-of-scope examples (DECLINE)
+## Out-of-scope examples (REDIRECT)
 
-- “Write Python to add two numbers”
-- LeetCode / interview prep / Discord bot / Minecraft / shopping / jokes
+- Toy coding (“add two numbers”), LeetCode, Discord bots
+- Jokes, birthday poems, vacation / lifestyle asks
 
 ## Enforcement
 
 | Mode | Env | Behavior |
 |------|-----|----------|
-| Soft decline (default) | `RESEARCH_SCOPE_ENFORCEMENT=soft_decline` | Decline/clarify without LLM |
+| Soft redirect (default) | `RESEARCH_SCOPE_ENFORCEMENT=soft_redirect` | Redirect/clarify without LLM |
 | Off | `RESEARCH_SCOPE_ENFORCEMENT=off` | Gateway no-op (emergency) |
 
-## Provenance on gated replies
+Legacy: `soft_decline` ≡ soft_redirect.
 
-Assistant message `sources` / metadata may include:
+## Provenance
 
 ```json
 {
   "scope_gate": {
-    "verdict": "decline",
-    "reason_codes": ["generic_coding"],
-    "router_version": "0.1"
+    "verdict": "redirect",
+    "reason_codes": ["clear_offscope"],
+    "relevance_score": 12,
+    "router_version": "1.0"
   }
 }
 ```
 
-## Relation to other layers
+## Forbidden
 
-| Layer | Role |
-|-------|------|
-| Research Scope (this) | Allowed to run at all? |
-| AI Capability Router | Which capability / model? |
-| UFTR / Evidence / Writing | Research content + grounding |
-
-## Versioning
-
-- Additive reason codes / skills: minor.
-- Changing default enforcement or removing ALLOW for research code: ADR + bump.
+- Framing redirects as punitive “declined” / “access denied”
+- Calling the LLM for clear redirect/clarify while enforcement is on
+- Rejecting research-workflow support (translation, grammar, stats, research coding)
+- Running SYSTEM platform paths through the research prompt classifier

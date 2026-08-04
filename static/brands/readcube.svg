@@ -1,0 +1,7 @@
+<svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-label="ReadCube">
+  <!-- Isometric cube mark -->
+  <path fill="#00A3E0" d="M12 2.4 20.2 7v10L12 21.6 3.8 17V7z"/>
+  <path fill="#0082B3" d="M12 2.4 20.2 7 12 11.6 3.8 7z"/>
+  <path fill="#007199" d="M12 11.6 20.2 7v10L12 21.6z"/>
+  <path fill="#33B5E5" d="M12 11.6 3.8 7v10L12 21.6z"/>
+</svg>

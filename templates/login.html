@@ -907,12 +907,12 @@
     opacity: 1;
     transform: scale(1.03);
   }
-  :root[data-theme="dark"] .eco-logo {
+  :root[data-theme="dark"] .eco-logo:not(.eco-logo-color) {
     filter: invert(1);
     opacity: 0.92;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .eco-logo {
+    :root:not([data-theme="light"]) .eco-logo:not(.eco-logo-color) {
       filter: invert(1);
       opacity: 0.92;
     }
@@ -1829,7 +1829,7 @@
           Dhund becomes the hub for your entire research workflow — connect the tools you already use,
           verify evidence in one place, and write without breaking your stack.
         </p>
-        <p class="eco-note">Official brand marks via Simple Icons (CC0). Live integrations ship unmarked; only true roadmap partners show Coming soon. A few scholarly marks use letter badges until an official SVG is available.</p>
+        <p class="eco-note">Brand marks for tools Dhund connects to — reference managers, scholarly sources, cloud storage, and export formats. Live integrations ship unmarked; only true roadmap partners show Coming soon.</p>
       </div>
 
       <div class="eco-flow reveal" aria-label="How Dhund sits in the research workflow">
@@ -1858,7 +1858,8 @@
             {% for p in cat_providers %}
             <div class="eco-chip{% if p.availability != 'live' %} is-soon{% endif %}" style="--brand:{{ p.brand_color or '#0F6E6A' }}">
               {% if p.logo %}
-              <img class="eco-logo" src="{{ url_for('static', filename=p.logo) }}" alt="" width="24" height="24" loading="lazy" decoding="async">
+              {% set color_logo = p.logo.endswith('.png') or p.logo.endswith('paperpile.svg') or p.logo.endswith('readcube.svg') %}
+              <img class="eco-logo{% if color_logo %} eco-logo-color{% endif %}" src="{{ url_for('static', filename=p.logo) }}" alt="" width="24" height="24" loading="lazy" decoding="async">
               {% else %}
               <span class="eco-mark">{{ p.mark or (p.name[:2] | upper) }}</span>
               {% endif %}

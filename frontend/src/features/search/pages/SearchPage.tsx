@@ -18,6 +18,7 @@ import type { SearchResult } from "@/types/api";
 import { discoverWorks, importDiscoverWork, type DiscoverProvider, type DiscoverWork } from "../discoverApi";
 import { formatApiFailure } from "@/lib/apiErrors";
 import { ResearchProgressStage } from "@/features/writing/components/ResearchProgressStage";
+import { OpenAlexIcon } from "@/features/sidebar/components/BrandIcons";
 
 const LIBRARY_ASK_STAGES = [
   "Searching your library",
@@ -375,12 +376,13 @@ function DiscoverProviderTabs({
           type="button"
           onClick={() => onChange(id)}
           className={cn(
-            "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+            "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
             provider === id
               ? "border-primary bg-accent-soft text-primary"
               : "border-border text-muted-foreground hover:border-primary/40",
           )}
         >
+          {id === "openalex" ? <OpenAlexIcon className="size-3.5" /> : null}
           {label}
         </button>
       ))}

@@ -151,6 +151,18 @@ export type GroundedWritingResult = {
     themes_fingerprint?: string;
     prompt_version?: string;
     reproducibility_hash?: string;
+    ai_execution?: Record<string, unknown>;
+  };
+  /** Capability Router provenance (ADR-0016) when writing used the gateway. */
+  ai_execution?: {
+    research_job?: string;
+    capability?: string;
+    execution_policy?: string;
+    provider?: string;
+    model?: string;
+    prompt_version?: string;
+    router_version?: string;
+    execution_id?: string;
   };
   /** RI-009 — themes/gaps/methods/timeline/consensus depth that informed the draft. */
   ri_context?: {

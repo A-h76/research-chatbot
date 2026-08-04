@@ -32,6 +32,10 @@ import { useProjectHub } from "../useProjects";
 import { useUI } from "@/context/UIContext";
 import { ApiError } from "@/lib/apiClient";
 import { cn, formatDate } from "@/lib/utils";
+import {
+  ResearchPipelineBeam,
+  pipelineIndexFromProjectStats,
+} from "@/features/research-flow";
 import type {
   ProjectHub,
   ProjectHubInsight,
@@ -264,6 +268,15 @@ function OverviewTab({
           </div>
         </section>
       )}
+
+      <ResearchPipelineBeam
+        activeIndex={pipelineIndexFromProjectStats({
+          papers: stats.papers,
+          notes_count: stats.notes,
+          writing_count: stats.chats > 0 && stats.notes > 0 ? 1 : 0,
+          evidence_count: pipeline_summary.done > 0 ? pipeline_summary.done : 0,
+        })}
+      />
 
       <div className="flex flex-wrap gap-4">
         <StatBadge icon={<FileText className="size-4" />} value={stats.papers} label="papers" />

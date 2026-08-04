@@ -1,4 +1,4 @@
-import { Copy, Trash2, ExternalLink, Pencil, CheckCircle2, CircleDashed, Loader2 } from "lucide-react";
+import { Copy, Trash2, ExternalLink, Pencil, CircleDashed, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Table,
@@ -12,6 +12,7 @@ import { useClipboard } from "@/hooks/useClipboard";
 import { toast } from "@/components/common/Toast";
 import type { Citation, CitationFormat, Project } from "@/types/api";
 import { citationsApi } from "../api";
+import { CrossrefIcon } from "@/features/sidebar/components/BrandIcons";
 
 function CopyFormatButton({
   label,
@@ -76,7 +77,7 @@ function FormattedCitationCell({
           {isLoading ? (
             <Loader2 className="size-3 animate-spin" />
           ) : verified ? (
-            <CheckCircle2 className="size-3" />
+            <CrossrefIcon className="size-3" />
           ) : (
             <CircleDashed className="size-3" />
           )}

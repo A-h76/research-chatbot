@@ -1,0 +1,14 @@
+<svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-label="JabRef">
+  <!-- JabRef: three citation nodes linked as a graph -->
+  <g fill="none" stroke-linecap="round" stroke-width="2.2">
+    <circle cx="12" cy="5.2" r="3.1" stroke="#3A3F41"/>
+    <circle cx="6.2" cy="16.2" r="3.1" stroke="#E6007A"/>
+    <circle cx="17.8" cy="16.2" r="3.1" stroke="#3A3F41"/>
+  </g>
+  <circle cx="12" cy="5.2" r="1.15" fill="#3A3F41"/>
+  <circle cx="6.2" cy="16.2" r="1.15" fill="#E6007A"/>
+  <circle cx="17.8" cy="16.2" r="1.15" fill="#3A3F41"/>
+  <path stroke="#E6007A" stroke-width="1.8" stroke-linecap="round" d="M11.1 6.2 7.1 14.7"/>
+  <path stroke="#3A3F41" stroke-width="1.8" stroke-linecap="round" d="M12.9 6.2 16.9 14.7"/>
+  <path stroke="#3A3F41" stroke-width="1.8" stroke-linecap="round" d="M7.5 16.2h9"/>
+</svg>

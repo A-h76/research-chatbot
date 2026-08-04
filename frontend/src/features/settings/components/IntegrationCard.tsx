@@ -98,8 +98,13 @@ export function IntegrationCard({
     >
       <div className="flex items-start gap-3">
         <div
-          className="flex size-10 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold text-white"
-          style={{ background: "var(--brand)" }}
+          className={cn(
+            "flex size-10 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold",
+            provider.logo
+              ? "border border-border/80 bg-background text-foreground"
+              : "text-white",
+          )}
+          style={provider.logo ? undefined : { background: "var(--brand)" }}
           aria-hidden
         >
           {provider.logo ? (

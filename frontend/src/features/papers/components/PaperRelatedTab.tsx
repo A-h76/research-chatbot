@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useUI } from "@/context/UIContext";
+import { SemanticScholarIcon } from "@/features/sidebar/components/BrandIcons";
 import {
   fetchRelated,
   importRelatedPaper,
@@ -275,7 +276,8 @@ export function PaperRelatedTab({ fileId }: { fileId: number }) {
         projectId={currentProjectId}
       />
       {data.cached_at && (
-        <p className="text-center text-xs text-muted-foreground/60">
+        <p className="inline-flex w-full items-center justify-center gap-1.5 text-center text-xs text-muted-foreground/60">
+          <SemanticScholarIcon className="size-3.5" />
           Via Semantic Scholar · cached {new Date(data.cached_at).toLocaleDateString()}
         </p>
       )}
