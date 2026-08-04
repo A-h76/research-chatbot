@@ -1568,6 +1568,80 @@ def _ecosystem_catalog_for_landing():
     return public_catalog()
 
 
+def _vite_ecosystem_island_tags():
+    """Script/link tags for the Research Ecosystem Icon Cloud React island.
+
+    Prod: hashed assets from frontend/dist/.vite/manifest.json (ecosystem.html entry).
+    Dev: VITE_DEV_SERVER / FLASK_DEBUG / DHUND_VITE_ECOSYSTEM → Vite HMR on :5173.
+    """
+    force_vite = (os.environ.get("DHUND_VITE_ECOSYSTEM") or "").strip() == "1"
+    vite_dev = (os.environ.get("VITE_DEV_SERVER") or "").strip().rstrip("/")
+    flask_debug = (os.environ.get("FLASK_DEBUG") or "").strip() in {"1", "true", "True"}
+
+    if force_vite or vite_dev:
+        base = vite_dev or "http://localhost:5173"
+        return {
+            "mode": "dev",
+            "scripts": [
+                f"{base}/@vite/client",
+                f"{base}/src/marketing/ecosystem-mount.tsx",
+            ],
+            "styles": [],
+        }
+
+    dist = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
+    for rel in (".vite/manifest.json", "manifest.json"):
+        manifest_path = os.path.join(dist, rel)
+        if not os.path.isfile(manifest_path):
+            continue
+        try:
+            with open(manifest_path, encoding="utf-8") as f:
+                manifest = json.load(f)
+        except Exception:
+            continue
+        entry = manifest.get("ecosystem.html") or manifest.get("src/marketing/ecosystem-mount.tsx")
+        if not isinstance(entry, dict):
+            continue
+        file_path = (entry.get("file") or "").lstrip("/")
+        if not file_path:
+            continue
+
+        # Collect CSS from the entry and imported chunks (Vite often puts CSS on chunks).
+        styles: list[str] = []
+        seen_css: set[str] = set()
+        queue = [entry]
+        visited: set[int] = set()
+        while queue:
+            node = queue.pop()
+            if id(node) in visited:
+                continue
+            visited.add(id(node))
+            for c in node.get("css") or []:
+                href = f"/{str(c).lstrip('/')}"
+                if href not in seen_css:
+                    seen_css.add(href)
+                    styles.append(href)
+            for imp in node.get("imports") or []:
+                child = manifest.get(imp)
+                if isinstance(child, dict):
+                    queue.append(child)
+
+        return {"mode": "prod", "scripts": [f"/{file_path}"], "styles": styles}
+
+    if flask_debug:
+        base = "http://localhost:5173"
+        return {
+            "mode": "dev",
+            "scripts": [
+                f"{base}/@vite/client",
+                f"{base}/src/marketing/ecosystem-mount.tsx",
+            ],
+            "styles": [],
+        }
+
+    return {"mode": "missing", "scripts": [], "styles": []}
+
+
 def _render_login_landing():
     """Public Research OS landing + sign-in (login.html). Shared by / and /login."""
     raw_error = request.args.get("error")
@@ -1589,6 +1663,7 @@ def _render_login_landing():
         verified=request.args.get("verified") == "1",
         app_base_url=APP_BASE_URL,
         ecosystem_catalog=_ecosystem_catalog_for_landing(),
+        ecosystem_island=_vite_ecosystem_island_tags(),
     )
 
 

@@ -792,6 +792,37 @@
   }
 
   /* Research Ecosystem — floating logo chips */
+  .eco-cloud-wrap {
+    display: flex;
+    justify-content: center;
+    min-height: 22rem;
+    margin-top: 1.5rem;
+  }
+  .eco-cloud-fallback {
+    margin: 4rem auto;
+    text-align: center;
+    color: var(--mute);
+    font-size: 0.9rem;
+  }
+  .eco-catalog {
+    border-top: 1px solid var(--line);
+    padding-top: 0.5rem;
+  }
+  .eco-catalog-summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--mute);
+    list-style: none;
+  }
+  .eco-catalog-summary::-webkit-details-marker { display: none; }
+  .eco-catalog-summary::before {
+    content: "▸ ";
+    color: var(--teal);
+  }
+  .eco-catalog[open] .eco-catalog-summary::before { content: "▾ "; }
+  .eco-catalog[open] .eco-cloud-fallback { display: none; }
+
   .eco-intro {
     max-width: 40rem;
     margin-bottom: 1rem;
@@ -1824,58 +1855,77 @@
     <section class="wrap block" id="ecosystem">
       <div class="eco-intro reveal">
         <p class="eyebrow">Research ecosystem</p>
-        <h2 class="section-title">Built for your research ecosystem</h2>
-        <p class="section-lead" style="margin-top:0.85rem;max-width:42ch">
-          Dhund becomes the hub for your entire research workflow — connect the tools you already use,
-          verify evidence in one place, and write without breaking your stack.
+        <h2 class="section-title">Your entire research ecosystem. One workspace.</h2>
+        <p class="section-lead" style="margin-top:0.85rem;max-width:48ch">
+          Import papers from trusted academic databases, cloud storage, and reference managers.
+          Every source enters the same evidence-first research pipeline.
         </p>
-        <p class="eco-note">Brand marks for tools Dhund connects to — reference managers, scholarly sources, cloud storage, and export formats. Live integrations ship unmarked; only true roadmap partners show Coming soon.</p>
+        <p class="eco-note">
+          Dhund doesn’t replace your ecosystem — it unifies it. Live connectors ship unmarked;
+          roadmap partners show Coming soon.
+        </p>
       </div>
 
-      <div class="eco-flow reveal" aria-label="How Dhund sits in the research workflow">
+      <div class="eco-cloud-wrap reveal" id="dhund-ecosystem-cloud">
+        <p class="eco-cloud-fallback">Loading research ecosystem…</p>
+      </div>
+
+      {% set eco_island = ecosystem_island or {"mode": "missing", "scripts": [], "styles": []} %}
+      {% for href in eco_island.styles %}
+      <link rel="stylesheet" href="{{ href }}">
+      {% endfor %}
+      {% for src in eco_island.scripts %}
+      <script type="module" src="{{ src }}"></script>
+      {% endfor %}
+      {% if eco_island.mode == "missing" %}
+      <noscript></noscript>
+      {% endif %}
+
+      <div class="eco-flow reveal" aria-label="How Dhund sits in the research workflow" style="margin-top:1.75rem">
         <span class="eco-flow-node">Academic sources</span>
         <span class="eco-flow-arrow" aria-hidden="true">→</span>
         <span class="eco-flow-node is-hub">Dhund</span>
         <span class="eco-flow-arrow" aria-hidden="true">→</span>
-        <span class="eco-flow-node">Reference managers</span>
+        <span class="eco-flow-node">Evidence</span>
         <span class="eco-flow-arrow" aria-hidden="true">→</span>
         <span class="eco-flow-node">Writing</span>
-        <span class="eco-flow-arrow" aria-hidden="true">→</span>
-        <span class="eco-flow-node">Export</span>
       </div>
 
-      <div class="eco-sections">
-        {% set eco = ecosystem_catalog or {"categories": [], "providers": []} %}
-        {% for cat in eco.categories %}
-        {% set cat_providers = eco.providers | selectattr('category', 'equalto', cat.id) | list %}
-        {% if cat_providers %}
-        <div class="eco-section reveal">
-          <div class="eco-section-head">
-            <h3>{{ cat.name }}</h3>
-            <p>{{ cat.description }}</p>
-          </div>
-          <div class="eco-chips">
-            {% for p in cat_providers %}
-            <div class="eco-chip{% if p.availability != 'live' %} is-soon{% endif %}" style="--brand:{{ p.brand_color or '#0F6E6A' }}">
-              {% if p.logo %}
-              {% set color_logo = p.logo.endswith('.png') or p.logo.endswith('paperpile.svg') or p.logo.endswith('readcube.svg') %}
-              <img class="eco-logo{% if color_logo %} eco-logo-color{% endif %}" src="{{ url_for('static', filename=p.logo) }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-              {% else %}
-              <span class="eco-mark">{{ p.mark or (p.name[:2] | upper) }}</span>
-              {% endif %}
-              <span class="eco-meta">
-                <span class="eco-name">{{ p.name }}</span>
-                {% if p.availability != 'live' %}
-                <span class="eco-soon">Coming soon</span>
-                {% endif %}
-              </span>
+      <details class="eco-catalog reveal" style="margin-top:2rem">
+        <summary class="eco-catalog-summary">Full connector catalog</summary>
+        <div class="eco-sections" style="margin-top:1.25rem">
+          {% set eco = ecosystem_catalog or {"categories": [], "providers": []} %}
+          {% for cat in eco.categories %}
+          {% set cat_providers = eco.providers | selectattr('category', 'equalto', cat.id) | list %}
+          {% if cat_providers %}
+          <div class="eco-section">
+            <div class="eco-section-head">
+              <h3>{{ cat.name }}</h3>
+              <p>{{ cat.description }}</p>
             </div>
-            {% endfor %}
+            <div class="eco-chips">
+              {% for p in cat_providers %}
+              <div class="eco-chip{% if p.availability != 'live' %} is-soon{% endif %}" style="--brand:{{ p.brand_color or '#0F6E6A' }}">
+                {% if p.logo %}
+                {% set color_logo = p.logo.endswith('.png') or p.logo.endswith('paperpile.svg') or p.logo.endswith('readcube.svg') %}
+                <img class="eco-logo{% if color_logo %} eco-logo-color{% endif %}" src="{{ url_for('static', filename=p.logo) }}" alt="" width="24" height="24" loading="lazy" decoding="async">
+                {% else %}
+                <span class="eco-mark">{{ p.mark or (p.name[:2] | upper) }}</span>
+                {% endif %}
+                <span class="eco-meta">
+                  <span class="eco-name">{{ p.name }}</span>
+                  {% if p.availability != 'live' %}
+                  <span class="eco-soon">Coming soon</span>
+                  {% endif %}
+                </span>
+              </div>
+              {% endfor %}
+            </div>
           </div>
+          {% endif %}
+          {% endfor %}
         </div>
-        {% endif %}
-        {% endfor %}
-      </div>
+      </details>
     </section>
 
     <!-- Enterprise Security -->

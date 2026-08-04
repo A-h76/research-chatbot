@@ -1,0 +1,35 @@
+/**
+ * Slim stylesheet for the landing Research Ecosystem island.
+ * Avoids KaTeX / full SPA chrome so the marketing page stays light.
+ */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.5rem;
+  --background: #f7f8fa;
+  --foreground: #111827;
+  --card: #ffffff;
+  --card-foreground: #111827;
+  --popover: #ffffff;
+  --popover-foreground: #111827;
+  --primary: #0f6e6a;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f3f7;
+  --secondary-foreground: #111827;
+  --muted: #f1f3f7;
+  --muted-foreground: #6b7280;
+  --accent: #0f6e6a;
+  --accent-foreground: #ffffff;
+  --border: #e5e7eb;
+  --input: #e5e7eb;
+  --ring: #0f6e6a;
+}
+
+.dhund-ecosystem-island {
+  color: var(--foreground);
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+}

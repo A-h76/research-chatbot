@@ -1,6 +1,4 @@
 import path from "path"
-// vitest/config re-exports Vite's own defineConfig, extended with a typed
-// `test` key — same config object, just so `test` below isn't a type error.
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -13,6 +11,15 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  build: {
+    manifest: true,
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        ecosystem: path.resolve(__dirname, "ecosystem.html"),
+      },
     },
   },
   server: {
@@ -31,9 +38,6 @@ export default defineConfig({
     },
   },
   test: {
-    // Testing plain fetch-wrapping functions (features/*/api.ts), not
-    // React components — the default node environment is enough, no
-    // jsdom/testing-library needed for what's actually being tested.
     environment: "node",
     globals: false,
   },

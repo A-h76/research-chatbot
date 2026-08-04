@@ -22,7 +22,10 @@ import { HomeHeroUpload } from "./components/HomeHeroUpload";
 import { HomeSecondaryActions } from "./components/HomeSecondaryActions";
 import { GettingStartedChecklist } from "./components/GettingStartedChecklist";
 import { HomeRecentList, HomeSectionLabel } from "./components/HomeRecentList";
-import { ResearchOsHeroFlow } from "@/features/research-flow";
+import {
+  ResearchOsHeroFlow,
+  ResearchEcosystemCloud,
+} from "@/features/research-flow";
 import {
   buildGettingStarted,
   deriveHomeStage,
@@ -273,6 +276,16 @@ export function DashboardPage() {
                 How Dhund works
               </h2>
               <ResearchOsHeroFlow className="mt-1" />
+            </section>
+
+            <section className="rounded-xl border border-border bg-card/60 p-3 sm:p-4">
+              <h2 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Research ecosystem
+              </h2>
+              <p className="mt-1 px-1 text-[12px] text-muted-foreground">
+                Connect the tools you already use — Dhund unifies them into one evidence pipeline.
+              </p>
+              <ResearchEcosystemCloud className="mt-3" compact showCategories={false} />
             </section>
           </div>
         ) : (
