@@ -337,11 +337,36 @@ App shell: prefer `8–16` gaps; kill empty “dashboard air” (DESIGN-SYSTEM-v
 | **Library** | Rows + status, not tile carnival | Linear + Vercel |
 | **Search / Discover** | Technical clarity, provider honesty | Vercel |
 | **Dashboard** | Next action, not widget soup | Linear + Airtable editorial clarity |
-| **Landing** | Product museum + teal close + ecosystem cloud | Apple + Tesla + Superhuman + Vercel |
+| **Landing** | Section-owned brands (see §8b); product museum + teal close | Tesla · Apple · Linear · SpaceX · Replicate · … |
 | **Docs / API / ADR** | Sidebar · prose · TOC | Mintlify |
 | **Trust Layer** | Austere proof (security → compliance → privacy → reproducibility → audit) | SpaceX (layer only) |
 | **Evidence inspector** | Canvas + side inspector | Figma pattern + Linear density |
 | **AI / API explainers** | Dark code-story wells | Replicate pattern + Dhund teal |
+
+### 8b. Landing section ownership (frozen formula)
+
+Do **not** paint the whole landing as one brand. Assign each band; keep Dhund tokens (signal teal, cool paper, Newsreader + Plus Jakarta).
+
+| Landing section | Primary | Secondary | Mix |
+| --------------- | ------- | --------- | --- |
+| Hero | Tesla | Apple | 70 / 30 |
+| Product story | Apple | Vercel | 80 / 20 |
+| Research pipeline | Linear | Together AI | 80 / 20 |
+| Ecosystem | SpaceX | Together AI | 60 / 40 |
+| AI Capability Router | Replicate | Together AI | dark code-story |
+| Research OS showcase | Linear | Figma | 60 / 40 |
+| Evidence inspector | Figma | Linear | canvas + rail |
+| Writing | Notion | Apple | 80 / 20 |
+| API / Docs tease | Mintlify | Replicate | 80 / 20 |
+| Enterprise / Trust | SpaceX | IBM austerity | 70 / 30 |
+| Pricing | Stripe | Apple | 70 / 30 |
+| FAQ | Mintlify | Notion | dense accordion |
+| Finale CTA | Superhuman | — | deep `signal-900` |
+| Footer | Vercel | Apple | 70 / 30 |
+
+**Motion (landing only):** hero fade · pipeline beam · ecosystem connections · AI router cascade · product-frame enter-viewport. Forbidden: floating icons, constant rotations, neon particles, infinite background loops.
+
+**Implementation:** `templates/login.html` + `static/landing-v2.css` + `static/landing.js`.
 
 ---
 

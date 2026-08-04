@@ -4,1517 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dhund — Research Operating System</title>
-<meta name="description" content="Where evidence becomes publishable research. Dhund is an AI Research Operating System — understand papers, verify evidence, write literature reviews, and collaborate with grounded AI.">
+<meta name="description" content="Research without the chaos. One workspace to discover, understand, write, review, and publish research.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="{{ url_for('static', filename='landing-theme.js') }}"></script>
-<style>
-  :root {
-    --ink: #111816;
-    --ink-soft: #3d4a47;
-    --muted: #6b7875;
-    --line: #e4ebe9;
-    --line-strong: #cfd9d6;
-    --teal: #0F6E6A;
-    --teal-deep: #0a524f;
-    --teal-soft: #e8f4f3;
-    /* Design Language — Superhuman close / signal scale */
-    --signal-900: #083B39;
-    --signal-800: #0e3030;
-    --trust-ink: #0a0c0b;
-    --bg: #ffffff;
-    --paper: #ffffff;
-    --surface: #f6f8f8;
-    --surface-2: #eef2f1;
-    --ok: #1f6b4a;
-    --danger: #9b2c2c;
-    --radius: 14px;
-    --radius-lg: 22px;
-    /* Elevation only — structure uses 1px borders (Border Doctrine) */
-    --shadow: 0 1px 0 rgba(17, 24, 22, 0.04), 0 24px 64px rgba(17, 24, 22, 0.06);
-    --font: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-    --serif: "Newsreader", Georgia, "Times New Roman", serif;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --ink: #eef3f2;
-      --ink-soft: #b5c2bf;
-      --muted: #8a9a96;
-      --line: #24302e;
-      --line-strong: #33403d;
-      --teal: #1ab5ad;
-      --teal-deep: #5ee0d4;
-      --teal-soft: #0d2a28;
-      --signal-900: #083B39;
-      --signal-800: #0e3030;
-      --trust-ink: #050706;
-      --bg: #0b1010;
-      --paper: #121918;
-      --surface: #161e1d;
-      --surface-2: #1c2624;
-      --shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
-    }
-  }
-  :root[data-theme="dark"] {
-    --ink: #eef3f2;
-    --ink-soft: #b5c2bf;
-    --muted: #8a9a96;
-    --line: #24302e;
-    --line-strong: #33403d;
-    --teal: #1ab5ad;
-    --teal-deep: #5ee0d4;
-    --teal-soft: #0d2a28;
-    --signal-900: #083B39;
-    --signal-800: #0e3030;
-    --trust-ink: #050706;
-    --bg: #0b1010;
-    --paper: #121918;
-    --surface: #161e1d;
-    --surface-2: #1c2624;
-    --shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
-  }
-  :root[data-theme="light"] {
-    --ink: #111816;
-    --ink-soft: #3d4a47;
-    --muted: #6b7875;
-    --line: #e4ebe9;
-    --line-strong: #cfd9d6;
-    --teal: #0F6E6A;
-    --teal-deep: #0a524f;
-    --teal-soft: #e8f4f3;
-    --signal-900: #083B39;
-    --signal-800: #0e3030;
-    --trust-ink: #0a0c0b;
-    --bg: #ffffff;
-    --paper: #ffffff;
-    --surface: #f6f8f8;
-    --surface-2: #eef2f1;
-    --shadow: 0 1px 0 rgba(17, 24, 22, 0.04), 0 24px 64px rgba(17, 24, 22, 0.06);
-  }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body {
-    font-family: var(--font);
-    color: var(--ink);
-    background: var(--bg);
-    min-height: 100vh;
-    line-height: 1.55;
-    -webkit-font-smoothing: antialiased;
-  }
-  a { color: inherit; text-decoration: none; }
-  button, input { font: inherit; }
-  .wrap { width: min(1180px, calc(100% - 3rem)); margin-inline: auto; }
-  .wrap-narrow { width: min(720px, calc(100% - 3rem)); margin-inline: auto; }
-  .wrap-wide { width: min(1280px, calc(100% - 2.5rem)); margin-inline: auto; }
-
-  /* ——— Nav ——— */
-  .topbar {
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    background: color-mix(in srgb, var(--bg) 86%, transparent);
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid transparent;
-  }
-  .topbar.is-scrolled { border-bottom-color: var(--line); }
-  .nav {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1.25rem;
-    padding: 1rem 0;
-  }
-  .brand {
-    display: inline-flex;
-    align-items: center;
-    font-weight: 800;
-    font-size: 1.45rem;
-    letter-spacing: -0.05em;
-    line-height: 1;
-  }
-  .brand-mark {
-    width: 1.55rem;
-    height: 1.55rem;
-    border-radius: 0.4rem;
-    background: var(--teal);
-    color: #fff;
-    display: grid;
-    place-items: center;
-    font-size: 0.7rem;
-    font-weight: 700;
-  }
-  .nav-links {
-    display: flex;
-    align-items: center;
-    gap: 0.15rem;
-    flex: 1;
-    justify-content: center;
-  }
-  .nav-links a {
-    padding: 0.4rem 0.7rem;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--ink-soft);
-  }
-  .nav-links a:hover { color: var(--ink); }
-  .nav-actions { display: flex; align-items: center; gap: 0.55rem; }
-  .theme-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.2rem;
-    height: 2.2rem;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: var(--paper);
-    color: var(--muted);
-    cursor: pointer;
-  }
-  .theme-toggle:hover { color: var(--ink); border-color: var(--teal); }
-  .theme-toggle svg { width: 1rem; height: 1rem; }
-  .theme-toggle .icon-sun { display: none; }
-  .theme-toggle .icon-moon { display: block; }
-  :root[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
-  :root[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .theme-toggle .icon-sun { display: block; }
-    :root:not([data-theme="light"]) .theme-toggle .icon-moon { display: none; }
-  }
-  .nav-login {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--ink-soft);
-    padding: 0.4rem 0.55rem;
-  }
-  .nav-login:hover { color: var(--ink); }
-  .nav-cta {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.55rem 1.05rem;
-    border-radius: 999px;
-    background: var(--teal);
-    color: #fff;
-    font-size: 0.84rem;
-    font-weight: 600;
-  }
-  .nav-cta:hover { background: var(--teal-deep); }
-
-  /* ——— Buttons ——— */
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    border: none;
-    border-radius: 999px;
-    padding: 0.8rem 1.35rem;
-    font-size: 0.92rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease;
-  }
-  .btn:hover { transform: translateY(-1px); }
-  .btn-primary { background: var(--teal); color: #fff; }
-  .btn-primary:hover { background: var(--teal-deep); }
-  .btn-ghost {
-    background: var(--paper);
-    color: var(--ink);
-    border: 1px solid var(--line-strong);
-  }
-  .btn-ghost:hover { border-color: var(--teal); color: var(--teal-deep); }
-  .btn-lg { padding: 0.95rem 1.55rem; font-size: 0.98rem; }
-  .hero-secondary {
-    display: inline-block;
-    font-size: 0.92rem;
-    font-weight: 500;
-    color: var(--ink-soft);
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-  .hero-secondary:hover { color: var(--teal-deep); }
-  .btn-sm { padding: 0.55rem 1rem; font-size: 0.82rem; }
-
-  /* ——— Typography ——— */
-  .eyebrow {
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--teal);
-    margin-bottom: 1rem;
-  }
-  .section-title {
-    font-size: clamp(1.85rem, 3.4vw, 2.65rem);
-    font-weight: 700;
-    letter-spacing: -0.035em;
-    line-height: 1.12;
-    margin-bottom: 0.85rem;
-  }
-  .section-title.serif {
-    font-family: var(--serif);
-    font-weight: 500;
-    letter-spacing: -0.02em;
-  }
-  .section-lead {
-    color: var(--muted);
-    font-size: 1.05rem;
-    line-height: 1.6;
-    max-width: 44ch;
-  }
-  .editorial-row {
-    display: grid;
-    grid-template-columns: 1.15fr 0.85fr;
-    gap: 3rem;
-    align-items: start;
-  }
-  .editorial-row .section-lead { margin-top: 0.35rem; }
-  .block { padding: 6.5rem 0; }
-  .block-tight { padding: 4rem 0; }
-  .block-band {
-    padding: 6rem 0;
-    background: var(--surface);
-  }
-
-  /* ——— Hero ——— */
-  .hero {
-    padding: 4.5rem 0 2rem;
-  }
-  .hero-top {
-    display: grid;
-    grid-template-columns: 1.2fr 0.9fr;
-    gap: 3.5rem;
-    align-items: end;
-    margin-bottom: 2.25rem;
-  }
-  .hero h1 {
-    font-size: clamp(2.65rem, 5.5vw, 4.1rem);
-    line-height: 1.02;
-    letter-spacing: -0.045em;
-    font-weight: 700;
-  }
-  .hero h1 .soft {
-    display: block;
-    margin-top: 0.35rem;
-    color: var(--muted);
-    font-weight: 500;
-    letter-spacing: -0.03em;
-    font-size: 0.52em;
-    line-height: 1.35;
-    max-width: 22ch;
-  }
-  .hero-aside {
-    color: var(--ink-soft);
-    font-size: 1.02rem;
-    line-height: 1.65;
-    padding-bottom: 0.35rem;
-  }
-  .hero-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.7rem;
-    margin-top: 1.75rem;
-  }
-  .hero-actions + .hero-secondary {
-    margin-top: 0.85rem;
-  }
-
-  /* Product preview — three pane */
-  .preview-shell {
-    margin-top: 3.5rem;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
-    padding: 0.85rem;
-    box-shadow: var(--shadow);
-  }
-  .workspace {
-    display: grid;
-    grid-template-columns: 220px 1fr 280px;
-    min-height: 420px;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: var(--paper);
-    overflow: hidden;
-  }
-  .ws-side {
-    border-right: 1px solid var(--line);
-    padding: 1rem 0.85rem;
-    background: var(--surface);
-  }
-  .ws-ws {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.45rem 0.55rem;
-    border-radius: 8px;
-    border: 1px solid var(--line);
-    background: var(--paper);
-    font-size: 0.78rem;
-    font-weight: 600;
-    margin-bottom: 1rem;
-  }
-  .ws-nav {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    margin-bottom: 1.15rem;
-  }
-  .ws-nav span {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.5rem;
-    border-radius: 7px;
-    font-size: 0.78rem;
-    font-weight: 500;
-    color: var(--ink-soft);
-  }
-  .ws-nav span.is-on {
-    background: var(--teal-soft);
-    color: var(--teal-deep);
-    font-weight: 600;
-  }
-  .ws-folders { display: flex; flex-direction: column; gap: 0.2rem; }
-  .ws-folder {
-    font-size: 0.74rem;
-    color: var(--muted);
-    padding: 0.35rem 0.5rem;
-    border-radius: 6px;
-  }
-  .ws-folder.is-on {
-    background: var(--paper);
-    color: var(--ink);
-    font-weight: 600;
-    border: 1px solid var(--line);
-  }
-  .ws-main { display: flex; flex-direction: column; min-width: 0; }
-  .ws-tabs {
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid var(--line);
-    padding: 0.55rem 0.85rem 0;
-  }
-  .ws-tab {
-    padding: 0.45rem 0.75rem;
-    font-size: 0.74rem;
-    font-weight: 600;
-    color: var(--muted);
-    border: 1px solid transparent;
-    border-bottom: none;
-    border-radius: 8px 8px 0 0;
-  }
-  .ws-tab.is-on {
-    background: var(--paper);
-    color: var(--ink);
-    border-color: var(--line);
-    margin-bottom: -1px;
-  }
-  .ws-table { padding: 0.35rem 0; }
-  .ws-row {
-    display: grid;
-    grid-template-columns: 1.6fr 0.9fr 0.7fr;
-    gap: 0.75rem;
-    padding: 0.7rem 1rem;
-    border-bottom: 1px solid var(--line);
-    font-size: 0.78rem;
-  }
-  .ws-row.head {
-    color: var(--muted);
-    font-weight: 600;
-    font-size: 0.7rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-  .ws-row strong { font-weight: 600; }
-  .ws-row span { color: var(--muted); }
-  .ws-right {
-    border-left: 1px solid var(--line);
-    display: flex;
-    flex-direction: column;
-    background: var(--surface);
-  }
-  .ws-right-head {
-    padding: 0.85rem 1rem;
-    border-bottom: 1px solid var(--line);
-    font-size: 0.82rem;
-    font-weight: 600;
-  }
-  .ws-right-body {
-    flex: 1;
-    padding: 1rem;
-    font-size: 0.8rem;
-    color: var(--muted);
-    line-height: 1.5;
-  }
-  .ws-ask {
-    margin: 0.75rem;
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    padding: 0.45rem 0.55rem;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: var(--paper);
-  }
-  .ws-ask span {
-    flex: 1;
-    font-size: 0.78rem;
-    color: var(--muted);
-    padding-left: 0.35rem;
-  }
-  .ws-send {
-    width: 1.85rem;
-    height: 1.85rem;
-    border-radius: 999px;
-    background: var(--teal);
-    color: #fff;
-    display: grid;
-    place-items: center;
-    font-size: 0.75rem;
-    border: none;
-  }
-
-  /* Trust */
-  .trust {
-    padding: 2.75rem 0 1rem;
-    text-align: center;
-  }
-  .trust p {
-    font-size: 0.78rem;
-    font-weight: 500;
-    color: var(--muted);
-    margin-bottom: 1.25rem;
-    letter-spacing: 0.02em;
-  }
-  .trust-row {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 1.75rem 2.5rem;
-    opacity: 0.55;
-  }
-  .trust-row span {
-    font-size: 0.95rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    color: var(--ink-soft);
-  }
-
-  /* Pillars */
-  .pillars {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 2.5rem;
-    padding-top: 1rem;
-  }
-  .pillar h3 {
-    font-size: 1.05rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    margin-bottom: 0.55rem;
-  }
-  .pillar p {
-    font-size: 0.95rem;
-    color: var(--muted);
-    line-height: 1.55;
-  }
-
-  /* Feature split */
-  .feature {
-    display: grid;
-    grid-template-columns: 1.15fr 0.85fr;
-    gap: 3.5rem;
-    align-items: center;
-  }
-  .feature.reverse { grid-template-columns: 0.85fr 1.15fr; }
-  .feature.reverse .feature-copy { order: 1; }
-  .feature.reverse .feature-visual { order: 2; }
-  .feature-copy .section-lead { margin-bottom: 1.35rem; }
-  .feature-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-    margin-bottom: 1.5rem;
-  }
-  .feature-list li {
-    list-style: none;
-    font-size: 0.92rem;
-    color: var(--ink-soft);
-    padding-left: 1.15rem;
-    position: relative;
-  }
-  .feature-list li::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0.55rem;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--teal);
-  }
-
-  .mock {
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    background: var(--paper);
-    overflow: hidden;
-    box-shadow: var(--shadow);
-  }
-  .mock-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.65rem 0.9rem;
-    border-bottom: 1px solid var(--line);
-    background: var(--surface);
-  }
-  .mock-dot {
-    width: 7px; height: 7px; border-radius: 50%;
-    background: var(--line-strong);
-  }
-  .mock-label {
-    margin-left: 0.45rem;
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: var(--muted);
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-
-  /* Workflow tabs */
-  .flow-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    margin: 2rem 0 1.5rem;
-  }
-  .flow-tab {
-    padding: 0.5rem 0.95rem;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: var(--paper);
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--muted);
-    cursor: pointer;
-  }
-  .flow-tab.is-on {
-    background: var(--ink);
-    border-color: var(--ink);
-    color: #fff;
-  }
-  :root[data-theme="dark"] .flow-tab.is-on {
-    background: var(--teal);
-    border-color: var(--teal);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .flow-tab.is-on {
-      background: var(--teal);
-      border-color: var(--teal);
-    }
-  }
-  .flow-panel { display: none; }
-  .flow-panel.is-on { display: block; }
-
-  /* Evidence story */
-  .story-steps {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    margin-bottom: 1.25rem;
-  }
-  .story-step {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.4rem 0.75rem;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: var(--paper);
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--muted);
-    cursor: pointer;
-  }
-  .story-step.is-active {
-    background: var(--teal-soft);
-    border-color: var(--teal);
-    color: var(--teal-deep);
-  }
-  .story-step .n {
-    width: 1.15rem;
-    height: 1.15rem;
-    border-radius: 50%;
-    background: var(--surface-2);
-    display: grid;
-    place-items: center;
-    font-size: 0.65rem;
-  }
-  .story-step.is-active .n { background: var(--teal); color: #fff; }
-  .aha-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    min-height: 300px;
-  }
-  .chat-pane { padding: 1.25rem; }
-  .chat-q { font-size: 0.78rem; color: var(--muted); margin-bottom: 0.7rem; }
-  .chat-q strong { color: var(--ink); }
-  .chat-a { font-size: 0.92rem; line-height: 1.55; margin-bottom: 0.75rem; }
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    margin: 0.1rem 0.15rem;
-    padding: 0.25rem 0.5rem;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: var(--teal-soft);
-    color: var(--teal-deep);
-    font-size: 0.72rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .chip:hover, .chip.is-active {
-    border-color: var(--teal);
-    box-shadow: 0 0 0 3px rgba(15, 110, 106, 0.12);
-  }
-  .chip-hint { margin-top: 0.65rem; font-size: 0.76rem; color: var(--muted); }
-  .inspect-pane {
-    border-left: 1px solid var(--line);
-    background: var(--surface);
-    padding: 1.25rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.65rem;
-  }
-  .inspect-meta {
-    font-size: 0.7rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--teal);
-  }
-  .inspect-title { font-size: 0.86rem; font-weight: 600; }
-  .passage {
-    font-family: var(--serif);
-    font-size: 0.92rem;
-    line-height: 1.55;
-    padding: 0.85rem;
-    border-radius: 8px;
-    background: var(--paper);
-    border: 1px solid var(--line);
-  }
-  .passage mark {
-    background: rgba(15, 110, 106, 0.18);
-    color: inherit;
-  }
-  .inspect-foot { font-size: 0.76rem; color: var(--muted); }
-  .accept-pill {
-    display: inline-flex;
-    margin-top: auto;
-    padding: 0.4rem 0.7rem;
-    border-radius: 8px;
-    background: rgba(31, 107, 74, 0.1);
-    color: var(--ok);
-    font-size: 0.76rem;
-    font-weight: 600;
-  }
-
-  /* Graph mock */
-  .graph {
-    padding: 1.5rem;
-    min-height: 280px;
-    position: relative;
-    background:
-      radial-gradient(circle at 30% 40%, var(--teal-soft), transparent 40%),
-      radial-gradient(circle at 70% 55%, var(--surface-2), transparent 35%),
-      var(--paper);
-  }
-  .g-node {
-    position: absolute;
-    padding: 0.45rem 0.75rem;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: var(--paper);
-    font-size: 0.72rem;
-    font-weight: 600;
-    box-shadow: 0 8px 24px rgba(17, 24, 22, 0.06);
-  }
-  .g-node.core {
-    background: var(--teal);
-    border-color: var(--teal);
-    color: #fff;
-  }
-  .g-edge {
-    position: absolute;
-    height: 1px;
-    background: var(--line-strong);
-    transform-origin: left center;
-  }
-
-  /* Writing */
-  .write-mock {
-    display: grid;
-    grid-template-columns: 1.4fr 0.9fr;
-    min-height: 280px;
-  }
-  .write-body { padding: 1.25rem 1.35rem; border-right: 1px solid var(--line); }
-  .write-body h4, .reviewer h4 {
-    font-size: 0.7rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 0.75rem;
-  }
-  .write-body p {
-    font-family: var(--serif);
-    font-size: 0.95rem;
-    line-height: 1.65;
-    margin-bottom: 0.85rem;
-  }
-  .cite {
-    color: var(--teal);
-    font-family: var(--font);
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-  .reviewer { padding: 1.25rem; background: var(--surface); }
-  .issue {
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--paper);
-    padding: 0.7rem 0.8rem;
-    margin-bottom: 0.5rem;
-    font-size: 0.8rem;
-  }
-  .issue strong { display: block; margin-bottom: 0.2rem; font-size: 0.74rem; color: var(--danger); }
-
-  /* Agents / collab cards */
-  .card-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1rem;
-  }
-  .soft-card {
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    background: var(--paper);
-    padding: 1.35rem;
-  }
-  .soft-card h3 {
-    font-size: 1rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    margin-bottom: 0.45rem;
-  }
-  .soft-card p {
-    font-size: 0.9rem;
-    color: var(--muted);
-    line-height: 1.5;
-  }
-
-  /* Research Ecosystem — floating logo chips */
-  .eco-cloud-wrap {
-    display: flex;
-    justify-content: center;
-    min-height: 22rem;
-    margin-top: 1.5rem;
-  }
-  .eco-cloud-fallback {
-    margin: 4rem auto;
-    text-align: center;
-    color: var(--mute);
-    font-size: 0.9rem;
-  }
-  .eco-catalog {
-    border-top: 1px solid var(--line);
-    padding-top: 0.5rem;
-  }
-  .eco-catalog-summary {
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--mute);
-    list-style: none;
-  }
-  .eco-catalog-summary::-webkit-details-marker { display: none; }
-  .eco-catalog-summary::before {
-    content: "▸ ";
-    color: var(--teal);
-  }
-  .eco-catalog[open] .eco-catalog-summary::before { content: "▾ "; }
-  .eco-catalog[open] .eco-cloud-fallback { display: none; }
-
-  .eco-intro {
-    max-width: 40rem;
-    margin-bottom: 1rem;
-  }
-  .eco-note {
-    margin: 1rem 0 0;
-    font-size: 0.84rem;
-    color: var(--muted);
-  }
-  .eco-flow {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 0.65rem 0.4rem;
-    margin: 3rem 0 4.5rem;
-  }
-  .eco-flow-node {
-    font-size: 0.84rem;
-    font-weight: 500;
-    color: var(--muted);
-    letter-spacing: -0.01em;
-  }
-  .eco-flow-node.is-hub {
-    padding: 0.45rem 0.95rem;
-    border-radius: 999px;
-    background: var(--teal);
-    color: #fff;
-    font-weight: 700;
-  }
-  .eco-flow-arrow {
-    color: var(--line-strong);
-    font-size: 0.95rem;
-  }
-  .eco-sections {
-    display: flex;
-    flex-direction: column;
-    gap: 3.75rem;
-  }
-  .eco-section {
-    padding-top: 2.5rem;
-    border-top: 1px solid var(--line);
-  }
-  .eco-section-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.75rem 2rem;
-    margin-bottom: 1.65rem;
-  }
-  .eco-section-head h3 {
-    font-size: 1.2rem;
-    font-weight: 700;
-    letter-spacing: -0.03em;
-  }
-  .eco-section-head p {
-    font-size: 0.92rem;
-    color: var(--muted);
-    max-width: 36ch;
-  }
-  .eco-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.85rem;
-  }
-  .eco-chip {
-    --brand: var(--ink);
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.75rem;
-    min-width: 168px;
-    padding: 0.95rem 1.15rem;
-    border-radius: 20px;
-    border: 1px solid transparent;
-    background: var(--paper);
-    box-shadow:
-      0 1px 2px rgba(17, 24, 22, 0.04),
-      0 10px 28px rgba(17, 24, 22, 0.05);
-    cursor: default;
-    transition:
-      transform .22s ease,
-      box-shadow .22s ease,
-      border-color .22s ease,
-      background .22s ease;
-  }
-  .eco-chip:hover {
-    transform: translateY(-4px);
-    border-color: var(--teal);
-    box-shadow:
-      0 1px 2px rgba(17, 24, 22, 0.04),
-      0 18px 40px rgba(15, 110, 106, 0.12);
-  }
-  .eco-chip.is-soon {
-    background: color-mix(in srgb, var(--surface) 70%, var(--paper));
-    box-shadow: none;
-    border-color: var(--line);
-  }
-  .eco-chip.is-soon:hover {
-    background: var(--paper);
-  }
-  .eco-logo {
-    width: 1.55rem;
-    height: 1.55rem;
-    flex-shrink: 0;
-    display: block;
-    object-fit: contain;
-    opacity: 0.9;
-    transition: transform .22s ease, opacity .22s ease, filter .22s ease;
-  }
-  .eco-chip:hover .eco-logo {
-    opacity: 1;
-    transform: scale(1.03);
-  }
-  :root[data-theme="dark"] .eco-logo:not(.eco-logo-color) {
-    filter: invert(1);
-    opacity: 0.92;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .eco-logo:not(.eco-logo-color) {
-      filter: invert(1);
-      opacity: 0.92;
-    }
-  }
-  .eco-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.12rem;
-    min-width: 0;
-  }
-  .eco-name {
-    font-size: 0.92rem;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-    color: var(--ink);
-    line-height: 1.2;
-  }
-  .eco-soon {
-    font-size: 0.68rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    color: var(--muted);
-  }
-  .eco-mark {
-    width: 1.55rem;
-    height: 1.55rem;
-    border-radius: 8px;
-    display: grid;
-    place-items: center;
-    font-size: 0.58rem;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    background: var(--surface-2);
-    color: var(--ink-soft);
-    transition: background .22s ease, color .22s ease, transform .22s ease;
-  }
-  .eco-chip:hover .eco-mark {
-    background: var(--teal-soft);
-    color: var(--teal-deep);
-    transform: scale(1.03);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .eco-chip,
-    .eco-logo,
-    .eco-mark { transition: none; }
-    .eco-chip:hover { transform: none; }
-  }
-
-  /* Trust Layer — SpaceX austerity (design language §2 / surface ownership) */
-  .block-band.trust-layer {
-    background: var(--trust-ink);
-    color: #e8eeec;
-    border-block: 1px solid rgba(255, 255, 255, 0.08);
-    padding-block: 5.5rem;
-  }
-  .trust-layer .eyebrow {
-    color: rgba(232, 238, 236, 0.55);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-size: 0.72rem;
-    font-weight: 600;
-  }
-  .trust-layer .section-title {
-    color: #f4f7f6;
-    font-weight: 600;
-  }
-  .trust-layer .section-lead {
-    color: rgba(232, 238, 236, 0.62);
-  }
-  .trust-pillar {
-    margin-top: 2.25rem;
-  }
-  .trust-pillar + .trust-pillar {
-    margin-top: 1.75rem;
-  }
-  .trust-pillar-label {
-    margin-bottom: 0.65rem;
-    font-size: 0.68rem;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: rgba(232, 238, 236, 0.4);
-  }
-  .ent-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.55rem;
-    margin-top: 0;
-  }
-  .ent-card {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.9rem 1rem;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 2px;
-    background: transparent;
-  }
-  .ent-check {
-    flex-shrink: 0;
-    width: 1.25rem;
-    height: 1.25rem;
-    margin-top: 0.05rem;
-    border-radius: 2px;
-    border: 1px solid rgba(255, 255, 255, 0.28);
-    display: grid;
-    place-items: center;
-    background: transparent;
-    color: rgba(232, 238, 236, 0.85);
-    font-size: 0.68rem;
-    font-weight: 700;
-  }
-  .ent-card:not(.is-soon) .ent-check {
-    border-color: rgba(26, 181, 173, 0.55);
-    color: #5ee0d4;
-  }
-  .ent-card.is-soon .ent-check {
-    border-color: rgba(255, 255, 255, 0.12);
-    color: rgba(232, 238, 236, 0.35);
-  }
-  .ent-card strong {
-    display: block;
-    font-size: 0.86rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    margin-bottom: 0.15rem;
-    color: #f4f7f6;
-  }
-  .ent-card span {
-    font-size: 0.74rem;
-    color: rgba(232, 238, 236, 0.5);
-    line-height: 1.4;
-  }
-  .ent-legend {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.85rem 1.25rem;
-    margin-top: 1.75rem;
-    font-size: 0.76rem;
-    color: rgba(232, 238, 236, 0.45);
-  }
-  .ent-legend em {
-    font-style: normal;
-    font-weight: 700;
-    color: #5ee0d4;
-  }
-  .trust-ghost-cta {
-    display: inline-flex;
-    align-items: center;
-    margin-left: auto;
-    padding: 0.45rem 0.9rem;
-    border: 1px solid rgba(240, 250, 250, 0.35);
-    border-radius: 2px;
-    color: #f0fafa;
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-  }
-  .trust-ghost-cta:hover {
-    border-color: #fff;
-    background: rgba(255, 255, 255, 0.06);
-  }
-
-  /* Testimonials */
-  .quotes {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1.25rem;
-  }
-  .quote {
-    border-top: 1px solid var(--line);
-    padding: 1.75rem 0 0.5rem;
-  }
-  .quote blockquote {
-    font-family: var(--serif);
-    font-size: 1.25rem;
-    line-height: 1.45;
-    letter-spacing: -0.015em;
-    margin-bottom: 1.15rem;
-    color: var(--ink);
-  }
-  .quote cite {
-    font-style: normal;
-    font-size: 0.82rem;
-    color: var(--muted);
-  }
-
-  /* Superhuman three-band close — deep teal CTA band */
-  .finale {
-    text-align: center;
-    padding: 5.5rem 0;
-    background: var(--signal-900);
-    color: #f0fafa;
-    border: none;
-  }
-  .finale .wrap {
-    width: min(720px, calc(100% - 3rem));
-    margin-inline: auto;
-  }
-  .finale .eyebrow {
-    color: rgba(240, 250, 250, 0.55);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    font-size: 0.72rem;
-    font-weight: 600;
-    margin-bottom: 1rem;
-  }
-  .finale h2 {
-    font-size: clamp(1.85rem, 3.6vw, 2.75rem);
-    font-weight: 600;
-    letter-spacing: -0.035em;
-    line-height: 1.12;
-    max-width: 18ch;
-    margin: 0 auto 1rem;
-    color: #f0fafa;
-  }
-  .finale-lead {
-    margin: 0 auto 1.75rem;
-    max-width: 42ch;
-    font-size: 1.02rem;
-    line-height: 1.55;
-    color: rgba(240, 250, 250, 0.72);
-  }
-  .finale-actions {
-    display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 0.7rem;
-  }
-  .finale .btn-primary {
-    background: #fff;
-    color: var(--signal-900);
-  }
-  .finale .btn-primary:hover {
-    background: #e8f4f3;
-    color: var(--signal-800);
-  }
-  .finale .btn-ghost-on-dark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.95rem 1.55rem;
-    font-size: 0.98rem;
-    font-weight: 600;
-    border-radius: 999px;
-    border: 1px solid rgba(240, 250, 250, 0.4);
-    color: #f0fafa;
-    background: transparent;
-  }
-  .finale .btn-ghost-on-dark:hover {
-    border-color: #fff;
-    background: rgba(255, 255, 255, 0.06);
-  }
-  :root[data-theme="dark"] .finale,
-  :root:not([data-theme="light"]) .finale {
-    /* Keep close band teal in dark mode — Superhuman signal, not inverted ink */
-    background: var(--signal-900);
-  }
-
-  /* FAQ */
-  .faq-list { display: flex; flex-direction: column; }
-  .faq-item {
-    border-top: 1px solid var(--line);
-    padding: 0.15rem 0;
-  }
-  .faq-item:last-child { border-bottom: 1px solid var(--line); }
-  .faq-item summary {
-    cursor: pointer;
-    list-style: none;
-    padding: 1.2rem 0;
-    font-weight: 600;
-    font-size: 1rem;
-    letter-spacing: -0.015em;
-  }
-  .faq-item summary::-webkit-details-marker { display: none; }
-  .faq-item p {
-    padding: 0 0 1.25rem;
-    color: var(--muted);
-    font-size: 0.95rem;
-    max-width: 62ch;
-    line-height: 1.6;
-  }
-
-  /* Sign in */
-  .signin-layout {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 3rem;
-    align-items: start;
-  }
-  .signin-copy h2 {
-    font-size: clamp(1.7rem, 2.6vw, 2.2rem);
-    font-weight: 700;
-    letter-spacing: -0.03em;
-    margin-bottom: 0.85rem;
-  }
-  .signin-copy p { color: var(--muted); margin-bottom: 0.75rem; max-width: 36ch; }
-  .auth-card {
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    background: var(--paper);
-    padding: 1.85rem;
-    box-shadow: var(--shadow);
-    text-align: center;
-  }
-  .auth-card h2 { font-size: 1.2rem; margin-bottom: 0.35rem; }
-  .auth-card .sub { color: var(--muted); font-size: 0.88rem; margin-bottom: 1.25rem; }
-  .err, .ok {
-    text-align: left;
-    font-size: 0.85rem;
-    border-radius: 8px;
-    padding: 0.75rem 0.85rem;
-    margin-bottom: 1rem;
-  }
-  .err { background: #fde8e8; color: var(--danger); }
-  .ok { background: #e6f4ea; color: var(--ok); }
-  .gbtn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.65rem;
-    width: 100%;
-    padding: 0.8rem 1rem;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: var(--paper);
-    font-weight: 600;
-    font-size: 0.92rem;
-  }
-  .gbtn:hover { border-color: var(--teal); }
-  .gbtn svg { width: 1.15rem; height: 1.15rem; }
-  .or {
-    margin: 1rem 0;
-    font-size: 0.78rem;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-  .field { text-align: left; margin-bottom: 0.85rem; }
-  .field label {
-    display: block;
-    font-size: 0.78rem;
-    font-weight: 600;
-    margin-bottom: 0.35rem;
-    color: var(--ink-soft);
-  }
-  .field input {
-    width: 100%;
-    padding: 0.75rem 0.9rem;
-    border-radius: 10px;
-    border: 1px solid var(--line);
-    background: var(--surface);
-    color: var(--ink);
-  }
-  .field input:focus {
-    outline: none;
-    border-color: var(--teal);
-    box-shadow: 0 0 0 3px rgba(15, 110, 106, 0.12);
-  }
-  .magic-btn {
-    width: 100%;
-    padding: 0.8rem;
-    border: none;
-    border-radius: 999px;
-    background: var(--teal);
-    color: #fff;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .magic-btn:hover { background: var(--teal-deep); }
-  .magic-btn:disabled { opacity: 0.6; cursor: wait; }
-  .setup-box {
-    text-align: left;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--surface);
-    padding: 1rem;
-    margin-bottom: 0.5rem;
-  }
-  .setup-box h3 { font-size: 0.88rem; margin-bottom: 0.75rem; }
-  .step {
-    display: flex;
-    gap: 0.65rem;
-    font-size: 0.8rem;
-    color: var(--muted);
-    margin-bottom: 0.55rem;
-  }
-  .step-num {
-    width: 1.25rem;
-    height: 1.25rem;
-    border-radius: 50%;
-    background: var(--teal-soft);
-    color: var(--teal-deep);
-    display: grid;
-    place-items: center;
-    font-size: 0.68rem;
-    font-weight: 700;
-    flex-shrink: 0;
-  }
-  .dev-btn {
-    display: block;
-    width: 100%;
-    padding: 0.8rem;
-    border-radius: 999px;
-    border: 1px dashed var(--line-strong);
-    font-weight: 600;
-    font-size: 0.88rem;
-    color: var(--ink-soft);
-  }
-  .dev-btn:hover { border-color: var(--teal); color: var(--teal); }
-
-  /* Footer */
-  footer {
-    border-top: 1px solid var(--line);
-    padding: 3.5rem 0 2rem;
-    background: var(--surface);
-  }
-  .footer-grid {
-    display: grid;
-    grid-template-columns: 1.4fr repeat(3, 1fr);
-    gap: 2rem;
-    margin-bottom: 2.5rem;
-  }
-  .footer-brand p {
-    margin-top: 0.85rem;
-    font-size: 0.88rem;
-    color: var(--muted);
-    max-width: 28ch;
-    line-height: 1.5;
-  }
-  .footer-col h4 {
-    font-size: 0.72rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 0.85rem;
-  }
-  .footer-col a {
-    display: block;
-    font-size: 0.88rem;
-    color: var(--ink-soft);
-    padding: 0.25rem 0;
-  }
-  .footer-col a:hover { color: var(--teal); }
-  .footer-bottom {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-    padding-top: 1.5rem;
-    border-top: 1px solid var(--line);
-    font-size: 0.78rem;
-    color: var(--muted);
-  }
-
-  /* Motion */
-  .reveal {
-    opacity: 1;
-    transform: none;
-  }
-  body.js-animate .reveal {
-    opacity: 0;
-    transform: translateY(18px);
-    transition: opacity .7s ease, transform .7s ease;
-  }
-  body.js-animate .reveal.in {
-    opacity: 1;
-    transform: none;
-  }
-  .reduce-motion * { transition: none !important; animation: none !important; }
-
-  .profile-mock { padding: 1.1rem; }
-  .profile-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.55rem 0;
-    border-bottom: 1px solid var(--line);
-    font-size: 0.84rem;
-  }
-  .profile-row:last-child { border-bottom: 0; }
-  .profile-row span { color: var(--muted); }
-  .profile-row strong { font-weight: 600; text-align: right; }
-
-  .matrix {
-    display: grid;
-    grid-template-columns: 1.3fr repeat(3, 1fr);
-    gap: 1px;
-    background: var(--line);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    overflow: hidden;
-    font-size: 0.72rem;
-    margin: 1rem;
-  }
-  .matrix > * { background: var(--paper); padding: 0.55rem 0.45rem; text-align: center; }
-  .matrix .h { background: var(--surface); font-weight: 600; color: var(--muted); }
-  .matrix .row-h { text-align: left; font-weight: 500; }
-  .cell-yes { color: var(--ok); font-weight: 600; }
-  .cell-no { color: var(--danger); font-weight: 600; }
-  .cell-mix { color: var(--teal); font-weight: 600; }
-
-  .agent-rail {
-    display: flex;
-    flex-direction: column;
-    gap: 0.55rem;
-    padding: 1rem;
-  }
-  .agent-chip {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.7rem 0.85rem;
-    border-radius: 10px;
-    border: 1px solid var(--line);
-    background: var(--surface);
-    font-size: 0.8rem;
-  }
-  .agent-chip strong { font-weight: 600; }
-  .agent-chip em {
-    font-style: normal;
-    font-size: 0.7rem;
-    color: var(--teal);
-    font-weight: 600;
-  }
-
-  @media (max-width: 980px) {
-    .nav-links { display: none; }
-    .hero-top, .editorial-row, .feature, .feature.reverse,
-    .signin-layout, .quotes, .pillars, .card-grid, .footer-grid,
-    .aha-grid, .write-mock, .ent-grid {
-      grid-template-columns: 1fr;
-    }
-    .eco-chip { min-width: calc(50% - 0.45rem); }
-    .eco-flow { margin: 2.25rem 0 3rem; }
-    .eco-sections { gap: 2.75rem; }
-    .feature.reverse .feature-copy,
-    .feature.reverse .feature-visual { order: unset; }
-    .workspace { grid-template-columns: 1fr; }
-    .ws-side, .ws-right { display: none; }
-    .hero h1 { font-size: clamp(2.2rem, 8vw, 3rem); }
-    .block { padding: 4.5rem 0; }
-  }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='landing-v2.css') }}">
 </head>
 <body>
   <header class="topbar" id="top">
@@ -1522,9 +17,11 @@
       <a class="brand" href="#top">Dhund</a>
       <nav class="nav-links" aria-label="Primary">
         <a href="#product">Product</a>
-        <a href="#workflow">Workflow</a>
+        <a href="#pipeline">Pipeline</a>
         <a href="#ecosystem">Ecosystem</a>
+        <a href="/docs">Docs</a>
         <a href="#trust-layer">Trust</a>
+        <a href="#pricing">Pricing</a>
         <a href="#faq">FAQ</a>
       </nav>
       <div class="nav-actions">
@@ -1539,543 +36,359 @@
   </header>
 
   <main>
-    <!-- Hero -->
-    <section class="wrap hero" id="product">
-      <div class="hero-top reveal">
-        <div>
-          <h1>
-            Where evidence becomes publishable research
-            <span class="soft">The operating system for modern research.</span>
-          </h1>
-          <div class="hero-actions">
-            <a class="btn btn-primary btn-lg" href="/auth/sign-up">Start researching</a>
-          </div>
-          <a class="hero-secondary" href="#workspace">See the workspace</a>
-        </div>
-        <p class="hero-aside">
-          Dhund is not a paper summarizer. It is an end-to-end Research Operating System —
-          understand papers, verify every claim, build a living knowledge base, write literature
-          reviews, and collaborate with AI that stays grounded in your library.
-        </p>
+    <!-- Hero — Tesla 70% / Apple 30% -->
+    <section class="wrap hero" id="hero">
+      <div class="hero-copy hero-fade">
+        <h1>
+          Research.
+          <span class="line2">Without the chaos.</span>
+        </h1>
+      </div>
+      <p class="hero-sub hero-fade">
+        One workspace to discover, understand, write, review, and publish research.
+      </p>
+      <div class="hero-actions hero-fade">
+        <a class="btn btn-primary btn-lg" href="/auth/sign-up">Start Research</a>
+        <a class="btn btn-ghost btn-lg" href="#pipeline">Watch Demo</a>
       </div>
 
-      <div class="preview-shell reveal" aria-label="Dhund research workspace preview">
-        <div class="workspace">
-          <aside class="ws-side">
-            <div class="ws-ws">Nanoemulsion PK Lab <span aria-hidden="true">▾</span></div>
-            <div class="ws-nav">
-              <span>＋ Create</span>
-              <span class="is-on">Library</span>
-              <span>Search</span>
-            </div>
-            <div class="ws-folders">
-              <div class="ws-folder is-on">Oral bioavailability</div>
-              <div class="ws-folder">Lipid carriers</div>
-              <div class="ws-folder">Hepatic clearance</div>
-              <div class="ws-folder">Human translation</div>
-            </div>
-          </aside>
-          <div class="ws-main">
-            <div class="ws-tabs">
-              <div class="ws-tab is-on">Evidence set</div>
-              <div class="ws-tab">Papers</div>
-              <div class="ws-tab">Notes</div>
-            </div>
-            <div class="ws-table">
-              <div class="ws-row head"><span>Claim</span><span>Support</span><span>Source</span></div>
-              <div class="ws-row"><strong>↑ oral AUC vs suspension</strong><span>Strong · 4 papers</span><span>Patel 2021</span></div>
-              <div class="ws-row"><strong>Lymphatic contribution</strong><span>Mixed · 2 papers</span><span>Chen 2019</span></div>
-              <div class="ws-row"><strong>Kupffer sequestration</strong><span>Conflict noted</span><span>Okada 2020</span></div>
-              <div class="ws-row"><strong>PEG reduces RES uptake</strong><span>Moderate · 3</span><span>Lu 2018</span></div>
-            </div>
+      <div class="product-frame enter" aria-label="Dhund Research OS preview">
+        <div class="product-frame-slot">
+          <div class="pf-chrome">
+            <span class="pf-dot" aria-hidden="true"></span>
+            <span class="pf-dot" aria-hidden="true"></span>
+            <span class="pf-dot" aria-hidden="true"></span>
+            <span class="pf-url">app.dhund.ai / library</span>
           </div>
-          <aside class="ws-right">
-            <div class="ws-right-head">Ask across the project</div>
-            <div class="ws-right-body">
-              Compare hepatic clearance mechanisms across your accepted evidence. Open any citation to the original passage before you write.
-            </div>
-            <div class="ws-ask">
-              <span>Ask a follow-up…</span>
-              <button type="button" class="ws-send" aria-label="Send">↑</button>
-            </div>
-          </aside>
-        </div>
-      </div>
-    </section>
-
-    <section class="wrap trust reveal">
-      <p>Built for researchers who need more than a chat window</p>
-      <div class="trust-row" aria-hidden="true">
-        <span>PhD labs</span>
-        <span>Clinical research</span>
-        <span>Biopharma R&amp;D</span>
-        <span>Systematic reviews</span>
-        <span>Grant writing</span>
-      </div>
-    </section>
-
-    <!-- Pillars -->
-    <section class="wrap block-tight">
-      <div class="editorial-row reveal" style="margin-bottom:3.5rem">
-        <h2 class="section-title">A new kind of scientific instrument.</h2>
-        <p class="section-lead">
-          Search your library and the literature, verify what you find, synthesize across projects,
-          and write with every claim cited back to a source you accepted.
-        </p>
-      </div>
-      <div class="pillars reveal">
-        <div class="pillar">
-          <h3>Inspectable memory</h3>
-          <p>Every file you upload becomes structured research memory — ask across it anytime, with passages you can open.</p>
-        </div>
-        <div class="pillar">
-          <h3>Cited answers</h3>
-          <p>Every answer points to the exact passage it came from. Accept findings before they enter your draft.</p>
-        </div>
-        <div class="pillar">
-          <h3>Built for the whole loop</h3>
-          <p>From library → evidence → literature review → publishable draft — one Research OS, not five disconnected tools.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- Workflow -->
-    <section class="block-band" id="workflow">
-      <div class="wrap">
-        <div class="editorial-row reveal">
-          <h2 class="section-title">How research actually moves.</h2>
-          <p class="section-lead">
-            Dhund follows the path researchers already walk — understanding, verification, knowledge,
-            writing — with AI that stays inside your evidence boundary.
-          </p>
-        </div>
-        <div class="flow-tabs reveal" role="tablist" aria-label="Research workflow" id="flow-tabs">
-          <button type="button" class="flow-tab is-on" data-flow="understand" role="tab" aria-selected="true">Understand</button>
-          <button type="button" class="flow-tab" data-flow="verify" role="tab" aria-selected="false">Verify</button>
-          <button type="button" class="flow-tab" data-flow="knowledge" role="tab" aria-selected="false">Knowledge</button>
-          <button type="button" class="flow-tab" data-flow="write" role="tab" aria-selected="false">Write</button>
-          <button type="button" class="flow-tab" data-flow="publish" role="tab" aria-selected="false">Publish</button>
-        </div>
-
-        <div class="flow-panel is-on reveal" data-flow-panel="understand">
-          <div class="feature">
-            <div class="mock">
-              <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-label">Research Profile</span></div>
-              <div class="profile-mock">
-                <div class="profile-row"><span>Objective</span><strong>Oral bioavailability of nanoemulsions</strong></div>
-                <div class="profile-row"><span>Design</span><strong>In vivo PK · rat model</strong></div>
-                <div class="profile-row"><span>Population</span><strong>Male Sprague–Dawley · n=24</strong></div>
-                <div class="profile-row"><span>Primary endpoint</span><strong>AUC<sub>0–∞</sub></strong></div>
-                <div class="profile-row"><span>Key entities</span><strong>PEG · MCT · Kupffer cells</strong></div>
-                <div class="profile-row"><span>Status</span><strong style="color:var(--teal)">Analysed · indexed</strong></div>
+          <div class="pf-body">
+            <aside class="pf-side">
+              <div class="pf-ws">Nanoemulsion PK Lab</div>
+              <div class="pf-nav">
+                <span class="is-on">Library</span>
+                <span>Search</span>
+                <span>Evidence</span>
+                <span>Writing</span>
               </div>
-            </div>
-            <div class="feature-copy">
-              <p class="eyebrow">Understand papers</p>
-              <h3 class="section-title" style="font-size:1.75rem">Structure over summaries.</h3>
-              <p class="section-lead">Papers become Research Profiles — methods, entities, findings, and relationships you can navigate, not a one-paragraph gloss.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="flow-panel reveal" data-flow-panel="verify">
-          <div class="feature">
-            <div class="mock" id="evidence-demo">
-              <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-label">Evidence moment</span></div>
-              <div style="padding:1rem 1rem 0">
-                <div class="story-steps" role="tablist" aria-label="Evidence steps">
-                  <button type="button" class="story-step is-active" data-step="1" role="tab" aria-selected="true"><span class="n">1</span> Question</button>
-                  <button type="button" class="story-step" data-step="2" role="tab" aria-selected="false"><span class="n">2</span> Answer</button>
-                  <button type="button" class="story-step" data-step="3" role="tab" aria-selected="false"><span class="n">3</span> Chip</button>
-                  <button type="button" class="story-step" data-step="4" role="tab" aria-selected="false"><span class="n">4</span> Passage</button>
-                  <button type="button" class="story-step" data-step="5" role="tab" aria-selected="false"><span class="n">5</span> Accept</button>
-                </div>
+            </aside>
+            <div class="pf-main">
+              <div class="pf-tabs">
+                <span class="is-on">Evidence set</span>
+                <span>Papers</span>
+                <span>Notes</span>
               </div>
-              <div class="aha-grid">
-                <div class="chat-pane">
-                  <div id="demo-left"></div>
-                  <p class="chip-hint" id="demo-hint">Advance the steps — or click a citation chip.</p>
-                </div>
-                <aside class="inspect-pane" aria-live="polite" id="demo-right"></aside>
-              </div>
+              <div class="pf-row head"><span>Claim</span><span>Support</span><span>Source</span></div>
+              <div class="pf-row"><strong>↑ oral AUC vs suspension</strong><span>Strong · 4</span><span>Patel 2021</span></div>
+              <div class="pf-row"><strong>Lymphatic contribution</strong><span>Mixed · 2</span><span>Chen 2019</span></div>
+              <div class="pf-row"><strong>Kupffer sequestration</strong><span>Conflict</span><span>Okada 2020</span></div>
+              <div class="pf-row"><strong>PEG reduces RES uptake</strong><span>Moderate · 3</span><span>Lu 2018</span></div>
             </div>
-            <div class="feature-copy">
-              <p class="eyebrow">Verify evidence</p>
-              <h3 class="section-title" style="font-size:1.75rem">Click a chip. Open the passage.</h3>
-              <p class="section-lead">The moment that makes Dhund different: question → answer → citation → original source → accept into project evidence.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="flow-panel reveal" data-flow-panel="knowledge">
-          <div class="feature">
-            <div class="mock">
-              <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-label">Knowledge graph</span></div>
-              <div class="graph">
-                <div class="g-node core" style="left:38%;top:42%">Oral AUC ↑</div>
-                <div class="g-node" style="left:12%;top:18%">Lipid carrier</div>
-                <div class="g-node" style="left:62%;top:16%">PEG surface</div>
-                <div class="g-node" style="left:18%;top:68%">Lymphatic path</div>
-                <div class="g-node" style="left:68%;top:62%">Kupffer uptake</div>
-                <div class="g-node" style="left:44%;top:78%">Species gap</div>
-              </div>
-            </div>
-            <div class="feature-copy">
-              <p class="eyebrow">Build knowledge</p>
-              <h3 class="section-title" style="font-size:1.75rem">A graph of what you actually trust.</h3>
-              <p class="section-lead">Entities, claims, and relationships accumulate from accepted evidence — supports, conflicts, and open questions stay visible.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="flow-panel reveal" data-flow-panel="write">
-          <div class="feature">
-            <div class="mock">
-              <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-label">Evidence matrix</span></div>
-              <div class="matrix" aria-label="Example evidence matrix">
-                <div class="h"></div>
-                <div class="h">Paper A</div>
-                <div class="h">Paper B</div>
-                <div class="h">Paper C</div>
-                <div class="row-h">↑ Bioavailability</div>
-                <div class="cell-yes">Yes</div>
-                <div class="cell-yes">Yes</div>
-                <div class="cell-mix">Mixed</div>
-                <div class="row-h">Lymphatic uptake</div>
-                <div class="cell-yes">Yes</div>
-                <div class="cell-no">—</div>
-                <div class="cell-yes">Yes</div>
-                <div class="row-h">Kupffer clearance</div>
-                <div class="cell-mix">Noted</div>
-                <div class="cell-yes">Yes</div>
-                <div class="cell-no">No</div>
-              </div>
-            </div>
-            <div class="feature-copy">
-              <p class="eyebrow">Literature review</p>
-              <h3 class="section-title" style="font-size:1.75rem">Synthesis you can defend.</h3>
-              <p class="section-lead">Collections, compare views, and evidence matrices make agreement and disagreement explicit before you draft.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="flow-panel reveal" data-flow-panel="publish">
-          <div class="feature">
-            <div class="mock">
-              <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-label">Writing Studio</span></div>
-              <div class="write-mock">
-                <div class="write-body">
-                  <h4>Literature review · draft</h4>
-                  <p>
-                    Lipid-based nanoemulsions consistently improve oral exposure relative to aqueous suspensions
-                    <span class="cite">[12]</span><span class="cite">[7]</span>. Mechanisms include solubilisation
-                    and partial lymphatic transport <span class="cite">[3]</span>.
-                  </p>
-                  <p>
-                    Remaining uncertainty centres on hepatic uptake under PEGylated regimens —
-                    results diverge across models <span class="cite">[9]</span>.
-                  </p>
-                </div>
-                <aside class="reviewer">
-                  <h4>Reviewer</h4>
-                  <div class="issue">
-                    <strong>Check citation</strong>
-                    Sentence 2 cites [3] for lymphatic transport — verify the span matches the accepted passage.
-                  </div>
-                  <div class="issue">
-                    <strong style="color:var(--teal)">Grounded</strong>
-                    Bioavailability claim linked to 2 accepted findings.
-                  </div>
-                </aside>
-              </div>
-            </div>
-            <div class="feature-copy">
-              <p class="eyebrow">Generate publishable research</p>
-              <h3 class="section-title" style="font-size:1.75rem">Draft from accepted evidence.</h3>
-              <p class="section-lead">Writing Studio binds citations to evidence you accepted. The reviewer flags unsupported claims before export.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- AI Research Workspace -->
-    <section class="wrap block" id="workspace">
-      <div class="feature reveal">
-        <div class="feature-visual">
-          <div class="mock">
-            <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-label">AI Research Workspace</span></div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;min-height:260px">
-              <div style="padding:1.15rem;border-right:1px solid var(--line);font-size:0.82rem;line-height:1.55;color:var(--ink-soft)">
-                <p style="font-family:var(--serif);font-size:1rem;color:var(--ink);margin-bottom:0.75rem">Patel et al., 2021</p>
-                <p>…hepatic sequestration was dominated by Kupffer cells within thirty minutes of administration…</p>
-              </div>
-              <div style="padding:1.15rem;background:var(--surface)">
-                <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:1rem">
-                  <span class="chip" style="cursor:default">Compare clearance paths</span>
-                  <span class="chip" style="cursor:default">Species translation</span>
-                </div>
-                <p style="font-size:0.84rem;color:var(--muted);margin-bottom:1rem">Ask across every accepted finding in this project.</p>
-                <div class="ws-ask" style="margin:0">
-                  <span>Ask a follow-up…</span>
-                  <button type="button" class="ws-send" aria-label="Send">↑</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="feature-copy">
-          <p class="eyebrow">AI Research Workspace</p>
-          <h2 class="section-title" style="font-size:clamp(1.7rem,2.8vw,2.2rem)">Chat that lives inside your project.</h2>
-          <p class="section-lead">Not a generic assistant. Context is your library, your evidence set, and your writing — with every claim inspectable.</p>
-          <ul class="feature-list">
-            <li>Project-scoped questions</li>
-            <li>Suggestion chips from your themes</li>
-            <li>Citations that open the source</li>
-          </ul>
-          <a class="btn btn-ghost btn-sm" href="#signin">Learn more</a>
-        </div>
-      </div>
-    </section>
-
-    <!-- Evidence Graph -->
-    <section class="block-band" id="evidence">
-      <div class="wrap feature reverse reveal">
-        <div class="feature-copy">
-          <p class="eyebrow">Evidence Graph</p>
-          <h2 class="section-title" style="font-size:clamp(1.7rem,2.8vw,2.2rem)">Claims linked to passages — not vibes.</h2>
-          <p class="section-lead">Track support strength, conflicts, and provenance. Nothing enters writing until you accept it.</p>
-          <ul class="feature-list">
-            <li>Evidence objects with page-level spans</li>
-            <li>Support / conflict labels stay visible</li>
-            <li>One click from claim to PDF passage</li>
-          </ul>
-        </div>
-        <div class="feature-visual">
-          <div class="mock">
-            <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-label">Evidence Graph</span></div>
-            <div class="graph" style="min-height:300px">
-              <div class="g-node core" style="left:36%;top:40%">Claim · oral AUC</div>
-              <div class="g-node" style="left:8%;top:22%">[12] Patel</div>
-              <div class="g-node" style="left:70%;top:20%">[7] Rivera</div>
-              <div class="g-node" style="left:14%;top:70%">Accepted</div>
-              <div class="g-node" style="left:66%;top:68%">Page 7 · Methods</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Knowledge Graph -->
-    <section class="wrap block" id="knowledge">
-      <div class="feature reveal">
-        <div class="feature-visual">
-          <div class="mock">
-            <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-label">Project knowledge</span></div>
-            <div class="graph">
-              <div class="g-node core" style="left:40%;top:38%">Theme · clearance</div>
-              <div class="g-node" style="left:10%;top:15%">Entity · PEG</div>
-              <div class="g-node" style="left:65%;top:14%">Entity · Kupffer</div>
-              <div class="g-node" style="left:12%;top:65%">Supports</div>
-              <div class="g-node" style="left:62%;top:62%">Conflicts</div>
-              <div class="g-node" style="left:40%;top:78%">Open question</div>
-            </div>
-          </div>
-        </div>
-        <div class="feature-copy">
-          <p class="eyebrow">Knowledge Graph</p>
-          <h2 class="section-title" style="font-size:clamp(1.7rem,2.8vw,2.2rem)">Your library compounds into understanding.</h2>
-          <p class="section-lead">Entities, themes, and relationships grow as you work — so the next paper connects to what you already know.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- Writing Workspace -->
-    <section class="block-band" id="writing">
-      <div class="wrap">
-        <div class="editorial-row reveal" style="margin-bottom:2.5rem">
-          <h2 class="section-title">Writing Workspace</h2>
-          <p class="section-lead">Literature reviews drafted from accepted evidence, with a reviewer that checks your claims before you export Markdown or BibTeX.</p>
-        </div>
-        <div class="mock reveal">
-          <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-label">Writing Studio</span></div>
-          <div class="write-mock">
-            <div class="write-body">
-              <h4>Literature review · draft</h4>
-              <p>
-                Across the accepted evidence set, lipid nanoemulsions improve oral exposure versus aqueous controls
-                <span class="cite">[12]</span><span class="cite">[7]</span>. Authors attribute gains to solubilisation
-                and lymphatic transport <span class="cite">[3]</span>.
-              </p>
-              <p>
-                Translation remains limited by species differences in hepatic scavenging
-                <span class="cite">[14]</span> — flagged as an open conflict in the evidence matrix.
-              </p>
-            </div>
-            <aside class="reviewer">
-              <h4>Reviewer</h4>
-              <div class="issue">
-                <strong>Unsupported claim</strong>
-                “Lymphatic transport” — confirm [3] covers this mechanism in the accepted span.
-              </div>
-              <div class="issue">
-                <strong style="color:var(--teal)">Ready to export</strong>
-                3 of 4 claims bound to accepted evidence.
-              </div>
-              <p class="inspect-foot" style="margin-top:0.75rem">Export Markdown · BibTeX when ready.</p>
+            <aside class="pf-ask">
+              <strong>Ask across the project</strong>
+              Compare hepatic clearance across accepted evidence. Open any citation to the original passage.
             </aside>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- AI Agents -->
-    <section class="wrap block" id="agents">
-      <div class="editorial-row reveal" style="margin-bottom:2.5rem">
-        <h2 class="section-title">AI Agents for research work.</h2>
-        <p class="section-lead">Specialized agents for extraction, comparison, citation binding, and review — operating on your project, not the open web alone.</p>
-      </div>
-      <div class="feature reveal">
-        <div class="mock">
-          <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-label">Agent lane</span></div>
-          <div class="agent-rail">
-            <div class="agent-chip"><strong>Evidence Extractor</strong><em>Ready</em></div>
-            <div class="agent-chip"><strong>Conflict Finder</strong><em>Running</em></div>
-            <div class="agent-chip"><strong>Citation Binder</strong><em>Ready</em></div>
-            <div class="agent-chip"><strong>Draft Reviewer</strong><em>Ready</em></div>
-          </div>
-        </div>
-        <div class="card-grid" style="align-content:start">
-          <div class="soft-card">
-            <h3>Extract</h3>
-            <p>Pull methods, endpoints, and findings into structured evidence objects.</p>
-          </div>
-          <div class="soft-card">
-            <h3>Compare</h3>
-            <p>Surface agreement and disagreement across your collection.</p>
-          </div>
-          <div class="soft-card">
-            <h3>Review</h3>
-            <p>Flag claims in your draft that lack accepted backing.</p>
-          </div>
-        </div>
+    <!-- Product story — Apple / Vercel -->
+    <section class="band band-paper story" id="product">
+      <div class="wrap reveal">
+        <h2>Research shouldn't require seven different tools.</h2>
+        <ul class="story-list">
+          <li>Search.</li>
+          <li>Understand.</li>
+          <li>Write.</li>
+          <li>Review.</li>
+          <li class="is-end">One workspace.</li>
+        </ul>
       </div>
     </section>
 
-    <!-- Collaboration -->
-    <section class="block-band" id="collaborate">
+    <!-- Research pipeline — Linear / Together -->
+    <section class="band" id="pipeline">
       <div class="wrap">
-        <div class="editorial-row reveal" style="margin-bottom:2.5rem">
-          <h2 class="section-title">Collaborate with AI — and your lab.</h2>
-          <p class="section-lead">Projects, shared evidence sets, and grounded writing keep supervisors and collaborators aligned on what was verified.</p>
+        <div class="pipeline-head reveal">
+          <p class="eyebrow">Research pipeline</p>
+          <h2 class="section-title">From question to publishable draft</h2>
+          <p class="section-lead" style="margin-top:0.85rem">
+            One technical path. Every stage stays inspectable.
+          </p>
         </div>
-        <div class="card-grid reveal">
-          <div class="soft-card">
-            <h3>Projects</h3>
-            <p>Organize libraries, notes, and drafts around the review you’re writing.</p>
-          </div>
-          <div class="soft-card">
-            <h3>Shared evidence</h3>
-            <p>Accepted findings travel with the project — not buried in chat history.</p>
-          </div>
-          <div class="soft-card">
-            <h3>Human judgment</h3>
-            <p>AI proposes. You accept. Scholarly responsibility stays with the researcher.</p>
-          </div>
-        </div>
+        <ol class="pipeline-track" id="pipeline-track" aria-label="Research pipeline stages">
+          <li class="pipeline-step" data-pipeline-step>
+            <span class="dot" aria-hidden="true"></span>
+            <div><span class="label">Question</span><span class="hint">Scope what you need to know</span></div>
+          </li>
+          <li class="pipeline-step" data-pipeline-step>
+            <span class="dot" aria-hidden="true"></span>
+            <div><span class="label">Discovery</span><span class="hint">Find papers across academic sources</span></div>
+          </li>
+          <li class="pipeline-step" data-pipeline-step>
+            <span class="dot" aria-hidden="true"></span>
+            <div><span class="label">Library</span><span class="hint">Import, classify, keep full text</span></div>
+          </li>
+          <li class="pipeline-step" data-pipeline-step>
+            <span class="dot" aria-hidden="true"></span>
+            <div><span class="label">Evidence</span><span class="hint">Accept claims with provenance</span></div>
+          </li>
+          <li class="pipeline-step" data-pipeline-step>
+            <span class="dot" aria-hidden="true"></span>
+            <div><span class="label">Writing</span><span class="hint">Draft gated on accepted sources</span></div>
+          </li>
+          <li class="pipeline-step" data-pipeline-step>
+            <span class="dot" aria-hidden="true"></span>
+            <div><span class="label">Review</span><span class="hint">Conflicts, gaps, confidence bands</span></div>
+          </li>
+          <li class="pipeline-step" data-pipeline-step>
+            <span class="dot" aria-hidden="true"></span>
+            <div><span class="label">Publish</span><span class="hint">Export citations you can defend</span></div>
+          </li>
+        </ol>
       </div>
     </section>
 
-    <!-- Research Ecosystem -->
-    <section class="wrap block" id="ecosystem">
-      <div class="eco-intro reveal">
-        <p class="eyebrow">Research ecosystem</p>
-        <h2 class="section-title">Your entire research ecosystem. One workspace.</h2>
-        <p class="section-lead" style="margin-top:0.85rem;max-width:48ch">
-          Import papers from trusted academic databases, cloud storage, and reference managers.
-          Every source enters the same evidence-first research pipeline.
-        </p>
-        <p class="eco-note">
-          Dhund doesn’t replace your ecosystem — it unifies it. Live connectors ship unmarked;
-          roadmap partners show Coming soon.
-        </p>
-      </div>
+    <!-- Ecosystem — SpaceX / Together -->
+    <section class="band eco-band" id="ecosystem">
+      <div class="wrap">
+        <div class="eco-intro reveal">
+          <p class="eyebrow">Research ecosystem</p>
+          <h2 class="section-title">All flowing toward Dhund</h2>
+          <p class="section-lead" style="margin-top:0.85rem">
+            Academic databases, cloud storage, and reference managers enter one evidence-first pipeline.
+          </p>
+          <p class="eco-note">
+            Engineered connectors — not a colorful marketplace. Live unmarked; roadmap labeled Coming soon.
+          </p>
+        </div>
 
-      <div class="eco-cloud-wrap reveal" id="dhund-ecosystem-cloud">
-        <p class="eco-cloud-fallback">Loading research ecosystem…</p>
-      </div>
+        <div class="eco-cloud-wrap reveal" id="dhund-ecosystem-cloud">
+          <p class="eco-cloud-fallback">Loading research ecosystem…</p>
+        </div>
 
-      {% set eco_island = ecosystem_island or {"mode": "missing", "scripts": [], "styles": []} %}
-      {% for href in eco_island.styles %}
-      <link rel="stylesheet" href="{{ href }}">
-      {% endfor %}
-      {% for src in eco_island.scripts %}
-      <script type="module" src="{{ src }}"></script>
-      {% endfor %}
-      {% if eco_island.mode == "missing" %}
-      <noscript></noscript>
-      {% endif %}
+        {% set eco_island = ecosystem_island or {"mode": "missing", "scripts": [], "styles": []} %}
+        {% for href in eco_island.styles %}
+        <link rel="stylesheet" href="{{ href }}">
+        {% endfor %}
+        {% for src in eco_island.scripts %}
+        <script type="module" src="{{ src }}"></script>
+        {% endfor %}
 
-      <div class="eco-flow reveal" aria-label="How Dhund sits in the research workflow" style="margin-top:1.75rem">
-        <span class="eco-flow-node">Academic sources</span>
-        <span class="eco-flow-arrow" aria-hidden="true">→</span>
-        <span class="eco-flow-node is-hub">Dhund</span>
-        <span class="eco-flow-arrow" aria-hidden="true">→</span>
-        <span class="eco-flow-node">Evidence</span>
-        <span class="eco-flow-arrow" aria-hidden="true">→</span>
-        <span class="eco-flow-node">Writing</span>
-      </div>
+        <div class="eco-flow reveal" aria-label="How Dhund sits in the research workflow">
+          <span class="eco-flow-node">Academic sources</span>
+          <span class="eco-flow-arrow" aria-hidden="true">→</span>
+          <span class="eco-flow-node is-hub">Dhund</span>
+          <span class="eco-flow-arrow" aria-hidden="true">→</span>
+          <span class="eco-flow-node">Evidence</span>
+          <span class="eco-flow-arrow" aria-hidden="true">→</span>
+          <span class="eco-flow-node">Writing</span>
+        </div>
 
-      <details class="eco-catalog reveal" style="margin-top:2rem">
-        <summary class="eco-catalog-summary">Full connector catalog</summary>
-        <div class="eco-sections" style="margin-top:1.25rem">
-          {% set eco = ecosystem_catalog or {"categories": [], "providers": []} %}
-          {% for cat in eco.categories %}
-          {% set cat_providers = eco.providers | selectattr('category', 'equalto', cat.id) | list %}
-          {% if cat_providers %}
-          <div class="eco-section">
-            <div class="eco-section-head">
-              <h3>{{ cat.name }}</h3>
-              <p>{{ cat.description }}</p>
-            </div>
-            <div class="eco-chips">
-              {% for p in cat_providers %}
-              <div class="eco-chip{% if p.availability != 'live' %} is-soon{% endif %}" style="--brand:{{ p.brand_color or '#0F6E6A' }}">
-                {% if p.logo %}
-                {% set color_logo = p.logo.endswith('.png') or p.logo.endswith('paperpile.svg') or p.logo.endswith('readcube.svg') %}
-                <img class="eco-logo{% if color_logo %} eco-logo-color{% endif %}" src="{{ url_for('static', filename=p.logo) }}" alt="" width="24" height="24" loading="lazy" decoding="async">
-                {% else %}
-                <span class="eco-mark">{{ p.mark or (p.name[:2] | upper) }}</span>
-                {% endif %}
-                <span class="eco-meta">
-                  <span class="eco-name">{{ p.name }}</span>
-                  {% if p.availability != 'live' %}
-                  <span class="eco-soon">Coming soon</span>
-                  {% endif %}
-                </span>
+        <details class="eco-catalog reveal">
+          <summary>Full connector catalog</summary>
+          <div class="eco-sections">
+            {% set eco = ecosystem_catalog or {"categories": [], "providers": []} %}
+            {% for cat in eco.categories %}
+            {% set cat_providers = eco.providers | selectattr('category', 'equalto', cat.id) | list %}
+            {% if cat_providers %}
+            <div class="eco-section">
+              <div class="eco-section-head">
+                <h3>{{ cat.name }}</h3>
+                <p>{{ cat.description }}</p>
               </div>
-              {% endfor %}
+              <div class="eco-chips">
+                {% for p in cat_providers %}
+                <div class="eco-chip{% if p.availability != 'live' %} is-soon{% endif %}">
+                  {% if p.logo %}
+                  {% set color_logo = p.logo.endswith('.png') or p.logo.endswith('paperpile.svg') or p.logo.endswith('readcube.svg') %}
+                  <img class="eco-logo{% if color_logo %} eco-logo-color{% endif %}" src="{{ url_for('static', filename=p.logo) }}" alt="" width="24" height="24" loading="lazy" decoding="async">
+                  {% else %}
+                  <span class="eco-mark">{{ p.mark or (p.name[:2] | upper) }}</span>
+                  {% endif %}
+                  <span class="eco-meta">
+                    <span class="eco-name">{{ p.name }}</span>
+                    {% if p.availability != 'live' %}
+                    <span class="eco-soon">Coming soon</span>
+                    {% endif %}
+                  </span>
+                </div>
+                {% endfor %}
+              </div>
             </div>
+            {% endif %}
+            {% endfor %}
           </div>
-          {% endif %}
-          {% endfor %}
-        </div>
-      </details>
+        </details>
+      </div>
     </section>
 
-    <!-- Trust Layer (SpaceX austerity — design language) -->
-    <section class="block-band trust-layer" id="trust-layer">
-      <!-- #security alias for older deep links -->
+    <!-- AI Capability Router — Replicate / Together -->
+    <section class="band router-band" id="router">
+      <div class="wrap router-layout">
+        <div class="reveal">
+          <p class="eyebrow">AI Capability Router</p>
+          <h2 class="section-title">How every research job runs</h2>
+          <p class="section-lead" style="margin-top:0.85rem">
+            Job → capability → policy → provider → evidence → ledger.
+            Developers see the path. Researchers trust the outcome.
+          </p>
+        </div>
+        <div class="router-well" id="router-well" aria-label="Capability router flow">
+          <div class="router-step" data-router-step><span class="tag">01</span> Research Job</div>
+          <div class="router-step" data-router-step><span class="arrow" aria-hidden="true">↓</span> Capability</div>
+          <div class="router-step" data-router-step><span class="arrow" aria-hidden="true">↓</span> Policy</div>
+          <div class="router-step" data-router-step><span class="arrow" aria-hidden="true">↓</span> Provider</div>
+          <div class="router-step" data-router-step><span class="arrow" aria-hidden="true">↓</span> Evidence</div>
+          <div class="router-step" data-router-step><span class="arrow" aria-hidden="true">↓</span> Ledger</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Research OS showcase — Linear / Figma -->
+    <section class="band" id="workspace">
+      <div class="wrap">
+        <div class="reveal" style="max-width:42ch;margin-bottom:0.5rem">
+          <p class="eyebrow">Research OS</p>
+          <h2 class="section-title">Workspace with callouts</h2>
+          <p class="section-lead" style="margin-top:0.85rem">
+            Library through Reviewer — dense, inspectable chrome. Like inspecting a design system.
+          </p>
+        </div>
+        <div class="os-steps reveal">
+          <div class="os-step">
+            <span class="callout" aria-hidden="true">1</span>
+            <h3>Library</h3>
+            <p>Import PDFs and connectors. Classify. Keep full text ready for evidence.</p>
+          </div>
+          <div class="os-step">
+            <span class="callout" aria-hidden="true">2</span>
+            <h3>Paper</h3>
+            <p>Structure, entities, narrative — one paper, fully inspectable.</p>
+          </div>
+          <div class="os-step">
+            <span class="callout" aria-hidden="true">3</span>
+            <h3>Evidence</h3>
+            <p>Claims, spans, confidence. Accept what survives review.</p>
+          </div>
+          <div class="os-step">
+            <span class="callout" aria-hidden="true">4</span>
+            <h3>Writing</h3>
+            <p>Drafts gated on accepted sources. Citations you can open.</p>
+          </div>
+          <div class="os-step">
+            <span class="callout" aria-hidden="true">5</span>
+            <h3>Reviewer</h3>
+            <p>Gaps, conflicts, confidence bands before you publish.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Evidence inspector — Figma / Linear -->
+    <section class="band band-paper" id="evidence">
+      <div class="wrap">
+        <div class="reveal" style="max-width:42ch">
+          <p class="eyebrow">Evidence inspector</p>
+          <h2 class="section-title">Canvas + inspector</h2>
+          <p class="section-lead" style="margin-top:0.85rem">
+            Main view is the passage. The rail is provenance, confidence, and source.
+          </p>
+        </div>
+        <div class="inspect-split reveal">
+          <div class="inspect-canvas">
+            <p class="passage">
+              <mark>Kupffer cells accounted for the majority of nanoparticle sequestration</mark>
+              within 30 minutes of intravenous administration in murine models. Surface PEGylation
+              reduced uptake and extended plasma half-life relative to bare lipid particles.
+            </p>
+          </div>
+          <aside class="inspect-rail">
+            <p class="rail-label">Inspector</p>
+            <p class="claim">Hepatic scavenging by Kupffer cells</p>
+            <span class="band-badge">Strong support</span>
+            <div class="inspect-meta-row">
+              <span>Source <strong>Patel et al., 2021</strong></span>
+              <span>Span <strong>p.7 · Methods</strong></span>
+              <span>Status <strong>Accepted</strong></span>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- Writing — Notion / Apple -->
+    <section class="band" id="writing">
+      <div class="wrap-narrow reveal" style="text-align:center">
+        <p class="eyebrow">Writing</p>
+        <h2 class="section-title serif">Calm enough to think</h2>
+        <p class="section-lead" style="margin:0.85rem auto 0;text-align:center">
+          Long form. Comfortable measure. No flashy motion — the draft is the product.
+        </p>
+      </div>
+      <div class="wrap-narrow">
+        <article class="writing-sample reveal">
+          <h3>Literature notes</h3>
+          <p>
+            Lipid nanoparticle clearance in the liver is dominated by Kupffer-mediated scavenging
+            in murine models<span class="cite">[3]</span>. PEGylation reduces that uptake and
+            extends circulation time<span class="cite">[9]</span>, though inter-species differences
+            in Kupffer density limit direct translation<span class="cite">[14]</span>.
+          </p>
+          <p>
+            For writing that must survive peer review, every claim stays bound to an accepted
+            evidence object — not a chat hallucination.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Docs — Mintlify / Replicate -->
+    <section class="band band-paper" id="docs">
+      <div class="wrap">
+        <div class="reveal" style="max-width:42ch">
+          <p class="eyebrow">Documentation</p>
+          <h2 class="section-title">Contracts, ADRs, API</h2>
+          <p class="section-lead" style="margin-top:0.85rem">
+            Mintlify-style three columns. Living freeze for Evidence, RI, and jobs.
+          </p>
+        </div>
+        <div class="docs-tease reveal">
+          <nav class="docs-nav" aria-label="Docs preview nav">
+            <p class="dn-label">Sidebar</p>
+            <a class="is-on" href="/docs">Overview</a>
+            <a href="/docs/api-contracts">API contracts</a>
+            <a href="/docs/evidence-contract">Evidence</a>
+            <a href="/docs/capability-router">Capability Router</a>
+          </nav>
+          <div class="docs-prose">
+            <h3>Evidence contract</h3>
+            <p>Objects, stages, and reviewer bindings — the living freeze for grounded writing.</p>
+            <pre class="code-well">GET /api/evidence/{id}
+→ claim · span · confidence · provenance</pre>
+            <a class="docs-cta" href="/docs">Open docs →</a>
+          </div>
+          <aside class="docs-toc" aria-label="On this page preview">
+            <p class="dn-label">On this page</p>
+            <a href="/docs">Overview</a>
+            <a href="/docs/evidence-contract">Objects</a>
+            <a href="/docs/versioning">Versioning</a>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- Trust Layer — SpaceX -->
+    <section class="band trust-layer" id="trust-layer">
       <a id="security" href="#trust-layer" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)" tabindex="-1" aria-hidden="true">Trust Layer</a>
       <div class="wrap">
-        <div class="editorial-row reveal">
+        <div class="trust-head reveal">
           <div>
-            <p class="eyebrow">Trust Layer</p>
+            <p class="eyebrow">Enterprise · Trust Layer</p>
             <h2 class="section-title">Can you trust Dhund with this work?</h2>
           </div>
           <p class="section-lead">
-            Security, compliance, privacy, reproducibility, and audit — one institutional layer.
-            Proof first. Roadmap labeled. No silent promises.
+            Security, compliance, privacy, reproducibility, audit, research integrity —
+            one institutional layer. Proof first. Roadmap labeled.
           </p>
         </div>
 
@@ -2100,7 +413,7 @@
             </div>
             <div class="ent-card">
               <span class="ent-check" aria-hidden="true">✓</span>
-              <div><strong>API access</strong><span>Authenticated REST APIs for product workflows.</span></div>
+              <div><strong>API access</strong><span>Authenticated REST for product workflows.</span></div>
             </div>
             <div class="ent-card">
               <span class="ent-check" aria-hidden="true">✓</span>
@@ -2147,65 +460,108 @@
       </div>
     </section>
 
-    <!-- Testimonials -->
-    <section class="wrap block" id="stories">
-      <div class="editorial-row reveal" style="margin-bottom:1.5rem">
-        <h2 class="section-title serif">Purpose-built for high-stakes research.</h2>
-        <p class="section-lead">When a citation must survive peer review, summarizers aren’t enough. Dhund keeps the chain of evidence intact.</p>
-      </div>
-      <div class="quotes reveal">
-        <figure class="quote">
-          <blockquote>“I can finally ask across my thesis library and open the exact page before I cite it.”</blockquote>
-          <cite>PhD candidate · pharmaceutical sciences</cite>
-        </figure>
-        <figure class="quote">
-          <blockquote>“The evidence matrix made conflicts visible that our last review buried in a footnote.”</blockquote>
-          <cite>Postdoc · translational medicine</cite>
-        </figure>
-      </div>
-    </section>
-
-    <!-- FAQ -->
-    <section class="wrap-narrow block" id="faq">
-      <div class="reveal" style="margin-bottom:1.75rem;text-align:center">
-        <p class="eyebrow">Trust</p>
-        <h2 class="section-title" style="font-size:clamp(1.6rem,2.5vw,2rem)">Frequently asked questions</h2>
-      </div>
-      <div class="faq-list reveal">
-        <details class="faq-item">
-          <summary>Is Dhund another “write my thesis” chatbot?</summary>
-          <p>
-            No. Dhund is a Research Operating System. The point is not one prompt → eighty pages.
-            It’s keeping your library, evidence decisions, and grounded writing in one place so drafts
-            stay tied to sources you accepted.
+    <!-- Pricing — Stripe / Apple -->
+    <section class="band" id="pricing">
+      <div class="wrap">
+        <div class="reveal" style="text-align:center;max-width:40ch;margin:0 auto">
+          <p class="eyebrow">Pricing</p>
+          <h2 class="section-title">Simple plans for research work</h2>
+          <p class="section-lead" style="margin:0.85rem auto 0;text-align:center">
+            Start free. Scale when your library and writing volume grow. Final numbers publish with lab plans.
           </p>
-        </details>
-        <details class="faq-item">
-          <summary>Where do citations come from?</summary>
-          <p>
-            From papers you import and evidence you accept. Bindings connect manuscript spans to evidence
-            objects, then back to paper metadata for export — including BibTeX when bibliography data is available.
-          </p>
-        </details>
-        <details class="faq-item">
-          <summary>Can AI invent sources I didn’t upload?</summary>
-          <p>
-            Writing is gated on accepted evidence from your project. Candidates don’t silently enter drafts.
-            You still review and revise — Dhund doesn’t replace scholarly judgment.
-          </p>
-        </details>
-        <details class="faq-item">
-          <summary>Who is Dhund for?</summary>
-          <p>
-            Researchers running real literature reviews — MSc/PhD students, supervisors, and labs.
-            <a href="/auth/sign-up" style="color:var(--teal-deep);text-decoration:underline;text-underline-offset:2px">Create an account</a>
-            to get started.
-          </p>
-        </details>
+        </div>
+        <div class="pricing-grid reveal">
+          <div class="price-col">
+            <h3>Researcher</h3>
+            <p class="price-tag">Free <span>to start</span></p>
+            <ul>
+              <li>Personal library</li>
+              <li>Evidence + grounded writing</li>
+              <li>Core connectors</li>
+            </ul>
+            <a class="btn btn-ghost" href="/auth/sign-up">Start Research</a>
+          </div>
+          <div class="price-col is-featured">
+            <h3>Lab</h3>
+            <p class="price-tag">Coming soon</p>
+            <ul>
+              <li>Shared projects</li>
+              <li>Higher library limits</li>
+              <li>Team review workflows</li>
+            </ul>
+            <a class="btn btn-primary" href="/auth/sign-up">Join waitlist</a>
+          </div>
+          <div class="price-col">
+            <h3>Institution</h3>
+            <p class="price-tag">Coming soon</p>
+            <ul>
+              <li>SSO &amp; admin controls</li>
+              <li>Audit &amp; residency options</li>
+              <li>Procurement-ready Trust Layer</li>
+            </ul>
+            <a class="btn btn-ghost" href="/early-access">Talk to us</a>
+          </div>
+        </div>
+        <p class="price-note">No surprise “prompt credits” for core evidence workflows. Details expand as plans launch.</p>
       </div>
     </section>
 
-    <!-- Superhuman three-band close -->
+    <!-- FAQ — Mintlify / Notion -->
+    <section class="band band-paper" id="faq">
+      <div class="wrap-narrow">
+        <div class="reveal" style="margin-bottom:1.5rem;text-align:center">
+          <p class="eyebrow">FAQ</p>
+          <h2 class="section-title" style="font-size:clamp(1.5rem,2.5vw,2rem)">Frequently asked questions</h2>
+        </div>
+        <div class="faq-list reveal">
+          <details class="faq-item">
+            <summary>Is Dhund another “write my thesis” chatbot?</summary>
+            <p>
+              No. Dhund is a Research Operating System. The point is not one prompt → eighty pages.
+              It’s keeping your library, evidence decisions, and grounded writing in one place so drafts
+              stay tied to sources you accepted.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Where do citations come from?</summary>
+            <p>
+              From papers you import and evidence you accept. Bindings connect manuscript spans to evidence
+              objects, then back to paper metadata for export — including BibTeX when bibliography data is available.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Can AI invent sources I didn’t upload?</summary>
+            <p>
+              Writing is gated on accepted evidence from your project. Candidates don’t silently enter drafts.
+              You still review and revise — Dhund doesn’t replace scholarly judgment.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>What integrations are live vs coming soon?</summary>
+            <p>
+              See the <a href="#ecosystem">ecosystem catalog</a>. Live connectors ship unmarked; roadmap partners
+              are labeled Coming soon — we don’t silently promise availability.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>When will Lab and Institution pricing lock?</summary>
+            <p>
+              Researcher access is open now. Lab and Institution plans publish as shared projects and Trust Layer
+              controls land. <a href="/early-access">Early access</a> for labs that need to plan ahead.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Who is Dhund for?</summary>
+            <p>
+              Researchers running real literature reviews — MSc/PhD students, supervisors, and labs.
+              <a href="/auth/sign-up">Create an account</a> to get started.
+            </p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- Finale CTA — Superhuman teal close -->
     <section class="finale reveal" id="ready">
       <div class="wrap">
         <p class="eyebrow">Get started</p>
@@ -2214,15 +570,15 @@
           Import your library. Accept evidence. Write with citations you can defend.
         </p>
         <div class="finale-actions">
-          <a class="btn btn-primary btn-lg" href="/auth/sign-up">Start researching</a>
-          <a class="btn-ghost-on-dark btn-lg" href="#signin">Log in</a>
+          <a class="btn btn-primary btn-lg" href="/auth/sign-up">Start Research</a>
+          <a class="btn-ghost-on-dark" href="#signin">Log in</a>
         </div>
       </div>
     </section>
 
-    <!-- Sign in -->
-    <section class="wrap block" id="signin">
-      <div class="signin-layout">
+    <!-- Sign in — preserved auth -->
+    <section class="band" id="signin">
+      <div class="wrap signin-layout">
         <div class="signin-copy reveal">
           <p class="eyebrow">Sign in</p>
           <h2>Continue to your research workspace</h2>
@@ -2312,17 +668,18 @@
     <div class="wrap footer-grid">
       <div class="footer-brand">
         <a class="brand" href="#top">Dhund</a>
-        <p>Research Operating System — where evidence becomes publishable research.</p>
+        <p>Research Operating System — research without the chaos.</p>
       </div>
       <div class="footer-col">
         <h4>Product</h4>
-        <a href="{{ url_for('marketing_product') }}">Overview</a>
+        <a href="#product">Overview</a>
+        <a href="#pipeline">Pipeline</a>
         <a href="#ecosystem">Ecosystem</a>
-        <a href="#trust-layer">Trust</a>
-        <a href="#signin">Sign in</a>
+        <a href="#pricing">Pricing</a>
       </div>
       <div class="footer-col">
         <h4>Resources</h4>
+        <a href="/docs">Docs</a>
         <a href="{{ url_for('marketing_research') }}">Research guides</a>
         <a href="{{ url_for('marketing_early_access') }}">Early access</a>
         <a href="#faq">FAQ</a>
@@ -2331,6 +688,8 @@
         <h4>Legal</h4>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
+        <a href="#signin">Sign in</a>
+        <a href="#trust-layer">Trust</a>
       </div>
     </div>
     <div class="wrap footer-bottom">

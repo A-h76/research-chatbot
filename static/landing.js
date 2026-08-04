@@ -1,4 +1,4 @@
-/* Public landing page: theme toggle, motion, evidence demo, magic link. */
+/* Public landing v2: theme, reveal, pipeline beam, router cascade, magic link. */
 (function () {
   var root = document.documentElement;
 
@@ -50,180 +50,123 @@
     }
   }
 
+  function observeIn(nodes, className, options) {
+    var reduce =
+      window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      nodes.forEach(function (el) {
+        el.classList.add(className || "in");
+      });
+      return;
+    }
+    if (!("IntersectionObserver" in window) || !nodes.length) {
+      nodes.forEach(function (el) {
+        el.classList.add(className || "in");
+      });
+      return;
+    }
+    var io = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting) {
+            e.target.classList.add(className || "in");
+            io.unobserve(e.target);
+          }
+        });
+      },
+      options || { threshold: 0.12, rootMargin: "0px 0px -32px 0px" }
+    );
+    nodes.forEach(function (el) {
+      io.observe(el);
+    });
+  }
+
   function initReveal() {
     var reduce =
       window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce) root.classList.add("reduce-motion");
+    else document.body.classList.add("js-animate");
 
-    var nodes = document.querySelectorAll(".reveal");
-    if (!reduce && "IntersectionObserver" in window && nodes.length) {
-      document.body.classList.add("js-animate");
-      var io = new IntersectionObserver(
-        function (entries) {
-          entries.forEach(function (e) {
-            if (e.isIntersecting) e.target.classList.add("in");
-          });
-        },
-        { threshold: 0.12, rootMargin: "0px 0px -32px 0px" }
-      );
-      nodes.forEach(function (el) {
-        io.observe(el);
-      });
-    } else {
-      nodes.forEach(function (el) {
-        el.classList.add("in");
-      });
-    }
+    observeIn(Array.prototype.slice.call(document.querySelectorAll(".reveal")));
+    observeIn(Array.prototype.slice.call(document.querySelectorAll(".hero-fade")), "in", {
+      threshold: 0.01,
+      rootMargin: "0px",
+    });
+    observeIn(Array.prototype.slice.call(document.querySelectorAll(".product-frame.enter")), "in", {
+      threshold: 0.15,
+      rootMargin: "0px 0px -40px 0px",
+    });
   }
 
-  function initEvidenceDemo() {
-    var left = document.getElementById("demo-left");
-    var right = document.getElementById("demo-right");
-    var hint = document.getElementById("demo-hint");
-    var demo = document.getElementById("evidence-demo");
-    if (!left || !right || !demo) return;
+  function initPipelineBeam() {
+    var track = document.getElementById("pipeline-track");
+    if (!track) return;
+    var steps = Array.prototype.slice.call(track.querySelectorAll("[data-pipeline-step]"));
+    var reduce =
+      window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    var evidence = {
-      a: {
-        meta: "Accepted evidence · [3]",
-        title: "Patel et al., 2021 — Hepatic clearance of lipid nanoparticles",
-        html:
-          "<mark>Kupffer cells accounted for the majority of nanoparticle sequestration</mark> within 30 minutes of intravenous administration in murine models…",
-        foot: "PDF · page 7 · Methods · Support: strong",
-      },
-      b: {
-        meta: "Accepted evidence · [9]",
-        title: "Chen & Rivera, 2019 — PEGylation and RES evasion",
-        html:
-          "Surface PEGylation <mark>reduced Kupffer-mediated uptake by approximately 40%</mark> and extended plasma half-life relative to bare lipid particles…",
-        foot: "PDF · page 12 · Results · Support: moderate",
-      },
-      c: {
-        meta: "Accepted evidence · [14]",
-        title: "Okada et al., 2020 — Species differences in hepatic scavenging",
-        html:
-          "Authors note <mark>inter-species variability in Kupffer density</mark> that may limit direct translation of murine clearance findings…",
-        foot: "PDF · page 3 · Discussion · Conflict noted elsewhere",
-      },
-    };
-
-    var activeKey = "a";
-
-    function chipsHtml(active) {
-      return ["a", "b", "c"]
-        .map(function (k, i) {
-          var n = [3, 9, 14][i];
-          return (
-            '<button type="button" class="chip' +
-            (k === active ? " is-active" : "") +
-            '" data-ev="' +
-            k +
-            '" aria-pressed="' +
-            (k === active) +
-            '">[' +
-            n +
-            "]</button>"
-          );
-        })
-        .join("");
+    if (reduce || !("IntersectionObserver" in window)) {
+      track.classList.add("is-lit");
+      track.style.setProperty("--beam", "100%");
+      steps.forEach(function (s) {
+        s.classList.add("in");
+      });
+      return;
     }
 
-    function renderInspect(key, showAccept) {
-      var d = evidence[key] || evidence.a;
-      right.innerHTML =
-        '<p class="inspect-meta">' +
-        d.meta +
-        "</p>" +
-        '<p class="inspect-title">' +
-        d.title +
-        "</p>" +
-        '<div class="passage">' +
-        d.html +
-        "</div>" +
-        '<p class="inspect-foot">' +
-        d.foot +
-        "</p>" +
-        (showAccept
-          ? '<div class="accept-pill">✓ Finding accepted into project evidence</div>'
-          : "");
-    }
-
-    function bindChips() {
-      left.querySelectorAll(".chip[data-ev]").forEach(function (chip) {
-        chip.addEventListener("click", function () {
-          activeKey = chip.getAttribute("data-ev") || "a";
-          setStep(4);
+    var lit = 0;
+    var io = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          var idx = steps.indexOf(e.target);
+          if (idx < 0) return;
+          e.target.classList.add("in");
+          lit = Math.max(lit, idx + 1);
+          var pct = Math.round((lit / steps.length) * 100);
+          track.classList.add("is-lit");
+          track.style.setProperty("--beam", pct + "%");
+          io.unobserve(e.target);
         });
-      });
-    }
-
-    function setStep(step) {
-      demo.querySelectorAll(".story-step").forEach(function (btn) {
-        var on = btn.getAttribute("data-step") === String(step);
-        btn.classList.toggle("is-active", on);
-        btn.setAttribute("aria-selected", on ? "true" : "false");
-      });
-
-      if (step === 1) {
-        left.innerHTML =
-          '<p class="chat-q"><strong>You ask</strong></p>' +
-          '<p class="chat-a" style="font-family:var(--serif);font-size:1.08rem">How do Kupffer cells affect nanoparticle clearance in the liver?</p>';
-        right.innerHTML =
-          '<p class="inspect-meta">Waiting</p>' +
-          '<p class="inspect-title">Pose a research question grounded in your library.</p>' +
-          '<p class="inspect-foot">Next: Dhund answers with citations you can open.</p>';
-        if (hint) hint.textContent = "Step 1 — the research question.";
-      } else if (step === 2) {
-        left.innerHTML =
-          '<p class="chat-q"><strong>You asked</strong></p>' +
-          '<p class="chat-a" style="font-family:var(--serif);font-size:1rem;margin-bottom:0.85rem">How do Kupffer cells affect nanoparticle clearance in the liver?</p>' +
-          "<p class=\"chat-a\">Kupffer cells are the primary hepatic scavengers of circulating nanoparticles; surface PEGylation reduces uptake and prolongs circulation.</p>";
-        right.innerHTML =
-          '<p class="inspect-meta">Answer</p>' +
-          '<p class="inspect-title">Grounded response — citations arrive next.</p>' +
-          '<p class="inspect-foot">Claims stay provisional until you open the source.</p>';
-        if (hint) hint.textContent = "Step 2 — an answer before you verify.";
-      } else if (step === 3) {
-        left.innerHTML =
-          '<p class="chat-q"><strong>Answer with evidence chips</strong></p>' +
-          "<p class=\"chat-a\">Kupffer cells are the primary hepatic scavengers of circulating nanoparticles; surface PEGylation reduces uptake and prolongs circulation " +
-          chipsHtml(activeKey) +
-          ".</p>";
-        right.innerHTML =
-          '<p class="inspect-meta">Citation chips</p>' +
-          '<p class="inspect-title">Each chip maps to an evidence object in your project.</p>' +
-          '<p class="inspect-foot">Click a chip — or continue to open the passage.</p>';
-        if (hint) hint.textContent = "Step 3 — click a chip, or advance to the passage.";
-        bindChips();
-      } else if (step === 4) {
-        left.innerHTML =
-          '<p class="chat-q"><strong>Answer · inspectable</strong></p>' +
-          "<p class=\"chat-a\">Kupffer cells are the primary hepatic scavengers of circulating nanoparticles; surface PEGylation reduces uptake and prolongs circulation " +
-          chipsHtml(activeKey) +
-          ".</p>";
-        renderInspect(activeKey, false);
-        if (hint) hint.textContent = "Step 4 — original PDF passage with highlight.";
-        bindChips();
-      } else {
-        left.innerHTML =
-          '<p class="chat-q"><strong>Reviewer</strong></p>' +
-          '<p class="chat-a">Support is strong for hepatic scavenging. Accept this finding into the project evidence set used for writing.</p>' +
-          '<p class="chat-a">' +
-          chipsHtml(activeKey) +
-          "</p>";
-        renderInspect(activeKey, true);
-        if (hint) hint.textContent = "Step 5 — accepted finding joins grounded writing.";
-        bindChips();
-      }
-    }
-
-    demo.querySelectorAll(".story-step").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        setStep(Number(btn.getAttribute("data-step")));
-      });
+      },
+      { threshold: 0.55 }
+    );
+    steps.forEach(function (s) {
+      io.observe(s);
     });
+  }
 
-    setStep(1);
+  function initRouterCascade() {
+    var well = document.getElementById("router-well");
+    if (!well) return;
+    var steps = Array.prototype.slice.call(well.querySelectorAll("[data-router-step]"));
+    var reduce =
+      window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (reduce || !("IntersectionObserver" in window)) {
+      steps.forEach(function (s) {
+        s.classList.add("in");
+      });
+      return;
+    }
+
+    var started = false;
+    var io = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (e) {
+          if (!e.isIntersecting || started) return;
+          started = true;
+          steps.forEach(function (step, i) {
+            window.setTimeout(function () {
+              step.classList.add("in");
+            }, i * 120);
+          });
+          io.disconnect();
+        });
+      },
+      { threshold: 0.35 }
+    );
+    io.observe(well);
   }
 
   function initMagicLink() {
@@ -244,17 +187,20 @@
         body: JSON.stringify({ email: email }),
       })
         .then(function (res) {
-          return res.json().catch(function () {
-            return {};
-          }).then(function (data) {
-            msg.style.display = "block";
-            msg.style.color = res.ok ? "var(--ok)" : "var(--danger)";
-            msg.textContent =
-              data.detail ||
-              (res.ok
-                ? "If that email is allowed, check your inbox for a sign-in link."
-                : "Could not send link. Try again.");
-          });
+          return res
+            .json()
+            .catch(function () {
+              return {};
+            })
+            .then(function (data) {
+              msg.style.display = "block";
+              msg.style.color = res.ok ? "var(--ok)" : "var(--danger)";
+              msg.textContent =
+                data.detail ||
+                (res.ok
+                  ? "If that email is allowed, check your inbox for a sign-in link."
+                  : "Could not send link. Try again.");
+            });
         })
         .catch(function () {
           msg.style.display = "block";
@@ -264,29 +210,6 @@
         .finally(function () {
           btn.disabled = false;
         });
-    });
-  }
-
-  function initFlowTabs() {
-    var tabs = document.querySelectorAll(".flow-tab[data-flow]");
-    var panels = document.querySelectorAll("[data-flow-panel]");
-    if (!tabs.length || !panels.length) return;
-
-    tabs.forEach(function (tab) {
-      tab.addEventListener("click", function () {
-        var key = tab.getAttribute("data-flow");
-        tabs.forEach(function (t) {
-          var on = t === tab;
-          t.classList.toggle("is-on", on);
-          t.setAttribute("aria-selected", on ? "true" : "false");
-        });
-        panels.forEach(function (panel) {
-          panel.classList.toggle(
-            "is-on",
-            panel.getAttribute("data-flow-panel") === key
-          );
-        });
-      });
     });
   }
 
@@ -301,10 +224,11 @@
   }
 
   function boot() {
+    document.documentElement.classList.remove("no-js");
     initThemeToggle();
     initReveal();
-    initEvidenceDemo();
-    initFlowTabs();
+    initPipelineBeam();
+    initRouterCascade();
     initTopbarScroll();
     initMagicLink();
   }
