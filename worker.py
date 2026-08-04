@@ -125,7 +125,9 @@ def _handle_import(db, job):
             # Phase 1 pipeline is the primary structured analysis path.
             # paper_analysis (LLM overview) runs after phase1 so PromptBuilder
             # can consume persisted Phase 1 outputs.
-            _enqueue_job(db, uf.user_id, file_id, "phase1_analysis", job.upload_batch_id)
+            # Do not attach upload_batch_id — batch progress tracks intake
+            # (import) only; analysis follow-ups would inflate "N of M files".
+            _enqueue_job(db, uf.user_id, file_id, "phase1_analysis", None)
 
         _process_document(
             db,
@@ -161,7 +163,7 @@ def _handle_phase1_analysis(db, job):
         and uf.content_hash
         and existing.content_hash == uf.content_hash
     ):
-        _enqueue_job(db, uf.user_id, job.file_id, "paper_analysis", job.upload_batch_id)
+        _enqueue_job(db, uf.user_id, job.file_id, "paper_analysis", None)
         try:
             from backend.evidence.services.auto_extract import maybe_enqueue_evidence_extract
 
@@ -172,7 +174,7 @@ def _handle_phase1_analysis(db, job):
                 UserFile=UserFile,
                 UploadJob=UploadJob,
                 OutboxEvent=OutboxEvent,
-                upload_batch_id=job.upload_batch_id,
+                upload_batch_id=None,
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("auto evidence_extract enqueue skipped: %s", exc)
@@ -212,7 +214,7 @@ def _handle_phase1_analysis(db, job):
 
         # Crossref already ran in import→enqueue_followups (before Phase 1).
         # Phase 1.1 may still fill empty bibliographic fields via only_empty=True.
-        _enqueue_job(db, uf.user_id, job.file_id, "paper_analysis", job.upload_batch_id)
+        _enqueue_job(db, uf.user_id, job.file_id, "paper_analysis", None)
         # Paper Analysis 2.4 — auto evidence happy path (existing job family).
         try:
             from backend.evidence.services.auto_extract import maybe_enqueue_evidence_extract
@@ -224,7 +226,7 @@ def _handle_phase1_analysis(db, job):
                 UserFile=UserFile,
                 UploadJob=UploadJob,
                 OutboxEvent=OutboxEvent,
-                upload_batch_id=job.upload_batch_id,
+                upload_batch_id=None,
             )
         except Exception as exc:  # noqa: BLE001 — never fail phase1 on auto extract
             log.warning("auto evidence_extract enqueue skipped: %s", exc)
@@ -261,7 +263,7 @@ def _handle_extract_metadata(db, job):
         return
 
     # Redirect metadata + Phase 1 engines onto the canonical chain.
-    _enqueue_job(db, uf.user_id, job.file_id, "phase1_analysis", job.upload_batch_id)
+    _enqueue_job(db, uf.user_id, job.file_id, "phase1_analysis", None)
 
 
 def _handle_paper_analysis(db, job):

@@ -224,13 +224,20 @@ def create_bulk_upload_blueprint(
             if not batch or batch.user_id != user_id:
                 return jsonify({"error": "not_found", "message": "Batch not found"}), 404
 
+            # Intake only: one ``import`` job per uploaded file. Follow-ups
+            # (phase1_analysis, paper_analysis, evidence_extract) must not
+            # inflate progress — they used to share upload_batch_id and made
+            # the UI show "2 of 1 file processed" with duplicate filenames.
             rows = db.execute(
                 select(UploadJob, UserFile)
                 .join(UserFile, UserFile.id == UploadJob.file_id)
-                .where(UploadJob.upload_batch_id == batch_id)
+                .where(
+                    UploadJob.upload_batch_id == batch_id,
+                    UploadJob.job_type == "import",
+                )
             ).all()
 
-            total = len(rows)
+            total = int(batch.file_count or 0) or len(rows)
             processed = sum(1 for job, _ in rows if job.status in ("done", "failed"))
             failed = sum(1 for job, _ in rows if job.status == "failed")
             if total == 0 or processed == 0:
@@ -244,7 +251,7 @@ def create_bulk_upload_blueprint(
                 jsonify(
                     {
                         "batch_id": batch.id,
-                        "total_files": batch.file_count,
+                        "total_files": total,
                         "processed_files": processed,
                         "failed_files": failed,
                         "status": status,

@@ -101,7 +101,7 @@ export function BulkUploadProgress({ batchId, onComplete, onError }: BulkUploadP
             ? "This upload batch could not be found."
             : isLoading
               ? "Loading batch status…"
-              : `${processedFiles} of ${totalFiles} file${totalFiles === 1 ? "" : "s"} processed`}
+              : `${processedFiles} of ${totalFiles} file${totalFiles === 1 ? "" : "s"} indexed`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

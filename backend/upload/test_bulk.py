@@ -268,6 +268,42 @@ def test_batch_status_reports_progress(env):
     assert failed_job["error"] == "extraction failed"
 
 
+def test_batch_status_ignores_followup_analysis_jobs(env):
+    """Regression: phase1/paper_analysis must not inflate 'N of M files'."""
+    resp = _upload_bulk(env["client"], env["access"], [("main.pdf", b"%PDF fake")])
+    body = resp.get_json()
+    batch_id = body["batch_id"]
+    file_id = body["jobs"][0]["file_id"]
+
+    db = env["SessionLocal"]()
+    import_job = db.execute(
+        select(env["UploadJob"]).where(env["UploadJob"].upload_batch_id == batch_id)
+    ).scalar_one()
+    import_job.status = "done"
+    # Legacy pollution: follow-ups used to inherit upload_batch_id.
+    for job_type in ("phase1_analysis", "paper_analysis"):
+        db.add(
+            env["UploadJob"](
+                upload_batch_id=batch_id,
+                file_id=file_id,
+                user_id=1,
+                job_type=job_type,
+                status="done",
+            )
+        )
+    db.commit()
+    db.close()
+
+    status_resp = env["client"].get(f"/api/uploads/batch/{batch_id}/status", headers=_auth(env["access"]))
+    status = status_resp.get_json()
+    assert status_resp.status_code == 200, status
+    assert status["total_files"] == 1
+    assert status["processed_files"] == 1
+    assert status["status"] == "done"
+    assert len(status["jobs"]) == 1
+    assert status["jobs"][0]["filename"] == "main.pdf"
+
+
 def test_batch_status_not_found_for_other_users_batch(env):
     resp = _upload_bulk(env["client"], env["access"], [("a.pdf", b"%PDF fake")])
     batch_id = resp.get_json()["batch_id"]
