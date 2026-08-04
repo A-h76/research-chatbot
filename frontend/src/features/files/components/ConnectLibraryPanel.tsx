@@ -146,28 +146,6 @@ export const ConnectLibraryPanel = forwardRef<
     void qc.invalidateQueries({ queryKey: ["library-connections"] });
   }, [searchParams, setSearchParams, qc]);
 
-  const connectZotero = async () => {
-    setBusyKey("zotero");
-    try {
-      const res = await libraryBridgeApi.zoteroConnect();
-      window.location.href = res.authorize_url;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Zotero connect failed");
-      setBusyKey(null);
-    }
-  };
-
-  const connectMendeley = async () => {
-    setBusyKey("mendeley");
-    try {
-      const res = await libraryBridgeApi.mendeleyConnect();
-      window.location.href = res.authorize_url;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Mendeley connect failed");
-      setBusyKey(null);
-    }
-  };
-
   const openZoteroImport = async () => {
     setBusyKey("zotero-import");
     try {

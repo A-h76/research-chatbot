@@ -111,8 +111,13 @@ describe("buildWorkspaceRail", () => {
       warnings: [],
       errors: [],
       quality: {},
+      scientificStructure: null,
+      methodologyProfile: null,
+      statisticsProfile: null,
+      limitationsNoveltyProfile: null,
+      qualityAssessment: null,
       hasContent: true,
-    } as DocumentUnderstandingView;
+    } as unknown as DocumentUnderstandingView;
 
     const classification = {
       decisions: [
@@ -164,9 +169,11 @@ describe("buildWorkspaceRail", () => {
         findings: [],
         studyCharacteristics: [],
         temporal: [],
+        scientificEntities: [],
       },
+      localRelations: [],
       hasContent: true,
-    } as EntitiesViewModel;
+    } as unknown as EntitiesViewModel;
 
     const evidence = {
       skipped: false,
@@ -252,8 +259,13 @@ describe("buildWorkspaceRail", () => {
       warnings: [],
       errors: [],
       quality: {},
+      scientificStructure: null,
+      methodologyProfile: null,
+      statisticsProfile: null,
+      limitationsNoveltyProfile: null,
+      qualityAssessment: null,
       hasContent: true,
-    } as DocumentUnderstandingView;
+    } as unknown as DocumentUnderstandingView;
 
     const refs = buildWorkspaceRail({ fileId: 9, structure });
     const labels = refs.filter((r) => r.tab === "structure").map((r) => r.label);

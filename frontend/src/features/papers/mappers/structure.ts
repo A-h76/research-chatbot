@@ -321,16 +321,19 @@ function mapScientificStructure(raw: unknown): ScientificStructureView | null {
   const sectionSkeleton: SectionSkeletonRow[] = (
     Array.isArray(raw.section_skeleton) ? raw.section_skeleton : []
   )
-    .map((row) => {
+    .map((row): SectionSkeletonRow | null => {
       if (!isRecord(row)) return null;
       const sectionType = asString(row.section_type);
       if (!sectionType) return null;
-      return {
+      const heading = asString(row.heading);
+      const confidence = asNumber(row.confidence);
+      const out: SectionSkeletonRow = {
         sectionType,
         present: Boolean(row.present),
-        heading: asString(row.heading),
-        confidence: asNumber(row.confidence),
       };
+      if (heading) out.heading = heading;
+      if (confidence != null) out.confidence = confidence;
+      return out;
     })
     .filter((x): x is SectionSkeletonRow => x != null);
 

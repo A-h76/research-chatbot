@@ -15,6 +15,10 @@ function baseView(over: Partial<DocumentUnderstandingView> = {}): DocumentUnders
     errors: [],
     quality: {},
     scientificStructure: null,
+    methodologyProfile: null,
+    statisticsProfile: null,
+    limitationsNoveltyProfile: null,
+    qualityAssessment: null,
     hasContent: true,
     ...over,
   };
