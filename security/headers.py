@@ -10,18 +10,19 @@ from __future__ import annotations
 from typing import Mapping, MutableMapping, Optional, Tuple
 
 # Conservative policy for the production SPA served same-origin.
-# Allows Google profile images + data/blob previews; keeps scripts same-origin.
+# Allows Google profile images + data/blob previews; keeps app scripts same-origin.
+# Cloudflare Web Analytics beacon is injected at the edge — allow its script + beacon POSTs.
 PROD_CSP = (
     "default-src 'self'; "
     "base-uri 'self'; "
     "object-src 'none'; "
     "frame-ancestors 'none'; "
     "form-action 'self'; "
-    "script-src 'self'; "
+    "script-src 'self' https://static.cloudflareinsights.com; "
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     "img-src 'self' data: blob: https:; "
     "font-src 'self' data: https://fonts.gstatic.com; "
-    "connect-src 'self'; "
+    "connect-src 'self' https://cloudflareinsights.com; "
     "worker-src 'self' blob:; "
     "media-src 'self' blob:"
 )

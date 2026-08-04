@@ -30,6 +30,8 @@ def test_hsts_and_csp_enforced_in_production():
     csp = resp.headers["Content-Security-Policy"]
     assert "default-src 'self'" in csp
     assert "frame-ancestors 'none'" in csp
+    assert "static.cloudflareinsights.com" in csp
+    assert "cloudflareinsights.com" in csp
 
 
 def test_csp_report_only_rollback():
