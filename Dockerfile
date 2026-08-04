@@ -6,6 +6,8 @@ WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
+# Docs catalog imports living contracts/ADRs via @repo-docs → ../docs
+COPY docs/ /docs/
 RUN npm run build
 
 # Match CI-ish LTS runtime; avoid 3.13 builder OOM/edge wheels on Railway.
