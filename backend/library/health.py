@@ -32,6 +32,9 @@ def build_library_health(
     counts = {k: 0 for k in READINESS_ORDER}
     processing = 0
     need_pdf = 0
+    fulltext_outcomes: dict[str, int] = {}
+    auto_resolved = 0
+    manual_attached = 0
     for f in files:
         try:
             n_chunks = len(f.chunks) if getattr(f, "chunks", None) is not None else 0
@@ -44,9 +47,27 @@ def build_library_health(
         meta = (f.meta_status or "").lower()
         if (f.path or "").strip() and meta in {"pending", "running"}:
             processing += 1
+        try:
+            import json
+
+            raw = getattr(f, "fulltext_json", None) or ""
+            ft = json.loads(raw) if isinstance(raw, str) and raw.strip() else {}
+            if isinstance(ft, dict) and ft.get("outcome"):
+                oc = str(ft["outcome"])
+                fulltext_outcomes[oc] = fulltext_outcomes.get(oc, 0) + 1
+                src = (ft.get("full_text_source") or "").strip()
+                if src == "manual":
+                    manual_attached += 1
+                elif oc == "FOUND" and src:
+                    auto_resolved += 1
+        except Exception:
+            pass
 
     total = len(files)
     stub_ratio = (need_pdf / total) if total else 0.0
+    resolved_denom = auto_resolved + manual_attached + need_pdf
+    auto_resolution_rate = (auto_resolved / resolved_denom) if resolved_denom else 0.0
+    manual_attach_rate = (manual_attached / resolved_denom) if resolved_denom else 0.0
 
     sync: dict[str, Any] = {"runs": [], "connections": []}
     if LibraryConnection is not None:
@@ -100,6 +121,14 @@ def build_library_health(
         "stub_ratio": round(stub_ratio, 3),
         "processing": processing,
         "research_ready": counts.get("research_ready", 0),
+        "fulltext_resolution": {
+            "auto_resolved": auto_resolved,
+            "manual_attached": manual_attached,
+            "still_need_fulltext": need_pdf,
+            "auto_resolution_rate": round(auto_resolution_rate, 3),
+            "manual_attach_rate": round(manual_attach_rate, 3),
+            "by_outcome": fulltext_outcomes,
+        },
         "sync": sync,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

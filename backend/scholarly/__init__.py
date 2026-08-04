@@ -3,7 +3,9 @@
 Contracts:
 - Soft-fail: public helpers return None on any error; callers continue.
 - Short timeouts (default 5s).
-- Feature flags: ENABLE_CROSSREF / ENABLE_OPENALEX / ENABLE_SEMANTIC_SCHOLAR / ENABLE_PUBMED / ENABLE_ARXIV / ENABLE_EUROPE_PMC / ENABLE_ORCID.
+- Feature flags: ENABLE_CROSSREF / ENABLE_OPENALEX / ENABLE_SEMANTIC_SCHOLAR /
+  ENABLE_PUBMED / ENABLE_ARXIV / ENABLE_EUROPE_PMC / ENABLE_ORCID /
+  ENABLE_UNPAYWALL / ENABLE_UFTR.
 - Bulkhead: per-provider concurrency caps so one stalled provider cannot
   monopolise worker threads.
 - Circuit breaker: DB-backed (shared across Gunicorn + worker processes).
@@ -56,6 +58,8 @@ _FLAG_ENV = {
     "arxiv": "ENABLE_ARXIV",
     "europe_pmc": "ENABLE_EUROPE_PMC",
     "orcid": "ENABLE_ORCID",
+    "unpaywall": "ENABLE_UNPAYWALL",
+    "uftr": "ENABLE_UFTR",
 }
 
 _BULKHEAD_LIMITS = {

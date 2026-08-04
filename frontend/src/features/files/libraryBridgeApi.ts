@@ -188,6 +188,22 @@ export const libraryBridgeApi = {
     );
   },
 
+  fetchFulltext: (
+    fileId: number,
+    body: { force?: boolean; auto?: boolean } = {},
+  ) =>
+    api.post<{
+      ok: boolean;
+      skipped?: boolean;
+      reason?: string;
+      pdf_attached?: boolean;
+      analysis_queued?: boolean;
+      pdf_error?: string | null;
+      fulltext?: import("@/types/api").FullTextResolution | null;
+      file?: import("@/types/api").UserFile;
+      already_has_pdf?: boolean;
+    }>(`/api/library/files/${fileId}/fetch-fulltext`, body),
+
   pullPdf: (fileId: number) =>
     api.post<LibraryPullPdfsResult>(`/api/library/files/${fileId}/pull-pdf`, {}),
 

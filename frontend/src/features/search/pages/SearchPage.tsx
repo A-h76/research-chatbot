@@ -62,18 +62,14 @@ function DiscoverCard({
       setImportedId(result.file.id);
       setImportState(result.already_exists ? "exists" : "added");
       if (!result.already_exists && result.analysis_queued) {
-        setPipelineNote("Open-access PDF attached — Analysis 2.0 queued");
+        setPipelineNote("Full text attached — analysis queued");
       } else if (!result.already_exists && result.pdf_attached) {
-        setPipelineNote("PDF attached");
-      } else if (
-        !result.already_exists &&
-        (provider === "pubmed" ||
-          provider === "arxiv" ||
-          provider === "europe_pmc" ||
-          provider === "orcid") &&
-        !result.pdf_attached
-      ) {
-        setPipelineNote("Metadata saved — attach a PDF to run Analysis 2.0");
+        setPipelineNote("Full text attached");
+      } else if (!result.already_exists && !result.pdf_attached) {
+        const reason =
+          result.fulltext?.user_reason ||
+          "Couldn't access full text automatically — open the paper to retry or attach a PDF";
+        setPipelineNote(reason);
       }
     } catch (err) {
       setImportState("error");

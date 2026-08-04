@@ -275,6 +275,27 @@ export interface UserFile {
     | "research_ready";
   research_readiness_label?: string;
   has_pdf?: boolean;
+  /** UFTR provenance — soft full-text resolution state */
+  fulltext?: FullTextResolution | null;
+  lifecycle_label?: string;
+}
+
+export interface FullTextResolution {
+  outcome?: string | null;
+  user_reason?: string | null;
+  full_text_source?: string;
+  content_kind?: string;
+  url?: string;
+  last_attempt_at?: string | null;
+  resolving?: boolean;
+  found?: boolean;
+  attempts?: Array<{
+    resolver: string;
+    outcome: string;
+    reason?: string;
+    url?: string;
+    at?: string;
+  }>;
 }
 
 export interface PaperAnalysis {

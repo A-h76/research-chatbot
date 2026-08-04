@@ -112,9 +112,16 @@ def discover_app(monkeypatch):
         "backend.scholarly.orcid.enrich_oa_hints",
         lambda w, *, db: w,
     )
+    from backend.scholarly.uftr.outcomes import FullTextOutcome
+    from backend.scholarly.uftr.resolvers import Candidate
+
     monkeypatch.setattr(
-        "backend.scholarly.orcid.download_open_access_pdf",
-        lambda w, *, max_bytes=0, db=None: (b"%PDF-1.4 x", "orcid_152600.pdf"),
+        "backend.scholarly.uftr.resolve.collect_candidates",
+        lambda **kw: [Candidate(url=work.open_access_url, resolver="provider")],
+    )
+    monkeypatch.setattr(
+        "backend.scholarly.uftr.resolve.download_candidate",
+        lambda url, **kw: (FullTextOutcome.FOUND, b"%PDF-1.4 x", "application/pdf", url),
     )
 
     def fake_apply(db, uf, **kwargs):
@@ -183,9 +190,15 @@ def test_orcid_import_attaches_pdf_and_enqueues(discover_app):
 
 def test_orcid_import_metadata_only_when_no_pdf(discover_app, monkeypatch):
     app, db, enqueued = discover_app
+    from backend.scholarly.uftr.outcomes import FullTextOutcome
+
     monkeypatch.setattr(
-        "backend.scholarly.orcid.download_open_access_pdf",
-        lambda *a, **k: None,
+        "backend.scholarly.uftr.resolve.collect_candidates",
+        lambda **kw: [],
+    )
+    monkeypatch.setattr(
+        "backend.scholarly.uftr.resolve.download_candidate",
+        lambda *a, **k: (FullTextOutcome.NO_OPEN_ACCESS, b"", "", ""),
     )
     monkeypatch.setattr(
         "backend.scholarly.orcid.get_work_by_id",

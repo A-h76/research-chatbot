@@ -190,77 +190,35 @@ def create_discover_blueprint(
             db.close()
 
     def _try_attach_oa_pdf(db, uf, work, *, user_id: int) -> dict:
-        """Golden Rule: OA PDF → shared import → SUE → Evidence → Writing Intelligence.
+        """Golden Rule: UFTR → shared import → SUE → Evidence → Writing Intelligence.
 
-        Provider-specific code ends at PDF bytes. apply_pdf_bytes_to_stub + enqueue_import
-        are the same path as upload / Drive / PubMed — no arXiv analysis shortcuts.
+        Providers only supply identity + candidate hints. UFTR discovers/validates
+        full text; apply_pdf_bytes_to_stub + enqueue_import are the same path as
+        upload / Drive — no provider analysis shortcuts.
         """
-        out = {"pdf_attached": False, "analysis_queued": False, "pdf_error": None}
+        out = {"pdf_attached": False, "analysis_queued": False, "pdf_error": None, "fulltext": None}
         if storage is None or not upload_dir or enqueue_import is None:
             out["pdf_error"] = "pipeline_not_wired"
             return out
-        src = getattr(work, "source", "") or ""
-        if (
-            not getattr(work, "open_access_url", None)
-            and not getattr(work, "pmcid", None)
-            and not getattr(work, "arxiv_id", None)
-            and src not in ("arxiv",)
-        ):
-            out["pdf_error"] = "no_oa_pdf"
-            return out
         try:
-            from backend.library.file_pull import apply_pdf_bytes_to_stub
-            from backend.library.sync import has_research_asset
+            from backend.scholarly.uftr.resolve import resolve_and_attach
 
-            if has_research_asset(uf):
-                out["pdf_error"] = "already_has_pdf"
-                return out
-
-            hit = None
-            max_b = int(max_file_mb or 50) * 1024 * 1024
-            if src == "arxiv" or getattr(work, "arxiv_id", None):
-                from backend.scholarly.arxiv import download_pdf
-
-                hit = download_pdf(work, max_bytes=max_b)
-            elif src == "europe_pmc":
-                from backend.scholarly.europe_pmc import download_open_access_pdf
-
-                hit = download_open_access_pdf(work, max_bytes=max_b)
-            elif src == "orcid":
-                from backend.scholarly.orcid import download_open_access_pdf
-
-                hit = download_open_access_pdf(work, max_bytes=max_b, db=db)
-            else:
-                from backend.scholarly.pubmed import download_open_access_pdf
-
-                hit = download_open_access_pdf(work, max_bytes=max_b)
-            if not hit:
-                out["pdf_error"] = "oa_download_failed"
-                return out
-            data, filename = hit
-            applied = apply_pdf_bytes_to_stub(
+            return resolve_and_attach(
                 db,
                 uf,
-                data=data,
-                filename=filename,
-                content_type="application/pdf",
                 storage=storage,
                 upload_dir=upload_dir,
                 enqueue_import=enqueue_import,
                 user_id=user_id,
-                max_file_mb=max_file_mb,
+                max_file_mb=max_file_mb or 50,
+                work=work,
             )
-            if applied.get("ok"):
-                out["pdf_attached"] = True
-                out["analysis_queued"] = bool(applied.get("queued"))
-            else:
-                out["pdf_error"] = applied.get("error") or "attach_failed"
         except Exception as exc:
             app_logger.warning(
-                "discover OA attach skipped file_id=%s: %s", getattr(uf, "id", None), exc
+                "discover UFTR attach skipped file_id=%s: %s", getattr(uf, "id", None), exc
             )
             out["pdf_error"] = "oa_attach_exception"
-        return out
+            return out
 
     @bp.route("/api/discover/import", methods=["POST"])
     @login_required
@@ -728,7 +686,10 @@ def create_discover_blueprint(
                 "pdf_attached": False,
                 "analysis_queued": False,
                 "pdf_error": None,
+                "fulltext": None,
             }
+            # UFTR for every Discover import (incl. OpenAlex) — Golden Rule
+            work_for_pdf = None
             if search_provider == "pubmed":
                 from backend.scholarly.pubmed import PubmedWork
 
@@ -741,8 +702,6 @@ def create_discover_blueprint(
                     pmcid=pmcid,
                     is_open_access=bool(open_access_url or pmcid),
                 )
-                attach_meta = _try_attach_oa_pdf(db, uf, work_for_pdf, user_id=uid)
-                db.refresh(uf)
             elif search_provider == "arxiv":
                 from backend.scholarly.arxiv import ArxivWork
 
@@ -754,8 +713,6 @@ def create_discover_blueprint(
                     open_access_url=open_access_url,
                     is_open_access=True,
                 )
-                attach_meta = _try_attach_oa_pdf(db, uf, work_for_pdf, user_id=uid)
-                db.refresh(uf)
             elif search_provider == "europe_pmc":
                 from backend.scholarly.europe_pmc import EuropePmcWork
 
@@ -768,8 +725,6 @@ def create_discover_blueprint(
                     open_access_url=open_access_url,
                     is_open_access=bool(open_access_url or pmcid),
                 )
-                attach_meta = _try_attach_oa_pdf(db, uf, work_for_pdf, user_id=uid)
-                db.refresh(uf)
             elif search_provider == "orcid":
                 from backend.scholarly.orcid import OrcidWork
 
@@ -785,8 +740,20 @@ def create_discover_blueprint(
                     arxiv_id=arxiv_id,
                     is_open_access=bool(open_access_url or pmcid or arxiv_id),
                 )
-                attach_meta = _try_attach_oa_pdf(db, uf, work_for_pdf, user_id=uid)
-                db.refresh(uf)
+            else:
+                from types import SimpleNamespace
+
+                work_for_pdf = SimpleNamespace(
+                    source="openalex",
+                    doi=doi,
+                    title=title,
+                    open_access_url=open_access_url,
+                    pmcid=pmcid,
+                    arxiv_id=arxiv_id,
+                )
+
+            attach_meta = _try_attach_oa_pdf(db, uf, work_for_pdf, user_id=uid)
+            db.refresh(uf)
 
             db.commit()
             return (

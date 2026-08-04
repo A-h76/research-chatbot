@@ -259,9 +259,9 @@ export function FileCard({
                 fileInputRef.current?.click();
               }}
               className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-              title="Attach PDF to analyse"
+              title="Attach full text (PDF) to analyse"
             >
-              <Upload className="size-3" /> PDF
+              <Upload className="size-3" /> Full text
             </button>
           </>
         )}

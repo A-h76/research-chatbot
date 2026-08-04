@@ -23,7 +23,9 @@ function toastFromResult(data: ExtractResult) {
   if (data.status === "skipped" || data.skipped) {
     const reason = data.reason || "skipped";
     if (reason === "not_research_ready") {
-      toast.error("Paper is not Research Ready yet");
+      toast.error(
+        "Paper needs full text first — use Retry Full Text or Attach PDF on the paper page",
+      );
       return;
     }
     if (reason === "missing_phase1") {

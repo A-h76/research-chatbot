@@ -109,9 +109,16 @@ def discover_app(monkeypatch):
         "backend.scholarly.europe_pmc.get_work_by_id",
         lambda aid, *, db: work,
     )
+    from backend.scholarly.uftr.outcomes import FullTextOutcome
+    from backend.scholarly.uftr.resolvers import Candidate
+
     monkeypatch.setattr(
-        "backend.scholarly.europe_pmc.download_open_access_pdf",
-        lambda w, *, max_bytes=0: (b"%PDF-1.4 x", "PMC7654321.pdf"),
+        "backend.scholarly.uftr.resolve.collect_candidates",
+        lambda **kw: [Candidate(url=work.open_access_url, resolver="europe_pmc")],
+    )
+    monkeypatch.setattr(
+        "backend.scholarly.uftr.resolve.download_candidate",
+        lambda url, **kw: (FullTextOutcome.FOUND, b"%PDF-1.4 x", "application/pdf", url),
     )
 
     def fake_apply(db, uf, **kwargs):

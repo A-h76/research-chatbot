@@ -47,6 +47,14 @@ export interface DiscoverImportResult {
   pdf_attached?: boolean;
   analysis_queued?: boolean;
   pdf_error?: string | null;
+  fulltext?: {
+    outcome?: string | null;
+    user_reason?: string | null;
+    full_text_source?: string;
+    attempts?: unknown[];
+    last_attempt_at?: string | null;
+    found?: boolean;
+  } | null;
 }
 
 export async function discoverWorks(

@@ -70,7 +70,7 @@ export function LibraryHealthStrip({
 
   const continueTarget =
     data.need_pdf > 0
-      ? { label: "Attach PDFs", run: () => onFilterNeedsReview?.() }
+      ? { label: "Need full text", run: () => onFilterNeedsReview?.() }
       : data.processing > 0
         ? { label: "Continue Research", run: () => navigate("/home") }
         : data.research_ready > 0

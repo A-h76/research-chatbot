@@ -128,9 +128,16 @@ def discover_app(monkeypatch):
         "backend.scholarly.pubmed.get_work_by_pmid",
         lambda pmid, *, db, enrich=True: work,
     )
+    from backend.scholarly.uftr.outcomes import FullTextOutcome
+    from backend.scholarly.uftr.resolvers import Candidate
+
     monkeypatch.setattr(
-        "backend.scholarly.pubmed.download_open_access_pdf",
-        lambda w, *, max_bytes=0: (b"%PDF-1.4 fake", "PMID31452104.pdf"),
+        "backend.scholarly.uftr.resolve.collect_candidates",
+        lambda **kw: [Candidate(url=work.open_access_url, resolver="provider")],
+    )
+    monkeypatch.setattr(
+        "backend.scholarly.uftr.resolve.download_candidate",
+        lambda url, **kw: (FullTextOutcome.FOUND, b"%PDF-1.4 fake", "application/pdf", url),
     )
 
     applied = {}
@@ -213,4 +220,5 @@ def test_pubmed_import_attaches_oa_and_enqueues(discover_app):
     assert "from-pubmed" in tags
     assert "pmid:31452104" in tags
     assert enqueued == [(7, body["file"]["id"])]
-    assert applied.get("filename") == "PMID31452104.pdf"
+    assert applied.get("filename") == "paper.pdf"
+    assert body.get("fulltext", {}).get("found") is True or body.get("pdf_attached") is True

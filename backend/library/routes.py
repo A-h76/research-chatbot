@@ -2073,6 +2073,12 @@ def create_library_bridge_blueprint(
             uf.meta_status = "pending"
             if not (uf.name or "").strip() or uf.name == uf.title:
                 uf.name = name[:300]
+            try:
+                from backend.scholarly.uftr.state import record_manual_attach
+
+                record_manual_attach(uf, source="manual")
+            except Exception:
+                pass
             db.flush()
             queued = False
             if _enqueue_after_attach:
@@ -2093,6 +2099,85 @@ def create_library_bridge_blueprint(
         except Exception as exc:
             db.rollback()
             return jsonify({"error": "attach_failed", "detail": str(exc)[:200]}), 500
+        finally:
+            db.close()
+
+    @bp.route("/api/library/files/<int:fid>/fetch-fulltext", methods=["POST"])
+    @login_required
+    @_rate("30 per hour")
+    def fetch_fulltext_for_stub(fid: int):
+        """UFTR retry — resolve open full text and attach when FOUND.
+
+        Body (optional JSON):
+          force: bool — bypass 7-day / negative-cache gates
+          auto: bool — event-driven retry (paper open / writing / evidence);
+                       refuses if should_auto_retry is False unless force
+        """
+        if storage is None or not upload_dir:
+            return jsonify({"error": "storage_not_configured"}), 503
+
+        body = request.get_json(silent=True) or {}
+        force = bool(body.get("force"))
+        auto = bool(body.get("auto"))
+
+        db = SessionLocal()
+        try:
+            uf = db.get(UserFile, fid)
+            if not uf or uf.user_id != _uid():
+                return jsonify({"error": "not_found"}), 404
+
+            from backend.library.sync import has_research_asset
+            from backend.scholarly.uftr.resolve import resolve_and_attach
+            from backend.scholarly.uftr.state import should_auto_retry
+
+            if has_research_asset(uf):
+                return jsonify(
+                    {
+                        "ok": True,
+                        "pdf_attached": True,
+                        "already_has_pdf": True,
+                        "file": file_to_dict(uf) if file_to_dict else {"id": uf.id},
+                    }
+                ), 200
+
+            if auto and not force and not should_auto_retry(uf, force=False):
+                from backend.scholarly.uftr.state import fulltext_payload
+
+                return jsonify(
+                    {
+                        "ok": True,
+                        "skipped": True,
+                        "reason": "retry_not_due",
+                        "fulltext": fulltext_payload(uf),
+                        "file": file_to_dict(uf) if file_to_dict else {"id": uf.id},
+                    }
+                ), 200
+
+            result = resolve_and_attach(
+                db,
+                uf,
+                storage=storage,
+                upload_dir=upload_dir,
+                enqueue_import=_enqueue_after_attach,
+                user_id=_uid(),
+                max_file_mb=max_file_mb or 50,
+                force=force or not auto,
+            )
+            db.commit()
+            db.refresh(uf)
+            status = 200
+            if result.get("pdf_attached"):
+                status = 201
+            return jsonify(
+                {
+                    "ok": bool(result.get("pdf_attached")),
+                    **result,
+                    "file": file_to_dict(uf) if file_to_dict else {"id": uf.id},
+                }
+            ), status
+        except Exception as exc:
+            db.rollback()
+            return jsonify({"error": "fetch_fulltext_failed", "detail": str(exc)[:200]}), 500
         finally:
             db.close()
 

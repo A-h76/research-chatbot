@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   BookOpen, Calendar,
@@ -30,7 +30,10 @@ import { PaperEvidenceTab } from "../components/PaperEvidenceTab";
 import { PaperKnowledgeGraphTab } from "../components/PaperKnowledgeGraphTab";
 import { PaperRelatedTab } from "../components/PaperRelatedTab";
 import { ExtractEvidenceButton } from "@/features/evidence/components/ExtractEvidenceButton";
-
+import { FullTextNeededBanner } from "../components/FullTextNeededBanner";
+import { libraryBridgeApi } from "@/features/files/libraryBridgeApi";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 const ANALYZE_ERROR_MESSAGES: Record<string, string> = {
   not_ready: "This paper is still being processed. Try again in a moment.",
   token_quota_exceeded: "Monthly AI usage quota exceeded.",
@@ -190,6 +193,80 @@ export function PaperOverviewPage() {
   const citationFromPaper = useCitationFromPaper();
   const analyzeDocument = useAnalyzeDocument();
   const createConversation = useCreateConversation();
+  const qc = useQueryClient();
+  const [fulltextBusy, setFulltextBusy] = useState(false);
+  const autoRetryDone = useRef<number | null>(null);
+
+  const needsFullText =
+    !!file &&
+    file.has_pdf === false &&
+    (file.research_readiness === "metadata_only" ||
+      (!file.research_readiness && (!file.size || file.size === 0)));
+
+  // Event-driven UFTR: paper open + last attempt older than 7d (server-gated)
+  useEffect(() => {
+    if (!id || !needsFullText) return;
+    if (autoRetryDone.current === id) return;
+    autoRetryDone.current = id;
+    void (async () => {
+      try {
+        const res = await libraryBridgeApi.fetchFulltext(id, { auto: true });
+        if (res.pdf_attached) {
+          toast.success(
+            res.analysis_queued
+              ? "Full text found — analysis queued"
+              : "Full text attached",
+          );
+          void qc.invalidateQueries({ queryKey: queryKeys.file(id) });
+          void qc.invalidateQueries({ queryKey: queryKeys.files });
+        }
+      } catch {
+        /* soft — banner still shows Retry */
+      }
+    })();
+  }, [id, needsFullText, qc]);
+
+  const retryFulltext = async () => {
+    if (!id) return;
+    setFulltextBusy(true);
+    try {
+      const res = await libraryBridgeApi.fetchFulltext(id, { force: true });
+      if (res.pdf_attached) {
+        toast.success(
+          res.analysis_queued
+            ? "Full text found — analysis queued"
+            : "Full text attached",
+        );
+      } else if (res.fulltext?.user_reason) {
+        toast.error(res.fulltext.user_reason);
+      } else {
+        toast.error("Couldn't retrieve full text automatically");
+      }
+      void qc.invalidateQueries({ queryKey: queryKeys.file(id) });
+      void qc.invalidateQueries({ queryKey: queryKeys.files });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Full-text retry failed");
+    } finally {
+      setFulltextBusy(false);
+    }
+  };
+
+  const attachFulltextPdf = async (pdf: File) => {
+    if (!id) return;
+    setFulltextBusy(true);
+    try {
+      const res = await libraryBridgeApi.attachPdf(id, pdf);
+      toast.success(
+        res.queued ? "PDF attached — analysis queued" : "PDF attached",
+      );
+      void qc.invalidateQueries({ queryKey: queryKeys.file(id) });
+      void qc.invalidateQueries({ queryKey: queryKeys.files });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not attach PDF");
+    } finally {
+      setFulltextBusy(false);
+    }
+  };
 
   const displayTitle = file?.title || file?.name || "Paper";
   const analysisDone = analysis?.status === "done";
@@ -341,6 +418,17 @@ export function PaperOverviewPage() {
             </>
           }
         />
+
+        {needsFullText ? (
+          <FullTextNeededBanner
+            fulltext={file.fulltext}
+            sourceUrl={file.source_url}
+            doi={file.doi}
+            busy={fulltextBusy}
+            onRetry={() => void retryFulltext()}
+            onAttach={(pdf) => void attachFulltextPdf(pdf)}
+          />
+        ) : null}
 
         {(file.project_id || file.project?.id) && (
           <div className="flex flex-wrap items-center gap-2">

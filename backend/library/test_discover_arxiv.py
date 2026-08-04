@@ -107,9 +107,16 @@ def discover_app(monkeypatch):
         "backend.scholarly.arxiv.get_work_by_id",
         lambda aid, *, db: work,
     )
+    from backend.scholarly.uftr.outcomes import FullTextOutcome
+    from backend.scholarly.uftr.resolvers import Candidate
+
     monkeypatch.setattr(
-        "backend.scholarly.arxiv.download_pdf",
-        lambda w, *, max_bytes=0: (b"%PDF-1.4 x", "arXiv_2107.12345.pdf"),
+        "backend.scholarly.uftr.resolve.collect_candidates",
+        lambda **kw: [Candidate(url=work.open_access_url, resolver="arxiv")],
+    )
+    monkeypatch.setattr(
+        "backend.scholarly.uftr.resolve.download_candidate",
+        lambda url, **kw: (FullTextOutcome.FOUND, b"%PDF-1.4 x", "application/pdf", url),
     )
 
     def fake_apply(db, uf, **kwargs):

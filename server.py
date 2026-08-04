@@ -669,6 +669,8 @@ class UserFile(Base):
     # Phase 1b — stable identity for Connect library sync
     external_provider = Column(String(30), default="")  # zotero|mendeley|…
     external_item_id = Column(String(120), default="")
+    # UFTR provenance (migration 0040) — outcome, attempts, full_text_source
+    fulltext_json = Column(Text, default="{}")
 
     chunks = relationship("Chunk", cascade="all, delete-orphan", back_populates="file")
 
@@ -1406,6 +1408,8 @@ def ensure_columns():
         "ALTER TABLE files ADD COLUMN external_item_id VARCHAR(120) DEFAULT ''",
         "ALTER TABLE library_connections ADD COLUMN last_synced_at TIMESTAMP",
         "ALTER TABLE library_connections ADD COLUMN sync_cursor TEXT DEFAULT ''",
+        # ── UFTR full-text resolution provenance (migration 0040) ───────
+        "ALTER TABLE files ADD COLUMN fulltext_json TEXT DEFAULT '{}'",
     ):
         try:
             with engine.begin() as conn:
@@ -3461,6 +3465,15 @@ def _file_to_dict(x: UserFile) -> dict:
         ),
     }
     payload.update(readiness_payload(x, chunk_count=n_chunks))
+    try:
+        from backend.scholarly.uftr.state import fulltext_payload, lifecycle_label
+
+        ft = fulltext_payload(x)
+        if ft is not None:
+            payload["fulltext"] = ft
+        payload["lifecycle_label"] = lifecycle_label(x)
+    except Exception:
+        pass
     return payload
 
 

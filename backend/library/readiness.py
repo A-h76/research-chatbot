@@ -24,10 +24,11 @@ READINESS_ORDER: list[ResearchReadiness] = [
 ]
 
 READINESS_LABELS: dict[ResearchReadiness, str] = {
-    "metadata_only": "Metadata only",
-    "pdf_attached": "PDF attached",
-    "analysed": "Analysed",
-    "indexed": "Indexed",
+    # Soft UFTR language — machine state stays metadata_only
+    "metadata_only": "Full text needed",
+    "pdf_attached": "Analyzing",
+    "analysed": "Evidence ready",
+    "indexed": "Research ready",
     "research_ready": "Research ready",
 }
 
