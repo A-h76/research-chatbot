@@ -14,7 +14,11 @@ import { useNotes } from "@/features/notes/useNotes";
 import { usePipeline, usePipelinePhase } from "@/features/pipeline";
 import { mapStructure } from "../mappers/structure";
 import { mapClassification } from "../mappers/classification";
-import { mapEntities, formatEntityLabel } from "../mappers/entities";
+import {
+  enrichEntitiesWithScientificProfile,
+  mapEntities,
+  formatEntityLabel,
+} from "../mappers/entities";
 import { mapEvidence, formatConfidence, formatLabel } from "../mappers/evidence";
 import { mapKnowledgeGraph } from "../mappers/graph";
 import type { PaperTabId } from "../tabs";
@@ -84,8 +88,14 @@ export function PaperOverviewTab({
       clfQ.data?.result ?? pipeline?.phase_results?.classification ?? null,
       ctxQ.data?.result ?? pipeline?.phase_results?.analysis_context ?? null,
     );
-    const entities = mapEntities(
-      medQ.data?.result ?? pipeline?.phase_results?.medical_understanding ?? null,
+    const entities = enrichEntitiesWithScientificProfile(
+      mapEntities(medQ.data?.result ?? pipeline?.phase_results?.medical_understanding ?? null),
+      (
+        (duQ.data?.result ?? pipeline?.phase_results?.document_understanding) as
+          | Record<string, unknown>
+          | null
+          | undefined
+      )?.scientific_entities_profile,
     );
     const evidence = mapEvidence(
       egQ.data?.result ?? pipeline?.phase_results?.evidence_grading ?? null,
@@ -110,14 +120,18 @@ export function PaperOverviewTab({
   const studyDesign = classification?.decisions.find((d) => d.family === "study_design");
   const domain = classification?.decisions.find((d) => d.family === "domain");
 
-  const topEntities =
-    entities && !entities.skipped
-      ? [
-          ...entities.groups.clinicalEntities.flatMap((g) => g.items),
-          ...entities.groups.pico.interventions,
-          ...entities.groups.pico.outcomes,
-        ].slice(0, 6)
-      : [];
+  const topEntities = entities
+    ? [
+        ...(!entities.skipped
+          ? [
+              ...entities.groups.clinicalEntities.flatMap((g) => g.items),
+              ...entities.groups.pico.interventions,
+              ...entities.groups.pico.outcomes,
+            ]
+          : []),
+        ...entities.groups.scientificEntities.flatMap((g) => g.items),
+      ].slice(0, 6)
+    : [];
 
   const journal = structure?.journal || structure?.venue || file.venue || undefined;
   const year = structure?.publicationYear ?? file.year ?? undefined;
@@ -126,12 +140,13 @@ export function PaperOverviewTab({
     : file.authors || undefined;
   const abstractText = structure?.abstract || file.abstract || "";
 
-  const entityCount =
-    entities && !entities.skipped
-      ? entities.summary.clinicalEntityCount +
-        entities.summary.interventionCount +
-        entities.summary.outcomeCount
-      : null;
+  const entityCount = entities
+    ? (entities.skipped ? 0 : entities.summary.clinicalEntityCount) +
+      entities.summary.scientificEntityCount +
+      (entities.skipped
+        ? 0
+        : entities.summary.interventionCount + entities.summary.outcomeCount)
+    : null;
 
   return (
     <div className="space-y-5">
@@ -155,7 +170,7 @@ export function PaperOverviewTab({
                 : null
           }
           entityCount={entityCount}
-          entitySkipped={entities?.skipped}
+          entitySkipped={Boolean(entities?.skipped && !entities.summary.scientificEntityCount)}
           graphNodes={graph && !graph.skipped ? graph.summary.nodeCount : null}
           graphEdges={graph && !graph.skipped ? graph.summary.edgeCount : null}
           classificationLabel={domain?.displayLabel ?? studyType?.displayLabel ?? null}
@@ -212,6 +227,204 @@ export function PaperOverviewTab({
             ) : (
               <p className="text-[13px] text-muted-foreground">No abstract extracted yet.</p>
             )}
+          </div>
+        </section>
+      )}
+
+      {/* 3b. Scientific framing (2.1) — structured, not Narrative LLM */}
+      {structure?.scientificStructure &&
+        (structure.scientificStructure.objectives.length > 0 ||
+          structure.scientificStructure.researchQuestions.length > 0 ||
+          structure.scientificStructure.hypotheses.length > 0 ||
+          structure.scientificStructure.problemStatement) && (
+          <section aria-labelledby="overview-framing-heading">
+            <SectionLabel>Scientific framing</SectionLabel>
+            <div className="space-y-2 rounded-lg border border-border bg-card px-4 py-3">
+              {structure.scientificStructure.problemStatement ? (
+                <p className="text-[13px] leading-relaxed text-foreground/90">
+                  <span className="font-medium text-muted-foreground">Problem · </span>
+                  {structure.scientificStructure.problemStatement.text}
+                </p>
+              ) : null}
+              {structure.scientificStructure.objectives.slice(0, 2).map((o, i) => (
+                <p key={`obj-${i}`} className="text-[13px] leading-relaxed text-foreground/90">
+                  <span className="font-medium text-muted-foreground">Objective · </span>
+                  {o.text}
+                </p>
+              ))}
+              {structure.scientificStructure.researchQuestions.slice(0, 2).map((q, i) => (
+                <p key={`rq-${i}`} className="text-[13px] leading-relaxed text-foreground/90">
+                  <span className="font-medium text-muted-foreground">Question · </span>
+                  {q.text}
+                </p>
+              ))}
+              {structure.scientificStructure.hypotheses.slice(0, 1).map((h, i) => (
+                <p key={`hyp-${i}`} className="text-[13px] leading-relaxed text-foreground/90">
+                  <span className="font-medium text-muted-foreground">Hypothesis · </span>
+                  {h.text}
+                </p>
+              ))}
+              <button
+                type="button"
+                onClick={() => onJumpTab("structure")}
+                className="text-[12px] text-primary hover:underline"
+              >
+                Open Structure →
+              </button>
+            </div>
+          </section>
+        )}
+
+      {/* 3c. Methodology hint (2.2) */}
+      {structure?.methodologyProfile?.hasContent && (
+        <section aria-labelledby="overview-methodology-heading">
+          <SectionLabel>Methodology</SectionLabel>
+          <div className="space-y-2 rounded-lg border border-border bg-card px-4 py-3">
+            {structure.methodologyProfile.studyDesign ? (
+              <p className="text-[13px] leading-relaxed text-foreground/90">
+                <span className="font-medium text-muted-foreground">Design · </span>
+                {structure.methodologyProfile.studyDesign.label?.replace(/_/g, " ") ||
+                  structure.methodologyProfile.studyDesign.text}
+              </p>
+            ) : null}
+            {structure.methodologyProfile.sampleSize ? (
+              <p className="text-[13px] leading-relaxed text-foreground/90">
+                <span className="font-medium text-muted-foreground">Sample · </span>
+                {structure.methodologyProfile.sampleSize.text}
+              </p>
+            ) : null}
+            {structure.methodologyProfile.population ? (
+              <p className="text-[13px] leading-relaxed text-foreground/90">
+                <span className="font-medium text-muted-foreground">Population · </span>
+                {structure.methodologyProfile.population.text}
+              </p>
+            ) : null}
+            {structure.methodologyProfile.dataset && !structure.methodologyProfile.population ? (
+              <p className="text-[13px] leading-relaxed text-foreground/90">
+                <span className="font-medium text-muted-foreground">Dataset · </span>
+                {structure.methodologyProfile.dataset.text}
+              </p>
+            ) : null}
+            {structure.methodologyProfile.metrics.slice(0, 3).length > 0 ? (
+              <p className="text-[13px] leading-relaxed text-foreground/90">
+                <span className="font-medium text-muted-foreground">Metrics · </span>
+                {structure.methodologyProfile.metrics
+                  .slice(0, 3)
+                  .map((m) => m.text)
+                  .join(", ")}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => onJumpTab("structure")}
+              className="text-[12px] text-primary hover:underline"
+            >
+              Open Structure →
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* 3d. Statistical findings hint (2.3) */}
+      {structure?.statisticsProfile?.hasContent && (
+        <section aria-labelledby="overview-stats-findings-heading">
+          <SectionLabel>Statistical findings</SectionLabel>
+          <div className="space-y-2 rounded-lg border border-border bg-card px-4 py-3">
+            {structure.statisticsProfile.tests.slice(0, 2).map((t, i) => (
+              <p key={`test-${i}`} className="text-[13px] leading-relaxed text-foreground/90">
+                <span className="font-medium text-muted-foreground">Test · </span>
+                {t.label?.replace(/_/g, " ") || t.text}
+              </p>
+            ))}
+            {structure.statisticsProfile.pValues.slice(0, 2).map((p, i) => (
+              <p key={`p-${i}`} className="text-[13px] leading-relaxed text-foreground/90">
+                <span className="font-medium text-muted-foreground">P · </span>
+                {p.text}
+              </p>
+            ))}
+            {structure.statisticsProfile.effectSizes.slice(0, 2).map((e, i) => (
+              <p key={`es-${i}`} className="text-[13px] leading-relaxed text-foreground/90">
+                <span className="font-medium text-muted-foreground">Effect · </span>
+                {e.text}
+              </p>
+            ))}
+            {structure.statisticsProfile.interpretations.slice(0, 1).map((interp, i) => (
+              <p key={`interp-${i}`} className="text-[13px] leading-relaxed text-foreground/90">
+                <span className="font-medium text-muted-foreground">Author · </span>
+                {interp.text}
+              </p>
+            ))}
+            <button
+              type="button"
+              onClick={() => onJumpTab("structure")}
+              className="text-[12px] text-primary hover:underline"
+            >
+              Open Structure →
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* 3e. Limitations & novelty hint (2.5) */}
+      {structure?.limitationsNoveltyProfile?.hasContent && (
+        <section aria-labelledby="overview-limitations-novelty-heading">
+          <SectionLabel>Limitations &amp; novelty</SectionLabel>
+          <div className="space-y-2 rounded-lg border border-border bg-card px-4 py-3">
+            {structure.limitationsNoveltyProfile.limitations.slice(0, 2).map((item, i) => (
+              <p key={`lim-${i}`} className="text-[13px] leading-relaxed text-foreground/90">
+                <span className="font-medium text-muted-foreground">Limitation · </span>
+                {item.text}
+              </p>
+            ))}
+            {structure.limitationsNoveltyProfile.novelty.slice(0, 2).map((item, i) => (
+              <p key={`nov-${i}`} className="text-[13px] leading-relaxed text-foreground/90">
+                <span className="font-medium text-muted-foreground">Novelty · </span>
+                {item.text}
+              </p>
+            ))}
+            {structure.limitationsNoveltyProfile.futureWork.slice(0, 1).map((item, i) => (
+              <p key={`fut-${i}`} className="text-[13px] leading-relaxed text-foreground/90">
+                <span className="font-medium text-muted-foreground">Future · </span>
+                {item.text}
+              </p>
+            ))}
+            <button
+              type="button"
+              onClick={() => onJumpTab("structure")}
+              className="text-[12px] text-primary hover:underline"
+            >
+              Open Structure →
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* 3f. Quality assessment hint (2.7) */}
+      {structure?.qualityAssessment?.hasContent && (
+        <section aria-labelledby="overview-quality-heading">
+          <SectionLabel>Quality assessment</SectionLabel>
+          <div className="space-y-2 rounded-lg border border-border bg-card px-4 py-3">
+            {structure.qualityAssessment.sections.slice(0, 4).map((section) => {
+              const top = section.items.find((i) => i.status === "pass") || section.items[0];
+              return (
+                <p key={section.id} className="text-[13px] leading-relaxed text-foreground/90">
+                  <span className="font-medium text-muted-foreground">
+                    {section.label} · {section.band} ·{" "}
+                  </span>
+                  {top ? `${top.status === "pass" ? "✓" : top.status === "missing" ? "—" : "•"} ${top.text}` : "—"}
+                </p>
+              );
+            })}
+            <p className="text-[11px] text-muted-foreground">
+              Checklist with reasons — not an opaque score.
+            </p>
+            <button
+              type="button"
+              onClick={() => onJumpTab("structure")}
+              className="text-[12px] text-primary hover:underline"
+            >
+              Open Structure →
+            </button>
           </div>
         </section>
       )}

@@ -4422,6 +4422,10 @@ app.register_blueprint(
         app_logger=app.logger,
         feature_flag_service=feature_flag_service,
         discover_flag=FLAG_DISCOVER_SEARCH,
+        storage=storage,
+        upload_dir=UPLOAD_DIR,
+        enqueue_import=lambda db, uid, fid: _enqueue_job(db, uid, fid, "import"),
+        max_file_mb=MAX_FILE_MB,
     )
 )
 

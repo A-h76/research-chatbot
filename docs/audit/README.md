@@ -1,7 +1,7 @@
 # Dhund Research OS — Step 0 Audit Index
 
 **Audit date:** 2026-08-02  
-**Updated:** 2026-08-02 (completion tracker = Layer 4)
+**Updated:** 2026-08-03 (Phase 2A/2B · Golden Rule of Acquisition · competitive review stub)
 
 ## Engineering audit (Step 0)
 
@@ -27,13 +27,33 @@
 
 | # | Document | Path |
 |---|----------|------|
-| 11 | **Version 1 Completion Tracker** | [11-VERSION1-COMPLETION-TRACKER.md](11-VERSION1-COMPLETION-TRACKER.md) |
+| 11 | **Version 1 Completion Tracker** (historical) | [11-VERSION1-COMPLETION-TRACKER.md](11-VERSION1-COMPLETION-TRACKER.md) |
+| 12 | **Phase 2 Completion Tracker** (active) | [12-PHASE2-COMPLETION-TRACKER.md](12-PHASE2-COMPLETION-TRACKER.md) |
 
-**Stop planning. Execute against [11](11-VERSION1-COMPLETION-TRACKER.md).**  
-Freeze means freeze. One subsystem per sprint. 🟢 only when §0.1 Definition of Production Ready is fully checked.
+## Phase 2 — Paper Analysis 2.0 audit pack (#21)
+
+| # | Document | Path |
+|---|----------|------|
+| 13 | Paper Analysis Audit | [13-PAPER-ANALYSIS-AUDIT.md](13-PAPER-ANALYSIS-AUDIT.md) |
+| 14 | Paper Analysis Gap Report | [14-PAPER-ANALYSIS-GAP-REPORT.md](14-PAPER-ANALYSIS-GAP-REPORT.md) |
+| 15 | Paper Analysis Implementation Plan | [15-PAPER-ANALYSIS-IMPLEMENTATION-PLAN.md](15-PAPER-ANALYSIS-IMPLEMENTATION-PLAN.md) |
+
+## Post–Phase 2B (after #28)
+
+| # | Document | Path |
+|---|----------|------|
+| 16 | **Competitive Replacement Review** (governance gate — fill with real users) | [16-COMPETITIVE-REPLACEMENT-REVIEW.md](16-COMPETITIVE-REPLACEMENT-REVIEW.md) |
+
+**Active execution:** [12-PHASE2-COMPLETION-TRACKER.md](12-PHASE2-COMPLETION-TRACKER.md).  
+
+```text
+✅ V1 · ✅ Phase 2A (#21) · ✅ Phase 2B (#22–28 Knowledge Acquisition)
+```
+
+**Golden Rule of Acquisition:** every document → same canonical Paper → same Research Intelligence pipeline. Providers may differ only in auth / metadata / document acquisition; after bytes are accepted, all stages are provider-agnostic.  
+**Next:** Fill [16](16-COMPETITIVE-REPLACEMENT-REVIEW.md) (primary workspace · Session Completion · Research Progress · Cognitive Load · Product Doctrine) — **not** auto Graph / Agents / Phase 3.  
+**Still frozen:** KG Product / Memory / Agents / Enterprise / Teams / Billing.
 
 ---
 
-**Near-term:** Finish Evidence → grounded Writing → trust export → library durability.  
-**Long-term:** [05](05-RESEARCH-OS-VISION.md).  
-**Mode:** Completion engineer — one subsystem at a time until 100%.
+**Mode:** Discipline over speed — one subsystem at a time until 100%; complete workflows, not feature count.

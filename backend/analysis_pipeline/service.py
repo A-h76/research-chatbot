@@ -89,6 +89,17 @@ class AnalysisPipelineService:
             if classification is not None:
                 phases["classification"] = to_jsonable(classification)
 
+        # Paper Analysis 2.2 — methodology profile (DU + classification; medical later).
+        _attach_methodology_profile(phases)
+        # Paper Analysis 2.3 — statistical findings (DU; medical enrich later).
+        _attach_statistics_profile(phases)
+        # Paper Analysis 2.5 — author-stated limitations / novelty.
+        _attach_limitations_novelty_profile(phases)
+        # Paper Analysis 2.6 — paper-scoped scientific entities (from profiles).
+        _attach_scientific_entities_profile(phases)
+        # Paper Analysis 2.7 — inspectable quality checklist (aggregate profiles).
+        _attach_quality_assessment_profile(phases)
+
         # 1.3
         if options.run_analysis_context and classification is not None:
             context, w, e = _run_phase(
@@ -110,6 +121,11 @@ class AnalysisPipelineService:
             errors.extend(e)
             if medical is not None:
                 phases["medical_understanding"] = to_jsonable(medical)
+                # Re-attach with PICO / medical enrichment when medical phase succeeded.
+                _attach_methodology_profile(phases)
+                _attach_statistics_profile(phases)
+                _attach_scientific_entities_profile(phases)
+                _attach_quality_assessment_profile(phases)
 
         # 1.5
         if (
@@ -198,12 +214,156 @@ def _run_phase(name: str, fn):
         return None, warnings, errors
 
 
+def _attach_methodology_profile(phases: dict[str, Any]) -> None:
+    """Additive methodology_profile on document_understanding (2.2)."""
+    du = phases.get("document_understanding")
+    if not isinstance(du, dict):
+        return
+    try:
+        from backend.document_understanding.methodology_profile import (
+            extract_methodology_profile,
+        )
+
+        clf = phases.get("classification") if isinstance(phases.get("classification"), dict) else None
+        med = (
+            phases.get("medical_understanding")
+            if isinstance(phases.get("medical_understanding"), dict)
+            else None
+        )
+        du["methodology_profile"] = extract_methodology_profile(
+            du, classification=clf, medical=med
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("methodology_profile extract skipped: %s", exc)
+        du["methodology_profile"] = {
+            "schema_version": "1.0.0",
+            "has_content": False,
+            "error": str(exc),
+        }
+
+
+def _attach_statistics_profile(phases: dict[str, Any]) -> None:
+    """Additive statistics_profile on document_understanding (2.3)."""
+    du = phases.get("document_understanding")
+    if not isinstance(du, dict):
+        return
+    try:
+        from backend.document_understanding.statistics_profile import (
+            extract_statistics_profile,
+        )
+
+        med = (
+            phases.get("medical_understanding")
+            if isinstance(phases.get("medical_understanding"), dict)
+            else None
+        )
+        du["statistics_profile"] = extract_statistics_profile(du, medical=med)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("statistics_profile extract skipped: %s", exc)
+        du["statistics_profile"] = {
+            "schema_version": "1.0.0",
+            "has_content": False,
+            "error": str(exc),
+        }
+
+
+def _attach_limitations_novelty_profile(phases: dict[str, Any]) -> None:
+    """Additive limitations_novelty_profile on document_understanding (2.5)."""
+    du = phases.get("document_understanding")
+    if not isinstance(du, dict):
+        return
+    try:
+        from backend.document_understanding.limitations_novelty_profile import (
+            extract_limitations_novelty_profile,
+        )
+
+        # Narrative LLM output is not Phase 1; leave None unless a future phase attaches it.
+        narrative = phases.get("narrative") if isinstance(phases.get("narrative"), dict) else None
+        du["limitations_novelty_profile"] = extract_limitations_novelty_profile(
+            du, narrative=narrative
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("limitations_novelty_profile extract skipped: %s", exc)
+        du["limitations_novelty_profile"] = {
+            "schema_version": "1.0.0",
+            "has_content": False,
+            "error": str(exc),
+        }
+
+
+def _attach_scientific_entities_profile(phases: dict[str, Any]) -> None:
+    """Additive scientific_entities_profile on document_understanding (2.6)."""
+    du = phases.get("document_understanding")
+    if not isinstance(du, dict):
+        return
+    try:
+        from backend.document_understanding.scientific_entities_profile import (
+            extract_scientific_entities_profile,
+        )
+
+        med = (
+            phases.get("medical_understanding")
+            if isinstance(phases.get("medical_understanding"), dict)
+            else None
+        )
+        du["scientific_entities_profile"] = extract_scientific_entities_profile(
+            du, medical=med
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("scientific_entities_profile extract skipped: %s", exc)
+        du["scientific_entities_profile"] = {
+            "schema_version": "1.0.0",
+            "has_content": False,
+            "error": str(exc),
+        }
+
+
+def _attach_quality_assessment_profile(phases: dict[str, Any]) -> None:
+    """Additive quality_assessment_profile on document_understanding (2.7)."""
+    du = phases.get("document_understanding")
+    if not isinstance(du, dict):
+        return
+    try:
+        from backend.document_understanding.quality_assessment_profile import (
+            extract_quality_assessment_profile,
+        )
+
+        du["quality_assessment_profile"] = extract_quality_assessment_profile(du)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("quality_assessment_profile extract skipped: %s", exc)
+        du["quality_assessment_profile"] = {
+            "schema_version": "1.0.0",
+            "has_content": False,
+            "scoring": "inspectable_checklist",
+            "error": str(exc),
+        }
+
+
 def _hash_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
 
 
 def _serialize_document(document: Any, options: AnalysisOptions) -> Any:
     payload = to_jsonable(document, max_str=options.max_full_text_chars)
+    # Paper Analysis 2.1 — additive scientific framing (no extra LLM / PDF parse).
+    if isinstance(payload, dict):
+        try:
+            from backend.document_understanding.scientific_structure import (
+                extract_scientific_structure,
+            )
+
+            payload["scientific_structure"] = extract_scientific_structure(payload)
+        except Exception as exc:  # noqa: BLE001 — never fail Phase 1.1 on framing extract
+            log.warning("scientific_structure extract skipped: %s", exc)
+            payload["scientific_structure"] = {
+                "schema_version": "1.0.0",
+                "section_skeleton": [],
+                "objectives": [],
+                "research_questions": [],
+                "hypotheses": [],
+                "problem_statement": None,
+                "error": str(exc),
+            }
     return payload
 
 

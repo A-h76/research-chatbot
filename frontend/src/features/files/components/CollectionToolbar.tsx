@@ -26,6 +26,9 @@ export function CollectionToolbar({
   onBibtex,
   onZoteroImport,
   onMendeleyImport,
+  onGoogleDriveImport,
+  onDropboxImport,
+  onOneDriveImport,
   selectedCount = 0,
   onClearSelection,
   onBulkCompare,
@@ -45,6 +48,9 @@ export function CollectionToolbar({
   onBibtex?: () => void;
   onZoteroImport?: () => void;
   onMendeleyImport?: () => void;
+  onGoogleDriveImport?: () => void;
+  onDropboxImport?: () => void;
+  onOneDriveImport?: () => void;
   selectedCount?: number;
   onClearSelection?: () => void;
   onBulkCompare?: () => void;
@@ -98,6 +104,9 @@ export function CollectionToolbar({
           onBibtex={onBibtex}
           onZoteroImport={onZoteroImport}
           onMendeleyImport={onMendeleyImport}
+          onGoogleDriveImport={onGoogleDriveImport}
+          onDropboxImport={onDropboxImport}
+          onOneDriveImport={onOneDriveImport}
         />
         <Button
           size="sm"

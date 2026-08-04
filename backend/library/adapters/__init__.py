@@ -163,6 +163,9 @@ class OpenAlexAdapter(ImportAdapter):
 
 def get_adapter(name: str) -> ImportAdapter:
     from backend.library.adapters.mendeley_adapter import MendeleyAdapter
+    from backend.library.adapters.google_drive_adapter import GoogleDriveAdapter
+    from backend.library.adapters.dropbox_adapter import DropboxAdapter
+    from backend.library.adapters.onedrive_adapter import OneDriveAdapter
 
     registry: dict[str, type[ImportAdapter]] = {
         "bibtex": BibTeXAdapter,
@@ -170,6 +173,9 @@ def get_adapter(name: str) -> ImportAdapter:
         "zotero": ZoteroAdapter,
         "openalex": OpenAlexAdapter,
         "mendeley": MendeleyAdapter,
+        "google_drive": GoogleDriveAdapter,
+        "dropbox": DropboxAdapter,
+        "onedrive": OneDriveAdapter,
     }
     key = (name or "").strip().lower()
     if key in {"bib", "biblatex"}:

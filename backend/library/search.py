@@ -166,7 +166,22 @@ def _apply_import_source(UserFile, source: str):
     if source == "import":
         clauses.append(
             or_(
-                UserFile.metadata_source.in_(("bibtex", "ris", "zotero", "mendeley", "openalex")),
+                UserFile.metadata_source.in_(
+                    (
+                        "bibtex",
+                        "ris",
+                        "zotero",
+                        "mendeley",
+                        "openalex",
+                        "pubmed",
+                        "google_drive",
+                        "arxiv",
+                        "europe_pmc",
+                        "orcid",
+                        "dropbox",
+                        "onedrive",
+                    )
+                ),
                 UserFile.tags.contains("from-"),
             )
         )

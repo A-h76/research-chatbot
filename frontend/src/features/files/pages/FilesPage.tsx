@@ -340,6 +340,9 @@ export function FilesPage() {
             onBibtex={() => sourcesRef.current?.openBibtex()}
             onZoteroImport={() => sourcesRef.current?.openZoteroImport()}
             onMendeleyImport={() => sourcesRef.current?.openMendeleyImport()}
+            onGoogleDriveImport={() => sourcesRef.current?.openGoogleDriveImport()}
+            onDropboxImport={() => sourcesRef.current?.openDropboxImport()}
+            onOneDriveImport={() => sourcesRef.current?.openOneDriveImport()}
             selectedCount={selectedIds.size}
             onClearSelection={() => setSelectedIds(new Set())}
             needPdfFilter={needPdf}
@@ -430,6 +433,9 @@ export function FilesPage() {
                 onBibtex={() => sourcesRef.current?.openBibtex()}
                 onZoteroImport={() => sourcesRef.current?.openZoteroImport()}
                 onMendeleyImport={() => sourcesRef.current?.openMendeleyImport()}
+                onGoogleDriveImport={() => sourcesRef.current?.openGoogleDriveImport()}
+            onDropboxImport={() => sourcesRef.current?.openDropboxImport()}
+                onOneDriveImport={() => sourcesRef.current?.openOneDriveImport()}
               />
             </div>
           </div>

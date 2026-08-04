@@ -7,6 +7,12 @@ import { cn } from "@/lib/utils";
 import {
   mapStructure,
   type DocumentUnderstandingView,
+  type LimitationsNoveltyProfileView,
+  type MethodologyField,
+  type MethodologyProfileView,
+  type QualityAssessmentView,
+  type ScientificStructureView,
+  type StatisticsProfileView,
 } from "../mappers/structure";
 import { mapClassification } from "../mappers/classification";
 import { structureSectionRefId } from "../mappers/chat";
@@ -21,6 +27,294 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
     <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
       {children}
     </h3>
+  );
+}
+
+function FramingList({
+  label,
+  items,
+}: {
+  label: string;
+  items: { text: string; source?: string }[];
+}) {
+  if (!items.length) return null;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <ul className="list-disc space-y-1 pl-4 text-sm text-foreground/90">
+        {items.map((item, i) => (
+          <li key={`${label}-${i}`}>
+            <span>{item.text}</span>
+            {item.source ? (
+              <span className="ml-1 text-[11px] text-muted-foreground">({item.source})</span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ScientificFramingPanel({ structure }: { structure: ScientificStructureView }) {
+  const present = structure.sectionSkeleton.filter((s) => s.present);
+  return (
+    <section aria-labelledby="structure-framing-heading" className="space-y-3">
+      <h2 id="structure-framing-heading">
+        <SectionHeading>Scientific framing</SectionHeading>
+      </h2>
+      <div className="space-y-4 rounded-xl border border-border bg-card px-4 py-3">
+        {present.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {present.map((s) => (
+              <span
+                key={s.sectionType}
+                className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"
+                title={s.heading || s.sectionType}
+              >
+                {s.sectionType}
+              </span>
+            ))}
+          </div>
+        )}
+        {structure.problemStatement ? (
+          <div className="space-y-1">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Problem statement
+            </p>
+            <p className="text-sm leading-relaxed text-foreground/90">
+              {structure.problemStatement.text}
+            </p>
+          </div>
+        ) : null}
+        <FramingList label="Objectives" items={structure.objectives} />
+        <FramingList label="Research questions" items={structure.researchQuestions} />
+        <FramingList label="Hypotheses" items={structure.hypotheses} />
+        {!structure.objectives.length &&
+        !structure.researchQuestions.length &&
+        !structure.hypotheses.length &&
+        !structure.problemStatement ? (
+          <p className="text-[13px] text-muted-foreground">
+            No objectives, research questions, or hypotheses were reliably extractable.
+          </p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function MethodFieldRow({ label, field }: { label: string; field: MethodologyField | null }) {
+  if (!field) return null;
+  return (
+    <div className="space-y-1">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p className="text-sm leading-relaxed text-foreground/90">
+        {field.label && field.kind === "study_design" ? (
+          <span className="font-medium">{field.label.replace(/_/g, " ")} · </span>
+        ) : null}
+        {field.text}
+        {field.source ? (
+          <span className="ml-1 text-[11px] text-muted-foreground">({field.source})</span>
+        ) : null}
+      </p>
+    </div>
+  );
+}
+
+function MethodologyPanel({ profile }: { profile: MethodologyProfileView }) {
+  return (
+    <section aria-labelledby="structure-methodology-heading" className="space-y-3">
+      <h2 id="structure-methodology-heading">
+        <SectionHeading>Methodology</SectionHeading>
+      </h2>
+      <div className="space-y-4 rounded-xl border border-border bg-card px-4 py-3">
+        <MethodFieldRow label="Study design" field={profile.studyDesign} />
+        <MethodFieldRow label="Population" field={profile.population} />
+        <MethodFieldRow label="Sample size" field={profile.sampleSize} />
+        <MethodFieldRow label="Intervention" field={profile.intervention} />
+        <MethodFieldRow label="Controls" field={profile.controls} />
+        <MethodFieldRow label="Dataset" field={profile.dataset} />
+        <MethodFieldRow label="Experimental setup" field={profile.experimentalSetup} />
+        <FramingList label="Variables" items={profile.variables} />
+        <FramingList label="Metrics" items={profile.metrics} />
+        {(profile.codeAvailable || profile.datasetAvailable) && (
+          <div className="space-y-1.5 border-t border-border pt-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Author-stated availability
+            </p>
+            <ul className="list-disc space-y-1 pl-4 text-sm text-foreground/90">
+              {profile.codeAvailable ? (
+                <li>
+                  Code · {profile.codeAvailable.text}
+                  {profile.codeAvailable.source ? (
+                    <span className="ml-1 text-[11px] text-muted-foreground">
+                      ({profile.codeAvailable.source})
+                    </span>
+                  ) : null}
+                </li>
+              ) : null}
+              {profile.datasetAvailable ? (
+                <li>
+                  Dataset · {profile.datasetAvailable.text}
+                  {profile.datasetAvailable.source ? (
+                    <span className="ml-1 text-[11px] text-muted-foreground">
+                      ({profile.datasetAvailable.source})
+                    </span>
+                  ) : null}
+                </li>
+              ) : null}
+            </ul>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function FindingList({
+  label,
+  items,
+  showLabel = false,
+}: {
+  label: string;
+  items: { text: string; label?: string; source?: string }[];
+  showLabel?: boolean;
+}) {
+  if (!items.length) return null;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <ul className="list-disc space-y-1 pl-4 text-sm text-foreground/90">
+        {items.map((item, i) => (
+          <li key={`${label}-${i}`}>
+            {showLabel && item.label ? (
+              <span className="font-medium">{item.label.replace(/_/g, " ")} · </span>
+            ) : null}
+            <span>{item.text}</span>
+            {item.source ? (
+              <span className="ml-1 text-[11px] text-muted-foreground">({item.source})</span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function StatisticalFindingsPanel({ profile }: { profile: StatisticsProfileView }) {
+  return (
+    <section aria-labelledby="structure-stats-findings-heading" className="space-y-3">
+      <h2 id="structure-stats-findings-heading">
+        <SectionHeading>Statistical findings</SectionHeading>
+      </h2>
+      <div className="space-y-4 rounded-xl border border-border bg-card px-4 py-3">
+        <FindingList label="Tests" items={profile.tests} showLabel />
+        <FindingList label="P-values" items={profile.pValues} />
+        <FindingList label="Confidence intervals" items={profile.confidenceIntervals} />
+        <FindingList label="Effect sizes" items={profile.effectSizes} />
+        <FindingList label="Other measures" items={profile.otherMeasures} />
+        {profile.interpretations.length > 0 ? (
+          <div className="space-y-1.5 border-t border-border pt-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Author-stated interpretation
+            </p>
+            <ul className="list-disc space-y-1 pl-4 text-sm text-foreground/90">
+              {profile.interpretations.map((item, i) => (
+                <li key={`interp-${i}`}>
+                  {item.text}
+                  {item.source ? (
+                    <span className="ml-1 text-[11px] text-muted-foreground">({item.source})</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function LimitationsNoveltyPanel({ profile }: { profile: LimitationsNoveltyProfileView }) {
+  return (
+    <section aria-labelledby="structure-limitations-novelty-heading" className="space-y-3">
+      <h2 id="structure-limitations-novelty-heading">
+        <SectionHeading>Limitations &amp; novelty</SectionHeading>
+      </h2>
+      <div className="space-y-4 rounded-xl border border-border bg-card px-4 py-3">
+        <FindingList label="Author-stated limitations" items={profile.limitations} />
+        <FindingList label="Author-stated novelty / contributions" items={profile.novelty} />
+        <FindingList label="Research gaps" items={profile.researchGaps} />
+        <FindingList label="Future work" items={profile.futureWork} />
+        <p className="text-[11px] text-muted-foreground">
+          Extracted only when authors state these explicitly — no AI quality judgments.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function bandLabel(band: string): string {
+  switch (band) {
+    case "strong":
+      return "Strong";
+    case "partial":
+      return "Partial";
+    case "weak":
+      return "Weak";
+    default:
+      return "Unknown";
+  }
+}
+
+function statusMark(status: string): string {
+  if (status === "pass") return "✓";
+  if (status === "missing") return "—";
+  return "•";
+}
+
+function QualityAssessmentPanel({ assessment }: { assessment: QualityAssessmentView }) {
+  return (
+    <section aria-labelledby="structure-quality-assessment-heading" className="space-y-3">
+      <h2 id="structure-quality-assessment-heading">
+        <SectionHeading>Quality assessment</SectionHeading>
+      </h2>
+      <div className="space-y-4 rounded-xl border border-border bg-card px-4 py-3">
+        <p className="text-[12px] text-muted-foreground">
+          Inspectable checklist from extracted signals — not an opaque score.
+        </p>
+        {assessment.sections.map((section) => (
+          <div key={section.id} className="space-y-2">
+            <p className="text-sm font-medium text-foreground">
+              {section.label}:{" "}
+              <span className="text-muted-foreground font-normal">{bandLabel(section.band)}</span>
+            </p>
+            <ul className="space-y-1.5 pl-1 text-sm text-foreground/90">
+              {section.items.map((item, i) => (
+                <li key={`${section.id}-${i}`} className="flex gap-2">
+                  <span className="w-4 shrink-0 tabular-nums text-muted-foreground" aria-hidden>
+                    {statusMark(item.status)}
+                  </span>
+                  <span>
+                    {item.text}
+                    {item.reason ? (
+                      <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                        Why: {item.reason}
+                      </span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -134,6 +428,26 @@ function StructureReady({
           </div>
         )}
       </section>
+
+      {view.scientificStructure?.hasFraming && (
+        <ScientificFramingPanel structure={view.scientificStructure} />
+      )}
+
+      {view.methodologyProfile?.hasContent && (
+        <MethodologyPanel profile={view.methodologyProfile} />
+      )}
+
+      {view.statisticsProfile?.hasContent && (
+        <StatisticalFindingsPanel profile={view.statisticsProfile} />
+      )}
+
+      {view.limitationsNoveltyProfile?.hasContent && (
+        <LimitationsNoveltyPanel profile={view.limitationsNoveltyProfile} />
+      )}
+
+      {view.qualityAssessment?.hasContent && (
+        <QualityAssessmentPanel assessment={view.qualityAssessment} />
+      )}
 
       {(view.wordCount != null ||
         view.pageCount != null ||

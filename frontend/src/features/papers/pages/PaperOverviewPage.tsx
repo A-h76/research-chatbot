@@ -350,7 +350,8 @@ export function PaperOverviewPage() {
               readiness={file.research_readiness}
             />
             <span className="text-[11px] text-muted-foreground">
-              Evidence Extraction Pipeline → candidate EvidenceObjects (review in Writing Inspector)
+              Auto-runs after Phase 1 when Research Ready · or extract manually → candidate
+              EvidenceObjects (review in Writing Inspector)
             </span>
           </div>
         )}

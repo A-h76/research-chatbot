@@ -55,7 +55,7 @@ def test_projects_evidence_claim_nodes():
     assert cands[0].supports == ["HbA1c"]
     assert cands[0].provenance.get("outcome") == "HbA1c"
     assert cands[0].provenance.get("method") == "randomized_controlled_trial"
-    assert cands[0].provenance.get("extraction_prompt_version") == "phase_projector.v1.1"
+    assert cands[0].provenance.get("extraction_prompt_version") == "phase_projector.v1.2"
 
 
 def test_skips_ungrounded_claim():
@@ -177,3 +177,78 @@ def test_eg_fallback_uses_summary_when_no_claim_nodes():
     assert cands[0].claim == "Intervention improves outcome"
     assert cands[0].study_type == "systematic_review"
     assert cands[0].source_kg_node_id == "eg_ref:0"
+    assert cands[0].provenance.get("confidence")
+    assert cands[0].provenance.get("quote")
+
+
+def test_methodology_and_stats_enrich_facets():
+    phase = {
+        "classification": {},
+        "document_understanding": {
+            "methodology_profile": {
+                "has_content": True,
+                "study_design": {
+                    "text": "cohort",
+                    "label": "cohort",
+                    "kind": "study_design",
+                },
+                "population": {"text": "adults with hypertension"},
+                "sample_size": {"text": "n = 500", "label": "500"},
+            },
+            "statistics_profile": {
+                "has_content": True,
+                "p_values": [{"text": "p < 0.01"}],
+                "tests": [{"text": "ANOVA", "label": "anova"}],
+                "effect_sizes": [],
+            },
+        },
+        "knowledge_graph": {
+            "nodes": [
+                {
+                    "node_id": "c1",
+                    "node_type": "evidence_claim",
+                    "label": "BP reduced",
+                    "properties": {
+                        "limitations": ["Single-center enrollment only"],
+                    },
+                    "evidence_references": [
+                        {"page": 5, "text_snippet": "Systolic BP fell by 8 mmHg."},
+                    ],
+                }
+            ],
+            "edges": [],
+        },
+    }
+    cands = candidates_from_phase_results(file_id=5, phase_results=phase)
+    assert len(cands) == 1
+    prov = cands[0].provenance
+    assert cands[0].study_type == "cohort"
+    assert "cohort" in (prov.get("method") or "").lower()
+    assert "hypertension" in (prov.get("population") or "").lower()
+    assert prov.get("sample_size")
+    assert prov.get("statistical_signals")
+    assert cands[0].limitations
+    assert "Single-center" in cands[0].limitations[0]
+
+
+def test_candidate_cap_limits_noise():
+    nodes = []
+    for i in range(40):
+        nodes.append(
+            {
+                "node_id": f"c{i}",
+                "node_type": "evidence_claim",
+                "label": f"Claim number {i} about outcome",
+                "properties": {},
+                "evidence_references": [
+                    {"page": (i % 5) + 1, "text_snippet": f"Quote text for claim {i} with enough chars."},
+                ],
+            }
+        )
+    phase = {
+        "classification": {"study_design": "rct"},
+        "evidence_grading": {"study_quality": "high"},
+        "knowledge_graph": {"nodes": nodes, "edges": []},
+    }
+    cands = candidates_from_phase_results(file_id=6, phase_results=phase, max_candidates=10)
+    assert len(cands) == 10

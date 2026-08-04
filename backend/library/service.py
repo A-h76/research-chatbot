@@ -231,7 +231,7 @@ class LibraryImportService:
                     reading_status="unread",
                     tags=json.dumps(tags[:40]),
                     meta_status="done",
-                    metadata_source=rec.source if rec.source in {"bibtex", "ris", "zotero", "mendeley", "openalex"} else "user",
+                    metadata_source=rec.source if rec.source in {"bibtex", "ris", "zotero", "mendeley", "openalex", "pubmed", "google_drive", "arxiv", "europe_pmc", "orcid", "dropbox", "onedrive"} else "user",
                     source_url=(rec.url or rec.pdf_url or "")[:500],
                     doi_verified=False,
                     external_provider=(rec.source or "")[:30],

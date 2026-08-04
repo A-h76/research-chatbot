@@ -48,6 +48,7 @@ from backend.evidence.decisions import (
 )
 from backend.evidence.reviews import next_object_status_after_review, validate_review_payload
 from backend.evidence.services.extract_service import PIPELINE_VERSION, run_evidence_extraction
+from backend.evidence.phase_projector import EXTRACTION_PROMPT_VERSION
 from backend.evidence.services.logging import log_evidence_metric
 from backend.evidence.services.permission_service import (
     require_owned_document,
@@ -1347,7 +1348,7 @@ def create_evidence_blueprint(
                     or (analysis.phase_results.get("knowledge_graph") or {}).get("version")
                     or ""
                 ),
-                extraction_prompt_version="phase_projector.v1",
+                extraction_prompt_version=EXTRACTION_PROMPT_VERSION,
                 pipeline_version=PIPELINE_VERSION,
             )
 

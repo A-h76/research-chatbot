@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { AiStateBadge, isPipelineError, usePipeline, usePipelinePhase } from "@/features/pipeline";
 import { cn } from "@/lib/utils";
 import {
+  enrichEntitiesWithScientificProfile,
   filterClinicalGroups,
   filterEntityItems,
   filterPico,
@@ -140,8 +141,8 @@ function SummaryStrip({ view }: { view: EntitiesViewModel }) {
   const cells: [string, string][] = [
     ["Confidence", formatEntityConfidence(view.summary.overallConfidence) ?? "—"],
     ["Clinical entities", String(view.summary.clinicalEntityCount)],
+    ["Scientific entities", String(view.summary.scientificEntityCount)],
     ["Interventions", String(view.summary.interventionCount)],
-    ["Populations", String(view.summary.populationCount)],
     ["Outcomes", String(view.summary.outcomeCount)],
   ];
 
@@ -162,6 +163,70 @@ function SummaryStrip({ view }: { view: EntitiesViewModel }) {
         ))}
       </dl>
     </section>
+  );
+}
+
+function ScientificEntitiesSections({
+  groups,
+  relations,
+  deferredQuery,
+}: {
+  groups: EntitiesViewModel["groups"]["scientificEntities"];
+  relations: EntitiesViewModel["localRelations"];
+  deferredQuery: string;
+}) {
+  const filteredGroups = filterClinicalGroups(groups, deferredQuery);
+  const filteredRelations = useMemo(() => {
+    const q = deferredQuery.trim().toLowerCase();
+    if (!q) return relations;
+    return relations.filter(
+      (r) =>
+        r.subject.toLowerCase().includes(q) ||
+        r.predicate.toLowerCase().includes(q) ||
+        r.object.toLowerCase().includes(q),
+    );
+  }, [relations, deferredQuery]);
+
+  if (!filteredGroups.length && !filteredRelations.length) return null;
+
+  return (
+    <>
+      {filteredGroups.length > 0 && (
+        <section aria-labelledby="entities-scientific-heading" className="space-y-4">
+          <h2 id="entities-scientific-heading">
+            <SectionHeading>Scientific entities</SectionHeading>
+          </h2>
+          <p className="text-[12px] text-muted-foreground">
+            Paper-scoped signals from methodology and statistics (not a global knowledge graph).
+          </p>
+          {filteredGroups.map((group) => (
+            <div key={group.entityType} className="space-y-2">
+              <h3 className="text-sm font-medium text-foreground">
+                {group.displayType}{" "}
+                <span className="text-muted-foreground font-normal">({group.items.length})</span>
+              </h3>
+              <ItemGrid items={group.items} />
+            </div>
+          ))}
+        </section>
+      )}
+      {filteredRelations.length > 0 && (
+        <section aria-labelledby="entities-relations-heading" className="space-y-3">
+          <h2 id="entities-relations-heading">
+            <SectionHeading>Local relations</SectionHeading>
+          </h2>
+          <ul className="space-y-1.5 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+            {filteredRelations.map((r) => (
+              <li key={r.key} className="text-foreground/90">
+                <span className="font-medium">{r.subject}</span>
+                <span className="mx-1.5 text-muted-foreground">{r.predicate}</span>
+                <span className="font-medium">{r.object}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
   );
 }
 
@@ -189,6 +254,7 @@ function EntitiesReady({
       findings: filterEntityItems(view.groups.findings, deferredQuery),
       study: filterEntityItems(view.groups.studyCharacteristics, deferredQuery),
       temporal: filterEntityItems(view.groups.temporal, deferredQuery),
+      scientific: filterClinicalGroups(view.groups.scientificEntities, deferredQuery),
     };
   }, [view, deferredQuery]);
 
@@ -199,15 +265,19 @@ function EntitiesReady({
       filtered.pico.outcomes.length >
     0;
 
+  const hasScientific =
+    view.groups.scientificEntities.length > 0 || view.localRelations.length > 0;
+
   const anyFiltered =
     filtered.clinical.length > 0 ||
     picoHasItems ||
     filtered.statistics.length > 0 ||
     filtered.findings.length > 0 ||
     filtered.study.length > 0 ||
-    filtered.temporal.length > 0;
+    filtered.temporal.length > 0 ||
+    filtered.scientific.length > 0;
 
-  if (view.skipped) {
+  if (view.skipped && !hasScientific) {
     return (
       <div className="space-y-6">
         <SummaryStrip view={view} />
@@ -244,6 +314,21 @@ function EntitiesReady({
     <div className="space-y-8">
       <SummaryStrip view={view} />
 
+      {view.skipped ? (
+        <section
+          aria-labelledby="entities-skipped-note"
+          className="rounded-xl border border-border bg-muted/20 px-4 py-3"
+        >
+          <h2 id="entities-skipped-note" className="text-sm font-medium text-foreground">
+            Medical extraction skipped
+          </h2>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            {view.skipReason ??
+              "Showing paper-scoped scientific entities from methodology and statistics instead."}
+          </p>
+        </section>
+      ) : null}
+
       <div className="relative">
         <label htmlFor="entities-search" className="sr-only">
           Search entities and synonyms
@@ -266,11 +351,17 @@ function EntitiesReady({
         />
       </div>
 
-      {deferredQuery.trim() && !anyFiltered && (
+      {deferredQuery.trim() && !anyFiltered && view.localRelations.length === 0 && (
         <p className="text-sm text-muted-foreground" role="status">
           No entities match “{deferredQuery.trim()}”.
         </p>
       )}
+
+      <ScientificEntitiesSections
+        groups={view.groups.scientificEntities}
+        relations={view.localRelations}
+        deferredQuery={deferredQuery}
+      />
 
       {filtered.clinical.length > 0 && (
         <section aria-labelledby="entities-clinical-heading" className="space-y-4">
@@ -416,9 +507,9 @@ function EntitiesLoading() {
 }
 
 /**
- * Entities tab — medical concepts from medical_understanding (M7).
- * Bound to GET …/phases/medical_understanding via M1 hooks.
- * View model is domain-neutral (mapEntities); UI does not walk raw JSON.
+ * Entities tab — medical concepts + paper-scoped scientific entities (2.6).
+ * Medical: GET …/phases/medical_understanding
+ * Scientific: document_understanding.scientific_entities_profile
  */
 export function PaperEntitiesTab({
   fileId,
@@ -439,15 +530,30 @@ export function PaperEntitiesTab({
     (pipeline.phases.includes("medical_understanding") ||
       "medical_understanding" in (pipeline.phase_results ?? {}));
 
+  const hasDu =
+    pipeline != null &&
+    (pipeline.phases.includes("document_understanding") ||
+      "document_understanding" in (pipeline.phase_results ?? {}));
+
   const phaseQuery = usePipelinePhase(fileId, "medical_understanding", {
     enabled: hasPhase,
+  });
+  const duQuery = usePipelinePhase(fileId, "document_understanding", {
+    enabled: hasDu,
   });
 
   const view = useMemo(() => {
     const raw =
       phaseQuery.data?.result ?? pipeline?.phase_results?.medical_understanding ?? null;
-    return mapEntities(raw);
-  }, [phaseQuery.data, pipeline]);
+    const medicalView = mapEntities(raw);
+    const du =
+      duQuery.data?.result ?? pipeline?.phase_results?.document_understanding ?? null;
+    const profile =
+      du && typeof du === "object" && du !== null && "scientific_entities_profile" in du
+        ? (du as Record<string, unknown>).scientific_entities_profile
+        : null;
+    return enrichEntitiesWithScientificProfile(medicalView, profile);
+  }, [phaseQuery.data, duQuery.data, pipeline]);
 
   const waitingOnPipeline =
     derived.isQueued ||
@@ -458,6 +564,7 @@ export function PaperEntitiesTab({
   const loading =
     pipelineLoading ||
     (hasPhase && phaseQuery.isLoading && !view) ||
+    (hasDu && duQuery.isLoading && !view) ||
     (waitingOnPipeline && !view && !derived.isError);
 
   if (loading) {
@@ -504,7 +611,7 @@ export function PaperEntitiesTab({
           description={
             waitingOnPipeline
               ? "Entity extraction is still running. This tab will fill in when the phase completes."
-              : "No medical_understanding result is available for this paper. Run Phase 1 analysis to extract entities."
+              : "No entity signals are available for this paper yet. Run Phase 1 analysis to extract medical and scientific entities."
           }
         />
       </div>

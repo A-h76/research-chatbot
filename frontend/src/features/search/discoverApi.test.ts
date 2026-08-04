@@ -44,9 +44,38 @@ describe("discoverWorks", () => {
     expect(String(url)).toContain("q=transformers");
     expect(String(url)).toContain("page=1");
     expect(String(url)).toContain("per_page=15");
+    expect(String(url)).toContain("provider=openalex");
     expect(opts).toMatchObject({ credentials: "include" });
     expect(result.results[0]?.title).toBe("OpenAlex Paper");
     expect(result.page).toBe(1);
+  });
+
+  it("passes provider=pubmed when requested", async () => {
+    const fetchMock = mockFetchOnce(200, { results: [], page: 1, provider: "pubmed" });
+    await discoverWorks("crp", 1, 15, "pubmed");
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain("provider=pubmed");
+  });
+
+  it("passes provider=arxiv when requested", async () => {
+    const fetchMock = mockFetchOnce(200, { results: [], page: 1, provider: "arxiv" });
+    await discoverWorks("transformers", 1, 15, "arxiv");
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain("provider=arxiv");
+  });
+
+  it("passes provider=europe_pmc when requested", async () => {
+    const fetchMock = mockFetchOnce(200, { results: [], page: 1, provider: "europe_pmc" });
+    await discoverWorks("crp", 1, 15, "europe_pmc");
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain("provider=europe_pmc");
+  });
+
+  it("passes provider=orcid when requested", async () => {
+    const fetchMock = mockFetchOnce(200, { results: [], page: 1, provider: "orcid" });
+    await discoverWorks("0000-0002-1825-0097", 1, 15, "orcid");
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain("provider=orcid");
   });
 
   it("throws ApiError on non-2xx so the UI can show a soft failure", async () => {

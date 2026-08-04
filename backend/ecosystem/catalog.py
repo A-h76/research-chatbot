@@ -105,6 +105,24 @@ def _mendeley_configured() -> bool:
     return mendeley_mod.mendeley_configured()
 
 
+def _drive_configured() -> bool:
+    from backend.library import google_drive as drive_mod
+
+    return drive_mod.drive_configured()
+
+
+def _dropbox_configured() -> bool:
+    from backend.library import dropbox as dropbox_mod
+
+    return dropbox_mod.dropbox_configured()
+
+
+def _onedrive_configured() -> bool:
+    from backend.library import onedrive as onedrive_mod
+
+    return onedrive_mod.onedrive_configured()
+
+
 PROVIDER_DEFS: list[dict[str, Any]] = [
     _provider(
         id="zotero",
@@ -244,28 +262,37 @@ PROVIDER_DEFS: list[dict[str, Any]] = [
         id="pubmed",
         name="PubMed",
         category="academic_sources",
-        availability="soon",
-        auth="api_key",
+        availability="live",
+        auth="none",
+        capabilities=_caps(import_files=True, pdf_pull=True),
         brand_color="#326599",
         logo="brands/pubmed.svg",
+        blurb="Search PubMed and import into Library → Analysis 2.0. Optional NCBI_API_KEY raises rate limits.",
+        actions={"deep_link": "/search?mode=discover&provider=pubmed"},
     ),
     _provider(
         id="arxiv",
         name="arXiv",
         category="academic_sources",
-        availability="soon",
+        availability="live",
         auth="none",
+        capabilities=_caps(import_files=True, pdf_pull=True),
         brand_color="#B31B1B",
         logo="brands/arxiv.svg",
+        blurb="Search arXiv preprints and import PDFs into Library → Analysis 2.0.",
+        actions={"deep_link": "/search?mode=discover&provider=arxiv"},
     ),
     _provider(
         id="europe_pmc",
         name="Europe PMC",
         category="academic_sources",
-        availability="soon",
+        availability="live",
         auth="none",
+        capabilities=_caps(import_files=True, pdf_pull=True),
         brand_color="#F15A29",
         mark="EP",
+        blurb="Search Europe PMC and import OA PDFs into Library → Analysis 2.0.",
+        actions={"deep_link": "/search?mode=discover&provider=europe_pmc"},
     ),
     _provider(
         id="ssrn",
@@ -298,31 +325,55 @@ PROVIDER_DEFS: list[dict[str, Any]] = [
         id="google_drive",
         name="Google Drive",
         category="cloud_storage",
-        availability="soon",
+        availability="live",
         auth="oauth",
-        capabilities=_caps(folder_watch=True, import_files=True),
+        capabilities=_caps(import_files=True, pdf_pull=True),
         brand_color="#4285F4",
         logo="brands/googledrive.svg",
+        blurb="Import PDFs from Drive into Library → Analysis 2.0. Folder watch later.",
+        connectable=True,
+        server_configured_check=_drive_configured,
+        actions={
+            "connect": {"method": "GET", "path": "/api/library/google_drive/connect"},
+            "disconnect": {"method": "POST", "path": "/api/library/google_drive/disconnect"},
+            "deep_link": "/library?provider=google_drive#import",
+        },
     ),
     _provider(
         id="dropbox",
         name="Dropbox",
         category="cloud_storage",
-        availability="soon",
+        availability="live",
         auth="oauth",
-        capabilities=_caps(folder_watch=True, import_files=True),
+        capabilities=_caps(import_files=True, pdf_pull=True),
         brand_color="#0061FF",
         logo="brands/dropbox.svg",
+        blurb="Import PDFs from Dropbox into Library → Analysis 2.0. Folder watch later.",
+        connectable=True,
+        server_configured_check=_dropbox_configured,
+        actions={
+            "connect": {"method": "GET", "path": "/api/library/dropbox/connect"},
+            "disconnect": {"method": "POST", "path": "/api/library/dropbox/disconnect"},
+            "deep_link": "/library?provider=dropbox#import",
+        },
     ),
     _provider(
         id="onedrive",
         name="OneDrive",
         category="cloud_storage",
-        availability="soon",
+        availability="live",
         auth="oauth",
-        capabilities=_caps(folder_watch=True, import_files=True),
+        capabilities=_caps(import_files=True, pdf_pull=True),
         brand_color="#0078D4",
         logo="brands/microsoftonedrive.svg",
+        blurb="Import PDFs from OneDrive into Library → Analysis 2.0. Folder watch later.",
+        connectable=True,
+        server_configured_check=_onedrive_configured,
+        actions={
+            "connect": {"method": "GET", "path": "/api/library/onedrive/connect"},
+            "disconnect": {"method": "POST", "path": "/api/library/onedrive/disconnect"},
+            "deep_link": "/library?provider=onedrive#import",
+        },
     ),
     _provider(
         id="box",
@@ -517,12 +568,13 @@ PROVIDER_DEFS: list[dict[str, Any]] = [
         id="orcid",
         name="ORCID",
         category="identity",
-        availability="soon",
-        auth="oauth",
-        capabilities=_caps(import_files=True),
+        availability="live",
+        auth="none",
+        capabilities=_caps(import_files=True, pdf_pull=True),
         brand_color="#A6CE39",
         logo="brands/orcid.svg",
-        blurb="Researcher identity and works claim — planned.",
+        blurb="Paste an ORCID iD to import public works. OA PDFs when available; otherwise attach a PDF.",
+        actions={"deep_link": "/search?mode=discover&provider=orcid"},
     ),
 ]
 
@@ -541,12 +593,14 @@ def _public_row(defn: dict[str, Any]) -> dict[str, Any]:
         except Exception:
             configured = False
 
-    # Honesty: don't advertise Live if the server cannot actually run the connector
+    # Honesty rules for the public/landing catalog:
+    # - Roadmap items stay "Coming soon" (availability=soon).
+    # - Live product connectors stay Live even if OAuth env is unset —
+    #   missing credentials are an ops/setup issue (Settings shows server_configured).
+    # - AI model providers & Google sign-in still demote when keys are absent
+    #   so we don't advertise login/models the deploy cannot run.
     display_availability = availability
     if availability == "live" and defn["category"] == "ai" and not configured:
-        display_availability = "soon"
-        status_label = "Coming Soon"
-    elif availability == "live" and defn.get("connectable") and not configured:
         display_availability = "soon"
         status_label = "Coming Soon"
     elif availability == "live" and defn["id"] == "google_oauth" and not configured:
@@ -584,13 +638,36 @@ def public_catalog() -> dict[str, Any]:
 
 
 def _count_imported(db, UserFile, select_fn, user_id: int, provider_id: str) -> int:
-    if provider_id not in {"zotero", "mendeley", "bibtex", "ris", "openalex"}:
+    if provider_id not in {
+        "zotero",
+        "mendeley",
+        "bibtex",
+        "ris",
+        "openalex",
+        "pubmed",
+        "google_drive",
+        "arxiv",
+        "europe_pmc",
+        "orcid",
+        "dropbox",
+        "onedrive",
+    }:
         return 0
     try:
         from sqlalchemy import or_, func
 
         q = select_fn(func.count()).select_from(UserFile).where(UserFile.user_id == user_id)
-        if provider_id in {"zotero", "mendeley"}:
+        if provider_id in {
+            "zotero",
+            "mendeley",
+            "pubmed",
+            "google_drive",
+            "arxiv",
+            "europe_pmc",
+            "orcid",
+            "dropbox",
+            "onedrive",
+        }:
             q = q.where(
                 or_(
                     UserFile.external_provider == provider_id,

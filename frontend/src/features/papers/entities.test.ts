@@ -4,6 +4,7 @@ import {
   normalizeEvidence,
   filterEntityItems,
   filterClinicalGroups,
+  enrichEntitiesWithScientificProfile,
 } from "./mappers/entities";
 import type { PhaseResult } from "@/features/pipeline";
 
@@ -204,6 +205,7 @@ describe("mapEntities", () => {
       interventionCount: 1,
       populationCount: 1,
       outcomeCount: 1,
+      scientificEntityCount: 0,
     });
   });
 
@@ -248,6 +250,52 @@ describe("mapEntities", () => {
     })!;
     expect(view.hasContent).toBe(true);
     expect(view.summary.clinicalEntityCount).toBe(0);
+  });
+});
+
+describe("enrichEntitiesWithScientificProfile", () => {
+  it("fills scientific entities when medical is skipped", () => {
+    const medical = mapEntities({
+      skipped: true,
+      reasoning: "not medical",
+      clinical_entities: [],
+      interventions: [],
+      populations: [],
+      comparators: [],
+      outcomes: [],
+      warnings: [],
+      errors: [],
+    });
+    const view = enrichEntitiesWithScientificProfile(medical, {
+      has_content: true,
+      entities: [
+        {
+          value: "ImageNet",
+          entity_type: "dataset",
+          confidence: 0.8,
+          source: "methodology_profile",
+        },
+        {
+          value: "accuracy",
+          entity_type: "metric",
+          confidence: 0.8,
+          source: "methodology_profile",
+        },
+      ],
+      relations: [
+        {
+          subject: "cohort",
+          predicate: "uses",
+          object: "ImageNet",
+          confidence: 0.75,
+        },
+      ],
+    })!;
+    expect(view.skipped).toBe(true);
+    expect(view.summary.scientificEntityCount).toBe(2);
+    expect(view.groups.scientificEntities.length).toBeGreaterThan(0);
+    expect(view.localRelations).toHaveLength(1);
+    expect(view.hasContent).toBe(true);
   });
 });
 

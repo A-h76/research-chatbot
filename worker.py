@@ -162,6 +162,20 @@ def _handle_phase1_analysis(db, job):
         and existing.content_hash == uf.content_hash
     ):
         _enqueue_job(db, uf.user_id, job.file_id, "paper_analysis", job.upload_batch_id)
+        try:
+            from backend.evidence.services.auto_extract import maybe_enqueue_evidence_extract
+
+            maybe_enqueue_evidence_extract(
+                db,
+                user_id=uf.user_id,
+                file_id=job.file_id,
+                UserFile=UserFile,
+                UploadJob=UploadJob,
+                OutboxEvent=OutboxEvent,
+                upload_batch_id=job.upload_batch_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("auto evidence_extract enqueue skipped: %s", exc)
         db.commit()
         return
 
@@ -199,6 +213,21 @@ def _handle_phase1_analysis(db, job):
         # Crossref already ran in import→enqueue_followups (before Phase 1).
         # Phase 1.1 may still fill empty bibliographic fields via only_empty=True.
         _enqueue_job(db, uf.user_id, job.file_id, "paper_analysis", job.upload_batch_id)
+        # Paper Analysis 2.4 — auto evidence happy path (existing job family).
+        try:
+            from backend.evidence.services.auto_extract import maybe_enqueue_evidence_extract
+
+            maybe_enqueue_evidence_extract(
+                db,
+                user_id=uf.user_id,
+                file_id=job.file_id,
+                UserFile=UserFile,
+                UploadJob=UploadJob,
+                OutboxEvent=OutboxEvent,
+                upload_batch_id=job.upload_batch_id,
+            )
+        except Exception as exc:  # noqa: BLE001 — never fail phase1 on auto extract
+            log.warning("auto evidence_extract enqueue skipped: %s", exc)
         db.commit()
     except Exception as exc:
         db.rollback()

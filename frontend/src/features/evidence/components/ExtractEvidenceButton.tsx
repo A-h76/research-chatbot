@@ -45,7 +45,7 @@ export function ExtractEvidenceButton({
             ? "Assign this paper to a project to extract evidence"
             : !ready
               ? "Paper must be Research Ready before Evidence Extraction"
-              : "Run Evidence Extraction Pipeline → candidate EvidenceObjects"
+              : "Re-run Evidence Extraction (also auto-queued after Phase 1 when Research Ready)"
         }
         className={cn(size === "sm" ? "h-7 gap-1.5 px-2 text-[11px]" : "gap-2", "w-fit")}
         onClick={(e) => {

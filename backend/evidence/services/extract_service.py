@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from backend.evidence.api.errors import ErrorCode, EvidenceDomainError
-from backend.evidence.phase_projector import candidates_from_phase_results
+from backend.evidence.phase_projector import EXTRACTION_PROMPT_VERSION, candidates_from_phase_results
 from backend.evidence.provenance import compute_input_content_hash, provenance_to_json
 from backend.evidence.services.logging import log_evidence_metric
 from backend.library.readiness import research_readiness
@@ -99,7 +99,7 @@ def run_evidence_extraction(
             or (analysis.phase_results.get("knowledge_graph") or {}).get("version")
             or ""
         ),
-        extraction_prompt_version="phase_projector.v1",
+        extraction_prompt_version=EXTRACTION_PROMPT_VERSION,
         pipeline_version=pipeline_version,
     )
 

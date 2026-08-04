@@ -14,8 +14,8 @@ import { EmptyState }    from "@/components/common/EmptyState";
 import { useSearch, useAskAi } from "../useSearch";
 import { useUI }         from "@/context/UIContext";
 import { cn }            from "@/lib/utils";
-import type { SearchResult, UserFile } from "@/types/api";
-import { discoverWorks, type OpenAlexWork } from "../discoverApi";
+import type { SearchResult } from "@/types/api";
+import { discoverWorks, importDiscoverWork, type DiscoverProvider, type DiscoverWork } from "../discoverApi";
 import { formatApiFailure } from "@/lib/apiErrors";
 import { ResearchProgressStage } from "@/features/writing/components/ResearchProgressStage";
 
@@ -25,62 +25,56 @@ const LIBRARY_ASK_STAGES = [
   "Drafting grounded answer",
 ] as const;
 
-interface DiscoverImportResult {
-  already_exists: boolean;
-  file: UserFile;
-}
-
-async function importDiscoverWork(
-  work: OpenAlexWork,
-  projectId: number | null,
-): Promise<DiscoverImportResult> {
-  const res = await fetch("/api/discover/import", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      doi: work.doi,
-      title: work.title,
-      authors: work.authors,
-      year: work.year,
-      venue: work.venue,
-      abstract: work.abstract,
-      open_access_url: work.open_access_url,
-      openalex_id: work.id,
-      project_id: projectId,
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || body.error || "import_failed");
-  }
-  return res.json();
-}
-
 function DiscoverCard({
   work,
   projectId,
+  provider,
 }: {
-  work: OpenAlexWork;
+  work: DiscoverWork;
   projectId: number | null;
+  provider: DiscoverProvider;
 }) {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const [importState, setImportState] = useState<"idle" | "adding" | "added" | "exists" | "error">("idle");
   const [importedId, setImportedId] = useState<number | null>(null);
   const [importError, setImportError] = useState("");
+  const [pipelineNote, setPipelineNote] = useState("");
   const href = work.doi
     ? `https://doi.org/${work.doi}`
-    : work.open_access_url || null;
+    : work.pmcid && provider === "europe_pmc"
+      ? `https://europepmc.org/article/PMC/${work.pmcid.replace(/^PMC/i, "")}`
+      : work.pmid && provider === "europe_pmc"
+        ? `https://europepmc.org/article/MED/${work.pmid}`
+        : work.pmid
+          ? `https://pubmed.ncbi.nlm.nih.gov/${work.pmid}/`
+          : work.arxiv_id
+            ? `https://arxiv.org/abs/${work.arxiv_id}`
+            : work.open_access_url || null;
 
   async function handleAdd() {
     if (importState === "adding" || importState === "added" || importState === "exists") return;
     setImportState("adding");
     setImportError("");
+    setPipelineNote("");
     try {
-      const result = await importDiscoverWork(work, projectId);
+      const result = await importDiscoverWork(work, projectId, provider);
       setImportedId(result.file.id);
       setImportState(result.already_exists ? "exists" : "added");
+      if (!result.already_exists && result.analysis_queued) {
+        setPipelineNote("Open-access PDF attached — Analysis 2.0 queued");
+      } else if (!result.already_exists && result.pdf_attached) {
+        setPipelineNote("PDF attached");
+      } else if (
+        !result.already_exists &&
+        (provider === "pubmed" ||
+          provider === "arxiv" ||
+          provider === "europe_pmc" ||
+          provider === "orcid") &&
+        !result.pdf_attached
+      ) {
+        setPipelineNote("Metadata saved — attach a PDF to run Analysis 2.0");
+      }
     } catch (err) {
       setImportState("error");
       setImportError(err instanceof Error ? err.message : "Could not add to library");
@@ -106,6 +100,26 @@ function DiscoverCard({
               <span className="text-xs text-muted-foreground truncate max-w-[200px]">
                 · {work.venue}
               </span>
+            )}
+            {work.pmid && (
+              <Badge variant="outline" className="text-xs py-0">
+                PMID {work.pmid}
+              </Badge>
+            )}
+            {work.pmcid && (
+              <Badge variant="outline" className="text-xs py-0">
+                {work.pmcid}
+              </Badge>
+            )}
+            {work.arxiv_id && (
+              <Badge variant="outline" className="text-xs py-0">
+                arXiv:{work.arxiv_id}
+              </Badge>
+            )}
+            {work.is_open_access && (
+              <Badge variant="secondary" className="text-xs py-0">
+                OA
+              </Badge>
             )}
             {work.citation_count > 0 && (
               <Badge variant="secondary" className="text-xs gap-1 py-0">
@@ -173,6 +187,9 @@ function DiscoverCard({
                 Open paper
               </button>
             )}
+            {pipelineNote && (
+              <p className="w-full text-xs text-muted-foreground">{pipelineNote}</p>
+            )}
           </>
         ) : (
           <Button
@@ -198,45 +215,91 @@ function DiscoverCard({
   );
 }
 
-function DiscoverPanel({ query, projectId }: { query: string; projectId: number | null }) {
+function DiscoverPanel({
+  query,
+  projectId,
+  provider,
+  onProviderChange,
+}: {
+  query: string;
+  projectId: number | null;
+  provider: DiscoverProvider;
+  onProviderChange: (p: DiscoverProvider) => void;
+}) {
   const [page, setPage] = useState(1);
   const trimmed = query.trim();
 
+  useEffect(() => {
+    setPage(1);
+  }, [provider, trimmed]);
+
   const { data, isLoading, isError, error, isFetching } = useQuery({
-    queryKey: ["discover", trimmed, page],
-    queryFn: () => discoverWorks(trimmed, page),
+    queryKey: ["discover", provider, trimmed, page],
+    queryFn: () => discoverWorks(trimmed, page, 15, provider),
     enabled: trimmed.length >= 2,
     staleTime: 30 * 60 * 1000, // 30 min
     retry: 1,
   });
 
+  const providerLabel =
+    provider === "pubmed"
+      ? "PubMed"
+      : provider === "arxiv"
+        ? "arXiv"
+        : provider === "europe_pmc"
+          ? "Europe PMC"
+          : provider === "orcid"
+            ? "ORCID"
+            : "OpenAlex";
+
   if (trimmed.length < 2) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-        <Globe className="size-8 text-muted-foreground/40" />
-        <p className="text-sm text-muted-foreground">Type at least 2 characters to discover papers.</p>
+      <div className="space-y-4">
+        <DiscoverProviderTabs provider={provider} onChange={onProviderChange} />
+        <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+          <Globe className="size-8 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground">
+            {provider === "orcid"
+              ? "Paste a full ORCID iD (e.g. 0000-0002-1825-0097)."
+              : `Type at least 2 characters to discover papers${
+                  provider === "pubmed"
+                    ? ", or paste a PMID."
+                    : provider === "arxiv"
+                      ? ", or paste an arXiv id."
+                      : provider === "europe_pmc"
+                        ? ", or paste a PMCID / PMID."
+                        : "."
+                }`}
+          </p>
+        </div>
       </div>
     );
   }
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" />
-        <span className="text-sm">Searching OpenAlex…</span>
+      <div className="space-y-4">
+        <DiscoverProviderTabs provider={provider} onChange={onProviderChange} />
+        <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          <span className="text-sm">Searching {providerLabel}…</span>
+        </div>
       </div>
     );
   }
 
   if (isError) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-sm text-muted-foreground">
-          {formatApiFailure(
-            error,
-            "Discover is temporarily unavailable. Try again later.",
-          )}
-        </p>
+      <div className="space-y-4">
+        <DiscoverProviderTabs provider={provider} onChange={onProviderChange} />
+        <div className="py-12 text-center">
+          <p className="text-sm text-muted-foreground">
+            {formatApiFailure(
+              error,
+              "Discover is temporarily unavailable. Try again later.",
+            )}
+          </p>
+        </div>
       </div>
     );
   }
@@ -245,20 +308,30 @@ function DiscoverPanel({ query, projectId }: { query: string; projectId: number 
 
   if (works.length === 0) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-sm text-muted-foreground">No papers found for "{trimmed}".</p>
+      <div className="space-y-4">
+        <DiscoverProviderTabs provider={provider} onChange={onProviderChange} />
+        <div className="py-12 text-center">
+          <p className="text-sm text-muted-foreground">No papers found for "{trimmed}".</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
+      <DiscoverProviderTabs provider={provider} onChange={onProviderChange} />
       <p className="text-xs text-muted-foreground">
-        Via OpenAlex · page {page}
+        Via {providerLabel} · page {page}
+        {provider !== "openalex" && " · PDFs auto-enter Analysis 2.0 when available"}
         {isFetching && <Loader2 className="ml-1 inline size-3 animate-spin" />}
       </p>
       {works.map((w) => (
-        <DiscoverCard key={w.id || w.doi || w.title} work={w} projectId={projectId} />
+        <DiscoverCard
+          key={`${provider}-${w.id || w.pmid || w.doi || w.title}`}
+          work={w}
+          projectId={projectId}
+          provider={provider}
+        />
       ))}
       <div className="flex justify-center gap-2 pt-2">
         <Button
@@ -278,6 +351,43 @@ function DiscoverPanel({ query, projectId }: { query: string; projectId: number 
           Next
         </Button>
       </div>
+    </div>
+  );
+}
+
+function DiscoverProviderTabs({
+  provider,
+  onChange,
+}: {
+  provider: DiscoverProvider;
+  onChange: (p: DiscoverProvider) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-muted-foreground">Source:</span>
+      {(
+        [
+          ["openalex", "OpenAlex"],
+          ["pubmed", "PubMed"],
+          ["arxiv", "arXiv"],
+          ["europe_pmc", "Europe PMC"],
+          ["orcid", "ORCID"],
+        ] as const
+      ).map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onChange(id)}
+          className={cn(
+            "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+            provider === id
+              ? "border-primary bg-accent-soft text-primary"
+              : "border-border text-muted-foreground hover:border-primary/40",
+          )}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -437,6 +547,11 @@ export function SearchPage() {
   const [mode,     setMode]     = useState<SearchMode>(
     searchParams.get("mode") === "discover" ? "discover" : "library",
   );
+  const [discoverProvider, setDiscoverProvider] = useState<DiscoverProvider>(() => {
+    const p = searchParams.get("provider");
+    if (p === "pubmed" || p === "arxiv" || p === "europe_pmc" || p === "orcid") return p;
+    return "openalex";
+  });
   const [q,        setQ]        = useState(searchParams.get("q") ?? "");
   const [kinds,    setKinds]    = useState<Kind[]>(ALL_KINDS);
   const [submitted, setSubmitted] = useState(false);
@@ -447,7 +562,16 @@ export function SearchPage() {
   useEffect(() => {
     const urlQ = searchParams.get("q");
     const urlMode = searchParams.get("mode");
+    const urlProvider = searchParams.get("provider");
     if (urlMode === "discover") setMode("discover");
+    if (
+      urlProvider === "pubmed" ||
+      urlProvider === "arxiv" ||
+      urlProvider === "europe_pmc" ||
+      urlProvider === "orcid"
+    ) {
+      setDiscoverProvider(urlProvider);
+    }
     if (urlQ && urlQ.length >= 2 && urlMode !== "discover") {
       setQ(urlQ);
       search.mutate({ q: urlQ, kinds, project_id: currentProjectId });
@@ -456,6 +580,26 @@ export function SearchPage() {
     inputRef.current?.focus();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function setDiscoverMode(next: SearchMode) {
+    setMode(next);
+    if (next === "discover") {
+      const params: Record<string, string> = { mode: "discover" };
+      if (q.trim()) params.q = q.trim();
+      if (discoverProvider !== "openalex") params.provider = discoverProvider;
+      setSearchParams(params);
+    } else {
+      setSearchParams(q.trim() ? { q: q.trim() } : {});
+    }
+  }
+
+  function changeDiscoverProvider(p: DiscoverProvider) {
+    setDiscoverProvider(p);
+    const params: Record<string, string> = { mode: "discover" };
+    if (q.trim()) params.q = q.trim();
+    if (p !== "openalex") params.provider = p;
+    setSearchParams(params);
+  }
 
   function run(query = q) {
     if (query.trim().length < 2) return;
@@ -494,7 +638,7 @@ export function SearchPage() {
           {(["library", "discover"] as SearchMode[]).map((m) => (
             <button
               key={m}
-              onClick={() => setMode(m)}
+              onClick={() => setDiscoverMode(m)}
               className={cn(
                 "flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-all",
                 mode === m
@@ -579,8 +723,13 @@ export function SearchPage() {
         </div>}
 
         {mode === "discover" ? (
-          /* ── Discover (OpenAlex) ───────────────────────────────────────── */
-          <DiscoverPanel query={q} projectId={currentProjectId} />
+          /* ── Discover (OpenAlex / PubMed) ──────────────────────────────── */
+          <DiscoverPanel
+            query={q}
+            projectId={currentProjectId}
+            provider={discoverProvider}
+            onProviderChange={changeDiscoverProvider}
+          />
         ) : (
           /* ── Library (RAG + full-text search) ────────────────────────── */
           <>

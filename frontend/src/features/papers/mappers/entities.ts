@@ -77,6 +77,17 @@ export type EntitiesSummaryView = {
   interventionCount: number;
   populationCount: number;
   outcomeCount: number;
+  /** Paper Analysis 2.6 — general / projected scientific entities. */
+  scientificEntityCount: number;
+};
+
+export type LocalRelationView = {
+  key: string;
+  subject: string;
+  predicate: string;
+  object: string;
+  confidence?: number;
+  source?: string;
 };
 
 export type EntitiesViewModel = {
@@ -93,7 +104,11 @@ export type EntitiesViewModel = {
     findings: EntityItemView[];
     studyCharacteristics: EntityItemView[];
     temporal: EntityItemView[];
+    /** Paper Analysis 2.6 — non-medical + projected entities. */
+    scientificEntities: ClinicalEntityGroupView[];
   };
+  /** Local paper-scoped relations (not global graph). */
+  localRelations: LocalRelationView[];
   /**
    * True when the phase payload is usable for Ready UI
    * (including skipped docs and zero-entity extractions).
@@ -472,6 +487,7 @@ export function mapEntities(phase: PhaseResult | null | undefined): EntitiesView
       interventionCount,
       populationCount,
       outcomeCount,
+      scientificEntityCount: 0,
     },
     groups: {
       clinicalEntities,
@@ -480,8 +496,131 @@ export function mapEntities(phase: PhaseResult | null | undefined): EntitiesView
       findings,
       studyCharacteristics,
       temporal,
+      scientificEntities: [],
     },
+    localRelations: [],
     hasContent,
+  };
+}
+
+/** Map document_understanding.scientific_entities_profile (Paper Analysis 2.6). */
+export function mapScientificEntitiesProfile(
+  raw: unknown,
+): {
+  groups: ClinicalEntityGroupView[];
+  relations: LocalRelationView[];
+  entityCount: number;
+  hasContent: boolean;
+} {
+  if (!isRecord(raw)) {
+    return { groups: [], relations: [], entityCount: 0, hasContent: false };
+  }
+  const entitiesRaw = Array.isArray(raw.entities) ? raw.entities : [];
+  const byType = new Map<string, EntityItemView[]>();
+  let idx = 0;
+  for (const ent of entitiesRaw) {
+    if (!isRecord(ent)) continue;
+    const value = asString(ent.value) || asString(ent.label) || asString(ent.text);
+    if (!value) continue;
+    const entityType = (asString(ent.entity_type) || "other").toLowerCase();
+    const item: EntityItemView = {
+      key: makeKey("scientific", entityType, value, idx++),
+      displayName: value,
+      category: entityType,
+      confidence: asNumber(ent.confidence),
+      synonyms: [],
+      evidence: [],
+      extras: extrasFrom([
+        ["source", asString(ent.source)],
+        ["text", asString(ent.text)],
+      ]),
+    };
+    const list = byType.get(entityType) ?? [];
+    list.push(item);
+    byType.set(entityType, list);
+  }
+  const groups: ClinicalEntityGroupView[] = [...byType.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([entityType, items]) => ({
+      entityType,
+      displayType: formatEntityLabel(entityType),
+      items,
+    }));
+
+  const relations: LocalRelationView[] = [];
+  const relRaw = Array.isArray(raw.relations) ? raw.relations : [];
+  let rIdx = 0;
+  for (const rel of relRaw) {
+    if (!isRecord(rel)) continue;
+    const subject = asString(rel.subject);
+    const predicate = asString(rel.predicate);
+    const object = asString(rel.object);
+    if (!subject || !predicate || !object) continue;
+    relations.push({
+      key: `rel:${subject}:${predicate}:${object}:${rIdx++}`,
+      subject,
+      predicate,
+      object,
+      confidence: asNumber(rel.confidence),
+      source: asString(rel.source),
+    });
+  }
+
+  const entityCount = groups.reduce((n, g) => n + g.items.length, 0);
+  return {
+    groups,
+    relations,
+    entityCount,
+    hasContent: entityCount > 0 || relations.length > 0 || raw.has_content === true,
+  };
+}
+
+/** Merge scientific entities profile into a medical (or empty) entities view. */
+export function enrichEntitiesWithScientificProfile(
+  view: EntitiesViewModel | null,
+  scientificRaw: unknown,
+): EntitiesViewModel | null {
+  const sci = mapScientificEntitiesProfile(scientificRaw);
+  if (!view && !sci.hasContent) return null;
+  const base: EntitiesViewModel =
+    view ??
+    ({
+      skipped: true,
+      skipReason: undefined,
+      warnings: [],
+      errors: [],
+      summary: {
+        clinicalEntityCount: 0,
+        interventionCount: 0,
+        populationCount: 0,
+        outcomeCount: 0,
+        scientificEntityCount: 0,
+      },
+      groups: {
+        clinicalEntities: [],
+        pico: { populations: [], interventions: [], comparators: [], outcomes: [] },
+        statistics: [],
+        findings: [],
+        studyCharacteristics: [],
+        temporal: [],
+        scientificEntities: [],
+      },
+      localRelations: [],
+      hasContent: false,
+    } satisfies EntitiesViewModel);
+
+  return {
+    ...base,
+    summary: {
+      ...base.summary,
+      scientificEntityCount: sci.entityCount,
+    },
+    groups: {
+      ...base.groups,
+      scientificEntities: sci.groups,
+    },
+    localRelations: sci.relations,
+    hasContent: base.hasContent || sci.hasContent,
   };
 }
 

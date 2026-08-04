@@ -126,10 +126,30 @@ export function HomeHeroUpload() {
           size="sm"
           variant="ghost"
           className="h-8 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
-          onClick={() => navigate("/search?mode=discover&q=arxiv:")}
+          onClick={() => navigate("/search?mode=discover&provider=arxiv")}
         >
           <Hash className="size-3.5" />
           Import arXiv
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-8 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+          onClick={() => navigate("/search?mode=discover&provider=europe_pmc")}
+        >
+          <Hash className="size-3.5" />
+          Import Europe PMC
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-8 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+          onClick={() => navigate("/search?mode=discover&provider=orcid")}
+        >
+          <Hash className="size-3.5" />
+          Import ORCID
         </Button>
       </div>
     </div>

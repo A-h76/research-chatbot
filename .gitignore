@@ -13,6 +13,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+node_modules/
+.pytest_cache/
 .claude/settings.local.json
 *_dev.log
 *_dev.err.log

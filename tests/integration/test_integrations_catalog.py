@@ -11,7 +11,7 @@ def test_public_catalog_endpoint(client):
     ids = {p["id"] for p in data["providers"]}
     assert "zotero" in ids and "pubmed" in ids and "orcid" in ids
     orcid = next(p for p in data["providers"] if p["id"] == "orcid")
-    assert orcid["availability"] == "soon"
+    assert orcid["availability"] == "live"
 
 
 def test_authed_catalog_endpoint(researcher):

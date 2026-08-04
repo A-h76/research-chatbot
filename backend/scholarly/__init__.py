@@ -3,7 +3,7 @@
 Contracts:
 - Soft-fail: public helpers return None on any error; callers continue.
 - Short timeouts (default 5s).
-- Feature flags: ENABLE_CROSSREF / ENABLE_OPENALEX / ENABLE_SEMANTIC_SCHOLAR.
+- Feature flags: ENABLE_CROSSREF / ENABLE_OPENALEX / ENABLE_SEMANTIC_SCHOLAR / ENABLE_PUBMED / ENABLE_ARXIV / ENABLE_EUROPE_PMC / ENABLE_ORCID.
 - Bulkhead: per-provider concurrency caps so one stalled provider cannot
   monopolise worker threads.
 - Circuit breaker: DB-backed (shared across Gunicorn + worker processes).
@@ -52,12 +52,20 @@ _FLAG_ENV = {
     "crossref": "ENABLE_CROSSREF",
     "openalex": "ENABLE_OPENALEX",
     "semantic_scholar": "ENABLE_SEMANTIC_SCHOLAR",
+    "pubmed": "ENABLE_PUBMED",
+    "arxiv": "ENABLE_ARXIV",
+    "europe_pmc": "ENABLE_EUROPE_PMC",
+    "orcid": "ENABLE_ORCID",
 }
 
 _BULKHEAD_LIMITS = {
     "crossref": int(os.environ.get("PROVIDER_BULKHEAD_CROSSREF", "2")),
     "openalex": int(os.environ.get("PROVIDER_BULKHEAD_OPENALEX", "2")),
     "semantic_scholar": int(os.environ.get("PROVIDER_BULKHEAD_SEMANTIC_SCHOLAR", "2")),
+    "pubmed": int(os.environ.get("PROVIDER_BULKHEAD_PUBMED", "2")),
+    "arxiv": int(os.environ.get("PROVIDER_BULKHEAD_ARXIV", "2")),
+    "europe_pmc": int(os.environ.get("PROVIDER_BULKHEAD_EUROPE_PMC", "2")),
+    "orcid": int(os.environ.get("PROVIDER_BULKHEAD_ORCID", "2")),
 }
 
 _bulkheads: dict[str, threading.BoundedSemaphore] = {
@@ -315,7 +323,15 @@ def cache_hit_rate(db: Any, *, hours: int = 24) -> float | None:
 
 def providers_health(db: Any) -> dict[str, Any]:
     """Payload for GET /api/health/providers."""
-    providers = ("crossref", "openalex", "semantic_scholar")
+    providers = (
+        "crossref",
+        "openalex",
+        "semantic_scholar",
+        "pubmed",
+        "arxiv",
+        "europe_pmc",
+        "orcid",
+    )
     status = {p: circuit_status(p, db) for p in providers}
     hit = cache_hit_rate(db)
     return {

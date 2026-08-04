@@ -13,6 +13,9 @@ from .adapters import get_adapter
 from .service import records_from_user_files
 from . import zotero as zotero_mod
 from . import mendeley as mendeley_mod
+from . import google_drive as google_drive_mod
+from . import dropbox as dropbox_mod
+from . import onedrive as onedrive_mod
 from .bibtex import to_bibtex
 from .ris import to_ris
 from security.token_crypto import seal_secret, unseal_secret
@@ -178,8 +181,14 @@ def create_library_bridge_blueprint(
             connected = {r.provider: r for r in rows}
             z = connected.get("zotero")
             m = connected.get("mendeley")
+            g = connected.get("google_drive")
+            d = connected.get("dropbox")
+            od = connected.get("onedrive")
             z_meta = {}
             m_meta = {}
+            g_meta = {}
+            d_meta = {}
+            od_meta = {}
             if z and z.meta_json:
                 try:
                     z_meta = json.loads(z.meta_json)
@@ -190,6 +199,21 @@ def create_library_bridge_blueprint(
                     m_meta = json.loads(m.meta_json)
                 except Exception:
                     m_meta = {}
+            if g and g.meta_json:
+                try:
+                    g_meta = json.loads(g.meta_json)
+                except Exception:
+                    g_meta = {}
+            if d and d.meta_json:
+                try:
+                    d_meta = json.loads(d.meta_json)
+                except Exception:
+                    d_meta = {}
+            if od and od.meta_json:
+                try:
+                    od_meta = json.loads(od.meta_json)
+                except Exception:
+                    od_meta = {}
             return jsonify(
                 {
                     "zotero": {
@@ -213,8 +237,50 @@ def create_library_bridge_blueprint(
                         "file_import": True,
                         "missing_env": mendeley_mod.mendeley_missing_env(),
                     },
+                    "google_drive": {
+                        "available": google_drive_mod.drive_configured(),
+                        "connected": bool(g),
+                        "coming_soon": False,
+                        "username": g_meta.get("display_name") or g_meta.get("email") or "",
+                        "external_user_id": (g.external_user_id if g else "") or "",
+                        "last_synced_at": g.last_synced_at.isoformat() if g and g.last_synced_at else None,
+                        "incremental_sync": False,
+                        "file_import": True,
+                        "missing_env": google_drive_mod.drive_missing_env(),
+                    },
+                    "dropbox": {
+                        "available": dropbox_mod.dropbox_configured(),
+                        "connected": bool(d),
+                        "coming_soon": False,
+                        "username": d_meta.get("display_name") or d_meta.get("email") or "",
+                        "external_user_id": (d.external_user_id if d else "") or "",
+                        "last_synced_at": d.last_synced_at.isoformat() if d and d.last_synced_at else None,
+                        "incremental_sync": False,
+                        "file_import": True,
+                        "missing_env": dropbox_mod.dropbox_missing_env(),
+                    },
+                    "onedrive": {
+                        "available": onedrive_mod.onedrive_configured(),
+                        "connected": bool(od),
+                        "coming_soon": False,
+                        "username": od_meta.get("display_name") or od_meta.get("email") or "",
+                        "external_user_id": (od.external_user_id if od else "") or "",
+                        "last_synced_at": od.last_synced_at.isoformat() if od and od.last_synced_at else None,
+                        "incremental_sync": False,
+                        "file_import": True,
+                        "missing_env": onedrive_mod.onedrive_missing_env(),
+                    },
                     "formats": ["bibtex", "ris"],
-                    "adapters": ["bibtex", "ris", "zotero", "mendeley", "openalex"],
+                    "adapters": [
+                        "bibtex",
+                        "ris",
+                        "zotero",
+                        "mendeley",
+                        "openalex",
+                        "google_drive",
+                        "dropbox",
+                        "onedrive",
+                    ],
                 }
             )
         finally:
@@ -678,6 +744,973 @@ def create_library_bridge_blueprint(
             status = 404 if result["error"] == "project_not_found" else 500
             return jsonify(result), status
         return jsonify({**result, "parsed": len(records), "source": "mendeley"}), 201
+
+    # ── Google Drive OAuth + PDF import (Golden Rule) ───────────────────
+    @bp.route("/api/library/google_drive/connect", methods=["GET", "POST"])
+    @login_required
+    @_rate("20 per hour")
+    def google_drive_connect():
+        if not google_drive_mod.drive_configured():
+            return jsonify(
+                {
+                    "error": "google_drive_not_configured",
+                    "detail": "Set GOOGLE_DRIVE_CLIENT_ID/SECRET (or GOOGLE_CLIENT_ID/SECRET).",
+                    "coming_soon": False,
+                    "missing_env": google_drive_mod.drive_missing_env(),
+                    "fallback": ["bibtex", "ris", "upload"],
+                }
+            ), 503
+        callback = google_drive_mod.oauth_redirect_uri(app_base_url)
+        state = secrets.token_urlsafe(24)
+        session["google_drive_oauth"] = {"state": state}
+        try:
+            started = google_drive_mod.begin_oauth(callback, state)
+        except Exception as exc:
+            return jsonify({"error": "oauth_start_failed", "detail": str(exc)[:200]}), 502
+        # Integrations card navigates GET to this path — redirect into Google.
+        if request.method == "GET":
+            return redirect(started["authorize_url"])
+        return jsonify({"authorize_url": started["authorize_url"]})
+
+    @bp.route("/api/library/google_drive/callback", methods=["GET"])
+    @login_required
+    def google_drive_callback():
+        if not google_drive_mod.drive_configured():
+            return redirect("/library?google_drive=not_configured")
+        pending = session.pop("google_drive_oauth", None) or {}
+        code = (request.args.get("code") or "").strip()
+        state = (request.args.get("state") or "").strip()
+        if not code or not pending.get("state") or state != pending.get("state"):
+            return redirect("/library?google_drive=denied")
+        callback = google_drive_mod.oauth_redirect_uri(app_base_url)
+        try:
+            tokens = google_drive_mod.finish_oauth(code=code, callback_uri=callback)
+            profile = google_drive_mod.fetch_profile(tokens["access_token"])
+        except Exception:
+            return redirect("/library?google_drive=error")
+
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "google_drive")
+            meta = json.dumps(
+                {
+                    "display_name": profile.get("display_name") or "",
+                    "email": profile.get("email") or "",
+                }
+            )
+            if not row:
+                row = LibraryConnection(
+                    user_id=_uid(),
+                    provider="google_drive",
+                    external_user_id=profile.get("id") or "",
+                    meta_json=meta,
+                    status="active",
+                )
+                _store_oauth(
+                    row,
+                    access_token=tokens.get("access_token") or "",
+                    access_secret="",
+                    refresh_token=tokens.get("refresh_token") or "",
+                )
+                db.add(row)
+            else:
+                row.external_user_id = profile.get("id") or row.external_user_id
+                _store_oauth(
+                    row,
+                    access_token=tokens.get("access_token") or "",
+                    refresh_token=tokens.get("refresh_token")
+                    or _oauth_plain(row)["refresh_token"],
+                )
+                row.meta_json = meta
+                row.status = "active"
+                row.updated_at = datetime.now(timezone.utc)
+            db.commit()
+        finally:
+            db.close()
+        return redirect("/library?provider=google_drive&google_drive=connected#import")
+
+    @bp.route("/api/library/google_drive/disconnect", methods=["POST"])
+    @login_required
+    def google_drive_disconnect():
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "google_drive")
+            if row:
+                row.status = "revoked"
+                _store_oauth(row, access_token="", refresh_token="")
+                row.updated_at = datetime.now(timezone.utc)
+                db.commit()
+            return jsonify({"ok": True})
+        finally:
+            db.close()
+
+    def _google_drive_access_token(db, row) -> str:
+        toks = _oauth_plain(row)
+        token = (toks["access_token"] or "").strip()
+        if token:
+            return token
+        refresh = (toks["refresh_token"] or "").strip()
+        if not refresh:
+            return ""
+        refreshed = google_drive_mod.refresh_access_token(refresh)
+        _store_oauth(
+            row,
+            access_token=refreshed.get("access_token") or "",
+            refresh_token=refreshed.get("refresh_token") or refresh,
+        )
+        row.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return _oauth_plain(row)["access_token"] or ""
+
+    @bp.route("/api/library/google_drive/folders", methods=["GET"])
+    @login_required
+    def google_drive_folders():
+        parent_id = (request.args.get("parent_id") or "root").strip() or "root"
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "google_drive")
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            try:
+                token = _google_drive_access_token(db, row)
+                if not token:
+                    return jsonify({"error": "not_connected"}), 400
+                items = google_drive_mod.list_folders(token, parent_id=parent_id)
+                return jsonify({"items": items, "parent_id": parent_id})
+            except Exception as exc:
+                return jsonify({"error": "google_drive_api_error", "detail": str(exc)[:200]}), 502
+        finally:
+            db.close()
+
+    @bp.route("/api/library/google_drive/files", methods=["GET"])
+    @login_required
+    def google_drive_files():
+        folder_id = (request.args.get("folder_id") or "root").strip() or "root"
+        page_token = (request.args.get("page_token") or "").strip()
+        limit = min(100, max(1, int(request.args.get("limit") or 50)))
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "google_drive")
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            try:
+                token = _google_drive_access_token(db, row)
+                if not token:
+                    return jsonify({"error": "not_connected"}), 400
+                payload = google_drive_mod.list_pdf_files(
+                    token,
+                    folder_id=folder_id,
+                    limit=limit,
+                    page_token=page_token,
+                )
+                return jsonify(payload)
+            except Exception as exc:
+                return jsonify({"error": "google_drive_api_error", "detail": str(exc)[:200]}), 502
+        finally:
+            db.close()
+
+    @bp.route("/api/library/google_drive/import", methods=["POST"])
+    @login_required
+    @_rate("10 per hour")
+    def google_drive_import():
+        """Import selected Drive PDFs into Library → shared import job (Golden Rule)."""
+        from backend.library.file_pull import apply_pdf_bytes_to_stub
+
+        try:
+            data = parse_json_object(request.get_json(silent=True))
+            reject_unknown_fields(
+                data, {"file_ids", "project_id", "folder_id", "create_project", "project_name"}
+            )
+        except RequestValidationError as exc:
+            return exc.to_response()
+
+        raw_ids = data.get("file_ids") or []
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return jsonify({"error": "file_ids_required"}), 400
+        file_ids = [str(x).strip() for x in raw_ids if str(x).strip()][:20]
+        if not file_ids:
+            return jsonify({"error": "file_ids_required"}), 400
+
+        project_id = data.get("project_id")
+        if project_id is not None:
+            try:
+                project_id = int(project_id)
+            except (TypeError, ValueError):
+                project_id = None
+
+        uid = _uid()
+        if storage is None or not upload_dir or _enqueue_after_attach is None:
+            return jsonify({"error": "pipeline_not_wired"}), 503
+
+        db = SessionLocal()
+        created_ids: list[int] = []
+        queued_n = 0
+        skipped: list[dict] = []
+        errors: list[dict] = []
+        try:
+            if project_id is not None:
+                proj = db.get(Project, project_id)
+                if not proj or proj.user_id != uid:
+                    return jsonify({"error": "project_not_found"}), 404
+
+            row = _get_connection(db, uid, "google_drive")
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            token = _google_drive_access_token(db, row)
+            if not token:
+                return jsonify({"error": "not_connected"}), 400
+
+            for ext_id in file_ids:
+                existing = (
+                    db.execute(
+                        select_fn(UserFile).where(
+                            UserFile.user_id == uid,
+                            UserFile.external_provider == "google_drive",
+                            UserFile.external_item_id == ext_id,
+                        )
+                    )
+                    .scalars()
+                    .first()
+                )
+                if existing:
+                    skipped.append(
+                        {
+                            "external_id": ext_id,
+                            "reason": "already_exists",
+                            "file_id": existing.id,
+                        }
+                    )
+                    continue
+
+                hit = google_drive_mod.download_file(
+                    token,
+                    ext_id,
+                    max_bytes=int(max_file_mb or 50) * 1024 * 1024,
+                )
+                if not hit:
+                    errors.append({"external_id": ext_id, "error": "download_failed"})
+                    continue
+                pdf_bytes, filename, content_type = hit
+
+                uf = UserFile(
+                    user_id=uid,
+                    project_id=project_id,
+                    conversation_id=None,
+                    name=filename[:300],
+                    mime="",
+                    kind="document",
+                    path="",
+                    size=0,
+                    title=filename.rsplit(".", 1)[0][:500],
+                    authors="",
+                    year="",
+                    venue="",
+                    doi="",
+                    abstract="",
+                    reading_status="unread",
+                    tags=json.dumps(["from-google-drive", f"gdrive:{ext_id[:80]}"]),
+                    meta_status="pending",
+                    metadata_source="google_drive",
+                    source_url="",
+                    doi_verified=False,
+                    external_provider="google_drive",
+                    external_item_id=ext_id[:120],
+                )
+                db.add(uf)
+                db.flush()
+
+                applied = apply_pdf_bytes_to_stub(
+                    db,
+                    uf,
+                    data=pdf_bytes,
+                    filename=filename,
+                    content_type=content_type,
+                    storage=storage,
+                    upload_dir=upload_dir,
+                    enqueue_import=_enqueue_after_attach,
+                    user_id=uid,
+                    max_file_mb=max_file_mb,
+                )
+                if applied.get("ok"):
+                    created_ids.append(uf.id)
+                    if applied.get("queued"):
+                        queued_n += 1
+                else:
+                    errors.append(
+                        {
+                            "external_id": ext_id,
+                            "error": applied.get("error") or "attach_failed",
+                            "file_id": uf.id,
+                        }
+                    )
+
+            db.commit()
+            return (
+                jsonify(
+                    {
+                        "ok": True,
+                        "source": "google_drive",
+                        "created": len(created_ids),
+                        "created_ids": created_ids,
+                        "queued": queued_n,
+                        "skipped": skipped,
+                        "errors": errors,
+                        "project_id": project_id,
+                        "analysis_queued": queued_n > 0,
+                    }
+                ),
+                201,
+            )
+        except Exception as exc:
+            db.rollback()
+            return jsonify({"error": "import_failed", "detail": str(exc)[:200]}), 500
+        finally:
+            db.close()
+
+    # ── Dropbox OAuth + PDF import (Golden Rule) ────────────────────────
+    @bp.route("/api/library/dropbox/connect", methods=["GET", "POST"])
+    @login_required
+    @_rate("20 per hour")
+    def dropbox_connect():
+        if not dropbox_mod.dropbox_configured():
+            return jsonify(
+                {
+                    "error": "dropbox_not_configured",
+                    "detail": "Set DROPBOX_CLIENT_ID and DROPBOX_CLIENT_SECRET.",
+                    "coming_soon": False,
+                    "missing_env": dropbox_mod.dropbox_missing_env(),
+                    "fallback": ["bibtex", "ris", "upload"],
+                }
+            ), 503
+        callback = dropbox_mod.oauth_redirect_uri(app_base_url)
+        state = secrets.token_urlsafe(24)
+        session["dropbox_oauth"] = {"state": state}
+        try:
+            started = dropbox_mod.begin_oauth(callback, state)
+        except Exception as exc:
+            return jsonify({"error": "oauth_start_failed", "detail": str(exc)[:200]}), 502
+        if request.method == "GET":
+            return redirect(started["authorize_url"])
+        return jsonify({"authorize_url": started["authorize_url"]})
+
+    @bp.route("/api/library/dropbox/callback", methods=["GET"])
+    @login_required
+    def dropbox_callback():
+        if not dropbox_mod.dropbox_configured():
+            return redirect("/library?dropbox=not_configured")
+        pending = session.pop("dropbox_oauth", None) or {}
+        code = (request.args.get("code") or "").strip()
+        state = (request.args.get("state") or "").strip()
+        if not code or not pending.get("state") or state != pending.get("state"):
+            return redirect("/library?dropbox=denied")
+        callback = dropbox_mod.oauth_redirect_uri(app_base_url)
+        try:
+            tokens = dropbox_mod.finish_oauth(code=code, callback_uri=callback)
+            profile = dropbox_mod.fetch_profile(tokens["access_token"])
+        except Exception:
+            return redirect("/library?dropbox=error")
+
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "dropbox")
+            meta = json.dumps(
+                {
+                    "display_name": profile.get("display_name") or "",
+                    "email": profile.get("email") or "",
+                }
+            )
+            if not row:
+                row = LibraryConnection(
+                    user_id=_uid(),
+                    provider="dropbox",
+                    external_user_id=profile.get("id") or "",
+                    meta_json=meta,
+                    status="active",
+                )
+                _store_oauth(
+                    row,
+                    access_token=tokens.get("access_token") or "",
+                    access_secret="",
+                    refresh_token=tokens.get("refresh_token") or "",
+                )
+                db.add(row)
+            else:
+                row.external_user_id = profile.get("id") or row.external_user_id
+                _store_oauth(
+                    row,
+                    access_token=tokens.get("access_token") or "",
+                    refresh_token=tokens.get("refresh_token")
+                    or _oauth_plain(row)["refresh_token"],
+                )
+                row.meta_json = meta
+                row.status = "active"
+                row.updated_at = datetime.now(timezone.utc)
+            db.commit()
+        finally:
+            db.close()
+        return redirect("/library?provider=dropbox&dropbox=connected#import")
+
+    @bp.route("/api/library/dropbox/disconnect", methods=["POST"])
+    @login_required
+    def dropbox_disconnect():
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "dropbox")
+            if row:
+                row.status = "revoked"
+                _store_oauth(row, access_token="", refresh_token="")
+                row.updated_at = datetime.now(timezone.utc)
+                db.commit()
+            return jsonify({"ok": True})
+        finally:
+            db.close()
+
+    def _dropbox_access_token(db, row) -> str:
+        toks = _oauth_plain(row)
+        token = (toks["access_token"] or "").strip()
+        if token:
+            return token
+        refresh = (toks["refresh_token"] or "").strip()
+        if not refresh:
+            return ""
+        refreshed = dropbox_mod.refresh_access_token(refresh)
+        _store_oauth(
+            row,
+            access_token=refreshed.get("access_token") or "",
+            refresh_token=refreshed.get("refresh_token") or refresh,
+        )
+        row.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return _oauth_plain(row)["access_token"] or ""
+
+    @bp.route("/api/library/dropbox/folders", methods=["GET"])
+    @login_required
+    def dropbox_folders():
+        parent_id = (request.args.get("parent_id") or "").strip()
+        if parent_id in ("root", "/"):
+            parent_id = ""
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "dropbox")
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            try:
+                token = _dropbox_access_token(db, row)
+                if not token:
+                    return jsonify({"error": "not_connected"}), 400
+                items = dropbox_mod.list_folders(token, parent_id=parent_id)
+                return jsonify({"items": items, "parent_id": parent_id or "root"})
+            except Exception as exc:
+                return jsonify({"error": "dropbox_api_error", "detail": str(exc)[:200]}), 502
+        finally:
+            db.close()
+
+    @bp.route("/api/library/dropbox/files", methods=["GET"])
+    @login_required
+    def dropbox_files():
+        folder_id = (request.args.get("folder_id") or "").strip()
+        if folder_id in ("root", "/"):
+            folder_id = ""
+        page_token = (request.args.get("page_token") or "").strip()
+        limit = min(100, max(1, int(request.args.get("limit") or 50)))
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "dropbox")
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            try:
+                token = _dropbox_access_token(db, row)
+                if not token:
+                    return jsonify({"error": "not_connected"}), 400
+                payload = dropbox_mod.list_pdf_files(
+                    token,
+                    folder_id=folder_id,
+                    limit=limit,
+                    page_token=page_token,
+                )
+                return jsonify(payload)
+            except Exception as exc:
+                return jsonify({"error": "dropbox_api_error", "detail": str(exc)[:200]}), 502
+        finally:
+            db.close()
+
+    @bp.route("/api/library/dropbox/import", methods=["POST"])
+    @login_required
+    @_rate("10 per hour")
+    def dropbox_import():
+        """Import selected Dropbox PDFs into Library → shared import job (Golden Rule)."""
+        from backend.library.file_pull import apply_pdf_bytes_to_stub
+
+        try:
+            data = parse_json_object(request.get_json(silent=True))
+            reject_unknown_fields(
+                data, {"file_ids", "project_id", "folder_id", "create_project", "project_name"}
+            )
+        except RequestValidationError as exc:
+            return exc.to_response()
+
+        raw_ids = data.get("file_ids") or []
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return jsonify({"error": "file_ids_required"}), 400
+        file_ids = [str(x).strip() for x in raw_ids if str(x).strip()][:20]
+        if not file_ids:
+            return jsonify({"error": "file_ids_required"}), 400
+
+        project_id = data.get("project_id")
+        if project_id is not None:
+            try:
+                project_id = int(project_id)
+            except (TypeError, ValueError):
+                project_id = None
+
+        uid = _uid()
+        if storage is None or not upload_dir or _enqueue_after_attach is None:
+            return jsonify({"error": "pipeline_not_wired"}), 503
+
+        db = SessionLocal()
+        created_ids: list[int] = []
+        queued_n = 0
+        skipped: list[dict] = []
+        errors: list[dict] = []
+        try:
+            if project_id is not None:
+                proj = db.get(Project, project_id)
+                if not proj or proj.user_id != uid:
+                    return jsonify({"error": "project_not_found"}), 404
+
+            row = _get_connection(db, uid, "dropbox")
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            token = _dropbox_access_token(db, row)
+            if not token:
+                return jsonify({"error": "not_connected"}), 400
+
+            for ext_id in file_ids:
+                existing = (
+                    db.execute(
+                        select_fn(UserFile).where(
+                            UserFile.user_id == uid,
+                            UserFile.external_provider == "dropbox",
+                            UserFile.external_item_id == ext_id,
+                        )
+                    )
+                    .scalars()
+                    .first()
+                )
+                if existing:
+                    skipped.append(
+                        {
+                            "external_id": ext_id,
+                            "reason": "already_exists",
+                            "file_id": existing.id,
+                        }
+                    )
+                    continue
+
+                hit = dropbox_mod.download_file(
+                    token,
+                    ext_id,
+                    max_bytes=int(max_file_mb or 50) * 1024 * 1024,
+                )
+                if not hit:
+                    errors.append({"external_id": ext_id, "error": "download_failed"})
+                    continue
+                pdf_bytes, filename, content_type = hit
+
+                uf = UserFile(
+                    user_id=uid,
+                    project_id=project_id,
+                    conversation_id=None,
+                    name=filename[:300],
+                    mime="",
+                    kind="document",
+                    path="",
+                    size=0,
+                    title=filename.rsplit(".", 1)[0][:500],
+                    authors="",
+                    year="",
+                    venue="",
+                    doi="",
+                    abstract="",
+                    reading_status="unread",
+                    tags=json.dumps(["from-dropbox", f"dropbox:{ext_id[:80]}"]),
+                    meta_status="pending",
+                    metadata_source="dropbox",
+                    source_url="",
+                    doi_verified=False,
+                    external_provider="dropbox",
+                    external_item_id=ext_id[:120],
+                )
+                db.add(uf)
+                db.flush()
+
+                applied = apply_pdf_bytes_to_stub(
+                    db,
+                    uf,
+                    data=pdf_bytes,
+                    filename=filename,
+                    content_type=content_type,
+                    storage=storage,
+                    upload_dir=upload_dir,
+                    enqueue_import=_enqueue_after_attach,
+                    user_id=uid,
+                    max_file_mb=max_file_mb,
+                )
+                if applied.get("ok"):
+                    created_ids.append(uf.id)
+                    if applied.get("queued"):
+                        queued_n += 1
+                else:
+                    errors.append(
+                        {
+                            "external_id": ext_id,
+                            "error": applied.get("error") or "attach_failed",
+                            "file_id": uf.id,
+                        }
+                    )
+
+            db.commit()
+            return (
+                jsonify(
+                    {
+                        "ok": True,
+                        "source": "dropbox",
+                        "created": len(created_ids),
+                        "created_ids": created_ids,
+                        "queued": queued_n,
+                        "skipped": skipped,
+                        "errors": errors,
+                        "project_id": project_id,
+                        "analysis_queued": queued_n > 0,
+                    }
+                ),
+                201,
+            )
+        except Exception as exc:
+            db.rollback()
+            return jsonify({"error": "import_failed", "detail": str(exc)[:200]}), 500
+        finally:
+            db.close()
+
+    @bp.route("/api/library/onedrive/connect", methods=["GET", "POST"])
+    @login_required
+    @_rate("20 per hour")
+    def onedrive_connect():
+        if not onedrive_mod.onedrive_configured():
+            return jsonify(
+                {
+                    "error": "onedrive_not_configured",
+                    "detail": "Set ONEDRIVE_CLIENT_ID and ONEDRIVE_CLIENT_SECRET.",
+                    "coming_soon": False,
+                    "missing_env": onedrive_mod.onedrive_missing_env(),
+                    "fallback": ["bibtex", "ris", "upload"],
+                }
+            ), 503
+        callback = onedrive_mod.oauth_redirect_uri(app_base_url)
+        state = secrets.token_urlsafe(24)
+        session["onedrive_oauth"] = {"state": state}
+        try:
+            started = onedrive_mod.begin_oauth(callback, state)
+        except Exception as exc:
+            return jsonify({"error": "oauth_start_failed", "detail": str(exc)[:200]}), 502
+        if request.method == "GET":
+            return redirect(started["authorize_url"])
+        return jsonify({"authorize_url": started["authorize_url"]})
+
+    @bp.route("/api/library/onedrive/callback", methods=["GET"])
+    @login_required
+    def onedrive_callback():
+        if not onedrive_mod.onedrive_configured():
+            return redirect("/library?onedrive=not_configured")
+        pending = session.pop("onedrive_oauth", None) or {}
+        code = (request.args.get("code") or "").strip()
+        state = (request.args.get("state") or "").strip()
+        if not code or not pending.get("state") or state != pending.get("state"):
+            return redirect("/library?onedrive=denied")
+        callback = onedrive_mod.oauth_redirect_uri(app_base_url)
+        try:
+            tokens = onedrive_mod.finish_oauth(code=code, callback_uri=callback)
+            profile = onedrive_mod.fetch_profile(tokens["access_token"])
+        except Exception:
+            return redirect("/library?onedrive=error")
+
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "onedrive")
+            meta = json.dumps(
+                {
+                    "display_name": profile.get("display_name") or "",
+                    "email": profile.get("email") or "",
+                }
+            )
+            if not row:
+                row = LibraryConnection(
+                    user_id=_uid(),
+                    provider="onedrive",
+                    external_user_id=profile.get("id") or "",
+                    meta_json=meta,
+                    status="active",
+                )
+                _store_oauth(
+                    row,
+                    access_token=tokens.get("access_token") or "",
+                    access_secret="",
+                    refresh_token=tokens.get("refresh_token") or "",
+                )
+                db.add(row)
+            else:
+                row.external_user_id = profile.get("id") or row.external_user_id
+                _store_oauth(
+                    row,
+                    access_token=tokens.get("access_token") or "",
+                    refresh_token=tokens.get("refresh_token")
+                    or _oauth_plain(row)["refresh_token"],
+                )
+                row.meta_json = meta
+                row.status = "active"
+                row.updated_at = datetime.now(timezone.utc)
+            db.commit()
+        finally:
+            db.close()
+        return redirect("/library?provider=onedrive&onedrive=connected#import")
+
+    @bp.route("/api/library/onedrive/disconnect", methods=["POST"])
+    @login_required
+    def onedrive_disconnect():
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "onedrive")
+            if row:
+                row.status = "revoked"
+                _store_oauth(row, access_token="", refresh_token="")
+                row.updated_at = datetime.now(timezone.utc)
+                db.commit()
+            return jsonify({"ok": True})
+        finally:
+            db.close()
+
+    def _onedrive_access_token(db, row) -> str:
+        toks = _oauth_plain(row)
+        token = (toks["access_token"] or "").strip()
+        if token:
+            return token
+        refresh = (toks["refresh_token"] or "").strip()
+        if not refresh:
+            return ""
+        refreshed = onedrive_mod.refresh_access_token(refresh)
+        _store_oauth(
+            row,
+            access_token=refreshed.get("access_token") or "",
+            refresh_token=refreshed.get("refresh_token") or refresh,
+        )
+        row.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return _oauth_plain(row)["access_token"] or ""
+
+    @bp.route("/api/library/onedrive/folders", methods=["GET"])
+    @login_required
+    def onedrive_folders():
+        parent_id = (request.args.get("parent_id") or "root").strip() or "root"
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "onedrive")
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            try:
+                token = _onedrive_access_token(db, row)
+                if not token:
+                    return jsonify({"error": "not_connected"}), 400
+                items = onedrive_mod.list_folders(token, parent_id=parent_id)
+                return jsonify({"items": items, "parent_id": parent_id})
+            except Exception as exc:
+                return jsonify({"error": "onedrive_api_error", "detail": str(exc)[:200]}), 502
+        finally:
+            db.close()
+
+    @bp.route("/api/library/onedrive/files", methods=["GET"])
+    @login_required
+    def onedrive_files():
+        folder_id = (request.args.get("folder_id") or "root").strip() or "root"
+        page_token = (request.args.get("page_token") or "").strip()
+        limit = min(100, max(1, int(request.args.get("limit") or 50)))
+        db = SessionLocal()
+        try:
+            row = _get_connection(db, _uid(), "onedrive")
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            try:
+                token = _onedrive_access_token(db, row)
+                if not token:
+                    return jsonify({"error": "not_connected"}), 400
+                payload = onedrive_mod.list_pdf_files(
+                    token,
+                    folder_id=folder_id,
+                    limit=limit,
+                    page_token=page_token,
+                )
+                return jsonify(payload)
+            except Exception as exc:
+                return jsonify({"error": "onedrive_api_error", "detail": str(exc)[:200]}), 502
+        finally:
+            db.close()
+
+    @bp.route("/api/library/onedrive/import", methods=["POST"])
+    @login_required
+    @_rate("10 per hour")
+    def onedrive_import():
+        """Import selected OneDrive PDFs into Library → shared import job (Golden Rule)."""
+        from backend.library.file_pull import apply_pdf_bytes_to_stub
+
+        try:
+            data = parse_json_object(request.get_json(silent=True))
+            reject_unknown_fields(
+                data, {"file_ids", "project_id", "folder_id", "create_project", "project_name"}
+            )
+        except RequestValidationError as exc:
+            return exc.to_response()
+
+        raw_ids = data.get("file_ids") or []
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return jsonify({"error": "file_ids_required"}), 400
+        file_ids = [str(x).strip() for x in raw_ids if str(x).strip()][:20]
+        if not file_ids:
+            return jsonify({"error": "file_ids_required"}), 400
+
+        project_id = data.get("project_id")
+        if project_id is not None:
+            try:
+                project_id = int(project_id)
+            except (TypeError, ValueError):
+                project_id = None
+
+        uid = _uid()
+        if storage is None or not upload_dir or _enqueue_after_attach is None:
+            return jsonify({"error": "pipeline_not_wired"}), 503
+
+        db = SessionLocal()
+        created_ids: list[int] = []
+        queued_n = 0
+        skipped: list[dict] = []
+        errors: list[dict] = []
+        try:
+            if project_id is not None:
+                proj = db.get(Project, project_id)
+                if not proj or proj.user_id != uid:
+                    return jsonify({"error": "project_not_found"}), 404
+
+            row = _get_connection(db, uid, "onedrive")
+            if not row:
+                return jsonify({"error": "not_connected"}), 400
+            token = _onedrive_access_token(db, row)
+            if not token:
+                return jsonify({"error": "not_connected"}), 400
+
+            for ext_id in file_ids:
+                existing = (
+                    db.execute(
+                        select_fn(UserFile).where(
+                            UserFile.user_id == uid,
+                            UserFile.external_provider == "onedrive",
+                            UserFile.external_item_id == ext_id,
+                        )
+                    )
+                    .scalars()
+                    .first()
+                )
+                if existing:
+                    skipped.append(
+                        {
+                            "external_id": ext_id,
+                            "reason": "already_exists",
+                            "file_id": existing.id,
+                        }
+                    )
+                    continue
+
+                hit = onedrive_mod.download_file(
+                    token,
+                    ext_id,
+                    max_bytes=int(max_file_mb or 50) * 1024 * 1024,
+                )
+                if not hit:
+                    errors.append({"external_id": ext_id, "error": "download_failed"})
+                    continue
+                pdf_bytes, filename, content_type = hit
+
+                uf = UserFile(
+                    user_id=uid,
+                    project_id=project_id,
+                    conversation_id=None,
+                    name=filename[:300],
+                    mime="",
+                    kind="document",
+                    path="",
+                    size=0,
+                    title=filename.rsplit(".", 1)[0][:500],
+                    authors="",
+                    year="",
+                    venue="",
+                    doi="",
+                    abstract="",
+                    reading_status="unread",
+                    tags=json.dumps(["from-onedrive", f"onedrive:{ext_id[:80]}"]),
+                    meta_status="pending",
+                    metadata_source="onedrive",
+                    source_url="",
+                    doi_verified=False,
+                    external_provider="onedrive",
+                    external_item_id=ext_id[:120],
+                )
+                db.add(uf)
+                db.flush()
+
+                applied = apply_pdf_bytes_to_stub(
+                    db,
+                    uf,
+                    data=pdf_bytes,
+                    filename=filename,
+                    content_type=content_type,
+                    storage=storage,
+                    upload_dir=upload_dir,
+                    enqueue_import=_enqueue_after_attach,
+                    user_id=uid,
+                    max_file_mb=max_file_mb,
+                )
+                if applied.get("ok"):
+                    created_ids.append(uf.id)
+                    if applied.get("queued"):
+                        queued_n += 1
+                else:
+                    errors.append(
+                        {
+                            "external_id": ext_id,
+                            "error": applied.get("error") or "attach_failed",
+                            "file_id": uf.id,
+                        }
+                    )
+
+            db.commit()
+            return (
+                jsonify(
+                    {
+                        "ok": True,
+                        "source": "onedrive",
+                        "created": len(created_ids),
+                        "created_ids": created_ids,
+                        "queued": queued_n,
+                        "skipped": skipped,
+                        "errors": errors,
+                        "project_id": project_id,
+                        "analysis_queued": queued_n > 0,
+                    }
+                ),
+                201,
+            )
+        except Exception as exc:
+            db.rollback()
+            return jsonify({"error": "import_failed", "detail": str(exc)[:200]}), 500
+        finally:
+            db.close()
 
     def _run_provider_sync(provider: str):
         """Enqueue Phase 1b incremental sync (worker-backed).

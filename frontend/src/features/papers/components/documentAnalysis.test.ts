@@ -14,6 +14,7 @@ function baseView(over: Partial<DocumentUnderstandingView> = {}): DocumentUnders
     warnings: [],
     errors: [],
     quality: {},
+    scientificStructure: null,
     hasContent: true,
     ...over,
   };

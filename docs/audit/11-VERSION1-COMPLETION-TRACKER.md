@@ -1,12 +1,16 @@
 # Version 1 Completion Tracker
 
+> **ARCHIVED (historical milestone).** Version 1 scoreboard #1–20 is complete (🟢).  
+> **Active execution:** [12-PHASE2-COMPLETION-TRACKER.md](12-PHASE2-COMPLETION-TRACKER.md)  
+> Do not add new V1 rows here. Phase 2 starts with **#21 Paper Analysis 2.0**.
+
 **Document:** `11-VERSION1-COMPLETION-TRACKER.md`  
-**Role:** Layer 4 — **execution tracking** (not strategy)  
-**Last updated:** 2026-08-02  
+**Role:** Layer 4 — **execution tracking** (not strategy) — **V1 closed**  
+**Last updated:** 2026-08-03 (archived)  
 **Company mode:** Stop planning. Execute. Cursor = Engineering Team, not a coding assistant.
 
 **Do not add strategy here** — vision/strategy live in [05](05-RESEARCH-OS-VISION.md)–[10](10-RESEARCH-ECOSYSTEM-MASTERPLAN.md).  
-**Do not write new roadmap docs** unless product direction genuinely changes. Update **this** file instead.
+**Do not write new roadmap docs** unless product direction genuinely changes. Update **Phase 2 tracker [12](12-PHASE2-COMPLETION-TRACKER.md)** instead.
 
 ---
 

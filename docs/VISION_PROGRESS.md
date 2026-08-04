@@ -11,13 +11,15 @@
 
 | Lens | Status |
 |------|--------|
-| **V1 engineering scoreboard** (#1–20) | **100% 🟢** — personal closed-beta OS core Production Ready |
-| **Permanent Vision (5 pillars, avg)** | **~55%** — Research OS far from finished |
-| **Freeze** | Still holds for PubMed / Drive / Graph flagship / Agents / teams until product lifts it |
+| **V1 engineering scoreboard** (#1–20) | **100% 🟢** — personal closed-beta OS core Production Ready (**archived** → [11](./audit/11-VERSION1-COMPLETION-TRACKER.md)) |
+| **Phase 2 scoreboard** (#21–28) | **2A 🟢 / 2B 🟢** — [12](./audit/12-PHASE2-COMPLETION-TRACKER.md); #21–28 Production Ready |
+| **Permanent Vision (5 pillars, avg)** | **~56%** — Research OS far from finished |
+| **Freeze** | Graph/Agents/Memory/Enterprise frozen until [Primary Workspace Review](./audit/16-COMPETITIVE-REPLACEMENT-REVIEW.md) |
+| **Sequencing** | After #28 → Product Readiness Review ([16](./audit/16-COMPETITIVE-REPLACEMENT-REVIEW.md)), **not** auto Phase 3 · Doctrine: reduce context switching |
 | **Motto fit today** | Papers → evidence → (partial) insight → publishable **MD/Bib** trail works for lit-review |
 
 ```text
-Knowledge Acquisition     ████████░░  ~72%
+Knowledge Acquisition     █████████░  ~90%
 Research Intelligence     ██████░░░░  ~58%
 Writing Intelligence      ███████░░░  ~74%
 Research Workspace        █████░░░░░  ~48%
@@ -28,22 +30,28 @@ Publication Intelligence  ██░░░░░░░░  ~22%
 
 ## Pillar detail
 
-### 1 — Knowledge Acquisition (~72%)
+### 1 — Knowledge Acquisition (~90%)
 
-**Goal:** Collect every piece of knowledge a researcher needs → clean library.
+**Goal:** Collect every piece of knowledge a researcher needs → clean library. Sources are entrances into one pipeline, not silos.
 
 | Capability | Status |
 |------------|--------|
 | PDF / document import | ✅ |
-| DOI / metadata / dedupe | ✅ |
+| DOI / metadata / dedupe | ✅ (strengthen as sources land) |
 | Zotero + Mendeley (sync + PDF pull) | ✅ V1 |
-| OpenAlex Discover + Crossref | ✅ / Partial |
-| Semantic Scholar | Partial / stubby |
-| Web search | Chat tool only |
-| PubMed / arXiv / Drive / ORCID | ⚪ P2+ (frozen) |
+| OpenAlex Discover + Crossref | ✅ |
+| Semantic Scholar | ✅ related / enrichment |
+| PubMed | ✅ #22 — Discover + OA → Analysis |
+| Google Drive | ✅ #23 — OAuth + PDF import → Analysis (watch deferred) |
+| BibTeX / RIS | ✅ |
+| arXiv | 🟢 Phase 2B (#24) |
+| Europe PMC | 🟢 Phase 2B (#25) |
+| ORCID | 🟢 Phase 2B (#26) |
+| Dropbox | 🟢 Phase 2B (#27) |
+| OneDrive | 🟢 Phase 2B (#28) |
 | Automatic metadata + worker pipeline | ✅ |
 
-**Moves the needle next:** unified multi-source acquisition (PubMed + Drive) after freeze lift.
+**Moves the needle next:** Fill [16 Competitive Replacement Review](./audit/16-COMPETITIVE-REPLACEMENT-REVIEW.md) — primary workspace gate before Graph/Agents.
 
 ---
 
@@ -57,7 +65,7 @@ Publication Intelligence  ██░░░░░░░░  ~22%
 | Knowledge Graph as product | ⚪ / thin RI graph views — flagship P5 |
 | Corpus-scale literature questions without LLM invention | Partial — project-scoped, not OS-scale |
 
-**Moves the needle next:** deepen RI quality + eventually KG product — without reopening frozen contracts casually.
+**Moves the needle next:** Feed SUE via Phase 2B acquisition; after #28, [16 Competitive Replacement Review](./audit/16-COMPETITIVE-REPLACEMENT-REVIEW.md) may prioritize Workspace before Graph.
 
 ---
 

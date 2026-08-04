@@ -24,6 +24,39 @@ export interface LibraryConnections {
     file_import?: boolean;
     missing_env?: string[];
   };
+  google_drive?: {
+    available: boolean;
+    connected: boolean;
+    coming_soon?: boolean;
+    username: string;
+    external_user_id?: string;
+    last_synced_at?: string | null;
+    incremental_sync?: boolean;
+    file_import?: boolean;
+    missing_env?: string[];
+  };
+  dropbox?: {
+    available: boolean;
+    connected: boolean;
+    coming_soon?: boolean;
+    username: string;
+    external_user_id?: string;
+    last_synced_at?: string | null;
+    incremental_sync?: boolean;
+    file_import?: boolean;
+    missing_env?: string[];
+  };
+  onedrive?: {
+    available: boolean;
+    connected: boolean;
+    coming_soon?: boolean;
+    username: string;
+    external_user_id?: string;
+    last_synced_at?: string | null;
+    incremental_sync?: boolean;
+    file_import?: boolean;
+    missing_env?: string[];
+  };
   formats: string[];
   adapters?: string[];
 }
@@ -54,6 +87,15 @@ export interface ZoteroCollection {
 }
 
 export type MendeleyFolder = ZoteroCollection;
+
+export interface DrivePdfFile {
+  id: string;
+  name: string;
+  mime_type: string;
+  size: number;
+  modified_time: string;
+  web_view_link: string;
+}
 
 export const libraryBridgeApi = {
   connections: () => api.get<LibraryConnections>("/api/library/connections"),
@@ -154,6 +196,108 @@ export const libraryBridgeApi = {
 
   pullMendeleyPdfs: (body: { file_ids?: number[]; limit?: number } = {}) =>
     api.post<LibraryPullPdfsResult>("/api/library/mendeley/pull-pdfs", body),
+
+  googleDriveConnect: () =>
+    api.post<{ authorize_url: string }>("/api/library/google_drive/connect", {}),
+
+  googleDriveDisconnect: () =>
+    api.post<{ ok: boolean }>("/api/library/google_drive/disconnect", {}),
+
+  googleDriveFolders: (parentId = "root") =>
+    api.get<{ items: MendeleyFolder[]; parent_id: string }>(
+      `/api/library/google_drive/folders?parent_id=${encodeURIComponent(parentId)}`,
+    ),
+
+  googleDriveFiles: (opts: { folder_id?: string; limit?: number; page_token?: string } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.folder_id) p.set("folder_id", opts.folder_id);
+    if (opts.limit != null) p.set("limit", String(opts.limit));
+    if (opts.page_token) p.set("page_token", opts.page_token);
+    const q = p.toString();
+    return api.get<{
+      items: DrivePdfFile[];
+      next_page_token: string;
+      folder_id: string;
+    }>(`/api/library/google_drive/files${q ? `?${q}` : ""}`);
+  },
+
+  googleDriveImport: (body: {
+    file_ids: string[];
+    project_id?: number | null;
+    folder_id?: string;
+  }) =>
+    api.post<LibraryImportResult & { queued?: number; analysis_queued?: boolean }>(
+      "/api/library/google_drive/import",
+      body,
+    ),
+
+  dropboxConnect: () =>
+    api.post<{ authorize_url: string }>("/api/library/dropbox/connect", {}),
+
+  dropboxDisconnect: () =>
+    api.post<{ ok: boolean }>("/api/library/dropbox/disconnect", {}),
+
+  dropboxFolders: (parentId = "") =>
+    api.get<{ items: MendeleyFolder[]; parent_id: string }>(
+      `/api/library/dropbox/folders?parent_id=${encodeURIComponent(parentId)}`,
+    ),
+
+  dropboxFiles: (opts: { folder_id?: string; limit?: number; page_token?: string } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.folder_id) p.set("folder_id", opts.folder_id);
+    if (opts.limit != null) p.set("limit", String(opts.limit));
+    if (opts.page_token) p.set("page_token", opts.page_token);
+    const q = p.toString();
+    return api.get<{
+      items: DrivePdfFile[];
+      next_page_token: string;
+      folder_id: string;
+    }>(`/api/library/dropbox/files${q ? `?${q}` : ""}`);
+  },
+
+  dropboxImport: (body: {
+    file_ids: string[];
+    project_id?: number | null;
+    folder_id?: string;
+  }) =>
+    api.post<LibraryImportResult & { queued?: number; analysis_queued?: boolean }>(
+      "/api/library/dropbox/import",
+      body,
+    ),
+
+  onedriveConnect: () =>
+    api.post<{ authorize_url: string }>("/api/library/onedrive/connect", {}),
+
+  onedriveDisconnect: () =>
+    api.post<{ ok: boolean }>("/api/library/onedrive/disconnect", {}),
+
+  onedriveFolders: (parentId = "root") =>
+    api.get<{ items: MendeleyFolder[]; parent_id: string }>(
+      `/api/library/onedrive/folders?parent_id=${encodeURIComponent(parentId)}`,
+    ),
+
+  onedriveFiles: (opts: { folder_id?: string; limit?: number; page_token?: string } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.folder_id) p.set("folder_id", opts.folder_id);
+    if (opts.limit != null) p.set("limit", String(opts.limit));
+    if (opts.page_token) p.set("page_token", opts.page_token);
+    const q = p.toString();
+    return api.get<{
+      items: DrivePdfFile[];
+      next_page_token: string;
+      folder_id: string;
+    }>(`/api/library/onedrive/files${q ? `?${q}` : ""}`);
+  },
+
+  onedriveImport: (body: {
+    file_ids: string[];
+    project_id?: number | null;
+    folder_id?: string;
+  }) =>
+    api.post<LibraryImportResult & { queued?: number; analysis_queued?: boolean }>(
+      "/api/library/onedrive/import",
+      body,
+    ),
 
   health: (projectId?: number | null) => {
     const q =

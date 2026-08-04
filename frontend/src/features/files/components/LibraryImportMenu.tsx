@@ -20,11 +20,17 @@ export function LibraryImportMenu({
   onBibtex,
   onZoteroImport,
   onMendeleyImport,
+  onGoogleDriveImport,
+  onDropboxImport,
+  onOneDriveImport,
 }: {
   onUpload: () => void;
   onBibtex?: () => void;
   onZoteroImport?: () => void;
   onMendeleyImport?: () => void;
+  onGoogleDriveImport?: () => void;
+  onDropboxImport?: () => void;
+  onOneDriveImport?: () => void;
 }) {
   const navigate = useNavigate();
   const { data: connections } = useQuery({
@@ -33,6 +39,9 @@ export function LibraryImportMenu({
   });
   const zoteroOn = Boolean(connections?.zotero?.connected);
   const mendeleyOn = Boolean(connections?.mendeley?.connected);
+  const driveOn = Boolean(connections?.google_drive?.connected);
+  const dropboxOn = Boolean(connections?.dropbox?.connected);
+  const onedriveOn = Boolean(connections?.onedrive?.connected);
 
   return (
     <DropdownMenu>
@@ -83,14 +92,67 @@ export function LibraryImportMenu({
             Connect Mendeley in Integrations
           </DropdownMenuItem>
         )}
+        {driveOn ? (
+          <DropdownMenuItem onClick={() => onGoogleDriveImport?.()}>
+            <FileUp className="size-3.5" />
+            From Google Drive
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            onClick={() => void navigate("/settings/integrations")}
+          >
+            <FileUp className="size-3.5" />
+            Connect Google Drive in Integrations
+          </DropdownMenuItem>
+        )}
+        {dropboxOn ? (
+          <DropdownMenuItem onClick={() => onDropboxImport?.()}>
+            <FileUp className="size-3.5" />
+            From Dropbox
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            onClick={() => void navigate("/settings/integrations")}
+          >
+            <FileUp className="size-3.5" />
+            Connect Dropbox in Integrations
+          </DropdownMenuItem>
+        )}
+        {onedriveOn ? (
+          <DropdownMenuItem onClick={() => onOneDriveImport?.()}>
+            <FileUp className="size-3.5" />
+            From OneDrive
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            onClick={() => void navigate("/settings/integrations")}
+          >
+            <FileUp className="size-3.5" />
+            Connect OneDrive in Integrations
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => void navigate("/search?mode=discover&q=10.")}>
           <Link2 className="size-3.5" />
           Import DOI
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => void navigate("/search?mode=discover&q=PMID")}>
+        <DropdownMenuItem onClick={() => void navigate("/search?mode=discover&provider=pubmed")}>
           <Hash className="size-3.5" />
           Import PMID
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => void navigate("/search?mode=discover&provider=arxiv")}>
+          <Hash className="size-3.5" />
+          Import arXiv
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => void navigate("/search?mode=discover&provider=europe_pmc")}
+        >
+          <Hash className="size-3.5" />
+          Import Europe PMC
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => void navigate("/search?mode=discover&provider=orcid")}>
+          <Hash className="size-3.5" />
+          Import ORCID
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
