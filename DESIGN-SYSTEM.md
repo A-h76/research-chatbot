@@ -1,14 +1,14 @@
-# Soro Design System
+# DhundDesign System
 
-**Product specification:** [Soro Product Spec **v1.0**](PRODUCT-SPEC.md) — Part 3 of 3  
+**Product specification:** [Dhund Product Spec **v1.0**](PRODUCT-SPEC.md) — Part 3 of 3  
 **Document type:** Design system specification (visual + interaction language)  
-**Product:** Soro  
+**Product:** Dhund  
 **Spec version:** 1.0  
 **Date:** 2026-07-26  
 **Status:** **Locked in Product Spec v1.0** — feature-complete for first implementation phase (design only; no code in this document)  
 **Companions:** [`UI-Architecture.md`](UI-Architecture.md) · [`UI-State.md`](UI-State.md)
 
-**Intent:** Give Soro a visual identity that reads as a **research instrument**, not a generic AI chat product. Current product chrome (violet accent, dark-default assistant UI) is treated as **legacy** to migrate away from—not as the target system.
+**Intent:** Give Dhund a visual identity that reads as a **research instrument**, not a generic AI chat product. Current product chrome (violet accent, dark-default assistant UI) is treated as **legacy** to migrate away from—not as the target system.
 
 **UX / workstation redesign (pending approval):** [`docs/DESIGN-SYSTEM-v2.md`](docs/DESIGN-SYSTEM-v2.md) · [`docs/Interaction-Guidelines.md`](docs/Interaction-Guidelines.md). **Do not implement v2 UI until D0 + D0.5 (static prototype) are approved.**
 
@@ -32,7 +32,7 @@
 
 | Attribute | Expression |
 |-----------|------------|
-| **Name** | Soro — always, in product chrome |
+| **Name** | Dhund — always, in product chrome |
 | **Personality** | Precise, calm, scholarly-modern, private |
 | **Voice in UI** | Short, concrete (“Evidence ready,” not “Your AI magic is complete!”) |
 | **Metaphor** | Lab bench + reading desk: tools within reach, paper at center |

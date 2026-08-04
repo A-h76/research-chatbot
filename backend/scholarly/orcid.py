@@ -336,7 +336,10 @@ def download_open_access_pdf(
     max_bytes: int = 50 * 1024 * 1024,
     db: Any = None,
 ) -> tuple[bytes, str] | None:
-    """Resolve OA PDF via arXiv / DOI URL / Europe PMC / PubMed. Soft-fails to None."""
+    """Legacy/internal OA download — not the acquisition API.
+
+    New code: ``backend.scholarly.uftr.resolve_and_attach`` (UFTR v1.0).
+    """
     work = enrich_oa_hints(work, db=db) if db is not None else work
 
     if work.arxiv_id:

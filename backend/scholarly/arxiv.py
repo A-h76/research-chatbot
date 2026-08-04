@@ -342,7 +342,10 @@ def download_pdf(
     *,
     max_bytes: int = 50 * 1024 * 1024,
 ) -> tuple[bytes, str] | None:
-    """Download arXiv PDF. Soft-fails to None."""
+    """Legacy/internal arXiv PDF download — not the acquisition API.
+
+    New code: ``backend.scholarly.uftr.resolve_and_attach`` (UFTR v1.0).
+    """
     url = (work.open_access_url or "").strip() or pdf_url_for(work.arxiv_id or work.id)
     if not url:
         return None

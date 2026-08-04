@@ -65,71 +65,77 @@ export function WelcomeView({ me }: { me: Me }) {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div
         className={
           currentProjectId
-            ? "grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_17rem]"
-            : "min-h-0 flex-1"
+            ? "grid min-h-0 flex-1 overflow-hidden gap-0 lg:grid-cols-[minmax(0,1fr)_17rem]"
+            : "flex min-h-0 flex-1 flex-col overflow-hidden"
         }
       >
-        <div className="flex min-h-0 min-w-0 flex-col items-center justify-center px-5 py-8">
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="mb-6 w-full max-w-xl text-center"
-          >
-            <h1 className="text-[20px] font-semibold tracking-tight">
-              {project ? `Ask in ${project.name}` : "Ask Dhund"}
-            </h1>
-            <p className="mt-1.5 text-[13px] text-muted-foreground">
-              {project
-                ? "Grounded in this project's papers. Prefer Paper Chat for evidence-linked answers."
-                : "General inquiry. For evidence, entities, and GRADE — open a paper workspace."}
-            </p>
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-[12px]">
-              <Link
-                to="/library"
-                className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-muted-foreground hover:text-foreground"
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="mx-auto flex min-h-full max-w-xl flex-col items-center justify-center px-5 py-8">
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="mb-6 w-full text-center"
               >
-                <Library className="size-3.5" /> Open Library
-              </Link>
-              {project ? (
-                <Link
-                  to={`/projects/${project.id}`}
-                  className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-muted-foreground hover:text-foreground"
-                >
-                  <FolderKanban className="size-3.5" /> Research
-                </Link>
-              ) : (
-                <Link
-                  to="/projects"
-                  className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-muted-foreground hover:text-foreground"
-                >
-                  <FolderKanban className="size-3.5" /> Research
-                </Link>
-              )}
+                <h1 className="text-[20px] font-semibold tracking-tight">
+                  {project ? `Ask in ${project.name}` : "Ask Dhund"}
+                </h1>
+                <p className="mt-1.5 text-[13px] text-muted-foreground">
+                  {project
+                    ? "Grounded in this project's papers. Prefer Paper Chat for evidence-linked answers."
+                    : "General inquiry. For evidence, entities, and GRADE — open a paper workspace."}
+                </p>
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-[12px]">
+                  <Link
+                    to="/library"
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-muted-foreground hover:text-foreground"
+                  >
+                    <Library className="size-3.5" /> Open Library
+                  </Link>
+                  {project ? (
+                    <Link
+                      to={`/projects/${project.id}`}
+                      className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-muted-foreground hover:text-foreground"
+                    >
+                      <FolderKanban className="size-3.5" /> Research
+                    </Link>
+                  ) : (
+                    <Link
+                      to="/projects"
+                      className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-muted-foreground hover:text-foreground"
+                    >
+                      <FolderKanban className="size-3.5" /> Research
+                    </Link>
+                  )}
+                </div>
+              </motion.div>
+              <div className="w-full">
+                <SuggestionCards onPick={(prompt) => onSend(prompt, [])} />
+              </div>
             </div>
-          </motion.div>
-          <div className="w-full max-w-xl">
-            <Composer
-              settings={settings}
-              onSettingsChange={onSettingsChange}
-              onSend={onSend}
-              streaming={false}
-              onStop={() => {}}
-              conversationId={null}
-              projectId={currentProjectId}
-              autoFocus
-            />
           </div>
-          <div className="mt-5 w-full max-w-xl">
-            <SuggestionCards onPick={(prompt) => onSend(prompt, [])} />
+          <div className="shrink-0 border-t border-border/60 bg-background px-4 pb-4 pt-3">
+            <div className="mx-auto w-full max-w-xl">
+              <Composer
+                settings={settings}
+                onSettingsChange={onSettingsChange}
+                onSend={onSend}
+                streaming={false}
+                onStop={() => {}}
+                conversationId={null}
+                projectId={currentProjectId}
+                autoFocus
+              />
+            </div>
           </div>
         </div>
         {currentProjectId != null && (
-          <aside className="hidden min-h-0 min-w-0 overflow-hidden border-l border-border p-3 lg:block">
+          <aside className="hidden min-h-0 min-w-0 overflow-y-auto overflow-x-hidden border-l border-border p-3 lg:block">
             <ProjectInquiryRail projectId={currentProjectId} />
           </aside>
         )}

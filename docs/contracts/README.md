@@ -35,6 +35,9 @@ Implementation
 |-----|---------|
 | [A-405-documentation-freeze.md](./A-405-documentation-freeze.md) | **Checklist + DoD for this freeze** |
 | [RI-v3.0-COMPLETE-FREEZE.md](./RI-v3.0-COMPLETE-FREEZE.md) | **Phase 2 RI complete — feature freeze rules** |
+| [uftr-contract.md](./uftr-contract.md) | **UFTR v1.0** — platform full-text resolution (`resolve_and_attach`) |
+| [ai-capability-router-contract.md](./ai-capability-router-contract.md) | **AI Capability Router v1.0** — Job → Profile → Policy → Router → Prompt/Model Registry → Ledger |
+| [research-scope-contract.md](./research-scope-contract.md) | **Research Scope / Prompt Gateway** — ALLOW \| CLARIFY \| DECLINE before the LLM |
 | [api-contracts.md](./api-contracts.md) | Public Evidence/RI/bindings/reviewer routes + RI envelope |
 | [evidence-contract.md](./evidence-contract.md) | EvidenceObject, citations, stage payloads, ReviewerRun |
 | [error-contract.md](./error-contract.md) | `{ error, detail }` + status matrix |

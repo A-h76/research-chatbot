@@ -35,7 +35,7 @@ export function ChatTopControls({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
-    <div className="flex h-12 items-center gap-2 border-b border-border px-4">
+    <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
       {project && (
         <Link
           to={`/projects/${project.id}`}

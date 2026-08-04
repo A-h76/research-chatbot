@@ -1,19 +1,25 @@
 """Gateway-backed grounded section composer (Sprint A).
 
-Uses AI Gateway task ``section_generator`` / ``literature_review`` with
-EvidenceObject-only context. Requires in-text ``[#id]`` markers. Falls back to
-heuristic paste composition if the gateway is unavailable or returns unusable text.
+Uses AI Capability Router (ADR-0016) → AI Gateway → AI Ledger for writing /
+literature_review research jobs. Falls back to heuristic paste composition if
+the gateway is unavailable or returns unusable text.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import time
+import uuid
 from typing import Any, Callable
 
 log = logging.getLogger(__name__)
 
 MARKER_RE = re.compile(r"\[#(\d+)\]")
+
+# Formal prompt versions (job@semver) — reproducible artifacts (ADR-0016).
+PROMPT_VERSION_WRITING = "writing@5.4"
+PROMPT_VERSION_LIT_REVIEW = "literature_review@2.0"
 
 _SYSTEM = (
     "You are Dhund's grounded literature-review writer (Writing Intelligence v2). "
@@ -135,6 +141,22 @@ def extract_allowed_markers(text: str, allowed_ids: set[int]) -> tuple[str, list
     return cleaned, found
 
 
+def _research_job_for_task(task: str):
+    from backend.ai.capability_router import ResearchJob
+
+    if (task or "").strip().lower() == "literature_review":
+        return ResearchJob.LITERATURE_REVIEW
+    return ResearchJob.WRITING
+
+
+def _prompt_version_for_job(job) -> str:
+    from backend.ai.capability_router import ResearchJob
+
+    if job == ResearchJob.LITERATURE_REVIEW:
+        return PROMPT_VERSION_LIT_REVIEW
+    return PROMPT_VERSION_WRITING
+
+
 def compose_via_gateway(
     *,
     ai_gateway: Any,
@@ -147,12 +169,21 @@ def compose_via_gateway(
     mode: str = "balanced",
     user_id: int | None = None,
     task: str = "section_generator",
-) -> tuple[str, list[dict[str, Any]], list[str]]:
-    """Gateway synthesis. Raises on transport/model failure (caller may fallback)."""
+    project_id: int | None = None,
+) -> tuple[str, list[dict[str, Any]], list[str], dict[str, Any] | None]:
+    """Gateway synthesis via Capability Router + Ledger.
+
+    Returns ``(paragraph, citations, warnings, provenance_dict_or_none)``.
+    Raises on transport/model failure (caller may fallback).
+    """
+    from backend.ai.ai_ledger import AILedgerEntry, hash_output, record_execution
+    from backend.ai.capability_router import resolve_execution
+    from backend.ai.capability_router.resolve import execution_policy_from_mode
+
     ctx = context or {}
     allowed_ids = {int(o["id"]) for o in supporting if o.get("id") is not None}
     if not allowed_ids:
-        return "", [], ["No EvidenceObjects for gateway composition."]
+        return "", [], ["No EvidenceObjects for gateway composition."], None
 
     focus = (query.get("query_text") or "").strip()
     topic = (ctx.get("topic") or focus or "").strip()
@@ -178,16 +209,27 @@ def compose_via_gateway(
             f"and evidence: {list((conflict or {}).get('mediators') or [])}."
         )
 
+    job = _research_job_for_task(task)
+    policy = execution_policy_from_mode(mode)
+    plan = resolve_execution(job, execution_policy=policy)
+    prompt_version = _prompt_version_for_job(job)
+    execution_id = str(uuid.uuid4())
+    evidence_ids = [str(i) for i in sorted(allowed_ids)]
+
+    started = time.perf_counter()
     result = ai_gateway.call(
         model_registry=model_registry,
         task=task,
         mode=mode,
+        model=plan.model,
         messages=[
             {"role": "system", "content": _SYSTEM},
             {"role": "user", "content": user_prompt},
         ],
         user_id=user_id,
     )
+    latency_ms = int((time.perf_counter() - started) * 1000)
+
     raw = (result or {}).get("content") or ""
     if not isinstance(raw, str) or not raw.strip():
         raise ValueError("empty_gateway_content")
@@ -197,10 +239,48 @@ def compose_via_gateway(
         raise ValueError("no_valid_citation_markers")
 
     citations = _citations_for_ids(marker_ids, supporting)
-    warnings: list[str] = ["gateway_synthesis"]
+    tokens = int((result or {}).get("total_tokens") or 0) or None
+    cost = float((result or {}).get("cost") or 0.0)
+    # Evidence-first validation signals (not LLM-as-judge).
+    evaluation = {
+        "citation_markers_ok": True,
+        "marker_count": len(marker_ids),
+        "schema": "grounded_paragraph_v1",
+    }
+
+    entry = AILedgerEntry.from_plan(
+        plan,
+        prompt_version=prompt_version,
+        tools_used=[],
+        evidence_source_ids=evidence_ids,
+        tokens_in=None,
+        tokens_out=tokens,
+        cost_usd=cost if cost else None,
+        latency_ms=latency_ms,
+        output_hash=hash_output(cleaned),
+        evaluation=evaluation,
+        execution_id=execution_id,
+        extra={
+            "user_id": user_id,
+            "project_id": project_id,
+            "validation_status": "cited",
+            "legacy_gateway_task": task,
+        },
+    )
+    record_execution(entry)
+
+    provenance = plan.to_provenance(
+        tokens=tokens,
+        cost_usd=cost if cost else None,
+        duration_ms=latency_ms,
+        prompt_version=prompt_version,
+        execution_id=execution_id,
+    ).to_dict()
+
+    warnings: list[str] = ["gateway_synthesis", "acr_routed"]
     if len(supporting) > max_claims:
         warnings.append(f"Prompt truncated to {max_claims} EvidenceObjects.")
-    return cleaned, citations, warnings
+    return cleaned, citations, warnings, provenance
 
 
 def make_gateway_composer(
@@ -210,8 +290,15 @@ def make_gateway_composer(
     mode: str = "balanced",
     user_id: int | None = None,
     task: str = "section_generator",
+    project_id: int | None = None,
 ) -> Callable[..., tuple[str, list[dict[str, Any]], list[str]]]:
-    """Return a composer compatible with ``generate_sections`` / Writing Intelligence."""
+    """Return a composer compatible with ``generate_sections`` / Writing Intelligence.
+
+    After runs, inspect ``composer.acr_provenances`` / ``acr_last_provenance`` for
+    artifact embedding (ledger remains system of record).
+    """
+
+    provenances: list[dict[str, Any]] = []
 
     def composer(
         *,
@@ -223,7 +310,7 @@ def make_gateway_composer(
         **_: Any,
     ) -> tuple[str, list[dict[str, Any]], list[str]]:
         try:
-            return compose_via_gateway(
+            paragraph, citations, warnings, provenance = compose_via_gateway(
                 ai_gateway=ai_gateway,
                 model_registry=model_registry,
                 query=query,
@@ -234,7 +321,12 @@ def make_gateway_composer(
                 mode=mode,
                 user_id=user_id,
                 task=task,
+                project_id=project_id,
             )
+            if provenance:
+                provenances.append(provenance)
+                composer.acr_last_provenance = provenance  # type: ignore[attr-defined]
+            return paragraph, citations, warnings
         except Exception as exc:
             log.warning("gateway_composer_fallback reason=%s", str(exc)[:200])
             from backend.evidence.writing_intelligence import compose_grounded_paragraph
@@ -248,4 +340,6 @@ def make_gateway_composer(
             warnings = list(warnings) + [f"gateway_fallback:{type(exc).__name__}"]
             return paragraph, citations, warnings
 
+    composer.acr_provenances = provenances  # type: ignore[attr-defined]
+    composer.acr_last_provenance = None  # type: ignore[attr-defined]
     return composer

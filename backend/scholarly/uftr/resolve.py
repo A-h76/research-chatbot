@@ -226,10 +226,19 @@ def resolve_and_attach(
     force: bool = False,
     work: Any = None,
 ) -> dict[str, Any]:
-    """UFTR → apply_pdf_bytes_to_stub on FOUND. Persists fulltext_json either way.
+    """Platform entry point (UFTR v1.0): reference → Research Content → attach.
 
-    Returns attach_meta compatible with Discover import response:
+    **This is the only acquisition API for URL/DOI-based full-text resolution.**
+    Callers must not implement their own PDF download. Pass optional ``work``
+    for identity hints (doi, open_access_url, pmcid, arxiv_id, source) only.
+
+    On FOUND: ``apply_pdf_bytes_to_stub`` + enqueue shared ``import`` (Golden Rule).
+    Always persists ``fulltext_json`` provenance (FOUND only after successful attach).
+
+    Returns:
       pdf_attached, analysis_queued, pdf_error, fulltext (public dict)
+
+    See ``docs/contracts/uftr-contract.md`` and ADR-0015.
     """
     from backend.library.file_pull import apply_pdf_bytes_to_stub
     from backend.library.sync import has_research_asset

@@ -2127,7 +2127,7 @@ def create_library_bridge_blueprint(
                 return jsonify({"error": "not_found"}), 404
 
             from backend.library.sync import has_research_asset
-            from backend.scholarly.uftr.resolve import resolve_and_attach
+            from backend.scholarly.uftr import resolve_and_attach
             from backend.scholarly.uftr.state import should_auto_retry
 
             if has_research_asset(uf):

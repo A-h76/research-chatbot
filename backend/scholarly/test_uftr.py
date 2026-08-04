@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from backend.scholarly.uftr import UFTR_STATUS, UFTR_VERSION, resolve_and_attach
 from backend.scholarly.uftr.cache import ttl_for_outcome
 from backend.scholarly.uftr.outcomes import FullTextOutcome, content_kind_for_bytes
 from backend.scholarly.uftr.resolvers import collect_candidates, normalize_doi
@@ -17,6 +18,12 @@ from backend.scholarly.uftr.state import (
 )
 from backend.scholarly.uftr.validator import classify_body
 from backend.scholarly.uftr.outcomes import ResolutionAttempt, ResolutionResult
+
+
+def test_uftr_v1_platform_service_declared():
+    assert UFTR_VERSION == "1.0"
+    assert UFTR_STATUS == "production_ready"
+    assert callable(resolve_and_attach)
 
 
 def test_content_kind_pdf():

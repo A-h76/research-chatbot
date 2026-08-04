@@ -1958,9 +1958,26 @@ def create_evidence_blueprint(
                     mode=writing_quality_mode,
                     user_id=uid,
                     task=task,
+                    project_id=int(query["scope"]["project_id"]),
                 )
             result = apply_writing_intelligence_stage(reasoned, composer=composer)
             writing = result.get("writing") or {}
+            # Capability Router provenance (ADR-0016) — ledger is SoR; embed compact summary.
+            if composer is not None:
+                last_prov = getattr(composer, "acr_last_provenance", None)
+                all_prov = list(getattr(composer, "acr_provenances", None) or [])
+                if isinstance(last_prov, dict):
+                    ai_ex = last_prov.get("ai_execution") or last_prov
+                    writing["ai_execution"] = ai_ex
+                    if all_prov:
+                        writing["ai_executions"] = [
+                            (p.get("ai_execution") or p) for p in all_prov if isinstance(p, dict)
+                        ]
+                    dm = writing.get("draft_metadata")
+                    if isinstance(dm, dict) and isinstance(ai_ex, dict):
+                        dm["ai_execution"] = ai_ex
+                        if ai_ex.get("prompt_version"):
+                            dm["prompt_version"] = ai_ex["prompt_version"]
             # Phase A.4: enrich bibliography with real paper metadata for citation export
             writing = _enrich_writing_bibliography(db, uid=uid, writing=writing)
             result["writing"] = writing

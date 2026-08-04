@@ -190,18 +190,17 @@ def create_discover_blueprint(
             db.close()
 
     def _try_attach_oa_pdf(db, uf, work, *, user_id: int) -> dict:
-        """Golden Rule: UFTR → shared import → SUE → Evidence → Writing Intelligence.
+        """Golden Rule via UFTR platform service (v1.0): resolve_and_attach only.
 
-        Providers only supply identity + candidate hints. UFTR discovers/validates
-        full text; apply_pdf_bytes_to_stub + enqueue_import are the same path as
-        upload / Drive — no provider analysis shortcuts.
+        Providers supply identity + OA hints. They do not fetch PDFs themselves.
+        See docs/contracts/uftr-contract.md and ADR-0015.
         """
         out = {"pdf_attached": False, "analysis_queued": False, "pdf_error": None, "fulltext": None}
         if storage is None or not upload_dir or enqueue_import is None:
             out["pdf_error"] = "pipeline_not_wired"
             return out
         try:
-            from backend.scholarly.uftr.resolve import resolve_and_attach
+            from backend.scholarly.uftr import resolve_and_attach
 
             return resolve_and_attach(
                 db,

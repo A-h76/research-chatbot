@@ -5354,6 +5354,8 @@ def chat():
         convo_id = convo.id
         needs_title = not convo.title_generated
         project_id = convo.project_id
+        project_name = (project.name if project is not None else None) or None
+        research_skill_for_scope = research_skill_raw
     finally:
         db.close()
 
@@ -5377,6 +5379,54 @@ def chat():
         stage1_started = time.perf_counter() if paper_executor is not None else None
         try:
             last_query = user_message or (history[-1]["content"] if history else "")
+
+            # Prompt Gateway — Research Scope (ADR-0017). Soft decline/clarify
+            # without calling the LLM for clear off-scope asks.
+            from backend.ai.research_scope import evaluate_research_scope
+
+            scope_decision = evaluate_research_scope(
+                last_query,
+                project_name=project_name,
+                paper_scoped=bool(paper_file_id),
+                research_skill=research_skill_for_scope,
+            )
+            if scope_decision.blocks_llm and scope_decision.user_message:
+                full_text = scope_decision.user_message
+                yield sse("status", {"text": "Research scope check…"})
+                # Stream as a normal assistant turn so the UI stays consistent.
+                chunk_size = 48
+                for i in range(0, len(full_text), chunk_size):
+                    yield sse("delta", {"text": full_text[i : i + chunk_size]})
+                gate_blob = json.dumps(scope_decision.to_gate_dict())
+                dbi = SessionLocal()
+                try:
+                    dbi.add(
+                        Message(
+                            conversation_id=convo_id,
+                            role="assistant",
+                            content=full_text,
+                            sources=gate_blob,
+                        )
+                    )
+                    c2 = dbi.get(Conversation, convo_id)
+                    if c2:
+                        c2.updated_at = datetime.now(timezone.utc)
+                    dbi.commit()
+                finally:
+                    dbi.close()
+                yield sse(
+                    "done",
+                    {
+                        "sources": [],
+                        "references": [],
+                        "scope": None,
+                        "confidence": None,
+                        "warnings": [],
+                        "skill": research_skill_for_scope or "ask",
+                        "scope_gate": scope_decision.to_gate_dict().get("scope_gate"),
+                    },
+                )
+                return
 
             doc_atts = [a for a in atts if a["kind"] == "document"]
             img_atts = [a for a in atts if a["kind"] == "image"]

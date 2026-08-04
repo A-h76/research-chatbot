@@ -33,9 +33,13 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
       </a>
       <Sidebar me={me} />
       <MobileDrawer me={me} open={mobileOpen} onOpenChange={setMobileOpen} />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar onOpenMobileDrawer={() => setMobileOpen(true)} />
-        <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 outline-none">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="min-h-0 flex-1 overflow-hidden outline-none"
+        >
           {children}
         </main>
       </div>

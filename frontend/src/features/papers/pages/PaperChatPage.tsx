@@ -297,21 +297,25 @@ export function PaperChatPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* Paper context header */}
-      {fileIdNum && <PaperHeader fileId={fileIdNum} />}
+      {fileIdNum && (
+        <div className="shrink-0">
+          <PaperHeader fileId={fileIdNum} />
+        </div>
+      )}
 
       {/* Chat area */}
       {creating || (convLoading && !conv) ? (
-        <div className="flex flex-1 items-center justify-center gap-3 text-muted-foreground">
+        <div className="flex min-h-0 flex-1 items-center justify-center gap-3 text-muted-foreground">
           <Loader2 className="size-5 animate-spin" />
           <span className="text-sm">Opening paper chat…</span>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col" onClick={handleStarterClick}>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden" onClick={handleStarterClick}>
           {hasMessages || stream.isStreaming ? (
-            <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_17rem]">
-              <div className="min-h-0 min-w-0">
+            <div className="grid min-h-0 flex-1 overflow-hidden gap-0 lg:grid-cols-[minmax(0,1fr)_17rem]">
+              <div className="min-h-0 min-w-0 overflow-hidden">
                 <MessageList
                   messages={messages}
                   live={live}
@@ -319,18 +323,18 @@ export function PaperChatPage() {
                   fileId={fileIdNum}
                 />
               </div>
-              <aside className="hidden min-h-0 min-w-0 overflow-hidden border-l border-border p-3 lg:block">
+              <aside className="hidden min-h-0 min-w-0 overflow-y-auto overflow-x-hidden border-l border-border p-3 lg:block">
                 <PaperChatEvidenceRail fileId={fileIdNum} />
               </aside>
             </div>
           ) : (
-            <div className="min-h-0 flex-1">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               <PaperChatEmpty fileId={fileIdNum} />
             </div>
           )}
 
-          {/* Composer */}
-          <div className="px-4 pb-4 pt-2">
+          {/* Composer — always fixed at bottom of chat column */}
+          <div className="shrink-0 border-t border-border/60 bg-background px-4 pb-4 pt-3">
             {activeConvId ? (
               <>
                 <Composer
@@ -348,7 +352,7 @@ export function PaperChatPage() {
                 </p>
               </>
             ) : (
-              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-3">
+              <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground">
                 <AlertCircle className="size-4" />
                 Could not start chat.{" "}
                 <Button

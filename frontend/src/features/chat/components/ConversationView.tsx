@@ -124,9 +124,9 @@ export function ConversationView({ conversationId }: { conversationId: number })
   const showProjectRail = projectId != null && fileId == null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {fileId != null && (
-        <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-[13px]">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 text-[13px]">
           <Link
             to={`/papers/${fileId}/chat/${conversationId}`}
             className="inline-flex items-center gap-1 text-primary hover:underline"
@@ -137,7 +137,7 @@ export function ConversationView({ conversationId }: { conversationId: number })
         </div>
       )}
       {projectId != null && fileId == null && (
-        <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-[13px]">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 text-[13px]">
           <Link
             to={`/projects/${projectId}`}
             className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
@@ -147,15 +147,17 @@ export function ConversationView({ conversationId }: { conversationId: number })
           <span className="text-muted-foreground">· project-scoped inquiry</span>
         </div>
       )}
-      <ChatTopControls settings={settings} onSettingsChange={onSettingsChange} conversation={conv} />
+      <div className="shrink-0">
+        <ChatTopControls settings={settings} onSettingsChange={onSettingsChange} conversation={conv} />
+      </div>
       <div
         className={
           showProjectRail
-            ? "grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_17rem]"
-            : "min-h-0 flex-1"
+            ? "grid min-h-0 flex-1 overflow-hidden gap-0 lg:grid-cols-[minmax(0,1fr)_17rem]"
+            : "flex min-h-0 flex-1 flex-col overflow-hidden"
         }
       >
-        <div className="min-h-0 min-w-0">
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
           <MessageList
             messages={messages}
             live={live}
@@ -164,12 +166,12 @@ export function ConversationView({ conversationId }: { conversationId: number })
           />
         </div>
         {showProjectRail && (
-          <aside className="hidden min-h-0 min-w-0 overflow-hidden border-l border-border p-3 lg:block">
+          <aside className="hidden min-h-0 min-w-0 overflow-y-auto overflow-x-hidden border-l border-border p-3 lg:block">
             <ProjectInquiryRail projectId={projectId} />
           </aside>
         )}
       </div>
-      <div className="px-4 pb-4">
+      <div className="shrink-0 border-t border-border/60 bg-background px-4 pb-4 pt-3">
         <Composer
           settings={settings}
           onSettingsChange={onSettingsChange}

@@ -24,9 +24,9 @@
 #   gpt-4o-mini-search-preview
 #   omni-moderation-latest
 
-registry_version: "1.1"
+registry_version: "1.2"
 policy_version: "1.0"
-updated: "2026-07-29"
+updated: "2026-08-04"
 
 # ── Escalation tiers ──────────────────────────────────────────────────────────
 # These three tiers participate in the fast → standard → publication escalation
@@ -106,6 +106,115 @@ special:
       'latest' alias is intentional — OpenAI rotates this automatically.
       No registry version bump needed when OpenAI updates the underlying model.
 
+# ── Capability metadata catalog (ADR-0016 v1.0) ───────────────────────────────
+# Used by Capability Router for data-driven selection. Tier assignments above
+# remain the escalation SLO source; this catalog describes model traits.
+# Scores: low | medium | high. Exact model strings must match what the gateway
+# can call (env overrides allowed in capability_router/table.py).
+
+models_catalog:
+  gpt-5-mini:
+    provider: openai
+    capabilities:
+      reasoning: low
+      writing: medium
+      coding: medium
+      long_context: medium
+      structured_output: high
+      vision: low
+    pricing:
+      input_per_mtok: null
+      output_per_mtok: null
+    latency_class: fast
+    context_limit: 128000
+    supports_tools: true
+    supports_streaming: true
+
+  gpt-5.5:
+    provider: openai
+    capabilities:
+      reasoning: high
+      writing: high
+      coding: high
+      long_context: medium
+      structured_output: high
+      vision: medium
+    pricing:
+      input_per_mtok: null
+      output_per_mtok: null
+    latency_class: standard
+    context_limit: 200000
+    supports_tools: true
+    supports_streaming: true
+
+  gpt-5.5-pro:
+    provider: openai
+    capabilities:
+      reasoning: high
+      writing: high
+      coding: high
+      long_context: medium
+      structured_output: high
+      vision: medium
+    pricing:
+      input_per_mtok: null
+      output_per_mtok: null
+    latency_class: slow
+    context_limit: 200000
+    supports_tools: true
+    supports_streaming: true
+
+  claude-sonnet-4-20250514:
+    provider: anthropic
+    capabilities:
+      reasoning: high
+      writing: high
+      coding: medium
+      long_context: high
+      structured_output: medium
+      vision: medium
+    pricing:
+      input_per_mtok: null
+      output_per_mtok: null
+    latency_class: standard
+    context_limit: 200000
+    supports_tools: true
+    supports_streaming: true
+
+  gemini-2.5-pro:
+    provider: google
+    capabilities:
+      reasoning: high
+      writing: medium
+      coding: medium
+      long_context: high
+      structured_output: medium
+      vision: high
+    pricing:
+      input_per_mtok: null
+      output_per_mtok: null
+    latency_class: standard
+    context_limit: 1000000
+    supports_tools: true
+    supports_streaming: true
+
+  gemini-2.5-flash:
+    provider: google
+    capabilities:
+      reasoning: medium
+      writing: medium
+      coding: medium
+      long_context: high
+      structured_output: medium
+      vision: high
+    pricing:
+      input_per_mtok: null
+      output_per_mtok: null
+    latency_class: fast
+    context_limit: 1000000
+    supports_tools: true
+    supports_streaming: true
+
 # ── Version history ───────────────────────────────────────────────────────────
 # 1.0  2026-07-29  Initial registry. Tiers: fast=gpt-5-mini, standard=gpt-5.5,
 #                  publication=gpt-5.5-pro, embeddings=text-embedding-3-small.
@@ -114,3 +223,4 @@ special:
 #                  (gpt-4o-mini-search-preview) and moderation
 #                  (omni-moderation-latest) as named special-purpose models
 #                  reflecting verified project allowlist.
+# 1.2  2026-08-04  ADR-0016 v1.0: models_catalog capability metadata for router.

@@ -384,7 +384,11 @@ def download_open_access_pdf(
     *,
     max_bytes: int = 50 * 1024 * 1024,
 ) -> tuple[bytes, str] | None:
-    """Best-effort OA PDF download for Golden Rule enqueue. Soft-fails to None."""
+    """Legacy/internal OA download — not the acquisition API.
+
+    New library/Discover code must use ``backend.scholarly.uftr.resolve_and_attach``
+    (UFTR v1.0). This helper remains for scholarly tests / internal use only.
+    """
     candidates: list[str] = []
     url = (work.open_access_url or "").strip()
     if url:

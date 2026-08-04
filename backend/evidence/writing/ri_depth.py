@@ -17,8 +17,8 @@ from backend.evidence.themes import discover_themes, reconstruct_fingerprint
 from backend.evidence.timeline import build_timeline
 
 RI_DEPTH_VERSION = "1.1.0"
-PROMPT_VERSION_HEURISTIC = "heuristic_compose_v1"
-PROMPT_VERSION_GATEWAY = "gateway_section_generator_v2"
+PROMPT_VERSION_HEURISTIC = "writing@heuristic.1"
+PROMPT_VERSION_GATEWAY = "writing@5.4"  # formal job@semver (ADR-0016)
 
 
 def _papers_from_objects(objects: list[dict[str, Any]]) -> list[dict[str, Any]]:

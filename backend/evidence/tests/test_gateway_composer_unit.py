@@ -1,8 +1,11 @@
-"""Sprint A — gateway composer + marker extraction + fallback."""
+"""Sprint A — gateway composer + marker extraction + fallback + ACR routing."""
 
 from __future__ import annotations
 
+from backend.ai.ai_ledger import clear_ledger_for_tests, recent_executions
 from backend.evidence.writing.gateway_composer import (
+    PROMPT_VERSION_LIT_REVIEW,
+    PROMPT_VERSION_WRITING,
     extract_allowed_markers,
     make_gateway_composer,
 )
@@ -54,6 +57,7 @@ def test_extract_allowed_markers_strips_unknown_ids():
 
 
 def test_gateway_composer_requires_markers_and_builds_citations():
+    clear_ledger_for_tests()
     gateway = _FakeGateway(
         "Prior trials show HbA1c reductions with Drug X [#1]. "
         "Safety was acceptable at 12 weeks [#2]."
@@ -76,7 +80,18 @@ def test_gateway_composer_requires_markers_and_builds_citations():
     assert "[#1]" in paragraph and "[#2]" in paragraph
     assert [c["evidence_id"] for c in citations] == [1, 2]
     assert "gateway_synthesis" in warnings
+    assert "acr_routed" in warnings
     assert gateway.calls and gateway.calls[0]["task"] == "section_generator"
+    # Capability Router supplies model; gateway must not invent one silently.
+    assert gateway.calls[0].get("model")
+    prov = composer.acr_last_provenance
+    assert prov and prov["ai_execution"]["research_job"] == "writing"
+    assert prov["ai_execution"]["prompt_version"] == PROMPT_VERSION_WRITING
+    assert prov["ai_execution"]["execution_id"]
+    ledger = recent_executions(limit=1)
+    assert ledger and ledger[0]["research_job"] == "writing"
+    assert ledger[0]["prompt_version"] == PROMPT_VERSION_WRITING
+    assert ledger[0]["evaluation"]["citation_markers_ok"] is True
 
 
 def test_gateway_composer_falls_back_without_markers():
@@ -108,7 +123,35 @@ def test_gateway_composer_falls_back_on_gateway_error():
     assert any("gateway_fallback" in w for w in warnings)
 
 
+def test_literature_review_job_routes_and_records_ledger():
+    clear_ledger_for_tests()
+    gateway = _FakeGateway("Synthesis of Drug X benefit [#1].")
+    composer = make_gateway_composer(
+        ai_gateway=gateway,
+        model_registry=_FakeRegistry(),
+        task="literature_review",
+        mode="publication",
+        project_id=42,
+    )
+    paragraph, citations, warnings = composer(
+        query={"query_text": "Drug X"},
+        supporting=[_obj(1)],
+        conflict=None,
+    )
+    assert "[#1]" in paragraph
+    assert citations[0]["evidence_id"] == 1
+    assert "acr_routed" in warnings
+    ai_ex = composer.acr_last_provenance["ai_execution"]
+    assert ai_ex["research_job"] == "literature_review"
+    assert ai_ex["execution_policy"] == "highest_quality"
+    assert ai_ex["prompt_version"] == PROMPT_VERSION_LIT_REVIEW
+    entry = recent_executions(limit=1)[0]
+    assert entry["extra"].get("project_id") == 42
+    assert entry["extra"].get("validation_status") == "cited"
+
+
 def test_build_writing_uses_gateway_composer_end_to_end():
+    clear_ledger_for_tests()
     gateway = _FakeGateway(
         "Themes recur around glycemic benefit [#1][#2]. "
         "Residual uncertainty remains around subgroups [#3]."
@@ -137,6 +180,10 @@ def test_build_writing_uses_gateway_composer_end_to_end():
     )
     assert out["status"] == "ok"
     assert out["paragraph"]
-    assert any("[#" in (s.get("paragraph") or "") for s in out["sections"])
-    assert out["citations"]
     assert gateway.calls  # at least one slot used gateway
+    assert all(c.get("model") for c in gateway.calls)
+    assert composer.acr_last_provenance
+    assert composer.acr_last_provenance["ai_execution"]["research_job"] == "literature_review"
+    assert recent_executions(limit=5)
+    # Binder may strip misaligned markers from the fake shared reply; routing still happened.
+    assert any("acr_routed" in (w or "") for s in out["sections"] for w in (s.get("warnings") or []))

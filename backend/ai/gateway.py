@@ -112,17 +112,26 @@ class AIGateway:
         messages: list[dict[str, Any]],
         mode: str | None = None,
         confidence: float | None = None,
+        model: str | None = None,
         **kwargs,
     ) -> dict[str, Any]:
+        """Execute an LLM call.
+
+        Prefer ``model`` from ``resolve_execution`` (Capability Router). When
+        omitted, falls back to task/mode policy (migration shim).
+        """
         chosen_mode = self._normalize_mode(mode)
         resolved_mode = self._apply_confidence_routing(chosen_mode, confidence)
-        model = self.resolve_model(task, mode=chosen_mode, confidence=confidence)
+        if model and str(model).strip():
+            resolved_model = str(model).strip()
+        else:
+            resolved_model = self.resolve_model(task, mode=chosen_mode, confidence=confidence)
         started = time.perf_counter()
         success = False
         result: dict[str, Any] | None = None
         error_text = ""
         try:
-            result = model_registry.call(model, messages, **kwargs)
+            result = model_registry.call(resolved_model, messages, **kwargs)
             success = True
             return result
         except Exception as exc:
@@ -137,7 +146,7 @@ class AIGateway:
                 task,
                 chosen_mode,
                 resolved_mode,
-                model,
+                resolved_model,
                 latency_ms,
                 tokens,
                 cost,
