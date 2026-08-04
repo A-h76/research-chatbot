@@ -80,9 +80,10 @@ export function LibraryHealthStrip({
   return (
     <section
       aria-label="Research readiness"
-      className="border-b border-border/70 pb-5"
+      className="border-b border-border pb-3"
+      data-density="high"
     >
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h2 className="text-[13px] font-semibold tracking-tight text-foreground">
             Research readiness
@@ -93,7 +94,7 @@ export function LibraryHealthStrip({
         </div>
         <Button
           size="sm"
-          className="h-8 gap-1.5 text-[12px]"
+          className="h-7 gap-1.5 text-[12px]"
           onClick={continueTarget.run}
         >
           {continueTarget.label}
@@ -101,21 +102,21 @@ export function LibraryHealthStrip({
         </Button>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3 lg:grid-cols-5">
         {metrics.map((m) => (
           <div key={m.label} className="min-w-0">
             <p
               className={cn(
-                "text-[22px] font-semibold tracking-tight tabular-nums leading-none",
+                "text-[18px] font-semibold tracking-tight tabular-nums leading-none",
                 m.tone === "emphasis" && "text-primary",
-                m.tone === "warn" && needingReview > 0 && "text-amber-600 dark:text-amber-400",
+                m.tone === "warn" && needingReview > 0 && "text-sem-warn",
                 m.tone === "default" && "text-foreground",
               )}
               title={m.hint}
             >
               {m.value.toLocaleString()}
             </p>
-            <p className="mt-1.5 text-[11px] font-medium text-muted-foreground">
+            <p className="mt-1 text-[11px] font-medium text-muted-foreground">
               {m.label}
             </p>
           </div>

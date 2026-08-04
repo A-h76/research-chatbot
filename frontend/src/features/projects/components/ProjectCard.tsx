@@ -6,6 +6,10 @@ import {
 } from "lucide-react";
 import type { Project } from "@/types/api";
 
+/**
+ * Dense project row — answers “What am I working on?” (Design Language).
+ * Hairlines only; no card elevation (Border Doctrine).
+ */
 export function ProjectCard({
   project,
   chatCount,
@@ -17,7 +21,7 @@ export function ProjectCard({
   chatCount: number;
   fileCount: number;
   memoryCount: number;
-  onOpen: () => void;   // kept for backwards compat; navigation now uses router
+  onOpen: () => void;
   onEdit: () => void;
 }) {
   const navigate = useNavigate();
@@ -25,58 +29,60 @@ export function ProjectCard({
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -2 }}
-      transition={{ duration: 0.18 }}
-      className="group relative flex cursor-pointer flex-col gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm transition-all hover:border-primary/30 hover:shadow-md"
+      transition={{ duration: 0.15 }}
+      className="group relative flex cursor-pointer items-start gap-3 border-b border-border px-1 py-3 transition-colors last:border-b-0 hover:bg-muted/30"
+      data-density="high"
       onClick={() => navigate(`/projects/${project.id}`)}
     >
-      {/* Edit button */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onEdit(); }}
-        className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
-        title="Edit project"
-      >
-        <Pencil className="size-3.5" />
-      </button>
-
-      {/* Emoji */}
-      <div className="flex size-11 items-center justify-center rounded-xl bg-accent-soft text-2xl">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40 text-lg">
         {project.emoji}
       </div>
 
-      {/* Name + description */}
-      <div className="min-w-0">
-        <h3 className="font-medium leading-snug">{project.name}</h3>
-        {project.description && (
-          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start gap-2">
+          <h3 className="min-w-0 flex-1 truncate text-[13px] font-medium leading-snug tracking-tight">
+            {project.name}
+          </h3>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+            title="Edit project"
+          >
+            <Pencil className="size-3.5" />
+          </button>
+        </div>
+        {project.description ? (
+          <p className="mt-0.5 line-clamp-1 text-[12px] text-muted-foreground">
             {project.description}
           </p>
-        )}
-        {!project.description && project.instructions && (
-          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground italic">
+        ) : project.instructions ? (
+          <p className="mt-0.5 line-clamp-1 text-[12px] italic text-muted-foreground">
             {project.instructions}
           </p>
-        )}
-      </div>
+        ) : null}
 
-      {/* Stats row */}
-      <div className="mt-auto flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1" title="Chats">
-          <MessagesSquare className="size-3.5" /> {chatCount}
-        </span>
-        <span className="inline-flex items-center gap-1" title="Papers">
-          <FileText className="size-3.5" /> {fileCount}
-        </span>
-        {memoryCount > 0 && (
-          <span className="inline-flex items-center gap-1 text-primary" title="Memories">
-            <Brain className="size-3.5" /> {memoryCount}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tabular-nums text-muted-foreground">
+          <span className="inline-flex items-center gap-1" title="Chats">
+            <MessagesSquare className="size-3" /> {chatCount}
           </span>
-        )}
-        <span className="ml-auto flex items-center gap-1 text-primary opacity-0 transition-opacity group-hover:opacity-100">
-          Open <ArrowRight className="size-3" />
-        </span>
+          <span className="inline-flex items-center gap-1" title="Papers">
+            <FileText className="size-3" /> {fileCount}
+          </span>
+          {memoryCount > 0 && (
+            <span className="inline-flex items-center gap-1 text-primary" title="Memories">
+              <Brain className="size-3" /> {memoryCount}
+            </span>
+          )}
+          <span className="ml-auto inline-flex items-center gap-1 text-primary opacity-0 transition-opacity group-hover:opacity-100">
+            Open <ArrowRight className="size-3" />
+          </span>
+        </div>
       </div>
     </motion.div>
   );

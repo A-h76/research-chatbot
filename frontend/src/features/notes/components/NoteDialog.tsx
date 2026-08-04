@@ -92,7 +92,7 @@ export function NoteDialog({
               value={content}
               placeholder="Write your note here…"
               onChange={(e) => setContent(e.target.value)}
-              className="min-h-36 resize-y"
+              className="min-h-40 max-w-[65ch] resize-y text-[15px] leading-[1.55]"
               autoFocus
             />
           </div>

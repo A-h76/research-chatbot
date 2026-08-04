@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import { loadResearchPrefs, saveResearchPrefs, type ResearchPrefs } from "../lib/researchPrefs";
 import { toast } from "@/components/common/Toast";
+import { DocsHelpLink } from "@/features/docs/DocsHelpLink";
 
 function Row({
   label,
@@ -41,6 +42,12 @@ export function ResearchDefaultsSection() {
 
   return (
     <div>
+      <DocsHelpLink
+        className="mb-4"
+        to="/docs/research-scope"
+        label="Research Scope"
+        hint="How Dhund keeps work on the research path."
+      />
       <p className="mb-1 text-sm text-muted-foreground">
         Preferences for the evidence-first literature review path. Draft generation always uses{" "}
         <span className="font-medium text-foreground">accepted evidence only</span> — that gate is

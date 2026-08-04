@@ -28,7 +28,13 @@ function decorateCodeBlocks(container: HTMLElement) {
   });
 }
 
-export function MarkdownRenderer({ content }: { content: string }) {
+export function MarkdownRenderer({
+  content,
+  className = "prose-chat",
+}: {
+  content: string;
+  className?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const html = renderMarkdown(content);
 
@@ -39,7 +45,7 @@ export function MarkdownRenderer({ content }: { content: string }) {
   return (
     <div
       ref={ref}
-      className="prose-chat"
+      className={className}
       // Content is sanitized by DOMPurify inside renderMarkdown().
       dangerouslySetInnerHTML={{ __html: html }}
     />

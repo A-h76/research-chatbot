@@ -21,7 +21,7 @@ const FORMAT_TABS: { key: CitationFormat; label: string }[] = [
   { key: "bibtex", label: "BibTeX" },
 ];
 
-/** D7 T4 — dense tabular citations, export-first. */
+/** D7 T4 — dense tabular citations, export-first. Cognitive load: What can I cite? */
 export function CitationsPage() {
   const { currentProjectId } = useUI();
   const { data: projects = [] } = useProjects();
@@ -58,10 +58,14 @@ export function CitationsPage() {
   );
 
   return (
-    <PageContainer title="Citations" dense>
-      <div className="space-y-3">
+    <PageContainer
+      title="Citations"
+      description="What can I cite? Export-ready bibliography from papers and evidence you accepted."
+      dense
+    >
+      <div className="space-y-3" data-density="high">
         {/* Tool toolbar */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border pb-2.5">
           <div className="flex min-w-[12rem] flex-1 items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5">
             <Search className="size-3.5 shrink-0 text-muted-foreground" />
             <input
@@ -89,10 +93,10 @@ export function CitationsPage() {
                 type="button"
                 onClick={() => setFormat(key)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[12px] font-medium transition-colors",
+                  "inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-[12px] font-medium transition-colors",
                   format === key
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
+                    ? "border-border bg-card text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
                 )}
               >
                 {key === "bibtex" ? <BibtexIcon className="size-3.5" /> : null}
@@ -169,7 +173,7 @@ export function CitationsPage() {
           )
         ) : (
           <>
-            <p className="text-[12px] text-muted-foreground">
+            <p className="text-[12px] tabular-nums text-muted-foreground">
               {citations.length} citation{citations.length !== 1 ? "s" : ""} · {format.toUpperCase()}
             </p>
             <CitationTable

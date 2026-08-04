@@ -325,7 +325,7 @@ export function FilesPage() {
 
   return (
     <PageContainer description={statsLine} dense maxWidth="6xl">
-      <div className="space-y-6">
+      <div className="space-y-4" data-density="high">
         {hasLibrary && (
           <CollectionToolbar
             q={q}
@@ -440,7 +440,7 @@ export function FilesPage() {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-8 sm:flex-row sm:items-start">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
             <CollectionsPanel
               activeId={collectionId}
               totalPapers={paperCount}

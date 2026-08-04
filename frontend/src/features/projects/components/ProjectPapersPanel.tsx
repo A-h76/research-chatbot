@@ -32,7 +32,7 @@ function PaperListRow({
     <button
       type="button"
       onClick={onClick}
-      className="group flex w-full items-center gap-3 rounded-xl border border-border px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+      className="group flex w-full items-center gap-2.5 rounded-md border border-border px-3 py-2 text-left transition-colors hover:bg-muted/40"
     >
       <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-soft">
         <FileText className="size-4 text-primary" />

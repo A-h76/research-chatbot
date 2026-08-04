@@ -649,7 +649,7 @@ function DraftTab() {
   ]);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-density="low">
       {currentProjectId == null && (
         <div className="rounded-md border border-border bg-card p-3 text-[12px] text-muted-foreground">
           Select a project to open the writing desk. Documents are always project-scoped.
@@ -1000,7 +1000,10 @@ function DraftTab() {
             </p>
           ) : null}
 
-          <div className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/80 bg-[#faf9f7] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] sm:p-5 dark:bg-[#121212]">
+          <div
+            className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-[#f7f8fa] p-4 sm:p-6 dark:bg-[#161b22]"
+            data-density="low"
+          >
             <textarea
               ref={editorRef}
               value={input}
@@ -1039,7 +1042,7 @@ function DraftTab() {
               rows={18}
               aria-label="Manuscript editor"
               disabled={activeDoc?.status === "deleted"}
-              className="relative z-[1] mx-auto min-h-[24rem] w-full max-w-[42rem] flex-1 resize-y border-0 bg-transparent px-1 py-2 text-[15px] leading-[1.8] tracking-[-0.011em] text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+              className="relative z-[1] mx-auto min-h-[24rem] w-full max-w-[65ch] flex-1 resize-y border-0 bg-transparent px-1 py-2 text-[15px] leading-[1.55] tracking-[-0.011em] text-foreground outline-none placeholder:text-muted-foreground focus:ring-0"
             />
           </div>
 

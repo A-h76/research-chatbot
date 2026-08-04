@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 const BACKEND = 'http://localhost:5000'
+const REPO_DOCS = path.resolve(__dirname, "../docs")
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -11,6 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@repo-docs": REPO_DOCS,
     },
   },
   build: {
@@ -23,6 +25,10 @@ export default defineConfig({
     },
   },
   server: {
+    fs: {
+      // Allow importing living contracts / ADRs as ?raw for Docs (Mintlify layout).
+      allow: [path.resolve(__dirname, "..")],
+    },
     proxy: {
       '/api': BACKEND,
       '/auth': BACKEND,

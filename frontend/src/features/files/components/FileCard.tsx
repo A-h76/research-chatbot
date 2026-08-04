@@ -154,9 +154,10 @@ export function FileCard({
   return (
     <div
       className={cn(
-        "group relative flex w-full items-start gap-3 border-b border-border/60 px-1 py-3.5 text-left transition-colors last:border-b-0",
-        selected ? "bg-primary/[0.04]" : "hover:bg-muted/30",
+        "group relative flex w-full items-start gap-2.5 border-b border-border px-1 py-2.5 text-left transition-colors last:border-b-0",
+        selected ? "bg-primary/[0.04]" : "hover:bg-muted/40",
       )}
+      data-density="high"
     >
       {isPaper && onToggleSelect && (
         <label className="mt-1 flex shrink-0 cursor-pointer items-center">
@@ -182,7 +183,7 @@ export function FileCard({
         >
           {displayTitle}
         </p>
-        <p className="mt-1 truncate text-[12px] text-muted-foreground">
+        <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
           {meta || (file.title && file.title !== file.name ? file.name : "No metadata yet")}
           {study ? (
             <span className="text-muted-foreground/90"> · {study}</span>
@@ -196,15 +197,15 @@ export function FileCard({
         </p>
 
         {chips.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="mt-1.5 flex flex-wrap gap-1">
             {chips.map((c) => (
               <span
                 key={c.id}
                 className={cn(
-                  "rounded px-1.5 py-0.5 text-[10px] font-medium tracking-wide",
+                  "rounded border px-1.5 py-px text-[10px] font-medium tracking-wide",
                   c.on
-                    ? "bg-primary/10 text-primary"
-                    : "bg-muted/60 text-muted-foreground/70",
+                    ? "border-primary/30 bg-primary/8 text-primary"
+                    : "border-border text-muted-foreground/70",
                 )}
               >
                 {c.label}
@@ -214,12 +215,12 @@ export function FileCard({
         )}
       </button>
 
-      <div className="flex shrink-0 flex-col items-end gap-2 pt-0.5">
+      <div className="flex shrink-0 flex-col items-end gap-1.5 pt-0.5">
         <span
           className={cn(
-            "text-[11px] capitalize",
+            "text-[11px] capitalize tabular-nums",
             rs === "unread" && "font-medium text-foreground",
-            rs === "reading" && "text-amber-600 dark:text-amber-400",
+            rs === "reading" && "font-medium text-sem-warn",
             rs === "read" && "text-muted-foreground",
           )}
         >

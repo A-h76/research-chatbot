@@ -159,7 +159,7 @@ export function AnalysisOutput({ analysis, sectionsCount, onCopy, onDownload }: 
             </AccordionTrigger>
             <AccordionContent>
               {section.content ? (
-                <div className="prose-chat text-sm">
+                <div className="prose-docs max-w-[65ch]">
                   <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, rehypeSanitize]}>
                     {section.content}
                   </ReactMarkdown>

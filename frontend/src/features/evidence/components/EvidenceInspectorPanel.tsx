@@ -8,7 +8,9 @@ import { toast } from "@/components/common/Toast";
 import { evidenceApi } from "../api";
 import { useEvidenceReason } from "../hooks/useEvidenceReason";
 import { ConsensusConflictStrip } from "./ConsensusConflictStrip";
+import { ConfidenceBandBadge } from "./ConfidenceBandBadge";
 import { DecisionActivityFeed } from "./DecisionActivityFeed";
+import { ProvenanceStrip } from "./ProvenanceStrip";
 import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
 import { loadResearchPrefs } from "@/features/settings/lib/researchPrefs";
 import type { EvidenceObjectDTO, ExplainResponse, Sufficiency } from "../types";
@@ -157,11 +159,17 @@ export function EvidenceInspectorPanel({
 
   return (
     <aside
-      className="flex w-full flex-col gap-3 border-l border-border bg-muted/20 p-3 lg:max-w-sm"
+      className="flex w-full flex-col gap-3 border-l border-border bg-surface-panel p-3 lg:sticky lg:top-14 lg:max-h-[calc(100vh-4rem)] lg:max-w-sm lg:overflow-y-auto"
       aria-label="Evidence inspector"
+      data-density="high"
     >
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold tracking-tight">Evidence Inspector</h2>
+      <div className="flex items-baseline justify-between gap-2 border-b border-border pb-2">
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            Inspect
+          </p>
+          <h2 className="text-sm font-semibold tracking-tight">Evidence</h2>
+        </div>
         {status === "loading" && (
           <span className="text-[11px] text-muted-foreground">Looking up…</span>
         )}
@@ -346,9 +354,7 @@ function EvidenceObjectCard({
             Candidate
           </span>
         )}
-        <span className="rounded border border-border px-1 py-0.5 text-[10px] uppercase text-muted-foreground">
-          {evidence.confidence_band}
-        </span>
+        <ConfidenceBandBadge band={evidence.confidence_band} compact />
         <span className="rounded border border-border px-1 py-0.5 text-[10px] uppercase text-muted-foreground">
           {evidence.relation}
         </span>
@@ -371,6 +377,7 @@ function EvidenceObjectCard({
         {evidence.page != null ? ` · p. ${evidence.page}` : ""}
         {evidence.study_type ? ` · ${evidence.study_type}` : ""}
       </p>
+      <ProvenanceStrip provenance={evidence.provenance} />
       {(onAccept || onReject || onImportant) && (
         <div className="mt-2 flex flex-wrap gap-1">
           {onAccept && (

@@ -12,6 +12,7 @@ import { NotesPage }                from "@/features/notes/pages/NotesPage";
 import { SettingsPage }             from "@/features/settings/pages/SettingsPage";
 import { LegalPage }                from "@/features/legal/LegalPage";
 import { SupportPage }              from "@/features/support/SupportPage";
+import { DocsPage }                 from "@/features/docs/DocsPage";
 import { PaperOverviewPage }        from "@/features/papers/pages/PaperOverviewPage";
 import { PaperChatPage }            from "@/features/papers/pages/PaperChatPage";
 import { DashboardPage }            from "@/features/dashboard/DashboardPage";
@@ -27,6 +28,8 @@ export const router = createBrowserRouter([
   { path: "/cookies",  element: <LegalPage slug="cookies" />, errorElement: <RouteErrorFallback /> },
   { path: "/about",    element: <LegalPage slug="about" />, errorElement: <RouteErrorFallback /> },
   { path: "/support",  element: <SupportPage />, errorElement: <RouteErrorFallback /> },
+  { path: "/docs",     element: <Navigate to="/docs/overview" replace />, errorElement: <RouteErrorFallback /> },
+  { path: "/docs/:slug", element: <DocsPage />, errorElement: <RouteErrorFallback /> },
   {
     path: "/",
     element: <RootLayout />,

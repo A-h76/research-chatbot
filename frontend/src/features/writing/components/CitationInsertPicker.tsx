@@ -125,7 +125,7 @@ export function CitationInsertPicker({
   return (
     <div
       className={cn(
-        "rounded-lg border border-border bg-card shadow-md",
+        "rounded-md border border-border bg-card shadow-sm",
         className,
       )}
       role="dialog"

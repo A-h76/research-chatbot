@@ -248,18 +248,21 @@ export function DashboardPage() {
         ) : !data ? (
           <p className="text-sm text-foreground/65">Could not load home.</p>
         ) : stage === 1 ? (
-          <div className="space-y-8 py-6 sm:py-8">
+          <div className="space-y-6 py-6 sm:py-8" data-density="low">
             <header>
-              <h1 className="text-[24px] font-semibold tracking-tight text-foreground">
+              <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                What should I do next?
+              </p>
+              <h1 className="mt-1.5 text-[24px] font-semibold tracking-tight text-foreground">
                 {firstName ? `Welcome, ${firstName}` : "Welcome to Dhund"}
               </h1>
               {researchFocusLine ? (
-                <p className="mt-2 text-[14px] text-foreground/65">
+                <p className="mt-2 text-[14px] text-muted-foreground">
                   Research focus · {researchFocusLine}
                 </p>
               ) : (
-                <p className="mt-2 text-[14px] text-foreground/65">
-                  What should you do next? Start with your first paper.
+                <p className="mt-2 text-[14px] text-muted-foreground">
+                  Start with your first paper — everything else follows from evidence.
                 </p>
               )}
             </header>
@@ -271,27 +274,28 @@ export function DashboardPage() {
 
             <GettingStartedChecklist items={checklist} />
 
-            <section className="rounded-xl border border-border bg-card/60 p-3 sm:p-4">
-              <h2 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                How Dhund works
-              </h2>
-              <ResearchOsHeroFlow className="mt-1" />
-            </section>
-
-            <section className="rounded-xl border border-border bg-card/60 p-3 sm:p-4">
-              <h2 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Research ecosystem
-              </h2>
-              <p className="mt-1 px-1 text-[12px] text-muted-foreground">
-                Connect the tools you already use — Dhund unifies them into one evidence pipeline.
-              </p>
-              <ResearchEcosystemCloud className="mt-3" compact showCategories={false} />
-            </section>
+            <details className="group rounded-md border border-border">
+              <summary className="cursor-pointer list-none px-3.5 py-2.5 text-[13px] font-medium text-muted-foreground marker:content-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+                How Dhund works · Research ecosystem
+              </summary>
+              <div className="space-y-4 border-t border-border px-3.5 py-3">
+                <ResearchOsHeroFlow />
+                <div>
+                  <p className="text-[12px] text-muted-foreground">
+                    Connect the tools you already use — Dhund unifies them into one evidence pipeline.
+                  </p>
+                  <ResearchEcosystemCloud className="mt-2" compact showCategories={false} />
+                </div>
+              </div>
+            </details>
           </div>
         ) : (
-          <div className="space-y-7 py-2">
+          <div className="space-y-5 py-2" data-density="medium">
             <header>
-              <h1 className="text-[22px] font-semibold tracking-tight text-foreground sm:text-[24px]">
+              <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                What should I do next?
+              </p>
+              <h1 className="mt-1.5 text-[22px] font-semibold tracking-tight text-foreground sm:text-[24px]">
                 {stage === 3
                   ? firstName
                     ? `Resume your research, ${firstName}`
@@ -301,25 +305,18 @@ export function DashboardPage() {
                     : "Continue your research"}
               </h1>
               {researchFocusLine ? (
-                <p className="mt-1.5 text-[13px] text-foreground/65">
+                <p className="mt-1.5 text-[13px] text-muted-foreground">
                   Research focus · {researchFocusLine}
                 </p>
               ) : null}
             </header>
 
-            <div className="rounded-xl border border-border bg-card px-3.5 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-foreground/55">
-                Next
-              </p>
-              <p className="mt-1 text-[13px] text-foreground">{priorityLine}</p>
-            </div>
-
-            {/* Continue / resume hero — calm card, not a dashboard widget */}
-            <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
+            {/* Single primary answer — Next + Continue merged (Cognitive Load Doctrine) */}
+            <section className="rounded-md border border-border bg-card p-4 sm:p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
                   <span className="size-1.5 rounded-full bg-primary" aria-hidden />
-                  {stage === 3 ? "Active workspace" : "Continue"}
+                  Next
                 </span>
                 {projectName ? (
                   <button
@@ -327,20 +324,30 @@ export function DashboardPage() {
                     onClick={() =>
                       currentProjectId && navigate(`/projects/${currentProjectId}`)
                     }
-                    className="text-[11px] text-foreground/55 hover:text-foreground"
+                    className="text-[11px] text-muted-foreground hover:text-foreground"
                   >
                     {projectName}
                   </button>
                 ) : null}
               </div>
-              <h2 className="mt-2 text-[17px] font-semibold leading-snug tracking-tight sm:text-[18px]">
+              <p className="mt-2 text-[14px] leading-snug text-foreground">{priorityLine}</p>
+              <h2 className="mt-3 text-[17px] font-semibold leading-snug tracking-tight sm:text-[18px]">
                 {focusPaper
                   ? focusPaper.title || focusPaper.name
                   : topWriting
                     ? topWriting.title || "Untitled draft"
                     : "Pick up where you left off"}
               </h2>
-              <div className="mt-3 flex flex-wrap gap-2">
+              {insightLines[0] ? (
+                <button
+                  type="button"
+                  onClick={() => insightLines[0].href && navigate(insightLines[0].href)}
+                  className="mt-2 text-left text-[12px] text-muted-foreground hover:text-primary"
+                >
+                  {insightLines[0].text}
+                </button>
+              ) : null}
+              <div className="mt-4 flex flex-wrap gap-2">
                 <Button
                   className="gap-1.5"
                   disabled={!focusPaper && !topWriting}
@@ -385,24 +392,25 @@ export function DashboardPage() {
                     </HomeSectionLabel>
                     <div className="space-y-2">
                       {topWriting ? (
-                        <div className="rounded-xl border border-border bg-card px-3.5 py-3">
+                        <div className="rounded-md border border-border bg-card px-3.5 py-3">
                           <button
                             type="button"
                             onClick={() => navigate(`/writing?doc=${topWriting.id}`)}
                             className="flex w-full items-center gap-2 text-left"
                           >
-                            <PenLine className="size-3.5 text-foreground/45" />
+                            <PenLine className="size-3.5 text-muted-foreground" />
                             <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
                               {topWriting.title || "Untitled"}
                             </span>
-                            <span className="text-[11px] tabular-nums text-foreground/55">
+                            <span className="text-[11px] tabular-nums text-muted-foreground">
                               {topWriting.word_count}w
                             </span>
                           </button>
-                          <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+                          <div className="mt-2.5 h-px w-full overflow-hidden bg-border">
                             <div
-                              className="h-full rounded-full bg-primary transition-all duration-300"
+                              className="h-px bg-primary transition-all duration-300"
                               style={{ width: `${writingPct}%` }}
+                              aria-hidden
                             />
                           </div>
                         </div>
@@ -422,29 +430,6 @@ export function DashboardPage() {
                     </div>
                   </section>
                 )}
-
-                {insightLines.length > 0 ? (
-                  <section>
-                    <HomeSectionLabel>AI insights</HomeSectionLabel>
-                    <ul className="space-y-2 rounded-xl border border-border bg-card px-3.5 py-3">
-                      {insightLines.map((line) => (
-                        <li key={line.text}>
-                          <button
-                            type="button"
-                            onClick={() => line.href && navigate(line.href)}
-                            className="flex w-full items-start gap-2 text-left text-[13px] text-foreground transition-colors duration-150 hover:text-primary"
-                          >
-                            <span
-                              className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary"
-                              aria-hidden
-                            />
-                            {line.text}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                ) : null}
 
                 <section>
                   <HomeSectionLabel>Recently opened</HomeSectionLabel>
@@ -473,9 +458,9 @@ export function DashboardPage() {
               <>
                 <section>
                   <HomeSectionLabel>Recent papers</HomeSectionLabel>
-                  <div className="overflow-hidden rounded-xl border border-border bg-card divide-y divide-border">
+                  <div className="divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
                     {data.recent_papers.length === 0 ? (
-                      <p className="px-3.5 py-4 text-[13px] text-foreground/65">
+                      <p className="px-3.5 py-4 text-[13px] text-muted-foreground">
                         No papers yet — upload to start.
                       </p>
                     ) : (
@@ -484,9 +469,9 @@ export function DashboardPage() {
                           key={`p-${p.id}`}
                           type="button"
                           onClick={() => navigate(`/papers/${p.id}`)}
-                          className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors duration-150 hover:bg-muted/50"
+                          className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors duration-150 hover:bg-muted/40"
                         >
-                          <FileText className="size-3.5 shrink-0 text-foreground/45" aria-hidden />
+                          <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                           <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
                             {p.title || p.name}
                           </span>
@@ -501,46 +486,34 @@ export function DashboardPage() {
                 </section>
 
                 <section>
-                  <HomeSectionLabel>Recent projects</HomeSectionLabel>
+                  <HomeSectionLabel>Context</HomeSectionLabel>
                   <HomeRecentList
-                    empty="Create a project to organize questions and evidence."
-                    items={data.projects.slice(0, 5).map((p) => ({
-                      key: `proj-${p.id}`,
-                      label: `${p.emoji ? `${p.emoji} ` : ""}${p.name}`,
-                      meta: `${p.paper_count} papers`,
-                      icon: FolderKanban,
-                      onClick: () => navigate(`/projects/${p.id}`),
-                    }))}
-                  />
-                </section>
-
-                <section>
-                  <HomeSectionLabel>Recent AI conversations</HomeSectionLabel>
-                  <HomeRecentList
-                    empty="Ask Dhund a research question to get started."
-                    items={data.recent_chats.slice(0, 5).map((c) => ({
-                      key: `c-${c.id}`,
-                      label: c.title,
-                      meta: formatRelative(c.updated_at) ?? undefined,
-                      icon: MessageSquare,
-                      onClick: () => navigate(`/c/${c.id}`),
-                    }))}
-                  />
-                </section>
-
-                <section>
-                  <HomeSectionLabel>Recent literature reviews</HomeSectionLabel>
-                  <HomeRecentList
-                    empty="Start a literature review from Writing."
-                    items={(litReviews.length > 0 ? litReviews : recentWriting.slice(0, 4)).map(
-                      (doc) => ({
-                        key: `lr-${doc.id}`,
-                        label: doc.title || "Untitled",
-                        meta: formatRelative(doc.last_opened_at || doc.updated_at) ?? undefined,
-                        icon: BookOpen,
-                        onClick: () => navigate(`/writing?doc=${doc.id}`),
-                      }),
-                    )}
+                    empty="Create a project, ask Dhund, or start a literature review."
+                    items={[
+                      ...data.projects.slice(0, 2).map((p) => ({
+                        key: `proj-${p.id}`,
+                        label: `${p.emoji ? `${p.emoji} ` : ""}${p.name}`,
+                        meta: `${p.paper_count} papers`,
+                        icon: FolderKanban,
+                        onClick: () => navigate(`/projects/${p.id}`),
+                      })),
+                      ...(litReviews.length > 0 ? litReviews : recentWriting)
+                        .slice(0, 2)
+                        .map((doc) => ({
+                          key: `lr-${doc.id}`,
+                          label: doc.title || "Untitled",
+                          meta: formatRelative(doc.last_opened_at || doc.updated_at) ?? undefined,
+                          icon: BookOpen,
+                          onClick: () => navigate(`/writing?doc=${doc.id}`),
+                        })),
+                      ...data.recent_chats.slice(0, 2).map((c) => ({
+                        key: `c-${c.id}`,
+                        label: c.title,
+                        meta: formatRelative(c.updated_at) ?? undefined,
+                        icon: MessageSquare,
+                        onClick: () => navigate(`/c/${c.id}`),
+                      })),
+                    ]}
                   />
                 </section>
               </>

@@ -83,7 +83,7 @@ function DiscoverCard({
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.15 }}
-      className="rounded-2xl border border-border bg-card p-4 shadow-sm hover:border-primary/30 transition-colors"
+      className="rounded-lg border border-border bg-card p-3 hover:border-primary/40 transition-colors"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -119,7 +119,7 @@ function DiscoverCard({
               </Badge>
             )}
             {work.citation_count > 0 && (
-              <Badge variant="secondary" className="text-xs gap-1 py-0">
+              <Badge variant="secondary" className="gap-1 py-0 text-xs tabular-nums">
                 <Quote className="size-3" />
                 {work.citation_count.toLocaleString()}
               </Badge>
@@ -128,7 +128,10 @@ function DiscoverCard({
           {work.concepts.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
               {work.concepts.slice(0, 4).map((c) => (
-                <span key={c} className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                <span
+                  key={c}
+                  className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                >
                   {c}
                 </span>
               ))}
@@ -464,9 +467,9 @@ type Kind = "paper" | "note" | "citation" | "chat";
 
 const KIND_CONFIG: Record<Kind, { label: string; icon: React.ReactNode; color: string }> = {
   paper:    { label: "Papers",    icon: <FileText className="size-3.5" />,     color: "text-primary" },
-  note:     { label: "Notes",     icon: <StickyNote className="size-3.5" />,   color: "text-amber-600 dark:text-amber-400" },
-  citation: { label: "Citations", icon: <Quote className="size-3.5" />,         color: "text-emerald-600 dark:text-emerald-400" },
-  chat:     { label: "Chats",     icon: <MessageSquare className="size-3.5" />, color: "text-blue-600 dark:text-blue-400" },
+  note:     { label: "Notes",     icon: <StickyNote className="size-3.5" />,   color: "text-muted-foreground" },
+  citation: { label: "Citations", icon: <Quote className="size-3.5" />,         color: "text-muted-foreground" },
+  chat:     { label: "Chats",     icon: <MessageSquare className="size-3.5" />, color: "text-muted-foreground" },
 };
 
 // ── Result card ───────────────────────────────────────────────────────────────
@@ -480,17 +483,18 @@ function ResultCard({ result }: { result: SearchResult }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.15 }}
       onClick={() => navigate(result.url)}
-      className="flex w-full items-start gap-3 rounded-2xl border border-border bg-card p-4 text-left shadow-sm hover:border-primary/30 hover:shadow-md transition-all"
+      className="flex w-full items-start gap-3 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:border-primary/40"
     >
       {/* Kind icon */}
-      <div className={cn(
-        "flex size-9 shrink-0 items-center justify-center rounded-xl",
-        result.kind === "paper"    ? "bg-accent-soft"
-        : result.kind === "note"  ? "bg-amber-50 dark:bg-amber-950/40"
-        : result.kind === "chat"  ? "bg-blue-50 dark:bg-blue-950/40"
-        : "bg-emerald-50 dark:bg-emerald-950/40",
-      )}>
-        <span className={cfg.color}>{cfg.icon}</span>
+      <div
+        className={cn(
+          "flex size-8 shrink-0 items-center justify-center rounded-md border border-border",
+          result.kind === "paper" ? "bg-accent-soft/60" : "bg-muted/50",
+        )}
+      >
+        <span className={result.kind === "paper" ? "text-primary" : "text-muted-foreground"}>
+          {cfg.icon}
+        </span>
       </div>
 
       {/* Content */}
@@ -632,16 +636,16 @@ export function SearchPage() {
       <div className="space-y-6">
 
         {/* Mode tabs */}
-        <div className="flex gap-1 rounded-xl border border-border bg-muted/30 p-1 w-fit">
+        <div className="flex w-fit gap-1 rounded-md border border-border bg-muted/30 p-0.5">
           {(["library", "discover"] as SearchMode[]).map((m) => (
             <button
               key={m}
               onClick={() => setDiscoverMode(m)}
               className={cn(
-                "flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-all",
+                "flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition-colors",
                 mode === m
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "border border-border bg-card text-foreground"
+                  : "border border-transparent text-muted-foreground hover:text-foreground",
               )}
             >
               {m === "library" ? <Search className="size-3.5" /> : <Globe className="size-3.5" />}

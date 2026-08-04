@@ -97,6 +97,32 @@ export function ResearchProgressStage({
         Research progress
       </p>
 
+      <div
+        className="mb-2.5 flex flex-wrap gap-1.5"
+        aria-hidden={doneLabel ? undefined : true}
+        data-pipeline-stage-strip=""
+      >
+        {stages.map((label, i) => {
+          const done = doneLabel ? true : i < index;
+          const active = !doneLabel && i === index;
+          return (
+            <span
+              key={label}
+              className={cn(
+                "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium",
+                done && "border-sem-ready/35 bg-sem-ready/10 text-sem-ready",
+                active && "border-sem-running/40 bg-sem-running/15 text-sem-running",
+                !done && !active && "border-border text-muted-foreground",
+                active && !reduceMotion && "ai-state-pulse",
+              )}
+            >
+              {done ? <Check className="size-2.5" strokeWidth={3} aria-hidden /> : null}
+              {label}
+            </span>
+          );
+        })}
+      </div>
+
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={current}
@@ -110,31 +136,14 @@ export function ResearchProgressStage({
             className="relative flex size-3.5 shrink-0 items-center justify-center"
             aria-hidden
           >
-            <span className="absolute inset-0 rounded-full bg-primary/25" />
-            <span className="size-2 animate-pulse rounded-full bg-primary" />
+            <span className="absolute inset-0 rounded-full bg-sem-running/25" />
+            <span className="size-2 animate-pulse rounded-full bg-sem-running" />
           </span>
           <p className="text-[14px] font-medium tracking-tight text-foreground">
             {current}…
           </p>
         </motion.div>
       </AnimatePresence>
-
-      {index > 0 ? (
-        <ul className="mt-2.5 space-y-1 border-t border-border/60 pt-2">
-          {stages.slice(0, index).map((label) => (
-            <li
-              key={label}
-              className="flex items-center gap-2 text-[12px] text-muted-foreground"
-            >
-              <Check
-                className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400"
-                aria-hidden
-              />
-              <span>{label}</span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
 
       {liveMetric ? (
         <p className="mt-2 text-[11px] tabular-nums text-muted-foreground">{liveMetric}</p>

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Settings, LogOut, ChevronsUpDown, LifeBuoy, Plug, Shield } from "lucide-react";
+import { Settings, LogOut, ChevronsUpDown, LifeBuoy, Plug, Shield, BookOpen } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -63,6 +63,9 @@ export function AccountMenu({
             <Shield /> Admin
           </DropdownMenuItem>
         )}
+        <DropdownMenuItem onClick={() => navigate("/docs")}>
+          <BookOpen /> Docs
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate("/support")}>
           <LifeBuoy /> Help &amp; support
         </DropdownMenuItem>

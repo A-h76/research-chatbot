@@ -41,9 +41,8 @@ export function HomeSecondaryActions({ className }: { className?: string }) {
             type="button"
             onClick={() => navigate(item.href)}
             className={cn(
-              "flex w-full items-start gap-3 rounded-xl border border-border bg-card px-3.5 py-3 text-left",
-              "transition-[background-color,box-shadow,transform] duration-150 ease-out",
-              "hover:bg-muted/50 hover:shadow-sm hover:-translate-y-0.5",
+              "flex w-full items-start gap-3 rounded-md border border-border bg-card px-3.5 py-3 text-left",
+              "transition-colors duration-150 ease-out hover:bg-muted/40",
             )}
           >
             <Icon className="mt-0.5 size-3.5 shrink-0 text-foreground/55" aria-hidden />

@@ -39,24 +39,25 @@ function NoteCard({
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 6 }}
+      initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.97 }}
-      transition={{ duration: 0.18 }}
-      className="group flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm hover:border-primary/20 hover:shadow-md transition-all"
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      className="group flex flex-col gap-2 border-b border-border py-4 text-left last:border-b-0"
+      data-density="low"
     >
       {/* Top row: title + action buttons */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           {note.title ? (
-            <h3 className="truncate text-sm font-semibold leading-snug" title={note.title}>
+            <h3 className="truncate text-[15px] font-medium leading-snug tracking-tight" title={note.title}>
               {note.title}
             </h3>
           ) : (
-            <h3 className="text-sm font-semibold text-muted-foreground italic">Untitled</h3>
+            <h3 className="text-[15px] font-medium italic text-muted-foreground">Untitled</h3>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
           <button
             onClick={onEdit}
             className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -74,25 +75,25 @@ function NoteCard({
         </div>
       </div>
 
-      {/* Content preview */}
-      <p className="flex-1 text-sm leading-relaxed text-foreground/80 whitespace-pre-wrap break-words">
+      {/* Content preview — Notion reading measure */}
+      <p className="max-w-[65ch] text-[15px] leading-[1.55] text-foreground/85 whitespace-pre-wrap break-words">
         {preview}
       </p>
 
       {/* Footer: meta chips + timestamp */}
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         {isPaperNote && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-primary">
+          <span className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-primary">
             <FileText className="size-3" /> Paper note
           </span>
         )}
         {projectName && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5">
+          <span className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5">
             <FolderKanban className="size-3" />
             <span className="max-w-[12ch] truncate">{projectName}</span>
           </span>
         )}
-        <span className="ml-auto inline-flex items-center gap-1">
+        <span className="ml-auto inline-flex items-center gap-1 tabular-nums">
           <Clock className="size-3" />
           {note.updated_at ? formatDate(note.updated_at) : "—"}
         </span>
@@ -150,7 +151,7 @@ export function NotesPage() {
   return (
     <PageContainer
       title="Notes"
-      description="Capture thoughts, annotations, and ideas linked to your research."
+      description="Capture thoughts linked to your research — one calm reading column."
       actions={
         <div className="flex items-center gap-2">
           {/* Search */}
@@ -174,14 +175,14 @@ export function NotesPage() {
         </div>
       }
     >
-      <div className="space-y-5">
+      <div className="space-y-4" data-density="low">
         {/* Project filter tabs */}
         {projects.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-border pb-3">
+          <div className="flex flex-wrap items-center gap-1 border-b border-border pb-2">
             <button
               onClick={() => setProjectFilter("all")}
               className={cn(
-                "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                "rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors",
                 projectFilter === "all"
                   ? "bg-accent-soft text-primary"
                   : "text-muted-foreground hover:text-foreground",
@@ -192,7 +193,7 @@ export function NotesPage() {
             <button
               onClick={() => setProjectFilter(null)}
               className={cn(
-                "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                "rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors",
                 projectFilter === null
                   ? "bg-accent-soft text-primary"
                   : "text-muted-foreground hover:text-foreground",
@@ -205,7 +206,7 @@ export function NotesPage() {
                 key={p.id}
                 onClick={() => setProjectFilter(p.id)}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                  "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors",
                   projectFilter === p.id
                     ? "bg-accent-soft text-primary"
                     : "text-muted-foreground hover:text-foreground",
@@ -228,9 +229,9 @@ export function NotesPage() {
 
         {/* Cards grid */}
         {isLoading ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-44 animate-pulse rounded-2xl bg-muted" />
+          <div className="max-w-[65ch] space-y-0 divide-y divide-border">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-24 animate-pulse bg-muted/40" />
             ))}
           </div>
         ) : notes.length === 0 ? (
@@ -256,7 +257,7 @@ export function NotesPage() {
             />
           )
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="max-w-[65ch]">
             <AnimatePresence>
               {notes.map((note) => (
                 <NoteCard

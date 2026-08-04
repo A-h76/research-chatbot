@@ -354,8 +354,8 @@ export function PaperOverviewPage() {
   }
 
   return (
-    <div className="scrollbar-thin h-full overflow-y-auto bg-background">
-      <div className="mx-auto max-w-5xl px-5 py-5 sm:px-8 space-y-4">
+    <div className="scrollbar-thin h-full overflow-y-auto bg-background" data-density="medium">
+      <div className="mx-auto max-w-5xl space-y-4 px-5 py-5 sm:px-8">
         <button
           type="button"
           onClick={() => {

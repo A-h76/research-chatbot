@@ -79,11 +79,11 @@ export function PaperNarrativeTab({
   markdown: string;
 }) {
   return (
-    <section className="space-y-6">
+    <section className="space-y-5" data-density="medium">
       <div className="flex items-center justify-between">
         <SectionHeader icon={<BarChart3 className="size-4" />} label="Single Paper Analysis" />
         {analysisDone && !generating && (
-          <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+          <span className="flex items-center gap-1.5 text-xs text-sem-ready">
             <CheckCircle2 className="size-3" /> Analysis ready
           </span>
         )}
@@ -98,12 +98,12 @@ export function PaperNarrativeTab({
       ) : null}
 
       {stillProcessing || notReadyError ? (
-        <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
           <Clock className="size-4 shrink-0" />
           This paper is still being processed. Analysis will be available once extraction completes.
         </div>
       ) : (
-        <div className="space-y-4 rounded-xl border border-border bg-muted/20 p-4">
+        <div className="space-y-4 rounded-md border border-border bg-muted/15 p-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
             <div className="space-y-1.5">
               <DomainSelector

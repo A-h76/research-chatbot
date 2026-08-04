@@ -160,6 +160,7 @@ Email verification & password login, richer export, team projects, and expanded 
 };
 
 export const LEGAL_LINKS = [
+  { to: "/docs", label: "Docs" },
   { to: "/about", label: "About" },
   { to: "/privacy", label: "Privacy" },
   { to: "/terms", label: "Terms" },

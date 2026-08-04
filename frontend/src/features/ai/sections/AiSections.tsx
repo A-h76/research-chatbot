@@ -6,6 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
+import { CodeStoryWell } from "@/components/ui/code-story-well";
+import { DocsHelpLink } from "@/features/docs/DocsHelpLink";
 import { useAiPrompts, useAiTest } from "../useAi";
 
 // ── List Prompts ──────────────────────────────────────────────────────────────
@@ -41,8 +43,13 @@ export function PromptsSection() {
 
   return (
     <div className="space-y-3">
+      <DocsHelpLink
+        to="/docs/capability-router"
+        label="Capability Router"
+        hint="How jobs pick prompts and models."
+      />
       {prompts.map((p) => (
-        <div key={p.name} className="rounded-xl border border-border p-4">
+        <div key={p.name} className="rounded-md border border-border p-3">
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium">{p.name}</p>
             <Badge variant="outline">v{p.version}</Badge>
@@ -50,9 +57,9 @@ export function PromptsSection() {
               <Badge className="bg-accent-soft text-primary">active</Badge>
             )}
           </div>
-          <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
+          <CodeStoryWell eyebrow={p.name} className="mt-2">
             {p.template}
-          </pre>
+          </CodeStoryWell>
         </div>
       ))}
     </div>
@@ -72,7 +79,7 @@ export function TestAiSection() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+      <div className="flex items-start gap-2 rounded-md border border-sem-warn/40 bg-sem-warn/10 p-3 text-sm text-sem-warn">
         <FlaskConical className="mt-0.5 size-4 shrink-0" />
         <p>
           Dev-only tool — calls a real model and costs real money. The backend
@@ -101,14 +108,10 @@ export function TestAiSection() {
       )}
 
       {test.data && (
-        <div className="space-y-1.5 rounded-xl border border-border bg-muted/40 p-4 text-sm">
-          <p className="whitespace-pre-wrap">{test.data.content}</p>
-          <p className="text-xs text-muted-foreground">
-            {test.data.model} · {test.data.total_tokens} tokens
-            {" "}({test.data.prompt_tokens} in / {test.data.completion_tokens} out)
-            · ${test.data.cost.toFixed(6)} · {test.data.finish_reason}
-          </p>
-        </div>
+        <CodeStoryWell eyebrow={`${test.data.model} · response`}>
+          {test.data.content}
+          {`\n\n// ${test.data.total_tokens} tokens · $${test.data.cost.toFixed(6)} · ${test.data.finish_reason}`}
+        </CodeStoryWell>
       )}
     </div>
   );

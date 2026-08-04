@@ -157,21 +157,23 @@ export function CitationFormDialog({ open, onOpenChange, citation }: Props) {
 
           {/* Format preview */}
           <div className="space-y-2">
-            <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+            <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
               {FORMAT_LABELS.map(({ key, label }) => (
                 <button
                   key={key}
                   onClick={() => setFormat(key)}
                   className={cn(
-                    "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all",
-                    format === key ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground",
+                    "flex-1 rounded border px-3 py-1.5 text-xs font-medium transition-colors",
+                    format === key
+                      ? "border-border bg-card text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {label}
                 </button>
               ))}
             </div>
-            <pre className="whitespace-pre-wrap rounded-xl border border-border bg-muted/40 p-3 text-xs text-muted-foreground leading-relaxed font-mono overflow-x-auto">
+            <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-border bg-signal-900 p-3 font-mono text-[12px] leading-relaxed text-[#c5ddd9]">
               {preview}
             </pre>
           </div>

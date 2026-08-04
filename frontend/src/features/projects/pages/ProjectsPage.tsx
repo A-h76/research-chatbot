@@ -63,8 +63,8 @@ export function ProjectsPage() {
         isError
           ? "Couldn’t load your research projects."
           : isEmpty
-            ? "Continue a literature review, synthesis, or writing effort."
-            : "Pick up where you left off — papers, evidence, questions, and writing in one place."
+            ? "What am I working on? Start a literature review, synthesis, or writing effort."
+            : "What am I working on? Pick up papers, evidence, questions, and writing in one place."
       }
       actions={
         <Button
@@ -77,22 +77,20 @@ export function ProjectsPage() {
       }
     >
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="rounded-xl border border-border p-5 space-y-3">
-              <Skeleton className="h-5 w-2/3" />
-              <Skeleton className="h-3 w-full" />
-              <Skeleton className="h-3 w-4/5" />
-              <div className="flex gap-3 pt-2">
-                <Skeleton className="h-3 w-12" />
-                <Skeleton className="h-3 w-12" />
+        <div className="max-w-3xl space-y-0 divide-y divide-border" aria-busy="true" data-density="high">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-start gap-3 py-3">
+              <Skeleton className="size-9 rounded-md" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-3.5 w-2/5" />
+                <Skeleton className="h-3 w-3/5" />
               </div>
             </div>
           ))}
         </div>
       ) : isError ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-muted/20 px-6 py-16 text-center">
-          <AlertTriangle className="size-8 text-amber-600" />
+        <div className="flex flex-col items-center justify-center gap-3 rounded-md border border-border bg-muted/20 px-6 py-16 text-center">
+          <AlertTriangle className="size-8 text-sem-warn" />
           <p className="text-sm font-medium">Couldn’t load projects</p>
           <p className="max-w-sm text-[13px] text-muted-foreground">
             Check your connection and try again. This is not an empty library —
@@ -123,7 +121,7 @@ export function ProjectsPage() {
           onCreate={openCreate}
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="max-w-3xl" data-density="high">
           {projects.map((p) => (
             <ProjectCard
               key={p.id}

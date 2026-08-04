@@ -95,21 +95,21 @@ function MiniProgress({
   const pct = (n: number) => Math.round((n / total) * 100);
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
         <span>Reading progress</span>
-        <span>{pct(read)}% read</span>
+        <span className="tabular-nums">{pct(read)}% read</span>
       </div>
-      <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
-        <div className="bg-emerald-500" style={{ width: `${pct(read)}%` }} />
-        <div className="bg-amber-400" style={{ width: `${pct(reading)}%` }} />
+      <div className="flex h-px overflow-hidden bg-border">
+        <div className="bg-sem-ready" style={{ width: `${pct(read)}%` }} />
+        <div className="bg-sem-warn" style={{ width: `${pct(reading)}%` }} />
       </div>
     </div>
   );
 }
 
 const RS_ICON = {
-  read: <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />,
-  reading: <BookMarked className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />,
+  read: <CheckCircle2 className="size-3.5 shrink-0 text-sem-ready" />,
+  reading: <BookMarked className="size-3.5 shrink-0 text-sem-warn" />,
   unread: <BookOpen className="size-3.5 shrink-0 text-muted-foreground" />,
 };
 
@@ -126,16 +126,16 @@ function PaperRow({
     <button
       type="button"
       onClick={onClick}
-      className="group flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition-colors hover:bg-muted/50"
+      className="group flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/40"
     >
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-soft">
-        <FileText className="size-4 text-primary" />
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-muted/30">
+        <FileText className="size-3.5 text-primary" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium" title={title}>
+        <p className="truncate text-[13px] font-medium" title={title}>
           {title}
         </p>
-        <p className="truncate text-xs text-muted-foreground">
+        <p className="truncate text-[11px] text-muted-foreground">
           {[paper.authors?.split(";")[0]?.trim(), paper.year].filter(Boolean).join(" · ") ||
             "No metadata"}
         </p>
@@ -147,11 +147,11 @@ function PaperRow({
 
 function InsightRow({ insight }: { insight: ProjectHubInsight }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-border px-3 py-2.5">
-      <Sparkles className="size-4 shrink-0 text-primary" />
+    <div className="flex items-center gap-2.5 rounded-md border border-border px-3 py-2">
+      <Sparkles className="size-3.5 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{insight.title}</p>
-        <p className="text-xs text-muted-foreground capitalize">{insight.kind}</p>
+        <p className="truncate text-[13px] font-medium">{insight.title}</p>
+        <p className="text-[11px] capitalize text-muted-foreground">{insight.kind}</p>
       </div>
     </div>
   );
@@ -186,15 +186,15 @@ function GettingStartedChecklist({
   ];
 
   return (
-    <section className="rounded-xl border border-primary/25 bg-accent-soft/40 p-4">
+    <section className="rounded-md border border-border bg-muted/20 p-3.5">
       <h2 className="text-sm font-semibold">Getting started</h2>
       <p className="mt-1 text-xs text-muted-foreground">
         Research workflow — complete these steps to unlock project research.
       </p>
-      <ol className="mt-4 space-y-3">
+      <ol className="mt-3 space-y-2.5">
         {steps.map((step, i) => (
-          <li key={step.title} className="flex gap-3">
-            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+          <li key={step.title} className="flex gap-2.5">
+            <span className="flex size-5 shrink-0 items-center justify-center rounded border border-primary/30 bg-primary/10 text-[11px] font-semibold text-primary">
               {i + 1}
             </span>
             <div className="min-w-0 flex-1">
@@ -247,14 +247,17 @@ function OverviewTab({
     pipeline_summary.partial;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5" data-density="high">
       {stats.papers === 0 && (
         <GettingStartedChecklist onTab={onTab} onWriteDraft={onWriteDraft} />
       )}
 
       {stats.papers > 0 && (
-        <section className="rounded-xl border border-primary/25 bg-accent-soft/40 p-4">
-          <h2 className="text-sm font-semibold">Literature review workflow</h2>
+        <section className="rounded-md border border-border bg-muted/20 p-3.5">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            What am I working on?
+          </p>
+          <h2 className="mt-1 text-sm font-semibold">Literature review workflow</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Project → Evidence → Draft → Revise → Save — without leaving Dhund.
           </p>
@@ -306,9 +309,9 @@ function OverviewTab({
             {open_questions.map((q: ProjectHubQuestion) => (
               <li
                 key={q.id}
-                className="flex items-start gap-2 rounded-lg border border-border px-3 py-2 text-sm"
+                className="flex items-start gap-2 rounded-md border border-border px-3 py-2 text-sm"
               >
-                <HelpCircle className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <HelpCircle className="mt-0.5 size-3.5 shrink-0 text-sem-warn" />
                 <span className="min-w-0 flex-1 leading-relaxed">{q.text}</span>
               </li>
             ))}
@@ -321,7 +324,7 @@ function OverviewTab({
       )}
 
       {pipeTotal > 0 && (
-        <div className="rounded-xl border border-border bg-card px-3 py-2.5 text-xs text-muted-foreground">
+        <div className="rounded-md border border-border bg-card px-3 py-2.5 text-xs text-muted-foreground">
           Pipeline: {pipeline_summary.done} ready · {pipeline_summary.running} running ·{" "}
           {pipeline_summary.pending} pending
           {pipeline_summary.failed > 0 ? ` · ${pipeline_summary.failed} failed` : ""}
@@ -333,19 +336,19 @@ function OverviewTab({
           <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             AI Instructions
           </h2>
-          <div className="rounded-xl border border-border bg-muted/30 p-3.5">
-            <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+          <div className="rounded-md border border-border bg-muted/20 p-3">
+            <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
               {project.instructions}
             </p>
           </div>
         </section>
       )}
 
-      <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-accent-soft/50 p-4">
-        <Brain className="mt-0.5 size-4 shrink-0 text-primary" />
+      <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted/15 px-3 py-2.5">
+        <Brain className="mt-0.5 size-3.5 shrink-0 text-primary" />
         <div>
-          <p className="text-sm font-medium">Isolated knowledge context</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="text-[13px] font-medium">Isolated knowledge context</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
             Chat and research in this project only retrieve from papers assigned here.
           </p>
         </div>
@@ -389,7 +392,7 @@ function OverviewTab({
         ) : (
           <div className="space-y-2">
             {recent_notes.map((n) => (
-              <div key={n.id} className="rounded-xl border border-border px-3 py-2.5">
+              <div key={n.id} className="rounded-md border border-border px-3 py-2">
                 <p className="text-sm font-medium truncate">{n.title || "Untitled note"}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
                   {n.content_preview || "Empty"}
@@ -506,7 +509,7 @@ export function ProjectDetailPage() {
           <Skeleton className="h-10 w-full" />
           <div className="grid grid-cols-3 gap-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 rounded-xl" />
+              <Skeleton key={i} className="h-14 rounded-md" />
             ))}
           </div>
         </div>
@@ -566,23 +569,26 @@ export function ProjectDetailPage() {
   const { project, stats, recent_papers } = hub;
 
   return (
-    <div className="scrollbar-thin h-full overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-6 py-8 space-y-6">
+    <div className="scrollbar-thin h-full overflow-y-auto" data-density="high">
+      <div className="mx-auto max-w-3xl space-y-5 px-6 py-6">
         <button
           type="button"
           onClick={() => navigate("/projects")}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
         >
           <ChevronLeft className="size-4" /> Research
         </button>
 
         <motion.div
-          initial={{ opacity: 0, y: 6 }}
+          initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
-          className="space-y-4"
+          className="space-y-3"
         >
-          <div className="flex items-start gap-4">
-            <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-3xl">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            What am I working on?
+          </p>
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted/30 text-2xl">
               {project.emoji}
             </div>
             <div className="min-w-0 flex-1">
@@ -591,7 +597,7 @@ export function ProjectDetailPage() {
                 <p className="mt-1 text-sm text-muted-foreground">{project.description}</p>
               )}
               {project.created_at && (
-                <p className="mt-1 text-xs text-muted-foreground/70">
+                <p className="mt-1 text-[11px] text-muted-foreground">
                   Created {formatDate(project.created_at)}
                 </p>
               )}

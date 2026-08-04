@@ -19,6 +19,8 @@ import { useMe, useUpdateInstructions } from "@/features/profile/useMe";
 import { toast } from "@/components/common/Toast";
 import { SEARCH_MODES } from "@/lib/constants";
 import type { SearchMode } from "@/types/api";
+import { DocsHelpLink } from "@/features/docs/DocsHelpLink";
+import { CodeStoryWell } from "@/components/ui/code-story-well";
 
 function Row({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
   return (
@@ -114,12 +116,25 @@ export function ModelsSection() {
 
 export function ApiSection() {
   return (
-    <div className="rounded-xl border border-border bg-muted/40 p-5 text-sm text-muted-foreground">
-      <p className="font-medium text-foreground">API key</p>
-      <p className="mt-1">
-        OpenAI API key is stored securely on the backend (via the server's <code>.env</code>) and is never
-        exposed to the browser. Model access is derived from your account.
-      </p>
+    <div className="flex flex-col gap-3">
+      <div className="rounded-md border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+        <p className="font-medium text-foreground">API access</p>
+        <p className="mt-1">
+          OpenAI keys stay on the server (<code className="text-[12px]">.env</code>) and never reach the
+          browser. Product routes follow the frozen Evidence / RI contracts.
+        </p>
+      </div>
+      <CodeStoryWell eyebrow="Evidence API">
+{`GET /api/projects/{id}/evidence
+Authorization: session cookie
+
+→ { items, count, total, limit, offset }`}
+      </CodeStoryWell>
+      <DocsHelpLink
+        to="/docs/api-contracts"
+        label="API contracts"
+        hint="Frozen routes, envelopes, and errors."
+      />
     </div>
   );
 }
@@ -182,6 +197,7 @@ export function PrivacySection() {
         <Link to="/privacy" className="text-muted-foreground underline hover:text-foreground">Privacy Policy</Link>
         <Link to="/terms" className="text-muted-foreground underline hover:text-foreground">Terms of Service</Link>
         <Link to="/cookies" className="text-muted-foreground underline hover:text-foreground">Cookie Policy</Link>
+        <Link to="/docs" className="text-muted-foreground underline hover:text-foreground">Docs</Link>
         <Link to="/support" className="text-muted-foreground underline hover:text-foreground">Contact &amp; Support</Link>
       </div>
       <Button variant="outline" className="self-start" onClick={() => (window.location.href = "/logout")}>
@@ -194,7 +210,7 @@ export function PrivacySection() {
 export function AboutSection() {
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl border border-border bg-muted/40 p-5 text-sm text-muted-foreground">
+      <div className="rounded-md border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
         <p className="text-base font-semibold text-foreground">Dhund</p>
         <p className="mt-1">Research Operating System — evidence-backed literature review.</p>
         <p className="mt-3">
@@ -202,6 +218,11 @@ export function AboutSection() {
           Chat, memory, and RAG support the workflow; they are not the product.
         </p>
       </div>
+      <DocsHelpLink
+        to="/docs/overview"
+        label="Documentation"
+        hint="Contracts, API freeze, and ADRs."
+      />
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
         <Link to="/about" className="text-muted-foreground underline hover:text-foreground">About page</Link>
         <Link to="/support" className="text-muted-foreground underline hover:text-foreground">Contact &amp; Support</Link>

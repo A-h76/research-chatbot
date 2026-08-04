@@ -23,10 +23,11 @@
 5. **Light is first-class** — Research happens in daylight and offices. Dark is a preference, not the brand default.  
 6. **Cards are rare** — Prefer surfaces, rules, and spacing. Cards only when the object is selectable or actionable.  
 7. **Motion explains state** — Pipeline progress, stream cursor, panel open/close. Never decoration for its own sake.  
-   /** Animated Beam (Magic UI):** only where light traveling a path *explains research or AI flow* — (1) Landing Research OS hero, (2) Research pipeline progress, (3) AI Execution / Capability Router inspector. Prefer slow teal beams. **Do not** use in sidebar, nav, settings chrome, login chrome, or between Library cards.
-   **Icon Cloud (Magic UI):** Research Ecosystem section only — Dhund fixed at center, research-source logos orbiting (≤16). Pair with a short beam strip (source → Dhund → evidence/writing). Not a generic globe or “integrations” logo wall.  
-8. **Brand test** — Remove the wordmark: the page should still feel like Soro (ink, structure, precision)—not ChatGPT-violet.  
-9. **AI states are a product language** — Uploading → Queued → Understanding → Classifying → Evidence Ready → Graph Ready → Chat Ready must look and read the **same** in Library, Paper Workspace, Projects, and Dashboard. Users learn the system once.
+   **Animated Beam (Magic UI):** only where light traveling a path *explains research or AI flow* — (1) Landing Research OS hero, (2) Research pipeline progress, (3) AI Execution / Capability Router inspector. Prefer slow teal beams. **Do not** use in sidebar, nav, settings chrome, login chrome, or between Library cards.  
+   **Icon Cloud (Magic UI):** Research Ecosystem section only — dense 3D logo sphere (≤16 research marks), no center Dhund badge, no play/pause chrome. Static until hover; spins on hover/drag. Pair with a short beam strip (source → Dhund → evidence/writing) below. Not a generic globe or “integrations” logo wall.  
+8. **Brand test** — Remove the wordmark: the page should still feel like Dhund (ink, structure, precision)—not ChatGPT-violet.  
+9. **AI states are a product language** — Uploading → Queued → Understanding → Classifying → Evidence Ready → Graph Ready → Chat Ready must look and read the **same** in Library, Paper Workspace, Projects, and Dashboard. Users learn the system once.  
+10. **Governance freeze** — Visual doctrine lives in [`docs/DHUND-DESIGN-LANGUAGE-v1.md`](docs/DHUND-DESIGN-LANGUAGE-v1.md) (density, borders, confidence, cognitive load, Trust Layer). **Do not add new inspiration brands.** Execute that language.
 
 ---
 

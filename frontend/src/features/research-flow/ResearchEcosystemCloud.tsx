@@ -3,7 +3,7 @@ import { IconCloud } from "@/components/ui/icon-cloud";
 import { BeamCanvas, FlowNode } from "./FlowPrimitives";
 import { cn } from "@/lib/utils";
 
-/** High-signal live (or near-live) research ecosystem marks — keep ≤16. */
+/** High-signal research ecosystem marks — denser cloud, ≤16. */
 export const ECOSYSTEM_CLOUD_IMAGES = [
   "/static/brands/pubmed.svg",
   "/static/brands/arxiv.svg",
@@ -17,6 +17,10 @@ export const ECOSYSTEM_CLOUD_IMAGES = [
   "/static/brands/microsoftonedrive.svg",
   "/static/brands/dropbox.svg",
   "/static/brands/bibtex.svg",
+  "/static/brands/ris.svg",
+  "/static/brands/paperpile.svg",
+  "/static/brands/jabref.png",
+  "/static/brands/readcube.svg",
 ] as const;
 
 const FLOW_CYCLES = [
@@ -77,8 +81,8 @@ function EcosystemFlowStrip({
 }
 
 /**
- * Research Ecosystem — Icon Cloud with Dhund at the center + cycling beam story.
- * Landing marketing + in-app showcase. Not a generic integrations logo wall.
+ * Research Ecosystem — Magic UI–style Icon Cloud (no center logo).
+ * Static until hover; play/pause chrome hidden.
  */
 export function ResearchEcosystemCloud({
   className,
@@ -104,28 +108,15 @@ export function ResearchEcosystemCloud({
   return (
     <div className={cn("w-full", className)}>
       <div className="relative mx-auto flex max-w-xl flex-col items-center">
-        <div className="relative">
-          <IconCloud
-            images={[...ECOSYSTEM_CLOUD_IMAGES]}
-            showControl
-            width={compact ? 320 : 400}
-            height={compact ? 320 : 400}
-          />
-          {/* Dhund hub — fixed center; cloud orbits around product, not a generic globe */}
-          <div
-            className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1"
-            aria-hidden
-          >
-            <div className="flex size-14 items-center justify-center rounded-2xl bg-[#0F6E6A] shadow-[0_8px_28px_rgba(15,110,106,0.35)] ring-4 ring-background sm:size-16">
-              <span className="text-lg font-extrabold tracking-tight text-white sm:text-xl">D</span>
-            </div>
-            <span className="rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-foreground shadow-sm backdrop-blur">
-              Dhund
-            </span>
-          </div>
-        </div>
+        <IconCloud
+          images={[...ECOSYSTEM_CLOUD_IMAGES]}
+          showControl={false}
+          animateOnHover
+          width={compact ? 340 : 420}
+          height={compact ? 340 : 420}
+        />
 
-        <p className="mt-2 max-w-sm text-center text-[12px] text-muted-foreground">
+        <p className="mt-1 max-w-sm text-center text-[12px] text-muted-foreground">
           Everything researchers use connects here — then enters one evidence-first pipeline.
         </p>
 
