@@ -31,6 +31,10 @@ from backend.ai.capability_router.resolve import (
     legacy_quality_mode,
     resolve_execution,
 )
+from backend.ai.capability_router.chat_resolve import (
+    PROMPT_VERSION_CHAT,
+    resolve_chat_execution,
+)
 from backend.ai.capability_router.types import (
     ACR_STATUS,
     ACR_VERSION,
@@ -60,6 +64,8 @@ __all__ = [
     "ContextNeed",
     "TemperatureBand",
     "resolve_execution",
+    "resolve_chat_execution",
+    "PROMPT_VERSION_CHAT",
     "legacy_gateway_task",
     "legacy_quality_mode",
     "execution_policy_from_mode",

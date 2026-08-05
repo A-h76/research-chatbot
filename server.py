@@ -3855,13 +3855,13 @@ def preview_chat_prompt_builder_migration(user, project, memory_enabled=True):
 
 
 def _log_chat_cost(user_id, model, usage):
-    """Best-effort — a logging failure must never break an otherwise-
-    successful chat response, same reasoning as every other best-effort
-    cost-logging call site in this app. /api/chat calls
-    client.responses.create() directly (never went through
-    responses_text()), so unlike extract_metadata/paper_analysis this
-    route had NO cost logging at all until now — a real gap being
-    closed, not a duplicate of anything."""
+    """Best-effort CostLedger write for /api/chat.
+
+    Model selection is resolved via Capability Router (``resolve_chat_execution``);
+    transport remains ``client.responses.create``. CostLedger still records
+    dollars/tokens here; AI Ledger provenance is recorded separately via
+    ``record_execution`` after the turn (Evolution Tracker: dual ledger → unify).
+    """
     if not usage:
         return
     prompt_tokens = getattr(usage, "input_tokens", 0) or 0
@@ -5349,7 +5349,20 @@ def chat():
         convo = db.get(Conversation, cid) if cid else None
         if not convo or convo.user_id != user_id:
             return jsonify({"error": "conversation_not_found"}), 404
-        model = data.get("model") if data.get("model") in get_models() else convo.model
+        # Capability Router owns chat model selection (ADR-0016). Allowlisted
+        # client/conversation models become model_override for continuity;
+        # Responses streaming transport stays below the gateway.
+        from backend.ai.capability_router import resolve_chat_execution
+
+        allowlisted = list(get_models() or [])
+        acr_plan = resolve_chat_execution(
+            requested_model=data.get("model"),
+            conversation_model=convo.model,
+            allowlisted_models=allowlisted,
+            quality_mode=data.get("quality_mode") or data.get("mode"),
+            execution_policy=data.get("execution_policy"),
+        )
+        model = acr_plan.model
         project = db.get(Project, convo.project_id) if convo.project_id else None
         if project is not None and not project_owned_by_user(project, user_id):
             log_security_event(
@@ -5975,6 +5988,37 @@ def chat():
             }
             if new_title:
                 done_payload["title"] = new_title
+            # Capability Router provenance on the done event (inspectable).
+            try:
+                from backend.ai.ai_ledger import AILedgerEntry, hash_output, record_execution
+                from backend.ai.capability_router import PROMPT_VERSION_CHAT
+
+                usage_obj = getattr(final, "usage", None) if final else None
+                tin = getattr(usage_obj, "input_tokens", None) if usage_obj else None
+                tout = getattr(usage_obj, "output_tokens", None) if usage_obj else None
+                total = None
+                if tin is not None or tout is not None:
+                    total = int(tin or 0) + int(tout or 0)
+                entry = AILedgerEntry.from_plan(
+                    acr_plan,
+                    prompt_version=PROMPT_VERSION_CHAT,
+                    tokens_in=tin,
+                    tokens_out=tout,
+                    output_hash=hash_output(full_text) if full_text else None,
+                    extra={"conversation_id": convo_id, "path": "api_chat"},
+                )
+                record_execution(entry)
+                done_payload.update(
+                    acr_plan.to_provenance(
+                        tokens=total,
+                        prompt_version=PROMPT_VERSION_CHAT,
+                        execution_id=entry.execution_id,
+                    ).to_dict()
+                )
+            except Exception:
+                logging.getLogger(__name__).debug(
+                    "chat ai_execution provenance soft-fail", exc_info=True
+                )
             yield sse("done", done_payload)
 
             if memory_enabled:

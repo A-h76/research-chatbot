@@ -1,8 +1,19 @@
 """AI Ledger — first-class record of every platform AI execution (ADR-0016 v1.0).
 
 In-memory + optional DB persistence later. Feature code should call
-``record_execution`` after gateway calls; artifacts embed a compact summary
-via ``ExecutionPlan.to_provenance``.
+``record_execution`` after gateway / router-resolved calls; artifacts embed a
+compact summary via ``ExecutionPlan.to_provenance``.
+
+---------------------------------------------------------------------------
+Dual-ledger note (Evolution Tracker · High · temporary)
+---------------------------------------------------------------------------
+``CostLedger`` / ``model_registry_cost_ledger`` still records dollar/token rows
+for billing-ish accounting (chat via ``_log_chat_cost``, registry ``.call``).
+**AI Ledger** records Capability Router provenance (job, policy, provider,
+model, prompt_version). Until a unify ADR lands, chat writes **both**:
+CostLedger for money, AI Ledger for inspectability. Do not delete either half
+without consolidating write sites first.
+---------------------------------------------------------------------------
 """
 
 from __future__ import annotations

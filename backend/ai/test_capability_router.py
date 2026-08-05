@@ -93,6 +93,44 @@ def test_legacy_bridge():
     assert execution_policy_from_mode("balanced") == ExecutionPolicy.BALANCED
 
 
+def test_resolve_chat_execution_router_default():
+    from backend.ai.capability_router.chat_resolve import (
+        PROMPT_VERSION_CHAT,
+        resolve_chat_execution,
+    )
+
+    plan = resolve_chat_execution(allowlisted_models=["gpt-5-mini", "gpt-5.5"])
+    assert plan.research_job == ResearchJob.CHAT
+    assert plan.capability == Capability.SCIENTIFIC_REASONING
+    assert plan.model  # router-owned default
+    assert PROMPT_VERSION_CHAT.startswith("chat@")
+
+
+def test_resolve_chat_execution_allowlisted_override():
+    from backend.ai.capability_router.chat_resolve import resolve_chat_execution
+
+    plan = resolve_chat_execution(
+        requested_model="gpt-5-mini",
+        conversation_model="ignored-when-request-present",
+        allowlisted_models=["gpt-5-mini", "gpt-4o"],
+        execution_policy="balanced",
+    )
+    assert plan.model == "gpt-5-mini"
+    assert plan.notes == "model_override"
+
+
+def test_resolve_chat_execution_conversation_continuity():
+    from backend.ai.capability_router.chat_resolve import resolve_chat_execution
+
+    plan = resolve_chat_execution(
+        requested_model=None,
+        conversation_model="gpt-4o",
+        allowlisted_models=["gpt-4o", "gpt-5-mini"],
+    )
+    assert plan.model == "gpt-4o"
+    assert "override" in plan.notes
+
+
 def test_ai_ledger_records_execution():
     clear_ledger_for_tests()
     plan = resolve_execution("literature_review")

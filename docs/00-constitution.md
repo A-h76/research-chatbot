@@ -6,6 +6,13 @@ anything else — including its own stated goal. If a change satisfies its
 goal but violates a principle here, the principle wins; open an ADR
 instead of proceeding.
 
+**Companion (2026-08-05):** [`ENGINEERING-CONSTITUTION-v1.md`](ENGINEERING-CONSTITUTION-v1.md) —
+Platform Layers vs Product Domains, “don’t clean for aesthetics,” thin `server.py`
+endgame, AI Gateway discipline, and the 80/20 debt model. Living pictures:
+[`ENGINEERING-EVOLUTION-TRACKER.md`](ENGINEERING-EVOLUTION-TRACKER.md) (Current → Target)
+and [`ARCHITECTURE-HEALTH.md`](ARCHITECTURE-HEALTH.md) (scored KPIs). These do **not**
+replace this document; they direct *how* we renovate without rewriting.
+
 This document is truthful about where the codebase stands *today*
 against each principle, not just what the principle says — a constitution
 that doesn't admit its own violations gets silently ignored by the next
