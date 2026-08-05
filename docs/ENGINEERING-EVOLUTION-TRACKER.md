@@ -26,18 +26,18 @@ Debt lists *what hurts*. Roadmaps *what users get*. **Evolution** tracks *archit
 
 | Area | Current | Target | Priority | Notes |
 |------|---------|--------|----------|-------|
-| **AI Invocation** | Chat model via **Capability Router** (`resolve_chat_execution`); transport still Responses SSE. WI already Router→Gateway | Single path Router → Gateway → Provider (incl. streaming) | **High** | ADR-0016; chat bite 2026-08-05 |
-| **Cost Ledger** | Dual stores; chat now writes **CostLedger + AI Ledger** provenance | **Unified AI Ledger** (one attribution story) | **High** | Don't delete half; see `ai_ledger` dual-write note |
+| **AI Invocation** | Hot LLM paths: **one implementation** (`resolve_*` → `invoke_*` / Gateway). Shim list: `responses_text`, `embed` / `embed_texts`, session semantic search | **All LLM** → Capability Router → Gateway (shims retired or ADR) | **High** | Bites 1–7 done 2026-08-05 — not “delete chat path” |
+| **Cost Ledger** | Dual write: **CostLedger** ($) + **AI Ledger** (provenance) | AI Ledger owns attribution → CostLedger = billing adapter → **one write façade** | **High** | Unify after all paths record AI Ledger |
+| **Upload** | Two HTTP stacks + two storage façades (ADR-0014) | **Shared upload service** — two APIs OK, **one business implementation** | **High** | Not one endpoint; one `apply_pdf_bytes` / policy |
+| **Discovery** | Providers + shared scholarly ops; some custom attach/import bits | **Resolver pipeline** — provider supplies metadata only; shared import after acquisition | **High** | PubMed / Drive / OneDrive → same `enqueue_import` spine |
+| **Writing** | WI composer + assistant on Gateway; deterministic reviewer/extract engines | Every writing AI rule: `resolve_execution` → Gateway (already true for hot paths) | **Medium** | Maintain; no second compose path |
 | **Research Scope** | Gateway present (ADR-0017); chat gated | Scope enforced on all research AI entry points | **High** | ALLOW · CLARIFY · REDIRECT |
-| **UFTR** | Platform service (ADR-0015) | Default path for full-text resolution across Discovery/Library | **Medium** | Shared pipeline, not per-provider forks |
-| **Upload** | Dual HTTP + dual storage façades (ADR-0014) | Shared abstraction; one policy surface | **Low** | Accepted V1; unify only with ADR |
+| **UFTR** | Platform service (ADR-0015) | Default full-text path — **no per-provider fulltext forks** | **Medium** | Feeds Dimension 3 |
 | **server.py** | Monolith (models + many routes) | Thin composition root (`create_app` / register_*) | **Medium** | Peel by blueprint; models extract = separate ADR |
 | **Library** | Mixed (files, connect, storage concerns interleaved) | **Library** product domain ownership | **Medium** | Separate from Discovery |
-| **Discovery** | Provider-specific clients + some shared scholarly ops | Shared **resolver / import / metadata / fulltext** pipeline; providers at edges | **Medium** | PubMed ≠ OpenAlex only at the edge |
-| **Evidence** | Strong + frozen contracts | Keep growing; single research truth | **Low** (maintain) | ADR-0003 / 0005 / 0007 — don’t reopen casually |
-| **Writing** | Studio + WI + bindings; reviewer FE polish | Writing domain: binder · composer · grounding · citations · exports | **Medium** | Reviewer may extract later |
-| **Reviewer** | Backend persistence; FE incomplete | Clear Reviewer domain (or owned submodule of Writing) | **Medium** | Product-critical polish |
-| **Research Intelligence / SUE** | Analysis packages present | Isolated RI domain (quality / methodology / …) | **Medium** | Don’t merge into Evidence |
+| **Evidence** | Strong + frozen contracts; extract/reviewer engines canonical | Keep growing; single research truth | **Low** (maintain) | ADR-0003 / 0005 / 0007 — don’t reopen casually |
+| **Reviewer** | Backend persistence + ACR engine; FE incomplete | Clear Reviewer domain (or owned submodule of Writing) | **Medium** | Product-critical polish |
+| **Research Intelligence / SUE** | Phase1 + paper_analysis engines on ACR | Isolated RI domain; one pipeline per rule | **Medium** | Don’t merge into Evidence |
 | **Workspace** | Projects / notes / compare exist as surfaces | Explicit Workspace domain | **Low** (later) | After AI + Discovery/Library ownership clearer |
 | **Trust** | Baseline + landing Trust Layer; `/trust` page gap | Trust platform layer (events, audit hooks, compliance surfaces) | **Medium** | Serves all domains |
 | **Queue / Worker** | Postgres SKIP LOCKED + outbox + heartbeat | Same spine; evolve priority/cancel/observability **in place** | **Low** | ADR-0001 — no Celery rewrite |
@@ -73,10 +73,37 @@ See [`ENGINEERING-CONSTITUTION-v1.md`](ENGINEERING-CONSTITUTION-v1.md) §2.
 
 ---
 
+## Canonical implementation (Dimension 3)
+
+**Principle:** Every business rule has **one implementation**; callers delegate.
+
+| ✅ Fine | ❌ Not fine |
+|--------|------------|
+| JWT + session upload APIs → `UploadService` | PubMed + OpenAlex each reimplement store → queue → analysis |
+| React + CLI → Library API | Drive + OneDrive each custom attach logic |
+| PubMed + arXiv as thin provider edges | Second `OpenAI()` in a feature package |
+
+**PR checklist** (before merge):
+
+1. Does this introduce a **second implementation** of an existing rule?
+2. If yes: **Why?** · **Temporary?** · **ADR?** · **Retirement plan?**
+3. If no plan → reject or redesign.
+
+**Path to KPI 4** (see [`ARCHITECTURE-HEALTH.md`](ARCHITECTURE-HEALTH.md) §3): High rows below — especially **Cost Ledger**, **Upload**, **Discovery** — not folder merges. Rescore only when call sites converge (see **Architectural drift** in Architecture Health).
+
+---
+
 ## Recently moved (changelog)
 
 | Date | Area | Change |
 |------|------|--------|
+| 2026-08-05 | **Governance** | Architecture Health v2: canonical pipelines, capability ownership, drift check, what-NOT-to-score |
+| 2026-08-05 | **Search** | `invoke_rag_llm` + `resolve_search_execution`; `POST /api/rag` ACR + ledger + `ai_execution` |
+| 2026-08-05 | **SUE / Analyze Paper** | `invoke_paper_analysis_llm` + `record_phase1_pipeline_execution`; worker + upload analyze route |
+| 2026-08-05 | **Evidence** | `execute_evidence_extraction` + `resolve_evidence_extract_execution`; projector ledger + `ai_execution` on sync extract |
+| 2026-08-05 | **Reviewer** | `execute_reviewer` + `resolve_reviewer_execution`; deterministic validation + AI Ledger; `parent_execution_id` → WI composer |
+| 2026-08-05 | **AI Invocation** | Writing Assistant (`POST /api/writing`) via `resolve_writing_assistant_execution` + Gateway + AI Ledger |
+| 2026-08-05 | **AI Invocation** | Gateway owns chat Responses transport (`stream_responses` / `create_responses`); `OpenAIResponsesAdapter`; AI Ledger `trace_id` + `status` |
 | 2026-08-05 | **AI Invocation** | `/api/chat` model via `resolve_chat_execution`; `ai_execution` on SSE `done` + AI Ledger record |
 | 2026-08-05 | **Cost Ledger** | Documented dual-write (CostLedger $ + AI Ledger provenance); chat now hits both |
 | 2026-08-05 | — | Tracker opened; baseline from Engineering Constitution + debt audit |

@@ -47,6 +47,7 @@ from backend.evidence.decisions import (
     validate_decision_payload,
 )
 from backend.evidence.reviews import next_object_status_after_review, validate_review_payload
+from backend.evidence.services.extract_engine import execute_evidence_extraction
 from backend.evidence.services.extract_service import PIPELINE_VERSION, run_evidence_extraction
 from backend.evidence.phase_projector import EXTRACTION_PROMPT_VERSION
 from backend.evidence.services.logging import log_evidence_metric
@@ -1314,7 +1315,7 @@ def create_evidence_blueprint(
 
             # Legacy sync path (explicit, or when no queue wire-up).
             if sync or enqueue_job is None:
-                result = run_evidence_extraction(
+                result = execute_evidence_extraction(
                     db,
                     user_id=uid,
                     project_id=project_id,
@@ -2003,8 +2004,13 @@ def create_evidence_blueprint(
                     supporting_count=writing.get("supporting_count"),
                     binder_version=BINDER_VERSION,
                     prompt_meta={
-                        "reviewer_kind": "rule_based",
+                        "reviewer_kind": "acr_deterministic",
                         "writing_quality_mode": writing_quality_mode,
+                        **(
+                            {"ai_execution": review["ai_execution"]}
+                            if isinstance(review.get("ai_execution"), dict)
+                            else {}
+                        ),
                     },
                 )
                 _emit_contract_event(

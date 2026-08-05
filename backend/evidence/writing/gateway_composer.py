@@ -214,6 +214,7 @@ def compose_via_gateway(
     plan = resolve_execution(job, execution_policy=policy)
     prompt_version = _prompt_version_for_job(job)
     execution_id = str(uuid.uuid4())
+    trace_id = str(uuid.uuid4())
     evidence_ids = [str(i) for i in sorted(allowed_ids)]
 
     started = time.perf_counter()
@@ -260,6 +261,8 @@ def compose_via_gateway(
         output_hash=hash_output(cleaned),
         evaluation=evaluation,
         execution_id=execution_id,
+        trace_id=trace_id,
+        status="completed",
         extra={
             "user_id": user_id,
             "project_id": project_id,

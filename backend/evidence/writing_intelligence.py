@@ -19,7 +19,7 @@ from backend.evidence.writing.citation_binder import bind_citations_to_sections,
 from backend.evidence.writing.context_builder import build_section_contexts
 from backend.evidence.writing.metrics import compute_writing_metrics
 from backend.evidence.writing.planner import plan_sections
-from backend.evidence.writing.reviewer import review_grounded_draft
+from backend.evidence.writing.reviewer_engine import execute_reviewer
 from backend.evidence.writing.section_generator import generate_sections
 
 WRITING_VERSION = "2.0.0"
@@ -301,6 +301,28 @@ def build_writing_intelligence(
         )
         return payload
 
+    parent_execution_id = None
+    if composer is not None:
+        last_prov = getattr(composer, "acr_last_provenance", None)
+        if isinstance(last_prov, dict):
+            block = last_prov.get("ai_execution") or last_prov
+            if isinstance(block, dict):
+                parent_execution_id = block.get("execution_id")
+
+    def _run_reviewer(
+        sections: list[dict[str, Any]],
+        *,
+        supporting_n: int | None,
+    ) -> dict[str, Any]:
+        review, _ = execute_reviewer(
+            sections=sections,
+            consensus=consensus,
+            conflict=conflict,
+            supporting_count=supporting_n,
+            parent_execution_id=parent_execution_id,
+        )
+        return review
+
     fn = composer or compose_grounded_paragraph
     plan = plan_sections(
         section_type=section_type or "support_sentence",
@@ -327,12 +349,7 @@ def build_writing_intelligence(
         payload["accept_allowed"] = False
         payload["plan"] = plan
         payload["sections"] = sections
-        payload["review"] = review_grounded_draft(
-            sections=sections,
-            consensus=consensus,
-            conflict=conflict,
-            supporting_count=len(supporting),
-        )
+        payload["review"] = _run_reviewer(sections, supporting_n=len(supporting))
         payload["warnings"] = [
             "Generation blocked: supporting objects lacked claim/quote text."
         ]
@@ -370,9 +387,7 @@ def build_writing_intelligence(
 
     paragraph = "\n\n".join(str(s["paragraph"]) for s in ok_sections)
     bibliography = flatten_bindings(sections)
-    review = review_grounded_draft(
-        sections=sections, consensus=consensus, conflict=conflict, supporting_count=len(supporting)
-    )
+    review = _run_reviewer(sections, supporting_n=len(supporting))
 
     summary = (reasoning or {}).get("summary_code") or ""
     if summary in {"contested", "contested_with_mediators"}:

@@ -175,9 +175,9 @@ You already locked this (ADR-0016) — **never break it.**
 
 ### 5.4 Discovery providers discover only
 
-No duplicate business logic per connector. Shared pipelines (import, metadata, fulltext, UFTR) sit **above** provider-specific clients.
+**Business logic has a single implementation** — not “no duplicate files.” Shared pipelines (import, metadata, fulltext, UFTR) sit **above** provider-specific clients. Two APIs or two providers at the edge is fine when both delegate to the same service.
 
-### 5.5 Shared pipelines before provider-specific implementations
+### 5.5 Canonical pipelines before provider-specific implementations
 
 If two providers need the same step, extract the step once. Provider folders stay thin.
 
@@ -196,7 +196,9 @@ Each top-level capability package should state in a one-line README or module do
 ### 5.8 Dual paths — strengthen, don’t aesthetic-merge
 
 Dual upload/storage, dual AI invoke, dual cost ledgers are **named debt**.  
-Closing them is an architecture milestone (often under AI Platform / Library), not a “tidy folders” PR. Prefer consolidating **write sites and policies** over renaming directories.
+Closing them means **one canonical implementation per business rule** (see [`ARCHITECTURE-HEALTH.md`](ARCHITECTURE-HEALTH.md) Dimension 3) — consolidating write sites and policies, not renaming directories.
+
+**PR rule:** A second implementation of an existing rule requires why, temporariness, ADR, and retirement plan — otherwise reject.
 
 ---
 

@@ -2343,7 +2343,7 @@ model_router = ModelRouter(
         "_default": DEFAULT_MODEL,
     }
 )
-ai_model_gateway = AIGateway(model_router)
+ai_model_gateway = AIGateway(model_router, openai_client=client)
 validate_registry()  # logs tier/model summary; pass openai_client to verify API access
 
 # Also a genuine startup-time singleton — DomainRegistry is pure Python,
@@ -3858,9 +3858,9 @@ def _log_chat_cost(user_id, model, usage):
     """Best-effort CostLedger write for /api/chat.
 
     Model selection is resolved via Capability Router (``resolve_chat_execution``);
-    transport remains ``client.responses.create``. CostLedger still records
-    dollars/tokens here; AI Ledger provenance is recorded separately via
-    ``record_execution`` after the turn (Evolution Tracker: dual ledger → unify).
+    transport goes through ``AIGateway.stream_responses`` / ``create_responses``.
+    CostLedger still records dollars/tokens here; AI Ledger provenance is recorded
+    separately via ``record_execution`` after the turn (Evolution Tracker: dual ledger → unify).
     """
     if not usage:
         return
@@ -5492,12 +5492,14 @@ def chat():
     # Stage 1 executor — only used when pipeline mode is ``true`` for paper chat.
     paper_executor = None
     if paper_plan is not None and paper_pipeline_mode == "true":
-        from backend.ai_core.orchestration import AIExecutor, OpenAIResponsesStreamClient
+        from backend.ai_core.orchestration import AIExecutor
 
-        paper_executor = AIExecutor(
-            stream_client=OpenAIResponsesStreamClient(client),
-            default_model=model,
-        )
+        _gw_responses = ai_model_gateway.responses_adapter
+        if _gw_responses is not None:
+            paper_executor = AIExecutor(
+                stream_client=_gw_responses,
+                default_model=model,
+            )
     def generate():
         input_items = list(history)
         sources = []
@@ -5791,33 +5793,27 @@ def chat():
                 if search_mode == "auto":
                     tools.append(TOOL_WEB_SEARCH)
 
+            chat_trace_id = str(uuid.uuid4())
+            llm_started = time.perf_counter()
+
             for _round in range(4):
                 use_stream = supports_streaming(model)
-                kwargs = dict(
-                    model=model,
-                    instructions=system_prompt,
-                    input=input_items,
-                    store=False,
-                    tools=tools,
+                stream_temp = (
+                    temperature
+                    if temperature is not None and supports_temperature(model)
+                    else None
                 )
-                if use_stream:
-                    kwargs["stream"] = True
-                if temperature is not None and supports_temperature(model):
-                    kwargs["temperature"] = temperature
                 effort = normalize_reasoning_effort(model, reasoning_effort)
-                if effort and supports_reasoning_effort(model):
-                    kwargs["reasoning"] = {"effort": effort}
+                reasoning = (
+                    {"effort": effort}
+                    if effort and supports_reasoning_effort(model)
+                    else None
+                )
+                tools_for_round = tools
 
                 final = None
-                # Stage 1 (flag true): model invocation via AIExecutor — no
-                # direct responses.create on this path.
+                # Gateway-owned Responses transport (Bite 2). Model from ACR plan.
                 if paper_executor is not None and paper_plan is not None:
-                    stream_kwargs = {}
-                    if temperature is not None and supports_temperature(model):
-                        stream_kwargs["temperature"] = temperature
-                    reasoning = None
-                    if effort and supports_reasoning_effort(model):
-                        reasoning = {"effort": effort}
                     if not use_stream:
                         yield sse(
                             "status",
@@ -5828,10 +5824,10 @@ def chat():
                     for event in paper_executor.stream_round(
                         paper_plan,
                         input_items=input_items,
-                        tools=tools,
+                        tools=tools_for_round,
                         model=model,
+                        temperature=stream_temp,
                         reasoning=reasoning,
-                        **stream_kwargs,
                     ):
                         et = event.type
                         if et == "response.output_text.delta":
@@ -5849,15 +5845,32 @@ def chat():
                                 "text": "Running Pro model — this can take a few minutes…",
                             },
                         )
-                        final = client.responses.create(**kwargs)
+                        final = ai_model_gateway.create_responses(
+                            model=model,
+                            instructions=system_prompt,
+                            input=input_items,
+                            tools=tools_for_round,
+                            temperature=stream_temp,
+                            reasoning=reasoning,
+                            task="chat",
+                            trace_id=chat_trace_id,
+                        )
                         chunk = _responses_output_text(final)
                         if chunk:
                             full_text += chunk
                             yield sse("delta", {"text": chunk})
                     else:
-                        stream = client.responses.create(**kwargs)
-                        for event in stream:
-                            et = getattr(event, "type", "")
+                        for event in ai_model_gateway.stream_responses(
+                            model=model,
+                            instructions=system_prompt,
+                            input=input_items,
+                            tools=tools_for_round,
+                            temperature=stream_temp,
+                            reasoning=reasoning,
+                            task="chat",
+                            trace_id=chat_trace_id,
+                        ):
+                            et = event.type
                             if et == "response.output_text.delta":
                                 full_text += event.delta
                                 yield sse("delta", {"text": event.delta})
@@ -5865,11 +5878,7 @@ def chat():
                                 final = event.response
                             elif et == "response.failed":
                                 raise RuntimeError(
-                                    getattr(
-                                        getattr(event.response, "error", None),
-                                        "message",
-                                        "response failed",
-                                    )
+                                    event.error_message or "response failed"
                                 )
 
                 _log_chat_cost(user_id, model, getattr(final, "usage", None))
@@ -6005,6 +6014,9 @@ def chat():
                     tokens_in=tin,
                     tokens_out=tout,
                     output_hash=hash_output(full_text) if full_text else None,
+                    trace_id=chat_trace_id,
+                    status="completed",
+                    latency_ms=int((time.perf_counter() - llm_started) * 1000),
                     extra={"conversation_id": convo_id, "path": "api_chat"},
                 )
                 record_execution(entry)
@@ -6104,6 +6116,9 @@ app.register_blueprint(
     create_writing_assistant_blueprint(
         login_required=login_required,
         limiter=limiter,
+        ai_gateway=ai_model_gateway,
+        SessionLocal=SessionLocal,
+        get_model_registry=get_model_registry,
         responses_text=responses_text,
     )
 )

@@ -55,6 +55,9 @@ class AILedgerEntry:
     latency_ms: int | None = None
     output_hash: str | None = None
     evaluation: dict[str, Any] | None = None
+    trace_id: str = ""
+    parent_execution_id: str | None = None
+    status: str = "completed"
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -79,6 +82,9 @@ class AILedgerEntry:
         output_hash: str | None = None,
         evaluation: dict[str, Any] | None = None,
         execution_id: str | None = None,
+        trace_id: str = "",
+        parent_execution_id: str | None = None,
+        status: str = "completed",
         extra: dict[str, Any] | None = None,
     ) -> AILedgerEntry:
         return cls(
@@ -98,6 +104,9 @@ class AILedgerEntry:
             latency_ms=latency_ms,
             output_hash=output_hash,
             evaluation=evaluation,
+            trace_id=trace_id or str(uuid.uuid4()),
+            parent_execution_id=parent_execution_id,
+            status=status,
             router_version=plan.router_version,
             extra=dict(extra or {}),
         )

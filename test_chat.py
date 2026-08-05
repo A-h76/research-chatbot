@@ -3,17 +3,11 @@ building and cost logging — see server.py's _get_chat_system_opening()
 and _log_chat_cost().
 
 No existing chat tests existed to "update" (grepped for any — none in
-this project before this task) and the core model call in /api/chat
-still goes through client.responses.create() directly, not
-ModelRegistry (see the recorded reasoning: /api/chat's multi-round
-tool-calling loop, live SSE streaming, and vision support have no
-equivalent in ModelRegistry today — replacing the call itself would
-mean dropping web search, citation-saving, and real-time streaming, or
-building substantial new capability into model_registry.py first,
-neither of which this task asked for). What's new and testable is the
-prompt-registry-backed system-prompt opening and the cost-ledger
-logging this task actually added — that's what these tests cover
-instead of a "mock ModelRegistry" that wouldn't reflect what's real.
+this project before this task). The core model call in /api/chat goes through
+``AIGateway.stream_responses`` / ``create_responses`` (Bite 2); utility
+``responses_text()`` still uses ``client.responses.create`` directly. What's
+new and testable here is the prompt-registry-backed system-prompt opening and
+the cost-ledger logging — that's what these tests cover.
 
 DATABASE_URL isolation (so this never touches the real local chat_dev.db)
 lives in the project's root conftest.py, not here — see that file for

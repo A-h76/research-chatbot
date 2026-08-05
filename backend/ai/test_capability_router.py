@@ -148,3 +148,75 @@ def test_ai_ledger_records_execution():
     assert recorded["research_job"] == "literature_review"
     assert recorded["execution_profile"]["reasoning"] == "deep"
     assert recent_executions(limit=1)[0]["prompt_version"] == "literature_review@v1"
+
+
+def test_ai_ledger_trace_and_status_fields():
+    clear_ledger_for_tests()
+    plan = resolve_execution("literature_review")
+    entry = AILedgerEntry.from_plan(
+        plan,
+        prompt_version="literature_review@v1",
+        trace_id="trace-chat-1",
+        parent_execution_id="parent-9",
+        status="completed",
+        latency_ms=42,
+    )
+    recorded = record_execution(entry)
+    assert recorded["trace_id"] == "trace-chat-1"
+    assert recorded["parent_execution_id"] == "parent-9"
+    assert recorded["status"] == "completed"
+    assert recorded["latency_ms"] == 42
+
+
+def test_resolve_writing_assistant_grammar_uses_fastest():
+    from backend.ai.capability_router.writing_resolve import resolve_writing_assistant_execution
+
+    plan = resolve_writing_assistant_execution(action="improve_grammar")
+    assert plan.research_job.value == "writing"
+    assert plan.execution_policy.value == "fastest"
+
+
+def test_resolve_writing_assistant_abstract_uses_highest_quality():
+    from backend.ai.capability_router.writing_resolve import resolve_writing_assistant_execution
+
+    plan = resolve_writing_assistant_execution(action="generate_abstract")
+    assert plan.execution_policy.value == "highest_quality"
+
+
+def test_resolve_writing_assistant_respects_quality_mode():
+    from backend.ai.capability_router.writing_resolve import resolve_writing_assistant_execution
+
+    plan = resolve_writing_assistant_execution(action="shorten", quality_mode="publication")
+    assert plan.execution_policy.value == "highest_quality"
+
+
+def test_resolve_reviewer_execution_default():
+    from backend.ai.capability_router.reviewer_resolve import resolve_reviewer_execution
+
+    plan = resolve_reviewer_execution()
+    assert plan.research_job.value == "reviewer"
+    assert plan.capability.value == "academic_writing"
+
+
+def test_resolve_evidence_extract_execution_default():
+    from backend.ai.capability_router.evidence_extract_resolve import resolve_evidence_extract_execution
+
+    plan = resolve_evidence_extract_execution()
+    assert plan.research_job.value == "evidence_extraction"
+    assert plan.execution_policy.value == "lowest_cost"
+
+
+def test_resolve_paper_analysis_execution_default():
+    from backend.ai.capability_router.paper_analysis_resolve import resolve_paper_analysis_execution
+
+    plan = resolve_paper_analysis_execution(quality_mode="balanced")
+    assert plan.research_job.value == "analyze_paper"
+    assert plan.capability.value == "scientific_reasoning"
+
+
+def test_resolve_search_execution_default():
+    from backend.ai.capability_router.search_resolve import resolve_search_execution
+
+    plan = resolve_search_execution(quality_mode="balanced")
+    assert plan.research_job.value == "search"
+    assert plan.capability.value == "tool_use"

@@ -190,6 +190,7 @@ def _handle_phase1_analysis(db, job):
     db.commit()
 
     ext = os.path.splitext(uf.name.lower())[1]
+    phase1_started = time.perf_counter()
     try:
         with server.storage.storage_manager.provider.local_copy(uf.path, suffix=ext) as local_path:
             result = AnalysisPipelineService().analyze_file_path(
@@ -211,6 +212,19 @@ def _handle_phase1_analysis(db, job):
         db.commit()
         if result.status.value == "failed":
             raise RuntimeError("; ".join(result.errors) or "phase1_analysis failed")
+
+        from backend.analysis_pipeline.paper_analysis_engine import record_phase1_pipeline_execution
+
+        record_phase1_pipeline_execution(
+            file_id=int(job.file_id),
+            user_id=int(uf.user_id),
+            project_id=int(uf.project_id) if uf.project_id is not None else None,
+            content_hash=str(result.content_hash or ""),
+            status="completed",
+            phase_keys=sorted(list((result.phase_results or {}).keys())),
+            latency_ms=int((time.perf_counter() - phase1_started) * 1000),
+            errors=list(result.errors or []),
+        )
 
         # Crossref already ran in import→enqueue_followups (before Phase 1).
         # Phase 1.1 may still fill empty bibliographic fields via only_empty=True.
@@ -298,6 +312,8 @@ def _handle_paper_analysis(db, job):
 
         prompt_registry = PromptRegistry(db)
         model_registry = ModelRegistry(db)
+        from backend.analysis_pipeline.paper_analysis_engine import invoke_paper_analysis_llm
+
         # Prefer PromptBuilder when Phase 1 context exists so structured
         # analysis is in the Retrieved Context section; fall back to registry.
         if phase1_context:
@@ -321,25 +337,30 @@ def _handle_paper_analysis(db, job):
             response_format = PAPER_ANALYSIS_RESPONSE_FORMAT
             if assembled.domain == "medical":
                 response_format = medical_response_format(assembled.document_type)
-            result = ai_gateway.call(
+            result, _prov = invoke_paper_analysis_llm(
+                ai_gateway=ai_gateway,
                 model_registry=model_registry,
-                task="paper_analysis",
-                mode=DEFAULT_AI_MODE,
                 messages=[{"role": "user", "content": prompt_text}],
                 user_id=uf.user_id,
+                file_id=int(job.file_id),
+                project_id=int(uf.project_id) if uf.project_id is not None else None,
+                quality_mode=DEFAULT_AI_MODE,
                 response_format=response_format,
+                prompt_version_id=assembled.prompt_version_id,
             )
         else:
             prompt, _prompt_version = prompt_registry.get_prompt(
                 "paper_analysis",
                 variables={"text": text[:ANALYSIS_MAX_CHARS], "max_chars": ANALYSIS_MAX_CHARS},
             )
-            result = ai_gateway.call(
+            result, _prov = invoke_paper_analysis_llm(
+                ai_gateway=ai_gateway,
                 model_registry=model_registry,
-                task="paper_analysis",
-                mode=DEFAULT_AI_MODE,
                 messages=[{"role": "user", "content": prompt}],
                 user_id=uf.user_id,
+                file_id=int(job.file_id),
+                project_id=int(uf.project_id) if uf.project_id is not None else None,
+                quality_mode=DEFAULT_AI_MODE,
                 response_format=PAPER_ANALYSIS_RESPONSE_FORMAT,
             )
         data = json.loads(result["content"])
@@ -375,7 +396,7 @@ def _handle_paper_analysis(db, job):
 def _handle_evidence_extract(db, job):
     """Project Phase 1 outputs into candidate EvidenceObjects (Week 2)."""
     from backend.analysis_pipeline.persistence import load_analysis_result
-    from backend.evidence.services.extract_service import run_evidence_extraction
+    from backend.evidence.services.extract_engine import execute_evidence_extraction
 
     # Prefer project_id from outbox payload; fall back to file.project_id
     project_id = None
@@ -412,7 +433,7 @@ def _handle_evidence_extract(db, job):
             raise RuntimeError("evidence_extract requires project_id")
         project_id = int(uf.project_id)
 
-    run_evidence_extraction(
+    execute_evidence_extraction(
         db,
         user_id=job.user_id,
         project_id=project_id,

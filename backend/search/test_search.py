@@ -264,8 +264,11 @@ def test_rag_sends_the_assembled_final_text_to_the_model(env, mocker):
 
     env["client"].post("/api/rag", json={"query": "widgets"}, headers=_auth(env["access"]))
 
+    from backend.ai.capability_router.search_resolve import resolve_search_execution
+
+    expected_model = resolve_search_execution(quality_mode="balanced").model
     call = model_registry.call.call_args
-    assert call.args[0] == "gpt-4o-mini"  # model_router.get_model_for_task("rag")
+    assert call.args[0] == expected_model
     assert call.args[1] == [{"role": "user", "content": "ASSEMBLED FINAL PROMPT TEXT"}]
     assert call.kwargs["prompt_version_id"] == 5
 

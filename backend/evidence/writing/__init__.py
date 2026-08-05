@@ -16,6 +16,7 @@ from .export_markdown import (
 from .metrics import compute_writing_metrics
 from .planner import SECTION_TYPES, plan_sections
 from .reviewer import review_grounded_draft
+from .reviewer_engine import execute_reviewer
 from .ri_depth import (
     build_draft_metadata,
     build_ri_writing_context,
@@ -37,6 +38,7 @@ __all__ = [
     "bind_citations_to_sections",
     "flatten_bindings",
     "review_grounded_draft",
+    "execute_reviewer",
     "compute_writing_metrics",
     "build_literature_review_markdown",
     "build_bibtex_from_writing",

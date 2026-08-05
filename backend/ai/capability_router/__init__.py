@@ -35,6 +35,28 @@ from backend.ai.capability_router.chat_resolve import (
     PROMPT_VERSION_CHAT,
     resolve_chat_execution,
 )
+from backend.ai.capability_router.writing_resolve import (
+    PROMPT_VERSION_WRITING_ASSISTANT,
+    resolve_writing_assistant_execution,
+)
+from backend.ai.capability_router.reviewer_resolve import (
+    PROMPT_VERSION_REVIEWER,
+    resolve_reviewer_execution,
+)
+from backend.ai.capability_router.evidence_extract_resolve import (
+    PROMPT_VERSION_EVIDENCE_EXTRACT,
+    resolve_evidence_extract_execution,
+)
+from backend.ai.capability_router.paper_analysis_resolve import (
+    PROMPT_VERSION_PAPER_ANALYSIS,
+    PROMPT_VERSION_PHASE1_PIPELINE,
+    resolve_paper_analysis_execution,
+    resolve_phase1_pipeline_execution,
+)
+from backend.ai.capability_router.search_resolve import (
+    PROMPT_VERSION_RAG,
+    resolve_search_execution,
+)
 from backend.ai.capability_router.types import (
     ACR_STATUS,
     ACR_VERSION,
@@ -65,7 +87,19 @@ __all__ = [
     "TemperatureBand",
     "resolve_execution",
     "resolve_chat_execution",
+    "resolve_writing_assistant_execution",
+    "resolve_reviewer_execution",
+    "resolve_evidence_extract_execution",
+    "resolve_paper_analysis_execution",
+    "resolve_phase1_pipeline_execution",
+    "resolve_search_execution",
     "PROMPT_VERSION_CHAT",
+    "PROMPT_VERSION_WRITING_ASSISTANT",
+    "PROMPT_VERSION_REVIEWER",
+    "PROMPT_VERSION_EVIDENCE_EXTRACT",
+    "PROMPT_VERSION_PAPER_ANALYSIS",
+    "PROMPT_VERSION_PHASE1_PIPELINE",
+    "PROMPT_VERSION_RAG",
     "legacy_gateway_task",
     "legacy_quality_mode",
     "execution_policy_from_mode",

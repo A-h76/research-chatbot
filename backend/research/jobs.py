@@ -181,9 +181,14 @@ def run_literature_review_job(
             supporting_count=writing.get("supporting_count"),
             binder_version=BINDER_VERSION,
             prompt_meta={
-                "reviewer_kind": "rule_based",
+                "reviewer_kind": "acr_deterministic",
                 "writing_quality_mode": writing_quality_mode,
                 "async_job": True,
+                **(
+                    {"ai_execution": review["ai_execution"]}
+                    if isinstance(review.get("ai_execution"), dict)
+                    else {}
+                ),
             },
         )
         db.commit()

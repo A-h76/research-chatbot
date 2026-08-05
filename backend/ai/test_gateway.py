@@ -1,5 +1,6 @@
 from backend.ai.gateway import AIGateway
 from backend.ai.model_router import ModelRouter
+from backend.ai.responses_adapter import FakeResponsesAdapter
 
 
 class _StubRegistry:
@@ -59,3 +60,63 @@ def test_call_uses_resolved_model():
     )
     assert out["content"] == "ok"
     assert reg.calls
+
+
+def test_bind_responses_client_exposes_adapter():
+    gw = _gateway()
+    assert gw.responses_adapter is None
+    gw.bind_responses_client(object())
+    assert gw.responses_adapter is not None
+
+
+def test_stream_responses_delegates_to_adapter():
+    gw = _gateway()
+    adapter = FakeResponsesAdapter()
+    gw._responses = adapter
+    events = list(
+        gw.stream_responses(
+            model="gpt-test",
+            instructions="sys",
+            input=[{"role": "user", "content": "hi"}],
+            task="chat",
+            trace_id="trace-abc",
+        )
+    )
+    assert [e.type for e in events] == [
+        "response.output_text.delta",
+        "response.output_text.delta",
+        "response.completed",
+    ]
+    assert adapter.stream_client.calls
+    assert adapter.stream_client.calls[0]["model"] == "gpt-test"
+
+
+def test_create_responses_delegates_to_adapter():
+    gw = _gateway()
+    adapter = FakeResponsesAdapter()
+    gw._responses = adapter
+    result = gw.create_responses(
+        model="gpt-test",
+        instructions="sys",
+        input=[{"role": "user", "content": "hi"}],
+        task="chat",
+        trace_id="trace-xyz",
+    )
+    assert result is not None
+    assert adapter.create_calls
+    assert adapter.create_calls[0]["model"] == "gpt-test"
+
+
+def test_stream_responses_requires_bound_client():
+    gw = _gateway()
+    try:
+        list(
+            gw.stream_responses(
+                model="gpt-test",
+                instructions="sys",
+                input=[],
+            )
+        )
+        assert False, "expected RuntimeError"
+    except RuntimeError as exc:
+        assert "not bound" in str(exc).lower()

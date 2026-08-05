@@ -268,20 +268,33 @@ def create_search_blueprint(
             db.commit()
 
             started = time.perf_counter()
+            ai_provenance = None
             try:
                 messages = [{"role": "user", "content": assembled.final}]
+                source_chunk_ids = [int(ch.id) for _, ch, _ in results if getattr(ch, "id", None)]
                 if ai_gateway is not None:
-                    result = ai_gateway.call(
+                    from backend.search.search_engine import invoke_rag_llm
+
+                    result, ai_provenance = invoke_rag_llm(
+                        ai_gateway=ai_gateway,
                         model_registry=model_registry,
-                        task="rag",
-                        mode=quality_mode,
-                        confidence=confidence,
                         messages=messages,
                         user_id=user_id,
+                        quality_mode=quality_mode,
+                        confidence=confidence,
                         prompt_version_id=assembled.prompt_version_id,
+                        project_id=project_id,
+                        file_id=file_id,
+                        source_chunk_ids=source_chunk_ids,
                     )
                 else:
-                    model = model_router.get_model_for_task("rag")
+                    from backend.ai.capability_router.search_resolve import resolve_search_execution
+
+                    plan = resolve_search_execution(
+                        quality_mode=quality_mode,
+                        confidence=confidence,
+                    )
+                    model = plan.model
                     result = model_registry.call(
                         model,
                         messages,
@@ -321,6 +334,15 @@ def create_search_blueprint(
                             }
                             for score, ch, uf in results
                         ],
+                        **(
+                            {
+                                "ai_execution": (
+                                    ai_provenance.get("ai_execution") or ai_provenance
+                                )
+                            }
+                            if ai_provenance
+                            else {}
+                        ),
                     }
                 ),
                 200,

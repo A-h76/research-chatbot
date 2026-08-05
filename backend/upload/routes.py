@@ -471,19 +471,31 @@ def create_documents_blueprint(
             started = time.perf_counter()
             try:
                 messages = [{"role": "user", "content": assembled.final}]
+                from backend.analysis_pipeline.paper_analysis_engine import invoke_paper_analysis_llm
+
                 if ai_gateway is not None:
-                    result = ai_gateway.call(
+                    result, ai_provenance = invoke_paper_analysis_llm(
+                        ai_gateway=ai_gateway,
                         model_registry=model_registry,
-                        task="paper_analysis",
-                        mode=quality_mode,
-                        confidence=confidence,
                         messages=messages,
                         user_id=user_id,
+                        file_id=int(doc_id),
+                        project_id=int(uf.project_id) if uf.project_id is not None else None,
+                        quality_mode=quality_mode,
+                        confidence=confidence,
                         response_format=response_format,
                         prompt_version_id=assembled.prompt_version_id,
                     )
                 else:
-                    model = model_router.get_model_for_task("paper_analysis")
+                    from backend.ai.capability_router.paper_analysis_resolve import (
+                        resolve_paper_analysis_execution,
+                    )
+
+                    plan = resolve_paper_analysis_execution(
+                        quality_mode=quality_mode,
+                        confidence=confidence,
+                    )
+                    model = plan.model
                     result = model_registry.call(
                         model,
                         messages,
@@ -491,6 +503,7 @@ def create_documents_blueprint(
                         response_format=response_format,
                         prompt_version_id=assembled.prompt_version_id,
                     )
+                    ai_provenance = None
                 data = json.loads(result["content"])
             except ModelError as exc:
                 execution.status = "failed"
@@ -554,6 +567,15 @@ def create_documents_blueprint(
                         "domain_version_id": assembled.domain_version_id,
                         "document_id": doc_id,
                         "phase1_context_used": bool(phase1_context),
+                        **(
+                            {
+                                "ai_execution": (
+                                    ai_provenance.get("ai_execution") or ai_provenance
+                                )
+                            }
+                            if ai_provenance
+                            else {}
+                        ),
                     }
                 ),
                 200,
