@@ -2407,6 +2407,7 @@ from backend.library.collections import CollectionService
 from backend.library.routes import create_library_bridge_blueprint
 from backend.library.service import LibraryImportService
 from backend.library.sync import LibrarySyncService
+from backend.ecosystem import create_integrations_catalog_blueprint
 from backend.writing.api.errors import WritingDomainError
 from backend.writing.events import make_writing_event, publish_writing_event
 from backend.writing.services import (
