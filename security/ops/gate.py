@@ -2,9 +2,28 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any
 
 from quotas.policies import PLAN_LIMITS, plan_limits
+
+logger = logging.getLogger(__name__)
+
+# ── TEMPORARY (testing) ───────────────────────────────────────────────────
+# Free-tier / monthly token+cost quotas and daily AI budget are suspended so
+# Dhund can be exercised without hitting plan caps.
+#
+# Restore after testing:
+#   Set DHUND_SUSPEND_AI_QUOTAS=0 (and/or change default below to "0"), redeploy.
+# Kill switch + account status checks still apply.
+def ai_quotas_suspended() -> bool:
+    return os.environ.get("DHUND_SUSPEND_AI_QUOTAS", "1").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 class AiAccessDenied(Exception):
@@ -114,6 +133,8 @@ class AiAccessGate:
         )
 
     def assert_daily_budget(self, user_id: int | None = None) -> dict:
+        if ai_quotas_suspended():
+            return {"paused": False, "suspended_for_testing": True}
         status = self.settings.daily_budget_status()
         if status.get("warn_95") and self.events:
             self.events.record(
@@ -146,6 +167,8 @@ class AiAccessGate:
         self, user_id: int, *, token_estimate: int = 500, cost_estimate: float = 0.0
     ) -> None:
         self.assert_user_can_use_ai(user_id)
+        if ai_quotas_suspended():
+            return
         if self.entitlements is not None:
             from quotas.entitlements import EntitlementDenied
 
@@ -215,6 +238,14 @@ class AiAccessGate:
         self.assert_ai_enabled(user_id)
         u = self.assert_user_can_use_ai(user_id)
         self.assert_daily_budget(user_id)
+
+        if ai_quotas_suspended():
+            logger.debug(
+                "AI quotas suspended (DHUND_SUSPEND_AI_QUOTAS) — skipping entitlement/token checks"
+            )
+            out = dict(u)
+            out["quota_suspended_for_testing"] = True
+            return out
 
         warning = None
         if self.entitlements is not None:
@@ -291,4 +322,10 @@ class AiAccessGate:
                 db.close()
 
 
-__all__ = ["AiAccessDenied", "AiAccessGate", "PLAN_LIMITS", "plan_limits"]
+__all__ = [
+    "AiAccessDenied",
+    "AiAccessGate",
+    "PLAN_LIMITS",
+    "plan_limits",
+    "ai_quotas_suspended",
+]

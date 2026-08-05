@@ -189,6 +189,40 @@ def test_plan_limits_have_active_research_cap():
     assert PLAN_LIMITS["pro"]["max_active_research"] >= 5
 
 
+def test_ai_quotas_suspended_skips_token_and_budget(monkeypatch):
+    """TEMPORARY testing flag — skip monthly token/cost + daily budget."""
+    monkeypatch.setenv("DHUND_SUSPEND_AI_QUOTAS", "1")
+    Session, SystemSetting, *_ = _fresh_db()
+    settings = SystemSettingsService(Session, SystemSetting)
+    settings.set_daily_budget_usd(1.0)
+    settings.record_spend(9.0)
+
+    class BlockingQuota:
+        def check_token_quota(self, *a, **k):
+            raise RuntimeError("should not run when suspended")
+
+    users = {1: FakeUser(id=1, monthly_cost_used=99.0, monthly_cost_limit=1.0)}
+
+    def SessionLocal():
+        class S:
+            def get(self, model, uid):
+                return users.get(uid)
+
+            def close(self):
+                pass
+
+        return S()
+
+    gate = AiAccessGate(
+        SessionLocal=SessionLocal,
+        User=FakeUser,
+        settings=settings,
+        quota_service=BlockingQuota(),
+    )
+    out = gate.preflight(1, token_estimate=10**9, cost_estimate=100.0)
+    assert out.get("quota_suspended_for_testing") is True
+
+
 def test_password_user_needs_verification():
     Session, SystemSetting, *_ = _fresh_db()
     settings = SystemSettingsService(Session, SystemSetting)
