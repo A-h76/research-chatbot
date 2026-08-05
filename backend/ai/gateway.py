@@ -145,6 +145,7 @@ class AIGateway:
         result: dict[str, Any] | None = None
         error_text = ""
         try:
+            kwargs.setdefault("skip_cost_ledger", True)
             result = model_registry.call(resolved_model, messages, **kwargs)
             success = True
             return result

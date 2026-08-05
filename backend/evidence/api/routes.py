@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -951,6 +952,38 @@ def create_evidence_blueprint(
                 )
             db.commit()
             log_evidence_metric("review", user_id=uid, evidence_id=evidence_id, status=payload["status"])
+            try:
+                from backend.domain_events import (
+                    evidence_accepted,
+                    publish,
+                    research_decision_recorded,
+                )
+
+                if payload["status"] in ("accepted", "edited"):
+                    publish(
+                        evidence_accepted(
+                            user_id=uid,
+                            evidence_id=int(
+                                new_row.id if payload["status"] == "edited" else row.id
+                            ),
+                            project_id=row.project_id,
+                            review_status=payload["status"],
+                        )
+                    )
+                if getattr(decision, "id", None) is not None:
+                    publish(
+                        research_decision_recorded(
+                            user_id=uid,
+                            decision_id=int(decision.id),
+                            project_id=row.project_id,
+                            evidence_id=int(evidence_id),
+                            decision_type=str(decision.decision_type or ""),
+                        )
+                    )
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "evidence domain events failed", exc_info=True
+                )
             return jsonify({"ok": True, "evidence": serialize_evidence_object(row if payload["status"] != "edited" else new_row)})
         except ValueError as exc:
             return jsonify({"error": ErrorCode.VALIDATION, "detail": str(exc)}), 422

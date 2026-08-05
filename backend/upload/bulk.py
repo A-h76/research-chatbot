@@ -58,8 +58,28 @@ def create_bulk_upload_blueprint(
     quota_service,
     storage_backend,
     limiter=None,
+    import_spine=None,
+    upload_service=None,
 ):
     bp = Blueprint("bulk_upload", __name__, url_prefix="/api/uploads")
+
+    def _upload_svc():
+        if upload_service is not None:
+            return upload_service
+        from backend.upload.upload_service import UploadService
+
+        return UploadService(
+            UserFile,
+            UploadBatch,
+            import_spine=import_spine,
+            UploadJob=UploadJob,
+            OutboxEvent=OutboxEvent,
+        )
+
+    def _jwt_facade():
+        from backend.upload.upload_service import JwtStorageFacade
+
+        return JwtStorageFacade(storage_backend)
 
     def _limit(spec):
         def deco(fn):
@@ -140,46 +160,48 @@ def create_bulk_upload_blueprint(
 
         db = SessionLocal()
         uploaded_keys = []
+        facade = _jwt_facade()
+        svc = _upload_svc()
         try:
-            batch = UploadBatch(user_id=user_id, source="bulk_upload", file_count=len(prepared))
-            db.add(batch)
-            db.flush()  # assigns batch.id
+            batch = svc.ensure_batch(
+                db,
+                user_id,
+                source="bulk_upload",
+                file_count=len(prepared),
+                increment=False,
+            )
 
             jobs_out = []
             for data, ext, mime, size, original_name in prepared:
                 filename = safe_filename(original_name, ext)
-                key = f"users/{user_id}/uploads/{batch.id}/{uuid.uuid4().hex}/{filename}"
+                key = facade.new_bulk_key(user_id, batch.id, filename)
 
-                storage_backend.upload(io.BytesIO(data), key, content_type=mime)
-                uploaded_keys.append(key)
-
-                uf = UserFile(
+                result = svc.store_jwt_bytes_and_register(
+                    db,
+                    facade,
                     user_id=user_id,
-                    name=filename[:300],
+                    data=data,
+                    filename=filename,
                     mime=mime,
                     kind=kind_for_extension(ext),
-                    path=key,
-                    size=size,
+                    key=key,
+                    batch=batch,
+                    batch_source="bulk_upload",
+                    create_batch=False,
                 )
-                db.add(uf)
-                db.flush()  # assigns uf.id
-
-                job = enqueue_upload_job_with_outbox(
-                    db,
-                    UploadJob=UploadJob,
-                    OutboxEvent=OutboxEvent,
-                    user_id=user_id,
-                    file_id=uf.id,
-                    job_type="import",
-                    upload_batch_id=batch.id,
+                if not result.ok:
+                    raise RuntimeError(result.error or "storage_unavailable")
+                uploaded_keys.append(key)
+                jobs_out.append(
+                    {
+                        "job_id": result.job_id,
+                        "file_id": result.user_file.id,
+                        "filename": filename,
+                    }
                 )
-                jobs_out.append({"job_id": job.id, "file_id": uf.id, "filename": filename})
 
             db.commit()
 
-            # Best-effort, same as /api/documents/upload: the batch is
-            # already safely stored and recorded, so a quota-log hiccup
-            # here shouldn't undo it, only get logged.
             try:
                 quota_service.increment_storage(user_id, total_bytes, delta_files=len(prepared))
             except Exception:
@@ -199,7 +221,7 @@ def create_bulk_upload_blueprint(
             db.rollback()
             for key in uploaded_keys:
                 try:
-                    storage_backend.delete(key)
+                    facade.delete(key)
                 except Exception:
                     pass
             return (

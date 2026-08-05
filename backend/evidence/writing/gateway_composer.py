@@ -176,7 +176,8 @@ def compose_via_gateway(
     Returns ``(paragraph, citations, warnings, provenance_dict_or_none)``.
     Raises on transport/model failure (caller may fallback).
     """
-    from backend.ai.ai_ledger import AILedgerEntry, hash_output, record_execution
+    from backend.ai.ai_ledger import AILedgerEntry, hash_output
+    from backend.ai.ledger_facade import record_acr_execution
     from backend.ai.capability_router import resolve_execution
     from backend.ai.capability_router.resolve import execution_policy_from_mode
 
@@ -270,7 +271,26 @@ def compose_via_gateway(
             "legacy_gateway_task": task,
         },
     )
-    record_execution(entry)
+    record_acr_execution(
+        entry,
+        model_registry=model_registry,
+        user_id=user_id,
+        cost_action="chat",
+    )
+    try:
+        from backend.domain_events import publish, writing_generated
+
+        publish(
+            writing_generated(
+                user_id=int(user_id),
+                project_id=int(project_id) if project_id is not None else None,
+                execution_id=str(execution_id),
+                evidence_source_ids=list(evidence_ids or []),
+                correlation_id=str(trace_id) if trace_id else None,
+            )
+        )
+    except Exception:
+        log.warning("WritingGenerated domain event failed", exc_info=True)
 
     provenance = plan.to_provenance(
         tokens=tokens,

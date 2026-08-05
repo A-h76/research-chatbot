@@ -21,7 +21,8 @@ def invoke_rag_llm(
     source_chunk_ids: list[int] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Gateway LLM call for semantic search RAG under Capability Router provenance."""
-    from backend.ai.ai_ledger import AILedgerEntry, hash_output, record_execution
+    from backend.ai.ai_ledger import AILedgerEntry, hash_output
+    from backend.ai.ledger_facade import record_acr_execution
     from backend.ai.capability_router.search_resolve import (
         PROMPT_VERSION_RAG,
         resolve_search_execution,
@@ -73,7 +74,13 @@ def invoke_rag_llm(
             "source_count": len(source_chunk_ids or []),
         },
     )
-    record_execution(entry)
+    record_acr_execution(
+        entry,
+        model_registry=model_registry,
+        user_id=user_id,
+        cost_action="chat",
+        prompt_version_id=prompt_version_id,
+    )
 
     provenance = plan.to_provenance(
         tokens=tokens,

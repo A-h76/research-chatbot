@@ -13,6 +13,7 @@ from .ris import parse_ris, to_ris
 from .collections import CollectionService
 from .adapters import get_adapter
 from .adapters.base import ImportAdapter, AdapterCapabilities
+from .import_service import IMPORT_SPINE_VERSION, ImportIdentity, ImportService
 
 __all__ = [
     "LibraryRecord",
@@ -26,4 +27,7 @@ __all__ = [
     "get_adapter",
     "ImportAdapter",
     "AdapterCapabilities",
+    "ImportService",
+    "ImportIdentity",
+    "IMPORT_SPINE_VERSION",
 ]

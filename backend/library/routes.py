@@ -53,10 +53,33 @@ def create_library_bridge_blueprint(
     token_secret_key="",
     UploadJob=None,
     OutboxEvent=None,
+    import_spine=None,
 ):
     bp = Blueprint("library_bridge", __name__)
     # Prefer full import (extract + chunk + phase1); fall back to phase1-only.
     _enqueue_after_attach = enqueue_import or enqueue_phase1
+    # Bite 12: canonical Import Spine (may be same object as import_service for bibtex)
+    _import_spine = import_spine
+
+    def _spine():
+        nonlocal _import_spine
+        if _import_spine is not None:
+            return _import_spine
+        from backend.library.import_service import ImportService
+
+        _import_spine = ImportService(
+            UserFile,
+            select_fn,
+            storage=storage,
+            upload_dir=upload_dir,
+            enqueue_import=_enqueue_after_attach,
+            max_file_mb=max_file_mb,
+            enrich_file_from_doi=enrich_file_from_doi,
+            UploadJob=UploadJob,
+            OutboxEvent=OutboxEvent,
+        )
+        return _import_spine
+
     _tok_key = token_secret_key or ""
     _can_enqueue_sync = UploadJob is not None and OutboxEvent is not None
 
@@ -914,7 +937,7 @@ def create_library_bridge_blueprint(
     @_rate("10 per hour")
     def google_drive_import():
         """Import selected Drive PDFs into Library → shared import job (Golden Rule)."""
-        from backend.library.file_pull import apply_pdf_bytes_to_stub
+        from backend.library.import_service import ImportIdentity
 
         try:
             data = parse_json_object(request.get_json(silent=True))
@@ -960,28 +983,8 @@ def create_library_bridge_blueprint(
             if not token:
                 return jsonify({"error": "not_connected"}), 400
 
+            spine = _spine()
             for ext_id in file_ids:
-                existing = (
-                    db.execute(
-                        select_fn(UserFile).where(
-                            UserFile.user_id == uid,
-                            UserFile.external_provider == "google_drive",
-                            UserFile.external_item_id == ext_id,
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
-                if existing:
-                    skipped.append(
-                        {
-                            "external_id": ext_id,
-                            "reason": "already_exists",
-                            "file_id": existing.id,
-                        }
-                    )
-                    continue
-
                 hit = google_drive_mod.download_file(
                     token,
                     ext_id,
@@ -992,54 +995,42 @@ def create_library_bridge_blueprint(
                     continue
                 pdf_bytes, filename, content_type = hit
 
-                uf = UserFile(
-                    user_id=uid,
-                    project_id=project_id,
-                    conversation_id=None,
-                    name=filename[:300],
-                    mime="",
-                    kind="document",
-                    path="",
-                    size=0,
-                    title=filename.rsplit(".", 1)[0][:500],
-                    authors="",
-                    year="",
-                    venue="",
-                    doi="",
-                    abstract="",
-                    reading_status="unread",
-                    tags=json.dumps(["from-google-drive", f"gdrive:{ext_id[:80]}"]),
-                    meta_status="pending",
-                    metadata_source="google_drive",
-                    source_url="",
-                    doi_verified=False,
-                    external_provider="google_drive",
-                    external_item_id=ext_id[:120],
-                )
-                db.add(uf)
-                db.flush()
-
-                applied = apply_pdf_bytes_to_stub(
+                result = spine.import_held_bytes(
                     db,
-                    uf,
+                    ImportIdentity(
+                        user_id=uid,
+                        project_id=project_id,
+                        name=filename[:300],
+                        title=filename.rsplit(".", 1)[0][:500],
+                        tags=["from-google-drive", f"gdrive:{ext_id[:80]}"],
+                        metadata_source="google_drive",
+                        external_provider="google_drive",
+                        external_item_id=ext_id[:120],
+                        meta_status="pending",
+                    ),
                     data=pdf_bytes,
                     filename=filename,
                     content_type=content_type,
-                    storage=storage,
-                    upload_dir=upload_dir,
-                    enqueue_import=_enqueue_after_attach,
-                    user_id=uid,
-                    max_file_mb=max_file_mb,
                 )
-                if applied.get("ok"):
+                if result.get("already_exists"):
+                    skipped.append(
+                        {
+                            "external_id": ext_id,
+                            "reason": "already_exists",
+                            "file_id": result["file"].id,
+                        }
+                    )
+                    continue
+                uf = result["file"]
+                if result.get("ok"):
                     created_ids.append(uf.id)
-                    if applied.get("queued"):
+                    if result.get("queued"):
                         queued_n += 1
                 else:
                     errors.append(
                         {
                             "external_id": ext_id,
-                            "error": applied.get("error") or "attach_failed",
+                            "error": result.get("error") or "attach_failed",
                             "file_id": uf.id,
                         }
                     )
@@ -1239,7 +1230,7 @@ def create_library_bridge_blueprint(
     @_rate("10 per hour")
     def dropbox_import():
         """Import selected Dropbox PDFs into Library → shared import job (Golden Rule)."""
-        from backend.library.file_pull import apply_pdf_bytes_to_stub
+        from backend.library.import_service import ImportIdentity
 
         try:
             data = parse_json_object(request.get_json(silent=True))
@@ -1285,28 +1276,8 @@ def create_library_bridge_blueprint(
             if not token:
                 return jsonify({"error": "not_connected"}), 400
 
+            spine = _spine()
             for ext_id in file_ids:
-                existing = (
-                    db.execute(
-                        select_fn(UserFile).where(
-                            UserFile.user_id == uid,
-                            UserFile.external_provider == "dropbox",
-                            UserFile.external_item_id == ext_id,
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
-                if existing:
-                    skipped.append(
-                        {
-                            "external_id": ext_id,
-                            "reason": "already_exists",
-                            "file_id": existing.id,
-                        }
-                    )
-                    continue
-
                 hit = dropbox_mod.download_file(
                     token,
                     ext_id,
@@ -1317,54 +1288,42 @@ def create_library_bridge_blueprint(
                     continue
                 pdf_bytes, filename, content_type = hit
 
-                uf = UserFile(
-                    user_id=uid,
-                    project_id=project_id,
-                    conversation_id=None,
-                    name=filename[:300],
-                    mime="",
-                    kind="document",
-                    path="",
-                    size=0,
-                    title=filename.rsplit(".", 1)[0][:500],
-                    authors="",
-                    year="",
-                    venue="",
-                    doi="",
-                    abstract="",
-                    reading_status="unread",
-                    tags=json.dumps(["from-dropbox", f"dropbox:{ext_id[:80]}"]),
-                    meta_status="pending",
-                    metadata_source="dropbox",
-                    source_url="",
-                    doi_verified=False,
-                    external_provider="dropbox",
-                    external_item_id=ext_id[:120],
-                )
-                db.add(uf)
-                db.flush()
-
-                applied = apply_pdf_bytes_to_stub(
+                result = spine.import_held_bytes(
                     db,
-                    uf,
+                    ImportIdentity(
+                        user_id=uid,
+                        project_id=project_id,
+                        name=filename[:300],
+                        title=filename.rsplit(".", 1)[0][:500],
+                        tags=["from-dropbox", f"dropbox:{ext_id[:80]}"],
+                        metadata_source="dropbox",
+                        external_provider="dropbox",
+                        external_item_id=ext_id[:120],
+                        meta_status="pending",
+                    ),
                     data=pdf_bytes,
                     filename=filename,
                     content_type=content_type,
-                    storage=storage,
-                    upload_dir=upload_dir,
-                    enqueue_import=_enqueue_after_attach,
-                    user_id=uid,
-                    max_file_mb=max_file_mb,
                 )
-                if applied.get("ok"):
+                if result.get("already_exists"):
+                    skipped.append(
+                        {
+                            "external_id": ext_id,
+                            "reason": "already_exists",
+                            "file_id": result["file"].id,
+                        }
+                    )
+                    continue
+                uf = result["file"]
+                if result.get("ok"):
                     created_ids.append(uf.id)
-                    if applied.get("queued"):
+                    if result.get("queued"):
                         queued_n += 1
                 else:
                     errors.append(
                         {
                             "external_id": ext_id,
-                            "error": applied.get("error") or "attach_failed",
+                            "error": result.get("error") or "attach_failed",
                             "file_id": uf.id,
                         }
                     )
@@ -1559,7 +1518,7 @@ def create_library_bridge_blueprint(
     @_rate("10 per hour")
     def onedrive_import():
         """Import selected OneDrive PDFs into Library → shared import job (Golden Rule)."""
-        from backend.library.file_pull import apply_pdf_bytes_to_stub
+        from backend.library.import_service import ImportIdentity
 
         try:
             data = parse_json_object(request.get_json(silent=True))
@@ -1605,28 +1564,8 @@ def create_library_bridge_blueprint(
             if not token:
                 return jsonify({"error": "not_connected"}), 400
 
+            spine = _spine()
             for ext_id in file_ids:
-                existing = (
-                    db.execute(
-                        select_fn(UserFile).where(
-                            UserFile.user_id == uid,
-                            UserFile.external_provider == "onedrive",
-                            UserFile.external_item_id == ext_id,
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
-                if existing:
-                    skipped.append(
-                        {
-                            "external_id": ext_id,
-                            "reason": "already_exists",
-                            "file_id": existing.id,
-                        }
-                    )
-                    continue
-
                 hit = onedrive_mod.download_file(
                     token,
                     ext_id,
@@ -1637,54 +1576,42 @@ def create_library_bridge_blueprint(
                     continue
                 pdf_bytes, filename, content_type = hit
 
-                uf = UserFile(
-                    user_id=uid,
-                    project_id=project_id,
-                    conversation_id=None,
-                    name=filename[:300],
-                    mime="",
-                    kind="document",
-                    path="",
-                    size=0,
-                    title=filename.rsplit(".", 1)[0][:500],
-                    authors="",
-                    year="",
-                    venue="",
-                    doi="",
-                    abstract="",
-                    reading_status="unread",
-                    tags=json.dumps(["from-onedrive", f"onedrive:{ext_id[:80]}"]),
-                    meta_status="pending",
-                    metadata_source="onedrive",
-                    source_url="",
-                    doi_verified=False,
-                    external_provider="onedrive",
-                    external_item_id=ext_id[:120],
-                )
-                db.add(uf)
-                db.flush()
-
-                applied = apply_pdf_bytes_to_stub(
+                result = spine.import_held_bytes(
                     db,
-                    uf,
+                    ImportIdentity(
+                        user_id=uid,
+                        project_id=project_id,
+                        name=filename[:300],
+                        title=filename.rsplit(".", 1)[0][:500],
+                        tags=["from-onedrive", f"onedrive:{ext_id[:80]}"],
+                        metadata_source="onedrive",
+                        external_provider="onedrive",
+                        external_item_id=ext_id[:120],
+                        meta_status="pending",
+                    ),
                     data=pdf_bytes,
                     filename=filename,
                     content_type=content_type,
-                    storage=storage,
-                    upload_dir=upload_dir,
-                    enqueue_import=_enqueue_after_attach,
-                    user_id=uid,
-                    max_file_mb=max_file_mb,
                 )
-                if applied.get("ok"):
+                if result.get("already_exists"):
+                    skipped.append(
+                        {
+                            "external_id": ext_id,
+                            "reason": "already_exists",
+                            "file_id": result["file"].id,
+                        }
+                    )
+                    continue
+                uf = result["file"]
+                if result.get("ok"):
                     created_ids.append(uf.id)
-                    if applied.get("queued"):
+                    if result.get("queued"):
                         queued_n += 1
                 else:
                     errors.append(
                         {
                             "external_id": ext_id,
-                            "error": applied.get("error") or "attach_failed",
+                            "error": result.get("error") or "attach_failed",
                             "file_id": uf.id,
                         }
                     )
@@ -2031,62 +1958,40 @@ def create_library_bridge_blueprint(
                     }
                 ), 409
 
-            disk_name = uuid.uuid4().hex + ext
-            path = os.path.join(upload_dir, disk_name)
-            f.save(path)
-            size = os.path.getsize(path)
+            data_bytes = f.read()
+            if not data_bytes:
+                return jsonify({"error": "empty_file"}), 400
             try:
-                _, mime = validate_upload_path(
-                    path,
+                from backend.upload.validation import validate_upload_bytes
+
+                _, mime = validate_upload_bytes(
+                    data_bytes,
                     name,
-                    allowed=allowed_extensions or {".pdf"},
-                    size_bytes=size,
-                    max_mb=max_file_mb or 50,
+                    allowed=allowed_extensions or {".pdf", ".PDF"},
                 )
             except UploadValidationError as e:
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
                 return jsonify({"error": e.code, "detail": e.message}), 400
+            max_bytes = int(max_file_mb or 50) * 1024 * 1024
+            if len(data_bytes) > max_bytes:
+                return jsonify({"error": "file_too_large"}), 400
 
-            checksum = storage.sha256_file(path)
-            try:
-                storage.upload(disk_name, path)
-            except Exception:
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-                return jsonify({"error": "storage_unavailable"}), 502
-            finally:
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-
-            uf.path = disk_name
-            uf.size = size
-            uf.mime = mime or "application/pdf"
-            uf.kind = kind_for_extension(ext) or "document"
-            uf.checksum_sha256 = checksum
-            uf.meta_status = "pending"
-            if not (uf.name or "").strip() or uf.name == uf.title:
-                uf.name = name[:300]
-            try:
-                from backend.scholarly.uftr.state import record_manual_attach
-
-                record_manual_attach(uf, source="manual")
-            except Exception:
-                pass
-            db.flush()
-            queued = False
-            if _enqueue_after_attach:
-                try:
-                    _enqueue_after_attach(db, _uid(), uf.id)
-                    queued = True
-                except Exception:
-                    queued = False
+            applied = _spine().attach_manual_pdf(
+                db,
+                uf,
+                data=data_bytes,
+                filename=name,
+                user_id=_uid(),
+                content_type=mime or "application/pdf",
+            )
+            if not applied.get("ok"):
+                err = applied.get("error") or "attach_failed"
+                code = 409 if err == "already_has_pdf" else 400
+                if err == "storage_unavailable":
+                    code = 502
+                if err == "storage_not_configured":
+                    code = 503
+                return jsonify({"error": err, "file_id": uf.id}), code
+            queued = bool(applied.get("queued"))
             db.commit()
             db.refresh(uf)
             return jsonify(
@@ -2127,7 +2032,6 @@ def create_library_bridge_blueprint(
                 return jsonify({"error": "not_found"}), 404
 
             from backend.library.sync import has_research_asset
-            from backend.scholarly.uftr import resolve_and_attach
             from backend.scholarly.uftr.state import should_auto_retry
 
             if has_research_asset(uf):
@@ -2153,14 +2057,10 @@ def create_library_bridge_blueprint(
                     }
                 ), 200
 
-            result = resolve_and_attach(
+            result = _spine().resolve_fulltext(
                 db,
                 uf,
-                storage=storage,
-                upload_dir=upload_dir,
-                enqueue_import=_enqueue_after_attach,
                 user_id=_uid(),
-                max_file_mb=max_file_mb or 50,
                 force=force or not auto,
             )
             db.commit()

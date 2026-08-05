@@ -13,6 +13,15 @@ endgame, AI Gateway discipline, and the 80/20 debt model. Living pictures:
 and [`ARCHITECTURE-HEALTH.md`](ARCHITECTURE-HEALTH.md) (scored KPIs). These do **not**
 replace this document; they direct *how* we renovate without rewriting.
 
+**Frozen research-OS doctrines** (Engineering Constitution §0.5 — Bite 16):
+
+```text
+One Research Journey  →  One Canonical Pipeline  →  Many Entry Points
+One Business Rule     →  One Implementation      →  Many APIs
+```
+
+Workflow contracts: [`docs/contracts/WF-v1.0-COMPLETE-FREEZE.md`](contracts/WF-v1.0-COMPLETE-FREEZE.md).
+
 This document is truthful about where the codebase stands *today*
 against each principle, not just what the principle says — a constitution
 that doesn't admit its own violations gets silently ignored by the next

@@ -42,8 +42,29 @@ def create_processing_upload_blueprint(
     get_job_status_cache,
     set_job_status_cache,
     default_storage_limit_bytes,
+    import_spine=None,
+    upload_service=None,
 ):
     bp = Blueprint("processing_upload_routes", __name__)
+
+    def _upload_svc():
+        if upload_service is not None:
+            return upload_service
+        from backend.upload.upload_service import UploadService
+
+        return UploadService(
+            UserFile,
+            UploadBatch,
+            import_spine=import_spine,
+            find_duplicate_file=find_duplicate_file,
+            UploadJob=UploadJob,
+            OutboxEvent=OutboxEvent,
+        )
+
+    def _session_facade():
+        from backend.upload.upload_service import SessionStorageFacade
+
+        return SessionStorageFacade(storage)
 
     @bp.route("/api/files", methods=["POST"])
     @login_required
@@ -84,8 +105,6 @@ def create_processing_upload_blueprint(
             return jsonify({"error": e.code, "detail": e.message}), 400
 
         kind = kind_for_extension(ext)
-
-        checksum = storage.sha256_file(path)
         uid = session["user_id"]
 
         db = SessionLocal()
@@ -99,31 +118,6 @@ def create_processing_upload_blueprint(
                     user_id=uid,
                     project_id=request.form.get("project_id"),
                 )
-            dup = find_duplicate_file(db, uid, checksum)
-            if dup:
-                result = file_to_dict(dup)
-                result["note"] = None
-                result["duplicate"] = True
-                return jsonify(result)
-
-            try:
-                storage.upload(disk_name, path)
-            except Exception:
-                logging.exception("storage upload failed for %s", disk_name)
-                return jsonify({"error": "storage_unavailable"}), 502
-
-            batch = db.get(UploadBatch, batch_id) if batch_id else None
-            if not batch or batch.user_id != uid:
-                batch = UploadBatch(
-                    user_id=uid,
-                    project_id=project_id,
-                    conversation_id=conversation_id,
-                    source="library",
-                    file_count=0,
-                )
-                db.add(batch)
-                db.flush()
-            batch.file_count = (batch.file_count or 0) + 1
 
             usage = db.get(StorageUsage, uid)
             already_used = usage.bytes_used if usage else 0
@@ -145,50 +139,36 @@ def create_processing_upload_blueprint(
                     403,
                 )
 
-            uf = UserFile(
+            result = _upload_svc().store_session_and_register(
+                db,
+                _session_facade(),
                 user_id=uid,
-                project_id=project_id,
-                conversation_id=conversation_id,
-                name=name[:300],
+                local_path=path,
+                filename=name,
                 mime=mime,
                 kind=kind,
-                path=disk_name,
                 size=size,
-                checksum_sha256=checksum,
+                ext=ext,
+                project_id=project_id,
+                conversation_id=conversation_id,
+                batch_id=batch_id,
+                batch_source="library",
             )
-            db.add(uf)
-            db.flush()
-
-            job_id = None
-            if kind == "document":
-                job = UploadJob(
-                    upload_batch_id=batch.id,
-                    file_id=uf.id,
-                    user_id=uid,
-                    job_type="import",
-                    status="pending",
-                )
-                db.add(job)
-                db.flush()
-                job_id = job.id
-
-                db.add(
-                    OutboxEvent(
-                        aggregate_type="upload_job",
-                        aggregate_id=job.id,
-                        event_type="job.enqueued",
-                        payload=json.dumps({"file_id": uf.id}),
-                    )
-                )
+            if result.duplicate:
+                out = file_to_dict(result.user_file)
+                out["note"] = None
+                out["duplicate"] = True
+                return jsonify(out)
+            if not result.ok:
+                return jsonify({"error": result.error or "storage_unavailable"}), 502
 
             adjust_storage_usage(db, uid, delta_bytes=size, delta_files=1)
-
             db.commit()
 
-            result = file_to_dict(uf)
-            result["note"] = None
-            result["job_id"] = job_id
-            return jsonify(result)
+            out = file_to_dict(result.user_file)
+            out["note"] = None
+            out["job_id"] = result.job_id
+            return jsonify(out)
         finally:
             db.close()
             try:

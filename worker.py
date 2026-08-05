@@ -659,6 +659,7 @@ def run_job(job_id):
             db.commit()
             _sync_status_cache(job)
             _record_job_metrics(job, outcome="done")
+            _note_research_workflow(job, outcome="done")
             log.info("job %s (%s) done", job.id, job.job_type)
 
         except Exception as exc:
@@ -702,8 +703,26 @@ def run_job(job_id):
             _record_job_metrics(
                 job, outcome="failed" if job.status == "failed" else "retry"
             )
+            if job.status == "failed":
+                _note_research_workflow(job, outcome="failed", error=str(exc))
     finally:
         db.close()
+
+
+def _note_research_workflow(job, *, outcome: str, error: str | None = None) -> None:
+    """Bite 15 — advance Research Workflow steps from worker outcomes."""
+    try:
+        from backend.workflow.engine import get_engine
+
+        get_engine().note_job_outcome(
+            user_id=int(job.user_id),
+            file_id=int(job.file_id) if job.file_id is not None else None,
+            job_type=str(job.job_type or ""),
+            outcome=outcome,
+            error=error,
+        )
+    except Exception:
+        log.warning("research workflow note failed", exc_info=True)
 
 
 def _record_job_metrics(job, *, outcome: str) -> None:

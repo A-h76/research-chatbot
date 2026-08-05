@@ -149,10 +149,7 @@ def _add_file_with_chunk(
 
 def _mock_embed(mocker, vector, side_effect=None):
     model_registry = mocker.Mock()
-    if side_effect:
-        model_registry.embed.side_effect = side_effect
-    else:
-        model_registry.embed.return_value = vector
+    model_registry.embed.return_value = vector
     model_registry.call.return_value = {
         "content": "This is the answer.",
         "model": "gpt-4o-mini",
@@ -163,6 +160,10 @@ def _mock_embed(mocker, vector, side_effect=None):
         "cost": 0.001,
     }
     mocker.patch.object(search_routes, "ModelRegistry", return_value=model_registry)
+    if side_effect:
+        mocker.patch.object(search_routes, "invoke_query_embedding", side_effect=side_effect)
+    else:
+        mocker.patch.object(search_routes, "invoke_query_embedding", return_value=vector)
     return model_registry
 
 

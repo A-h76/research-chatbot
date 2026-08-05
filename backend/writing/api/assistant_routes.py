@@ -1,10 +1,8 @@
-"""Writing assistant route — Router → Gateway → Model Registry (Bite 3)."""
+"""Writing assistant route — Router → Gateway → Model Registry (Bite 3 / 9)."""
 
 from __future__ import annotations
 
 import logging
-import time
-import uuid
 from typing import Any, Callable
 
 from flask import Blueprint, jsonify, request, session
@@ -53,13 +51,10 @@ def create_writing_assistant_blueprint(
     ai_gateway: Any,
     SessionLocal: Callable[..., Any],
     get_model_registry: Callable[..., Any],
-    responses_text: Callable[..., str] | None = None,
 ):
     """Factory for ``POST /api/writing``.
 
-    Primary path: Capability Router → AI Gateway → Model Registry + AI Ledger.
-    ``responses_text`` is retained only as an optional legacy fallback when the
-    gateway is not wired (local tests / migration shim).
+    Capability Router → ``invoke_prompt_llm`` → Gateway → Model Registry + AI Ledger.
     """
     bp = Blueprint("writing_assistant_routes", __name__)
 
@@ -67,6 +62,18 @@ def create_writing_assistant_blueprint(
     @login_required
     @limiter.limit("30 per hour")
     def writing_assistant():
+        if ai_gateway is None or SessionLocal is None or get_model_registry is None:
+            log.error("writing_assistant: gateway not configured")
+            return (
+                jsonify(
+                    {
+                        "error": "ai_unavailable",
+                        "detail": "Writing assistant is not configured.",
+                    }
+                ),
+                503,
+            )
+
         data = request.get_json(silent=True) or {}
         action = str(data.get("action") or "").strip()
         text = str(data.get("text") or "").strip()
@@ -105,99 +112,50 @@ def create_writing_assistant_blueprint(
         )
 
         uid = int(session["user_id"])
-        trace_id = str(uuid.uuid4())
-        ai_execution: dict[str, Any] | None = None
 
-        if ai_gateway is not None and SessionLocal is not None and get_model_registry is not None:
-            from backend.ai.ai_ledger import AILedgerEntry, hash_output, record_execution
-            from backend.ai.capability_router.writing_resolve import (
-                PROMPT_VERSION_WRITING_ASSISTANT,
-                resolve_writing_assistant_execution,
-            )
+        from backend.ai.capability_router.writing_resolve import (
+            PROMPT_VERSION_WRITING_ASSISTANT,
+            resolve_writing_assistant_execution,
+        )
+        from backend.ai.utility_engine import invoke_prompt_llm
 
-            plan = resolve_writing_assistant_execution(action=action, quality_mode=quality_mode)
-            started = time.perf_counter()
-            db = SessionLocal()
-            try:
-                registry = get_model_registry(db)
-                result = ai_gateway.call(
-                    model_registry=registry,
-                    task="section_generator",
-                    mode=quality_mode or "balanced",
-                    model=plan.model,
-                    messages=[{"role": "user", "content": prompt}],
-                    user_id=uid,
-                )
-            finally:
-                db.close()
-            latency_ms = int((time.perf_counter() - started) * 1000)
-            content = (result or {}).get("content") or ""
-            if not isinstance(content, str) or not content.strip():
-                return (
-                    jsonify(
-                        {
-                            "error": "empty_response",
-                            "detail": "Writing assistant returned no content.",
-                        }
-                    ),
-                    502,
-                )
-            tokens = int((result or {}).get("total_tokens") or 0) or None
-            cost = float((result or {}).get("cost") or 0.0)
-            tin = (result or {}).get("prompt_tokens")
-            tout = (result or {}).get("completion_tokens")
-            entry = AILedgerEntry.from_plan(
-                plan,
+        plan = resolve_writing_assistant_execution(action=action, quality_mode=quality_mode)
+        db = SessionLocal()
+        try:
+            registry = get_model_registry(db)
+            content, provenance = invoke_prompt_llm(
+                ai_gateway=ai_gateway,
+                model_registry=registry,
+                prompt=prompt,
+                plan=plan,
                 prompt_version=PROMPT_VERSION_WRITING_ASSISTANT,
-                tokens_in=int(tin) if tin is not None else None,
-                tokens_out=int(tout) if tout is not None else tokens,
-                cost_usd=cost if cost else None,
-                latency_ms=latency_ms,
-                output_hash=hash_output(content),
-                trace_id=trace_id,
-                status="completed",
-                extra={
-                    "user_id": uid,
-                    "path": "writing_assistant",
-                    "action": action,
-                },
+                path="writing_assistant",
+                task="section_generator",
+                user_id=uid,
+                quality_mode=quality_mode,
+                extra={"action": action},
             )
-            record_execution(entry)
-            ai_execution = plan.to_provenance(
-                tokens=tokens,
-                cost_usd=cost if cost else None,
-                duration_ms=latency_ms,
-                prompt_version=PROMPT_VERSION_WRITING_ASSISTANT,
-                execution_id=entry.execution_id,
-            ).to_dict()
-            payload: dict[str, Any] = {
-                "result": content,
-                "action": action,
-                "warning": warning,
-            }
-            if ai_execution:
-                payload["ai_execution"] = ai_execution.get("ai_execution") or ai_execution
-            return jsonify(payload)
+        finally:
+            db.close()
 
-        if responses_text is None:
-            log.error("writing_assistant: no gateway and no responses_text fallback")
+        if not isinstance(content, str) or not content.strip():
             return (
                 jsonify(
                     {
-                        "error": "ai_unavailable",
-                        "detail": "Writing assistant is not configured.",
+                        "error": "empty_response",
+                        "detail": "Writing assistant returned no content.",
                     }
                 ),
-                503,
+                502,
             )
 
-        result = responses_text(prompt)
-        return jsonify(
-            {
-                "result": result,
-                "action": action,
-                "warning": warning,
-            }
-        )
+        payload: dict[str, Any] = {
+            "result": content,
+            "action": action,
+            "warning": warning,
+        }
+        if provenance:
+            payload["ai_execution"] = provenance.get("ai_execution") or provenance
+        return jsonify(payload)
 
     return bp

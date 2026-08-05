@@ -448,55 +448,15 @@ class ProjectResearchService:
                 task="literature_review",
                 user_id=da.user_id,
                 json_mode=True,
+                cost_action="research",
+                estimated_cost=request_meta.get("estimated_cost_usd"),
+                ai_gate=self.ai_gate,
                 extra={"derived_id": derived_id, "project_id": da.project_id},
             )
             data = json.loads(raw)
             actual_cost = None
             if provenance and provenance.get("ai_execution"):
-                block = provenance["ai_execution"]
-                actual_cost = block.get("cost_usd")
-            if actual_cost is None and self.cost_ledger is not None:
-                try:
-                    prompt_tokens = max(800, len(prompt) // 4)
-                    completion_tokens = max(400, len(raw) // 4)
-                    actual_cost = self.cost_ledger.estimate_cost(
-                        self.utility_model, prompt_tokens, completion_tokens
-                    )
-                    db_cost = self.SessionLocal()
-                    try:
-                        self.cost_ledger.log(
-                            db_cost,
-                            user_id=da.user_id,
-                            model=self.utility_model,
-                            prompt_tokens=prompt_tokens,
-                            completion_tokens=completion_tokens,
-                            total_tokens=prompt_tokens + completion_tokens,
-                            cost=actual_cost,
-                            action="research",
-                            estimated_cost=request_meta.get("estimated_cost_usd"),
-                        )
-                    finally:
-                        db_cost.close()
-                    if self.ai_gate is not None:
-                        self.ai_gate.record_usage(
-                            da.user_id,
-                            tokens=prompt_tokens + completion_tokens,
-                            cost_usd=actual_cost,
-                        )
-                except Exception:
-                    logging.getLogger(__name__).warning(
-                        "research cost logging failed derived_id=%s", derived_id, exc_info=True
-                    )
-            elif self.ai_gate is not None and actual_cost is not None:
-                try:
-                    tokens = (provenance or {}).get("ai_execution", {}).get("tokens")
-                    self.ai_gate.record_usage(
-                        da.user_id,
-                        tokens=int(tokens) if tokens else 0,
-                        cost_usd=float(actual_cost),
-                    )
-                except Exception:
-                    pass
+                actual_cost = provenance["ai_execution"].get("cost_usd")
 
             claims, supporting, incomplete = self._normalize_claims(
                 data.get("claims"),

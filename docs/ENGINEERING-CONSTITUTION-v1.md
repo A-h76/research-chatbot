@@ -28,6 +28,44 @@ Demolish the house
 
 ---
 
+## 0.5 Frozen research-OS doctrines (Bite 16)
+
+These two diagrams are **binding**. They are stronger than “don’t duplicate code.”
+
+### One Research Journey
+
+```text
+One Research Journey
+        ↓
+One Canonical Pipeline
+        ↓
+Many Entry Points
+```
+
+```text
+Import → UFTR → SUE → Evidence → Writing → Review → Publication
+```
+
+Providers, HTTP APIs, and CLIs may multiply at the **edges**. After acquisition, every paper follows the **same** pipeline. Do not invent a parallel journey for a new connector.
+
+**Contracts:** [`docs/contracts/WF-v1.0-COMPLETE-FREEZE.md`](contracts/WF-v1.0-COMPLETE-FREEZE.md) · [`docs/contracts/workflow/`](contracts/workflow/)
+
+### One Business Rule
+
+```text
+One Business Rule
+        ↓
+One Implementation
+        ↓
+Many APIs
+```
+
+JWT + session upload, PubMed + Drive, CLI + React — **fine**, if they call the same ImportService / UploadService / extract / composer / reviewer. A second *implementation* of the same rule requires why, temporariness, ADR, and a retirement plan — otherwise reject.
+
+**KPI:** [`ARCHITECTURE-HEALTH.md`](ARCHITECTURE-HEALTH.md) Dimensions 2, 3, and 8.
+
+---
+
 ## 1. Relationship to Master Constitution
 
 [`00-constitution.md`](00-constitution.md) remains binding (no rewrite without ADR, extend interfaces, Postgres worker, Evidence First, platform freeze, …).
@@ -196,9 +234,11 @@ Each top-level capability package should state in a one-line README or module do
 ### 5.8 Dual paths — strengthen, don’t aesthetic-merge
 
 Dual upload/storage, dual AI invoke, dual cost ledgers are **named debt**.  
-Closing them means **one canonical implementation per business rule** (see [`ARCHITECTURE-HEALTH.md`](ARCHITECTURE-HEALTH.md) Dimension 3) — consolidating write sites and policies, not renaming directories.
+Closing them means **one canonical implementation per business rule** (§0.5) — consolidating write sites and policies, not renaming folders.
 
 **PR rule:** A second implementation of an existing rule requires why, temporariness, ADR, and retirement plan — otherwise reject.
+
+**Stronger framing (frozen):** Many APIs are fine; many *implementations* of one rule are not.
 
 ---
 

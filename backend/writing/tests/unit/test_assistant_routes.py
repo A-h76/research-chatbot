@@ -93,6 +93,31 @@ def test_writing_assistant_rejects_invalid_action(assistant_client):
     assert resp.status_code == 400
 
 
+def test_writing_assistant_requires_gateway():
+    app = Flask(__name__)
+    app.secret_key = "test"
+    bp = create_writing_assistant_blueprint(
+        login_required=lambda f: f,
+        limiter=type("L", (), {"limit": lambda self, *a, **k: (lambda f: f)})(),
+        ai_gateway=None,
+        SessionLocal=_FakeSessionLocal(),
+        get_model_registry=lambda db: _FakeRegistry(),
+    )
+    app.register_blueprint(bp)
+
+    @app.before_request
+    def _seed_session():
+        session["user_id"] = 42
+
+    client = app.test_client()
+    resp = client.post(
+        "/api/writing",
+        data=json.dumps({"action": "shorten", "text": "hello world"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 503
+
+
 def test_writing_assistant_requires_text(assistant_client):
     resp = assistant_client.post(
         "/api/writing",

@@ -40,8 +40,22 @@ def create_presign_upload_blueprint(
     adjust_storage_usage,
     enqueue_job,
     upload_dir,
+    upload_service=None,
+    import_spine=None,
 ):
     bp = Blueprint("presign_upload_routes", __name__)
+
+    def _upload_svc():
+        if upload_service is not None:
+            return upload_service
+        from backend.upload.upload_service import UploadService
+
+        return UploadService(
+            UserFile,
+            UploadBatch,
+            import_spine=import_spine,
+            find_duplicate_file=find_duplicate_file,
+        )
 
     @bp.route("/api/uploads/presign", methods=["POST"])
     @login_required
@@ -243,40 +257,51 @@ def create_presign_upload_blueprint(
 
             kind = kind_for_extension(ext)
             uid = session["user_id"]
-            user_file = UserFile(
+            svc = _upload_svc()
+            batch = None
+            enqueue = kind == "document"
+            if enqueue:
+                batch = svc.ensure_batch(
+                    db,
+                    uid,
+                    source="presign",
+                    project_id=upload_session.project_id,
+                    conversation_id=upload_session.conversation_id,
+                    file_count=1,
+                    increment=False,
+                )
+            result = svc.register(
+                db,
                 user_id=uid,
-                project_id=upload_session.project_id,
-                conversation_id=upload_session.conversation_id,
                 name=upload_session.name,
                 mime=sniffed_mime,
                 kind=kind,
                 path=upload_session.key,
                 size=info.size,
                 checksum_sha256=upload_session.checksum_sha256,
+                project_id=upload_session.project_id,
+                conversation_id=upload_session.conversation_id,
+                batch=batch,
+                batch_source="presign",
+                create_batch=False,
+                enqueue=enqueue,
             )
-            db.add(user_file)
-            db.flush()
+            user_file = result.user_file
             upload_session.status = "confirmed"
             adjust_storage_usage(db, uid, delta_bytes=info.size, delta_files=1)
 
-            job_id = None
-            if kind == "document":
-                batch = UploadBatch(
-                    user_id=uid,
-                    project_id=upload_session.project_id,
-                    conversation_id=upload_session.conversation_id,
-                    source="presign",
-                    file_count=1,
+            job_id = result.job_id
+            # Fallback if UploadService has no import_spine (legacy wiring)
+            if enqueue and job_id is None and enqueue_job is not None:
+                job_id = enqueue_job(
+                    db, uid, user_file.id, "import", upload_batch_id=getattr(batch, "id", None)
                 )
-                db.add(batch)
-                db.flush()
-                job_id = enqueue_job(db, uid, user_file.id, "import", upload_batch_id=batch.id)
 
             db.commit()
-            result = file_to_dict(user_file)
-            result["note"] = None
-            result["job_id"] = job_id
-            return jsonify(result)
+            result_payload = file_to_dict(user_file)
+            result_payload["note"] = None
+            result_payload["job_id"] = job_id
+            return jsonify(result_payload)
         finally:
             db.close()
 

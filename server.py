@@ -1996,18 +1996,7 @@ from backend.upload.bulk import MAX_BATCH_SIZE, create_bulk_upload_blueprint
 app.config["MAX_CONTENT_LENGTH"] = max(
     app.config["MAX_CONTENT_LENGTH"], MAX_BATCH_SIZE * MAX_DOCUMENT_UPLOAD_MB * 1024 * 1024
 )
-app.register_blueprint(
-    create_bulk_upload_blueprint(
-        SessionLocal=SessionLocal,
-        UserFile=UserFile,
-        UploadBatch=UploadBatch,
-        UploadJob=UploadJob,
-        OutboxEvent=OutboxEvent,
-        quota_service=quota_service,
-        storage_backend=get_storage_backend(),
-        limiter=limiter,
-    )
-)
+# Bulk blueprint registered with documents (needs UploadService / ImportService).
 
 # GET /api/documents/search, POST /api/rag — Bearer-JWT counterparts to
 # the existing session-based POST /api/search (below), same relationship
@@ -2434,6 +2423,30 @@ from backend.writing.validation import ensure_transition_allowed
 from backend.writing.validation.schemas import normalize_document_mutation
 from backend.writing.services.logging import log_writing_metric
 from backend.scholarly.crossref import enrich_file_from_doi as _enrich_file_from_doi
+from backend.library.import_service import ImportService
+
+# Canonical Import Spine (Bite 12) — shared by Discover, Drive, Upload, attach, UFTR.
+_import_spine = ImportService(
+    UserFile,
+    select,
+    storage=storage,
+    upload_dir=UPLOAD_DIR,
+    max_file_mb=MAX_FILE_MB,
+    enrich_file_from_doi=_enrich_file_from_doi,
+    UploadJob=UploadJob,
+    OutboxEvent=OutboxEvent,
+)
+
+from backend.upload.upload_service import UploadService
+
+_upload_service = UploadService(
+    UserFile,
+    UploadBatch,
+    import_spine=_import_spine,
+    find_duplicate_file=lambda *a, **k: _find_duplicate_file(*a, **k),
+    UploadJob=UploadJob,
+    OutboxEvent=OutboxEvent,
+)
 
 _collection_service = CollectionService(
     SessionLocal,
@@ -2485,10 +2498,9 @@ app.register_blueprint(
         token_secret_key=app.secret_key,
         UploadJob=UploadJob,
         OutboxEvent=OutboxEvent,
+        import_spine=_import_spine,
     )
 )
-
-from backend.ecosystem import create_integrations_catalog_blueprint
 
 app.register_blueprint(
     create_integrations_catalog_blueprint(
@@ -2535,6 +2547,23 @@ app.register_blueprint(
         domain_registry=domain_registry,
         AnalysisPipelineResult=AnalysisPipelineResult,
         limiter=limiter,
+        import_spine=_import_spine,
+        upload_service=_upload_service,
+    )
+)
+
+app.register_blueprint(
+    create_bulk_upload_blueprint(
+        SessionLocal=SessionLocal,
+        UserFile=UserFile,
+        UploadBatch=UploadBatch,
+        UploadJob=UploadJob,
+        OutboxEvent=OutboxEvent,
+        quota_service=quota_service,
+        storage_backend=get_storage_backend(),
+        limiter=limiter,
+        import_spine=_import_spine,
+        upload_service=_upload_service,
     )
 )
 
@@ -3960,12 +3989,9 @@ def preview_chat_prompt_builder_migration(user, project, memory_enabled=True):
 
 
 def _log_chat_cost(user_id, model, usage):
-    """Best-effort CostLedger write for /api/chat.
+    """Deprecated — chat cost is projected via ``record_platform_execution`` on SSE done.
 
-    Model selection is resolved via Capability Router (``resolve_chat_execution``);
-    transport goes through ``AIGateway.stream_responses`` / ``create_responses``.
-    CostLedger still records dollars/tokens here; AI Ledger provenance is recorded
-    separately via ``record_execution`` after the turn (Evolution Tracker: dual ledger → unify).
+    Kept for any legacy callers; new code must use ``backend.ai.ledger_facade``.
     """
     if not usage:
         return
@@ -4479,6 +4505,8 @@ app.register_blueprint(
         get_job_status_cache=lambda *a, **k: _get_job_status_cache(*a, **k),
         set_job_status_cache=lambda job: _cache_upload_job_status(job),
         default_storage_limit_bytes=quota_service.DEFAULT_STORAGE_LIMIT_BYTES,
+        import_spine=_import_spine,
+        upload_service=_upload_service,
     )
 )
 
@@ -4529,6 +4557,8 @@ app.register_blueprint(
         adjust_storage_usage=_adjust_storage_usage,
         enqueue_job=_enqueue_job,
         upload_dir=UPLOAD_DIR,
+        upload_service=_upload_service,
+        import_spine=_import_spine,
     )
 )
 
@@ -4661,6 +4691,7 @@ app.register_blueprint(
         upload_dir=UPLOAD_DIR,
         enqueue_import=lambda db, uid, fid: _enqueue_job(db, uid, fid, "import"),
         max_file_mb=MAX_FILE_MB,
+        import_service=_import_spine,
     )
 )
 
@@ -4887,8 +4918,16 @@ app.register_blueprint(
         select=select,
         login_required=login_required,
         limiter=limiter,
+        UserFile=UserFile,
     )
 )
+
+try:
+    from backend.workflow.bridge import register_workflow_bridges
+
+    register_workflow_bridges()
+except Exception:
+    app.logger.warning("workflow domain-event bridges not registered", exc_info=True)
 
 
 # ── A-304 Metadata: Citation Manager ──────────────────────────────────────
@@ -5900,6 +5939,8 @@ def chat():
 
             chat_trace_id = str(uuid.uuid4())
             llm_started = time.perf_counter()
+            chat_prompt_tokens = 0
+            chat_completion_tokens = 0
 
             for _round in range(4):
                 use_stream = supports_streaming(model)
@@ -5986,7 +6027,10 @@ def chat():
                                     event.error_message or "response failed"
                                 )
 
-                _log_chat_cost(user_id, model, getattr(final, "usage", None))
+                usage_obj = getattr(final, "usage", None) if final else None
+                if usage_obj:
+                    chat_prompt_tokens += int(getattr(usage_obj, "input_tokens", 0) or 0)
+                    chat_completion_tokens += int(getattr(usage_obj, "output_tokens", 0) or 0)
 
                 calls = [it for it in (final.output if final else []) if getattr(it, "type", "") == "function_call"]
                 if calls:
@@ -6104,27 +6148,45 @@ def chat():
                 done_payload["title"] = new_title
             # Capability Router provenance on the done event (inspectable).
             try:
-                from backend.ai.ai_ledger import AILedgerEntry, hash_output, record_execution
+                from backend.ai.ai_ledger import AILedgerEntry, hash_output
                 from backend.ai.capability_router import PROMPT_VERSION_CHAT
+                from backend.ai.ledger_facade import CostProjection, record_platform_execution
 
-                usage_obj = getattr(final, "usage", None) if final else None
-                tin = getattr(usage_obj, "input_tokens", None) if usage_obj else None
-                tout = getattr(usage_obj, "output_tokens", None) if usage_obj else None
                 total = None
-                if tin is not None or tout is not None:
-                    total = int(tin or 0) + int(tout or 0)
+                if chat_prompt_tokens or chat_completion_tokens:
+                    total = chat_prompt_tokens + chat_completion_tokens
+                cost = 0.0
+                if chat_prompt_tokens or chat_completion_tokens:
+                    cost = get_cost_ledger().estimate_cost(
+                        model, chat_prompt_tokens, chat_completion_tokens
+                    )
                 entry = AILedgerEntry.from_plan(
                     acr_plan,
                     prompt_version=PROMPT_VERSION_CHAT,
-                    tokens_in=tin,
-                    tokens_out=tout,
+                    tokens_in=chat_prompt_tokens or None,
+                    tokens_out=chat_completion_tokens or None,
+                    cost_usd=cost if cost else None,
                     output_hash=hash_output(full_text) if full_text else None,
                     trace_id=chat_trace_id,
                     status="completed",
                     latency_ms=int((time.perf_counter() - llm_started) * 1000),
                     extra={"conversation_id": convo_id, "path": "api_chat"},
                 )
-                record_execution(entry)
+                db = SessionLocal()
+                try:
+                    record_platform_execution(
+                        entry,
+                        cost_projection=CostProjection(
+                            db_session=db,
+                            cost_ledger=get_cost_ledger(),
+                            user_id=user_id,
+                            action="chat",
+                            ai_gate=ai_gate,
+                            operation="chat",
+                        ),
+                    )
+                finally:
+                    db.close()
                 done_payload.update(
                     acr_plan.to_provenance(
                         tokens=total,
@@ -6225,7 +6287,6 @@ app.register_blueprint(
         ai_gateway=ai_model_gateway,
         SessionLocal=SessionLocal,
         get_model_registry=get_model_registry,
-        responses_text=responses_text,
     )
 )
 

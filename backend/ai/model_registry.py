@@ -106,13 +106,17 @@ class ModelRegistry:
         cost-ledger attribution (see _attach_cost_and_log)."""
         user_id = kwargs.pop("user_id", None)
         prompt_version_id = kwargs.pop("prompt_version_id", None)
+        skip_cost_ledger = kwargs.pop("skip_cost_ledger", False)
         candidates = [model] + list(fallback_models or [])
         errors = []
 
         for candidate in candidates:
             try:
                 result = self._dispatch(candidate, messages, **kwargs)
-                self._attach_cost_and_log(result, user_id, prompt_version_id)
+                if skip_cost_ledger:
+                    self._attach_cost_estimate_only(result)
+                else:
+                    self._attach_cost_and_log(result, user_id, prompt_version_id)
                 return result
             except ModelError as exc:
                 errors.append(exc)
@@ -126,15 +130,25 @@ class ModelRegistry:
             attempts=len(candidates),
         )
 
-    def embed(self, text: str, model: Optional[str] = None, user_id: Optional[int] = None) -> List[float]:
+    def embed(
+        self,
+        text: str,
+        model: Optional[str] = None,
+        user_id: Optional[int] = None,
+        *,
+        skip_cost_ledger: bool = False,
+    ) -> List[float]:
         """user_id isn't in the original signature either — added
         because "log cost as action='embedding'" is otherwise
         unactionable (no identity to log it against), same reasoning as
         call()'s user_id kwarg."""
         model = model or self.embed_model
         vector, tokens = self._call_with_retry(self._embed_openai, "openai", model, text)
-        record_ai_call(model, prompt_tokens=tokens)
+        self._last_embed_tokens = tokens
+        if skip_cost_ledger:
+            return vector
 
+        record_ai_call(model, prompt_tokens=tokens)
         cost = self._cost_ledger.estimate_cost(model, tokens, 0)
         if user_id is not None and self.db_session is not None:
             self._log_cost_safely(
@@ -216,6 +230,12 @@ class ModelRegistry:
         system_parts = [m["content"] for m in messages if m.get("role") == "system"]
         chat_messages = [m for m in messages if m.get("role") != "system"]
         return ("\n".join(system_parts) if system_parts else None), chat_messages
+
+    def _attach_cost_estimate_only(self, result: dict) -> None:
+        cost = self._cost_ledger.estimate_cost(
+            result["model"], result["prompt_tokens"], result["completion_tokens"]
+        )
+        result["cost"] = cost
 
     def _attach_cost_and_log(self, result: dict, user_id, prompt_version_id=None) -> None:
         record_ai_call(result["model"], result["prompt_tokens"], result["completion_tokens"])

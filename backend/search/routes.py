@@ -42,6 +42,7 @@ from sqlalchemy import select
 from auth.decorators import jwt_required
 from backend.ai import ModelError, ModelRegistry
 from backend.ai.prompts import ensure_default_prompts
+from backend.ai.utility_engine import invoke_query_embedding
 from backend.search.shared import search_user_document_chunks
 
 # Cap query size at the HTTP edge (Phase 2 / F4.1 / F10.4).
@@ -107,7 +108,12 @@ def create_search_blueprint(
         try:
             model_registry = ModelRegistry(db)
             try:
-                query_embedding = model_registry.embed(q, user_id=user_id)
+                query_embedding = invoke_query_embedding(
+                    model_registry=model_registry,
+                    text=q,
+                    user_id=user_id,
+                    path="api_documents_search",
+                )
             except ModelError as exc:
                 return jsonify({"error": "embedding_failed", "message": str(exc)}), 502
 
@@ -194,7 +200,12 @@ def create_search_blueprint(
         try:
             model_registry = ModelRegistry(db)
             try:
-                query_embedding = model_registry.embed(query, user_id=user_id)
+                query_embedding = invoke_query_embedding(
+                    model_registry=model_registry,
+                    text=query,
+                    user_id=user_id,
+                    path="api_rag_retrieve",
+                )
             except ModelError as exc:
                 return jsonify({"error": "embedding_failed", "message": str(exc)}), 502
 

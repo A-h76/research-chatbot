@@ -25,7 +25,8 @@ def invoke_paper_analysis_llm(
     parent_execution_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Gateway LLM call for paper_analysis under Capability Router provenance."""
-    from backend.ai.ai_ledger import AILedgerEntry, hash_output, record_execution
+    from backend.ai.ai_ledger import AILedgerEntry, hash_output
+    from backend.ai.ledger_facade import record_acr_execution
     from backend.ai.capability_router.paper_analysis_resolve import (
         PROMPT_VERSION_PAPER_ANALYSIS,
         resolve_paper_analysis_execution,
@@ -78,7 +79,13 @@ def invoke_paper_analysis_llm(
             "prompt_version_id": prompt_version_id,
         },
     )
-    record_execution(entry)
+    record_acr_execution(
+        entry,
+        model_registry=model_registry,
+        user_id=user_id,
+        cost_action="analysis",
+        prompt_version_id=prompt_version_id,
+    )
 
     provenance = plan.to_provenance(
         tokens=tokens,

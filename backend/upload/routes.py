@@ -98,9 +98,29 @@ def create_documents_blueprint(
     domain_registry,
     AnalysisPipelineResult=None,
     limiter=None,
+    import_spine=None,
+    upload_service=None,
 ):
     bp = Blueprint("documents", __name__, url_prefix="/api/documents")
     log = logging.getLogger(__name__)
+
+    def _upload_svc():
+        if upload_service is not None:
+            return upload_service
+        from backend.upload.upload_service import UploadService
+
+        return UploadService(
+            UserFile,
+            UploadBatch,
+            import_spine=import_spine,
+            UploadJob=UploadJob,
+            OutboxEvent=OutboxEvent,
+        )
+
+    def _jwt_facade():
+        from backend.upload.upload_service import JwtStorageFacade
+
+        return JwtStorageFacade(storage_backend)
 
     def _limit(spec):
         def deco(fn):
@@ -159,57 +179,35 @@ def create_documents_blueprint(
             return jsonify({"error": "not_found", "message": "User not found"}), 404
 
         filename = safe_filename(f.filename, ext)
-        key = f"users/{user_id}/documents/{uuid.uuid4().hex}/{filename}"
-
-        try:
-            storage_backend.upload(io.BytesIO(data), key, content_type=mime)
-        except Exception:
-            return (
-                jsonify(
-                    {
-                        "error": "storage_unavailable",
-                        "message": "Could not store the file, try again",
-                    }
-                ),
-                502,
-            )
+        facade = _jwt_facade()
+        key = facade.new_document_key(user_id, filename)
 
         db = SessionLocal()
         try:
-            batch = UploadBatch(user_id=user_id, source="api_documents", file_count=1)
-            db.add(batch)
-            db.flush()  # assigns batch.id
-
-            uf = UserFile(
+            result = _upload_svc().store_jwt_bytes_and_register(
+                db,
+                facade,
                 user_id=user_id,
-                name=filename[:300],
+                data=data,
+                filename=filename,
                 mime=mime,
                 kind=kind_for_extension(ext),
-                path=key,
-                size=size,
+                key=key,
+                batch_source="api_documents",
             )
-            db.add(uf)
-            db.flush()  # assigns uf.id
-
-            job = enqueue_upload_job_with_outbox(
-                db,
-                UploadJob=UploadJob,
-                OutboxEvent=OutboxEvent,
-                user_id=user_id,
-                file_id=uf.id,
-                job_type="import",
-                upload_batch_id=batch.id,
-            )
+            if not result.ok:
+                return (
+                    jsonify(
+                        {
+                            "error": result.error or "storage_unavailable",
+                            "message": "Could not store the file, try again",
+                        }
+                    ),
+                    502,
+                )
 
             db.commit()
 
-            # QuotaService owns its own session/transaction (see
-            # quotas/service.py) — it can't be folded into the commit
-            # above, so it runs after that commit succeeds rather than
-            # before. Best-effort like the app's existing AI-usage
-            # logging: the file is already safely stored and recorded,
-            # so a quota-log hiccup here shouldn't undo the upload or
-            # fail the request, only get logged.
             try:
                 quota_service.increment_storage(user_id, size)
             except Exception:
@@ -218,7 +216,7 @@ def create_documents_blueprint(
             return (
                 jsonify(
                     {
-                        "document_id": uf.id,
+                        "document_id": result.user_file.id,
                         "status": "PENDING",
                         "message": "Upload successful, processing started",
                     }
@@ -228,7 +226,7 @@ def create_documents_blueprint(
         except Exception:
             db.rollback()
             try:
-                storage_backend.delete(key)
+                facade.delete(key)
             except Exception:
                 pass
             raise

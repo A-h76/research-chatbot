@@ -28,8 +28,26 @@ def create_discover_blueprint(
     upload_dir: str | None = None,
     enqueue_import=None,
     max_file_mb: int = 50,
+    import_service=None,
 ):
     bp = Blueprint("discover_routes", __name__)
+
+    def _import_service():
+        """Canonical Import Spine — prefer injected service; lazy-build for tests."""
+        if import_service is not None:
+            return import_service
+        from backend.library.import_service import ImportService
+        from backend.scholarly.crossref import enrich_file_from_doi
+
+        return ImportService(
+            UserFile,
+            select_fn,
+            storage=storage,
+            upload_dir=upload_dir,
+            enqueue_import=enqueue_import,
+            max_file_mb=max_file_mb,
+            enrich_file_from_doi=enrich_file_from_doi,
+        )
 
     def _flag_blocked_payload():
         """Return error dict if Discover is feature-flagged off, else None."""
@@ -190,40 +208,13 @@ def create_discover_blueprint(
             db.close()
 
     def _try_attach_oa_pdf(db, uf, work, *, user_id: int) -> dict:
-        """Golden Rule via UFTR platform service (v1.0): resolve_and_attach only.
-
-        Providers supply identity + OA hints. They do not fetch PDFs themselves.
-        See docs/contracts/uftr-contract.md and ADR-0015.
-        """
-        out = {"pdf_attached": False, "analysis_queued": False, "pdf_error": None, "fulltext": None}
-        if storage is None or not upload_dir or enqueue_import is None:
-            out["pdf_error"] = "pipeline_not_wired"
-            return out
-        try:
-            from backend.scholarly.uftr import resolve_and_attach
-
-            return resolve_and_attach(
-                db,
-                uf,
-                storage=storage,
-                upload_dir=upload_dir,
-                enqueue_import=enqueue_import,
-                user_id=user_id,
-                max_file_mb=max_file_mb or 50,
-                work=work,
-            )
-        except Exception as exc:
-            app_logger.warning(
-                "discover UFTR attach skipped file_id=%s: %s", getattr(uf, "id", None), exc
-            )
-            out["pdf_error"] = "oa_attach_exception"
-            return out
+        """Golden Rule via ImportService → UFTR (ADR-0015)."""
+        return _import_service().resolve_fulltext(db, uf, user_id=user_id, work=work)
 
     @bp.route("/api/discover/import", methods=["POST"])
     @login_required
     def scholarly_discover_import():
         from backend.scholarly import provider_enabled
-        from backend.scholarly.crossref import enrich_file_from_doi
 
         blocked = _flag_blocked_payload()
         if blocked is not None:
@@ -422,82 +413,7 @@ def create_discover_blueprint(
                     if not proj or proj.user_id != uid:
                         return jsonify({"error": "project_not_found"}), 404
 
-            # Dedupe: DOI first, then provider external id
-            if doi:
-                existing = (
-                    db.execute(
-                        select_fn(UserFile).where(
-                            UserFile.user_id == uid,
-                            UserFile.doi == doi,
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
-                if existing:
-                    return jsonify({"already_exists": True, "file": file_to_dict(existing)})
-
-            if search_provider == "pubmed" and pmid:
-                existing = (
-                    db.execute(
-                        select_fn(UserFile).where(
-                            UserFile.user_id == uid,
-                            UserFile.external_provider == "pubmed",
-                            UserFile.external_item_id == pmid,
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
-                if existing:
-                    return jsonify({"already_exists": True, "file": file_to_dict(existing)})
-
-            if search_provider == "arxiv" and arxiv_id:
-                existing = (
-                    db.execute(
-                        select_fn(UserFile).where(
-                            UserFile.user_id == uid,
-                            UserFile.external_provider == "arxiv",
-                            UserFile.external_item_id == arxiv_id,
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
-                if existing:
-                    return jsonify({"already_exists": True, "file": file_to_dict(existing)})
-
-            if search_provider == "europe_pmc" and epmc_ext_id:
-                existing = (
-                    db.execute(
-                        select_fn(UserFile).where(
-                            UserFile.user_id == uid,
-                            UserFile.external_provider == "europe_pmc",
-                            UserFile.external_item_id == epmc_ext_id,
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
-                if existing:
-                    return jsonify({"already_exists": True, "file": file_to_dict(existing)})
-
-            if search_provider == "orcid" and orcid_ext_id:
-                existing = (
-                    db.execute(
-                        select_fn(UserFile).where(
-                            UserFile.user_id == uid,
-                            UserFile.external_provider == "orcid",
-                            UserFile.external_item_id == orcid_ext_id,
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
-                if existing:
-                    return jsonify({"already_exists": True, "file": file_to_dict(existing)})
-
-            # Optional live enrich when client sent thin payload
+            # Provider live enrich (thin payload) — acquisition edge only
             pubmed_work = None
             arxiv_work = None
             epmc_work = None
@@ -642,52 +558,9 @@ def create_discover_blueprint(
                     else:
                         tags.append(f"openalex:{openalex_id[:80]}")
                 metadata_source = "openalex"
-                external_provider = ""
-                external_item_id = ""
+                external_provider = "openalex" if openalex_id else ""
+                external_item_id = (openalex_id or "")[:120]
 
-            uf = UserFile(
-                user_id=uid,
-                project_id=project_id,
-                conversation_id=None,
-                name=display_name,
-                mime="",
-                kind="document",
-                path="",
-                size=0,
-                title=(title or display_name)[:500],
-                authors=authors[:1000],
-                year=year,
-                venue=venue[:300],
-                doi=doi[:200],
-                abstract=abstract[:8000],
-                reading_status="unread",
-                tags=json.dumps(tags),
-                meta_status="done",
-                metadata_source=metadata_source,
-                source_url=open_access_url[:500],
-                doi_verified=False,
-                external_provider=external_provider,
-                external_item_id=external_item_id,
-            )
-            db.add(uf)
-            db.flush()
-
-            if doi:
-                try:
-                    enrich_file_from_doi(db, uf.id)
-                    db.refresh(uf)
-                except Exception as cx_exc:
-                    app_logger.warning(
-                        "discover import crossref enrich skipped file_id=%s: %s", uf.id, cx_exc
-                    )
-
-            attach_meta = {
-                "pdf_attached": False,
-                "analysis_queued": False,
-                "pdf_error": None,
-                "fulltext": None,
-            }
-            # UFTR for every Discover import (incl. OpenAlex) — Golden Rule
             work_for_pdf = None
             if search_provider == "pubmed":
                 from backend.scholarly.pubmed import PubmedWork
@@ -751,9 +624,42 @@ def create_discover_blueprint(
                     arxiv_id=arxiv_id,
                 )
 
-            attach_meta = _try_attach_oa_pdf(db, uf, work_for_pdf, user_id=uid)
-            db.refresh(uf)
+            from backend.library.import_service import ImportIdentity
 
+            spine = _import_service()
+            result = spine.import_reference(
+                db,
+                ImportIdentity(
+                    user_id=uid,
+                    project_id=project_id,
+                    name=display_name,
+                    title=title or display_name,
+                    authors=authors,
+                    year=year,
+                    venue=venue,
+                    doi=doi,
+                    abstract=abstract,
+                    source_url=open_access_url,
+                    metadata_source=metadata_source,
+                    external_provider=external_provider,
+                    external_item_id=external_item_id,
+                    tags=tags,
+                    meta_status="done",
+                ),
+                work=work_for_pdf,
+                enrich_doi=True,
+            )
+            uf = result["file"]
+            if result.get("already_exists"):
+                return jsonify({"already_exists": True, "file": file_to_dict(uf)})
+
+            attach_meta = result.get("attach") or {
+                "pdf_attached": False,
+                "analysis_queued": False,
+                "pdf_error": None,
+                "fulltext": None,
+            }
+            db.refresh(uf)
             db.commit()
             return (
                 jsonify(

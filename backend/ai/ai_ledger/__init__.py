@@ -5,14 +5,13 @@ In-memory + optional DB persistence later. Feature code should call
 compact summary via ``ExecutionPlan.to_provenance``.
 
 ---------------------------------------------------------------------------
-Dual-ledger note (Evolution Tracker · High · temporary)
+Ledger write path (Bite 11)
 ---------------------------------------------------------------------------
-``CostLedger`` / ``model_registry_cost_ledger`` still records dollar/token rows
-for billing-ish accounting (chat via ``_log_chat_cost``, registry ``.call``).
-**AI Ledger** records Capability Router provenance (job, policy, provider,
-model, prompt_version). Until a unify ADR lands, chat writes **both**:
-CostLedger for money, AI Ledger for inspectability. Do not delete either half
-without consolidating write sites first.
+Platform ACR flows call ``record_platform_execution`` / ``record_acr_execution``
+(``backend.ai.ledger_facade``). CostLedger rows are **projections** of AI Ledger
+entries — ModelRegistry skips DB cost writes when ``skip_cost_ledger=True`` (Gateway default).
+Legacy ``responses_text`` / direct ``ModelRegistry.call`` without the façade may still
+log cost at the registry until those paths retire.
 ---------------------------------------------------------------------------
 """
 

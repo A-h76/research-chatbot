@@ -23,9 +23,13 @@ def invoke_prompt_llm(
     json_mode: bool = False,
     quality_mode: str | None = None,
     extra: dict[str, Any] | None = None,
+    cost_action: str = "chat",
+    ai_gate: Any | None = None,
+    estimated_cost: float | None = None,
 ) -> tuple[str, dict[str, Any] | None]:
     """Single-user-prompt utility call under Capability Router provenance."""
-    from backend.ai.ai_ledger import AILedgerEntry, hash_output, record_execution
+    from backend.ai.ai_ledger import AILedgerEntry, hash_output
+    from backend.ai.ledger_facade import record_acr_execution
 
     trace_id = str(uuid.uuid4())
     started = time.perf_counter()
@@ -69,7 +73,14 @@ def invoke_prompt_llm(
         status="completed",
         extra=ledger_extra,
     )
-    record_execution(entry)
+    record_acr_execution(
+        entry,
+        model_registry=model_registry,
+        user_id=user_id,
+        cost_action=cost_action,
+        ai_gate=ai_gate,
+        estimated_cost=estimated_cost,
+    )
 
     provenance = plan.to_provenance(
         tokens=tokens,
@@ -89,7 +100,8 @@ def invoke_embed_texts(
     path: str = "embed",
 ) -> list[list[float] | None]:
     """Batch embeddings with AI Ledger provenance (keyword fallback callers use None slots)."""
-    from backend.ai.ai_ledger import AILedgerEntry, record_execution
+    from backend.ai.ai_ledger import AILedgerEntry
+    from backend.ai.ledger_facade import record_acr_execution
     from backend.ai.capability_router.utility_resolve import (
         PROMPT_VERSION_EMBED,
         resolve_embed_execution,
@@ -106,12 +118,11 @@ def invoke_embed_texts(
     try:
         for text in texts:
             try:
-                vector = model_registry.embed(text, user_id=user_id)
+                vector = model_registry.embed(text, user_id=user_id, skip_cost_ledger=True)
                 out.append(vector)
+                total_tokens += int(getattr(model_registry, "_last_embed_tokens", 0) or 0)
             except Exception:
                 out.append(None)
-        # model_registry.embed logs CostLedger per call; one ledger row summarizes the batch.
-        total_tokens = sum(max(1, len(t) // 4) for t in texts if t)
         entry = AILedgerEntry.from_plan(
             plan,
             prompt_version=PROMPT_VERSION_EMBED,
@@ -126,10 +137,40 @@ def invoke_embed_texts(
                 "embed_model": embed_model,
             },
         )
-        record_execution(entry)
+        record_acr_execution(
+            entry,
+            model_registry=model_registry,
+            user_id=user_id,
+            cost_action="embedding",
+        )
         return out
     except Exception:
         return [None] * len(texts)
+
+
+def invoke_query_embedding(
+    *,
+    model_registry: Any,
+    text: str,
+    user_id: int,
+    path: str,
+) -> list[float]:
+    """Single-query embed for search/RAG retrieval (ACR + AI Ledger).
+
+    Raises ``ModelError`` when embedding fails — JWT routes require strict 502.
+    """
+    from backend.ai import ModelError
+
+    vectors = invoke_embed_texts(
+        model_registry=model_registry,
+        texts=[text],
+        user_id=user_id,
+        path=path,
+    )
+    if not vectors or vectors[0] is None:
+        embed_model = getattr(model_registry, "embed_model", None) or "text-embedding-3-small"
+        raise ModelError("embedding failed", provider="openai", model=embed_model)
+    return vectors[0]
 
 
 def make_embed_texts_fn(

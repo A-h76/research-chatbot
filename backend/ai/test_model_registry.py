@@ -219,6 +219,25 @@ def test_call_with_logging(registry, db):
     assert rows[0].model == "gpt-4o-mini"
 
 
+def test_call_skip_cost_ledger(registry, db):
+    from backend.ai.model_registry import CostLedgerEntry
+
+    registry.db_session = db
+    registry._openai = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **kw: _fake_openai_response()))
+    )
+
+    result = registry.call(
+        "gpt-4o-mini",
+        [{"role": "user", "content": "hi"}],
+        user_id=42,
+        skip_cost_ledger=True,
+    )
+
+    assert result.get("cost") is not None
+    assert db.query(CostLedgerEntry).count() == 0
+
+
 def test_call_without_logging(registry, db):
     from backend.ai.model_registry import CostLedgerEntry
 

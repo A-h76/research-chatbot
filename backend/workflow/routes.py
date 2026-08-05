@@ -1,4 +1,4 @@
-"""Flask routes for Phase A.6 workflow instrumentation."""
+"""Flask routes for workflow instrumentation + Research Workflow inspect (Bite 15)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ from typing import Any, Callable
 
 from flask import Blueprint, jsonify, request, session
 
+from backend.workflow.definitions import RESEARCH_PAPER_STEPS, WORKFLOW_ENGINE_VERSION
+from backend.workflow.engine import get_engine
 from backend.workflow.events import (
     WORKFLOW_EVENTS,
     emit_workflow_event_log,
@@ -47,6 +49,7 @@ def create_workflow_blueprint(
     select: Any,
     login_required: Callable,
     limiter: Any,
+    UserFile: Any = None,
 ) -> Blueprint:
     bp = Blueprint("workflow_events", __name__)
 
@@ -91,5 +94,71 @@ def create_workflow_blueprint(
     @login_required
     def workflow_event_catalog():
         return jsonify({"events": sorted(WORKFLOW_EVENTS)})
+
+    @bp.get("/api/workflows/catalog")
+    @login_required
+    def research_workflow_catalog():
+        """Named Research Workflow steps (inspect contract — not agents)."""
+        return jsonify(
+            {
+                "engine_version": WORKFLOW_ENGINE_VERSION,
+                "workflows": [
+                    {
+                        "name": "research_paper",
+                        "steps": list(RESEARCH_PAPER_STEPS),
+                    }
+                ],
+            }
+        )
+
+    @bp.get("/api/workflows/<workflow_id>")
+    @login_required
+    def get_research_workflow(workflow_id: str):
+        uid = _uid()
+        payload = get_engine().inspect(workflow_id)
+        if payload is None or int(payload.get("user_id") or 0) != uid:
+            return jsonify({"error": "not_found"}), 404
+        return jsonify(payload)
+
+    @bp.get("/api/workflows/by-file/<int:file_id>")
+    @login_required
+    def get_research_workflow_by_file(file_id: int):
+        uid = _uid()
+        if UserFile is not None:
+            db = SessionLocal()
+            try:
+                uf = db.execute(
+                    select(UserFile).where(UserFile.id == file_id, UserFile.user_id == uid)
+                ).scalar_one_or_none()
+                if uf is None:
+                    return jsonify({"error": "not_found"}), 404
+            finally:
+                db.close()
+        payload = get_engine().inspect_file(uid, file_id)
+        if payload is None:
+            return jsonify({"error": "not_found", "detail": "no_active_workflow"}), 404
+        return jsonify(payload)
+
+    @bp.get("/api/projects/<int:project_id>/workflows")
+    @login_required
+    def list_project_research_workflows(project_id: int):
+        uid = _uid()
+        db = SessionLocal()
+        try:
+            proj = db.execute(
+                select(Project).where(Project.id == project_id, Project.user_id == uid)
+            ).scalar_one_or_none()
+            if proj is None:
+                return jsonify({"error": "not_found"}), 404
+        finally:
+            db.close()
+        rows = get_engine().list_for_project(uid, project_id)
+        return jsonify(
+            {
+                "engine_version": WORKFLOW_ENGINE_VERSION,
+                "project_id": project_id,
+                "workflows": rows,
+            }
+        )
 
     return bp
