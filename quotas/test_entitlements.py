@@ -107,7 +107,8 @@ def test_authorize_soft_warning_at_80_percent(env):
     assert d.warning_percent >= WARN_RATIO * 100
 
 
-def test_authorize_hard_block(env):
+def test_authorize_hard_block(env, monkeypatch):
+    monkeypatch.setenv("DHUND_SUSPEND_AI_QUOTAS", "0")
     db = env["SessionLocal"]()
     u = db.get(env["User"], 1)
     u.monthly_token_used = 95

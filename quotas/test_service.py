@@ -92,7 +92,8 @@ def test_check_token_quota_passes_under_limit(env):
     env["service"].check_token_quota(1, 50_000)
 
 
-def test_check_token_quota_raises_when_exceeded(env):
+def test_check_token_quota_raises_when_exceeded(env, monkeypatch):
+    monkeypatch.setenv("DHUND_SUSPEND_AI_QUOTAS", "0")
     db = env["SessionLocal"]()
     user = db.get(env["User"], 1)
     user.monthly_token_used = 95_000

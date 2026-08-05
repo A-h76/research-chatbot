@@ -104,6 +104,14 @@ class QuotaService:
             db.close()
 
     def check_token_quota(self, user_id, token_estimate):
+        # TEMPORARY testing: DHUND_SUSPEND_AI_QUOTAS (default on) — see security.ops.gate
+        try:
+            from security.ops.gate import ai_quotas_suspended
+
+            if ai_quotas_suspended():
+                return
+        except Exception:
+            pass
         db = self.SessionLocal()
         try:
             user = self._get_user(db, user_id)

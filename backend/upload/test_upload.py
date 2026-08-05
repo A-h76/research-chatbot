@@ -901,7 +901,7 @@ def test_analyze_document_not_ready_returns_409_and_skips_model_call(env, mocker
     model_registry.call.assert_not_called()
 
 
-def test_analyze_document_token_quota_exceeded_returns_403(env, mocker):
+def test_analyze_document_token_quota_exceeded_returns_403(env, mocker, monkeypatch):
     # QuotaService.check_token_quota() falls back to DEFAULT_TOKEN_LIMIT
     # via `or` whenever monthly_token_limit is falsy (0 included) — so
     # exceeding it means pushing monthly_token_used near the *default*,
@@ -911,6 +911,7 @@ def test_analyze_document_token_quota_exceeded_returns_403(env, mocker):
     # treats a never-initialized reset_at as "start a fresh window now"
     # and would zero monthly_token_used right before the check otherwise
     # (see quotas/test_service.py's identical setup for this exact trap).
+    monkeypatch.setenv("DHUND_SUSPEND_AI_QUOTAS", "0")
     doc_id = _sample_document(env)
     db = env["SessionLocal"]()
     user = db.get(env["User"], 1)
