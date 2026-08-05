@@ -97,11 +97,42 @@ def create_derived_analysis_blueprint(
     select_fn,
     login_required,
     limiter,
-    responses_text,
+    ai_gateway,
+    get_model_registry,
     utility_model,
 ):
     bp = Blueprint("derived_analysis_routes", __name__)
     log = logging.getLogger(__name__)
+
+    def _invoke_json_llm(
+        prompt: str,
+        *,
+        user_id: int,
+        path: str,
+        task: str,
+        resolve_fn,
+        prompt_version: str,
+    ) -> str:
+        from backend.ai.utility_engine import invoke_prompt_llm
+
+        db = SessionLocal()
+        try:
+            registry = get_model_registry(db)
+            plan = resolve_fn()
+            content, _ = invoke_prompt_llm(
+                ai_gateway=ai_gateway,
+                model_registry=registry,
+                prompt=prompt,
+                plan=plan,
+                prompt_version=prompt_version,
+                path=path,
+                task=task,
+                user_id=user_id,
+                json_mode=True,
+            )
+            return content
+        finally:
+            db.close()
 
     def _run_comparison(derived_id: int, analyses_payload: str, file_ids: list[int]) -> None:
         db = SessionLocal()
@@ -114,7 +145,19 @@ def create_derived_analysis_blueprint(
                 n=len(file_ids),
                 analyses=analyses_payload[:_COMPARE_MAX_ANALYSES_CHARS],
             )
-            raw = responses_text(prompt, json_mode=True)
+            from backend.ai.capability_router.utility_resolve import (
+                PROMPT_VERSION_COMPARE,
+                resolve_compare_execution,
+            )
+
+            raw = _invoke_json_llm(
+                prompt,
+                user_id=da.user_id,
+                path="compare_papers",
+                task="compare",
+                resolve_fn=resolve_compare_execution,
+                prompt_version=PROMPT_VERSION_COMPARE,
+            )
             data = json.loads(raw)
 
             for arr_key in (
@@ -162,7 +205,19 @@ def create_derived_analysis_blueprint(
                 n=len(file_ids),
                 analyses=analyses_payload[:_GAP_MAX_ANALYSES_CHARS],
             )
-            raw = responses_text(prompt, json_mode=True)
+            from backend.ai.capability_router.utility_resolve import (
+                PROMPT_VERSION_GAPS,
+                resolve_gaps_execution,
+            )
+
+            raw = _invoke_json_llm(
+                prompt,
+                user_id=da.user_id,
+                path="gap_finder",
+                task="literature_review",
+                resolve_fn=resolve_gaps_execution,
+                prompt_version=PROMPT_VERSION_GAPS,
+            )
             data = json.loads(raw)
 
             data["disclaimer"] = _GAP_DISCLAIMER

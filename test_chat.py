@@ -5,9 +5,7 @@ and _log_chat_cost().
 No existing chat tests existed to "update" (grepped for any — none in
 this project before this task). The core model call in /api/chat goes through
 ``AIGateway.stream_responses`` / ``create_responses`` (Bite 2); utility
-``responses_text()`` still uses ``client.responses.create`` directly. What's
-new and testable here is the prompt-registry-backed system-prompt opening and
-the cost-ledger logging — that's what these tests cover.
+``responses_text()`` / ``embed_texts()`` delegate to ``utility_engine`` (Bite 8).
 
 DATABASE_URL isolation (so this never touches the real local chat_dev.db)
 lives in the project's root conftest.py, not here — see that file for

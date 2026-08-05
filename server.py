@@ -2942,22 +2942,23 @@ def chunk_document(text, size=1500, overlap=200):
 def embed_texts(texts, user_id=None):
     """Returns list of embeddings or None per text (None = embedding failed).
 
-    `user_id`: when given, logs token usage to ai_usage_ledger (kind=
-    "embedding") — optional so existing call sites that don't have a
-    user_id handy (or don't need cost tracking) are unaffected."""
+    Routes through Capability Router + ModelRegistry + AI Ledger (Bite 8).
+    """
+    from backend.ai.utility_engine import invoke_embed_texts
+
+    db = SessionLocal()
     try:
-        out = []
-        total_tokens = 0
-        for i in range(0, len(texts), 64):
-            resp = client.embeddings.create(model=EMBED_MODEL, input=texts[i : i + 64])
-            out.extend([d.embedding for d in resp.data])
-            total_tokens += getattr(resp.usage, "prompt_tokens", 0) or 0
-        record_ai_call(EMBED_MODEL, prompt_tokens=total_tokens)
-        if user_id:
-            _log_ai_usage(user_id, "embedding", "embed_model", total_tokens, 0)
-        return out
+        registry = get_model_registry(db)
+        return invoke_embed_texts(
+            model_registry=registry,
+            texts=texts,
+            user_id=user_id,
+            path="chunk_embed",
+        )
     except Exception:
         return [None] * len(texts)
+    finally:
+        db.close()
 
 
 def cosine(a, b):
@@ -3129,30 +3130,59 @@ is worth remembering (this is common and fine)."""
 
 
 def responses_text(prompt, json_mode=False, kind=None, user_id=None):
-    """`kind`/`user_id`: when both are given, logs token usage to
-    ai_usage_ledger. Optional — most of this function's call sites don't
-    pass them yet (chat, memory extraction, titles, compare, gap-finder,
-    writing assistant); only extract_metadata and paper_analysis do
-    today. Not logging is the safe default, not an error."""
-    kwargs = dict(model=UTILITY_MODEL, input=prompt, store=False)
-    if json_mode:
-        kwargs["text"] = {"format": {"type": "json_object"}}
-    resp = client.responses.create(**kwargs)
-    usage = getattr(resp, "usage", None)
-    record_ai_call(
-        UTILITY_MODEL,
-        prompt_tokens=getattr(usage, "input_tokens", 0) or 0,
-        completion_tokens=getattr(usage, "output_tokens", 0) or 0,
+    """Legacy shim — routes through Capability Router + Gateway (Bite 8).
+
+    Prefer ``invoke_prompt_llm`` at new call sites.
+    """
+    from backend.ai.capability_router.utility_resolve import (
+        PROMPT_VERSION_METADATA,
+        resolve_metadata_extraction_execution,
     )
-    if kind and user_id:
-        _log_ai_usage(
-            user_id,
-            kind,
-            "utility_model",
-            getattr(usage, "input_tokens", 0) or 0,
-            getattr(usage, "output_tokens", 0) or 0,
+    from backend.ai.utility_engine import invoke_prompt_llm
+
+    plan = resolve_metadata_extraction_execution()
+    prompt_version = PROMPT_VERSION_METADATA
+    path = kind or "utility_text"
+    task = "bulk_process"
+    if kind == "analysis":
+        from backend.ai.capability_router.paper_analysis_resolve import (
+            PROMPT_VERSION_PAPER_ANALYSIS,
+            resolve_paper_analysis_execution,
         )
-    return resp.output_text
+
+        plan = resolve_paper_analysis_execution()
+        prompt_version = PROMPT_VERSION_PAPER_ANALYSIS
+        task = "paper_analysis"
+    elif kind == "metadata":
+        path = "metadata_extract"
+    elif kind == "project_research":
+        from backend.ai.capability_router.utility_resolve import (
+            PROMPT_VERSION_PROJECT_RESEARCH,
+            resolve_project_research_execution,
+        )
+
+        plan = resolve_project_research_execution()
+        prompt_version = PROMPT_VERSION_PROJECT_RESEARCH
+        task = "literature_review"
+        path = "project_research"
+
+    db = SessionLocal()
+    try:
+        registry = get_model_registry(db)
+        content, _ = invoke_prompt_llm(
+            ai_gateway=ai_model_gateway,
+            model_registry=registry,
+            prompt=prompt,
+            plan=plan,
+            prompt_version=prompt_version,
+            path=path,
+            task=task,
+            user_id=user_id,
+            json_mode=json_mode,
+        )
+        return content
+    finally:
+        db.close()
 
 
 # Sprint B/C — project research + memory promotion (needs responses_text above).
@@ -3173,7 +3203,8 @@ project_research_service = create_project_research_service(
     DerivedAnalysis=DerivedAnalysis,
     AnalysisPipelineResult=AnalysisPipelineResult,
     get_prompt_builder=get_prompt_builder,
-    responses_text=responses_text,
+    ai_gateway=ai_model_gateway,
+    get_model_registry=get_model_registry,
     utility_model=UTILITY_MODEL,
     build_phase1_prompt_context=build_phase1_prompt_context,
     memory_promotion_service=memory_promotion_service,
@@ -3235,12 +3266,29 @@ def _extract_meta_from_text(text: str, user_id=None) -> dict:
     empty dict so the caller can degrade gracefully."""
     excerpt = text[:3000]
     try:
-        raw = responses_text(
-            _META_PROMPT.format(excerpt=excerpt),
-            json_mode=True,
-            kind="metadata",
-            user_id=user_id,
+        from backend.ai.capability_router.utility_resolve import (
+            PROMPT_VERSION_METADATA,
+            resolve_metadata_extraction_execution,
         )
+        from backend.ai.utility_engine import invoke_prompt_llm
+
+        db = SessionLocal()
+        try:
+            registry = get_model_registry(db)
+            plan = resolve_metadata_extraction_execution()
+            raw, _ = invoke_prompt_llm(
+                ai_gateway=ai_model_gateway,
+                model_registry=registry,
+                prompt=_META_PROMPT.format(excerpt=excerpt),
+                plan=plan,
+                prompt_version=PROMPT_VERSION_METADATA,
+                path="metadata_extract",
+                task="bulk_process",
+                user_id=user_id,
+                json_mode=True,
+            )
+        finally:
+            db.close()
         data = json.loads(raw)
     except Exception:
         return {}
@@ -3448,7 +3496,25 @@ def _run_paper_analysis(file_id: int, text: str, content_hash: str, job_id=None)
             max_chars=_ANALYSIS_MAX_CHARS,
             text=text[:_ANALYSIS_MAX_CHARS],
         )
-        raw = responses_text(prompt, json_mode=True, kind="analysis", user_id=pa.user_id)
+        from backend.analysis_pipeline.paper_analysis_engine import invoke_paper_analysis_llm
+
+        uf_row = db.get(UserFile, file_id)
+        project_id = int(uf_row.project_id) if uf_row and uf_row.project_id is not None else None
+        db_reg = SessionLocal()
+        try:
+            registry = get_model_registry(db_reg)
+            result, _ = invoke_paper_analysis_llm(
+                ai_gateway=ai_model_gateway,
+                model_registry=registry,
+                messages=[{"role": "user", "content": prompt}],
+                user_id=pa.user_id,
+                file_id=file_id,
+                project_id=project_id,
+                response_format={"type": "json_object"},
+            )
+            raw = (result or {}).get("content") or ""
+        finally:
+            db_reg.close()
         data = json.loads(raw)
 
         # Normalise: ensure array fields are lists, terms dict is a dict
@@ -3599,10 +3665,29 @@ def extract_memories(user_id, project_id, convo_messages):
     try:
         existing = [m.fact for m in db.execute(select(Memory).where(Memory.user_id == user_id)).scalars()]
         transcript = "\n".join(f"{m['role']}: {str(m['content'])[:500]}" for m in convo_messages[-10:])
-        text = responses_text(
-            MEMORY_PROMPT.format(known=json.dumps(existing), transcript=transcript),
-            json_mode=True,
+        from backend.ai.capability_router.utility_resolve import (
+            PROMPT_VERSION_MEMORY,
+            resolve_memory_extraction_execution,
         )
+        from backend.ai.utility_engine import invoke_prompt_llm
+
+        db_llm = SessionLocal()
+        try:
+            registry = get_model_registry(db_llm)
+            plan = resolve_memory_extraction_execution()
+            text, _ = invoke_prompt_llm(
+                ai_gateway=ai_model_gateway,
+                model_registry=registry,
+                prompt=MEMORY_PROMPT.format(known=json.dumps(existing), transcript=transcript),
+                plan=plan,
+                prompt_version=PROMPT_VERSION_MEMORY,
+                path="memory_extract",
+                task="bulk_process",
+                user_id=user_id,
+                json_mode=True,
+            )
+        finally:
+            db_llm.close()
         facts = json.loads(text).get("facts", [])
         for f in facts[:5]:
             if f and f not in existing:
@@ -3626,11 +3711,31 @@ def extract_memories(user_id, project_id, convo_messages):
 
 def generate_title(first_user_msg, first_reply):
     try:
-        t = responses_text(
-            "Write a short title (2-5 words, no quotes, no punctuation at the "
-            "end) for a chat that starts like this:\n"
-            f"user: {str(first_user_msg)[:400]}\nassistant: {first_reply[:400]}"
+        from backend.ai.capability_router.utility_resolve import (
+            PROMPT_VERSION_TITLE,
+            resolve_title_generation_execution,
         )
+        from backend.ai.utility_engine import invoke_prompt_llm
+
+        db = SessionLocal()
+        try:
+            registry = get_model_registry(db)
+            plan = resolve_title_generation_execution()
+            t, _ = invoke_prompt_llm(
+                ai_gateway=ai_model_gateway,
+                model_registry=registry,
+                prompt=(
+                    "Write a short title (2-5 words, no quotes, no punctuation at the "
+                    "end) for a chat that starts like this:\n"
+                    f"user: {str(first_user_msg)[:400]}\nassistant: {first_reply[:400]}"
+                ),
+                plan=plan,
+                prompt_version=PROMPT_VERSION_TITLE,
+                path="chat_title",
+                task="bulk_process",
+            )
+        finally:
+            db.close()
         return (t or "").strip().strip('"')[:60] or None
     except Exception:
         return None
@@ -6101,7 +6206,8 @@ app.register_blueprint(
         select_fn=select,
         login_required=login_required,
         limiter=limiter,
-        responses_text=lambda *a, **k: responses_text(*a, **k),
+        ai_gateway=ai_model_gateway,
+        get_model_registry=get_model_registry,
         utility_model=UTILITY_MODEL,
     )
 )

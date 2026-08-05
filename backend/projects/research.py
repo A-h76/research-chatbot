@@ -123,7 +123,8 @@ class ProjectResearchService:
     DerivedAnalysis: Any
     AnalysisPipelineResult: Any | None
     get_prompt_builder: Callable[[Any], Any]
-    responses_text: Callable[..., str]
+    ai_gateway: Any
+    get_model_registry: Callable[[Any], Any]
     utility_model: str
     build_phase1_prompt_context: Callable[[dict[str, Any], int], str] | None = None
     memory_promotion_service: Any | None = None
@@ -429,11 +430,32 @@ class ProjectResearchService:
             if not da:
                 return
 
-            raw = self.responses_text(prompt, json_mode=True, kind="project_research", user_id=da.user_id)
+            from backend.ai.capability_router.utility_resolve import (
+                PROMPT_VERSION_PROJECT_RESEARCH,
+                resolve_project_research_execution,
+            )
+            from backend.ai.utility_engine import invoke_prompt_llm
+
+            registry = self.get_model_registry(db)
+            plan = resolve_project_research_execution()
+            raw, provenance = invoke_prompt_llm(
+                ai_gateway=self.ai_gateway,
+                model_registry=registry,
+                prompt=prompt,
+                plan=plan,
+                prompt_version=PROMPT_VERSION_PROJECT_RESEARCH,
+                path="project_research",
+                task="literature_review",
+                user_id=da.user_id,
+                json_mode=True,
+                extra={"derived_id": derived_id, "project_id": da.project_id},
+            )
             data = json.loads(raw)
-            # Best-effort actual cost from estimate table (token usage not always available)
             actual_cost = None
-            if self.cost_ledger is not None:
+            if provenance and provenance.get("ai_execution"):
+                block = provenance["ai_execution"]
+                actual_cost = block.get("cost_usd")
+            if actual_cost is None and self.cost_ledger is not None:
                 try:
                     prompt_tokens = max(800, len(prompt) // 4)
                     completion_tokens = max(400, len(raw) // 4)
@@ -465,6 +487,16 @@ class ProjectResearchService:
                     logging.getLogger(__name__).warning(
                         "research cost logging failed derived_id=%s", derived_id, exc_info=True
                     )
+            elif self.ai_gate is not None and actual_cost is not None:
+                try:
+                    tokens = (provenance or {}).get("ai_execution", {}).get("tokens")
+                    self.ai_gate.record_usage(
+                        da.user_id,
+                        tokens=int(tokens) if tokens else 0,
+                        cost_usd=float(actual_cost),
+                    )
+                except Exception:
+                    pass
 
             claims, supporting, incomplete = self._normalize_claims(
                 data.get("claims"),
@@ -793,7 +825,8 @@ def create_project_research_service(
     DerivedAnalysis,
     AnalysisPipelineResult=None,
     get_prompt_builder,
-    responses_text,
+    ai_gateway,
+    get_model_registry,
     utility_model: str,
     build_phase1_prompt_context=None,
     memory_promotion_service=None,
@@ -811,7 +844,8 @@ def create_project_research_service(
         DerivedAnalysis=DerivedAnalysis,
         AnalysisPipelineResult=AnalysisPipelineResult,
         get_prompt_builder=get_prompt_builder,
-        responses_text=responses_text,
+        ai_gateway=ai_gateway,
+        get_model_registry=get_model_registry,
         utility_model=utility_model,
         build_phase1_prompt_context=build_phase1_prompt_context,
         memory_promotion_service=memory_promotion_service,

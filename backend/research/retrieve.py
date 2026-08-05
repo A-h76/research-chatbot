@@ -44,7 +44,7 @@ class PassageHit:
         return entry
 
 
-EmbedFn = Callable[[list[str]], list[Optional[list[float]]]]
+EmbedFn = Callable[..., list[Optional[list[float]]]]
 
 
 def research_retrieve(
@@ -85,7 +85,7 @@ def research_retrieve(
 
     q_emb: Optional[list[float]] = None
     try:
-        emb_list = embed_texts([query[:500]])
+        emb_list = embed_texts([query[:500]], scope.user_id)
         if emb_list and emb_list[0]:
             q_emb = emb_list[0]
     except Exception:

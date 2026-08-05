@@ -86,7 +86,7 @@ Discovery → Import → UFTR → SUE → Evidence → Writing
 
 | Rule | Canonical path | Still duplicated |
 |------|----------------|------------------|
-| Hot LLM execution | `resolve_*` → `invoke_*` / `execute_*` → Gateway | `responses_text()`, some embed paths |
+| Hot LLM execution | `resolve_*` → `invoke_*` / `execute_*` → Gateway | session `/api/search` embed in `search/routes.py`; writing assistant fallback |
 | Import → analysis → evidence | Shared worker queue + engines | Connector-specific attach/store bits |
 | Upload accept/store | Two façades (`storage/` vs `backend/storage/`) | Two HTTP entry stacks (ADR-0014) |
 | Cost / attribution | AI Ledger (provenance) + CostLedger ($) | Dual write sites |
@@ -105,7 +105,7 @@ Discovery → Import → UFTR → SUE → Evidence → Writing
 
 **Does not reduce this score:** two APIs, two frontends, two providers at the edge — as long as they call the same service.
 
-**Baseline:** **2.5** — Bites 1–7 unified hot LLM paths; upload façades + dual ledger + utility SDK remain.
+**Baseline:** **2.75** — Bites 1–8 unified utility + hot LLM paths; session search embed + dual ledger remain.
 
 ---
 
@@ -181,12 +181,12 @@ User action → Workflow event → Research decision → Artifact → Evidence �
 |---|-----------|-------|
 | 1 | Capability ownership | 3 |
 | 2 | Canonical pipelines | 3 |
-| 3 | Business logic — single implementation | 2.5 |
+| 3 | Business logic — single implementation | 2.75 |
 | 4 | Single source of truth | 3.5 |
 | 5 | Replaceability | 4 |
 | 6 | Testability | 4 |
 | 7 | Inspectability | 4.5 |
-| | **Overall** | **3.7 / 5** |
+| | **Overall** | **3.6 / 5** |
 
 *Narrative constitution score (~8.5/10 product+doctrine maturity) ≠ this KPI. Architecture Health is stricter on dual paths and replaceability.*
 
@@ -235,7 +235,7 @@ Review drift on major PRs and when rescoring.
 
 | Date | Overall | Note |
 |------|---------|------|
-| 2026-08-05 | 3.7 / 5 | Refinements: canonical pipelines, capability ownership, replaceability/inspectability expanded; drift + anti-abstraction principle |
+| 2026-08-05 | 3.6 / 5 | Bite 8: utility shims on ACR — compare, project research, embed, memory/titles |
 | 2026-08-05 | 3.7 / 5 | KPI #3 reframed: single implementation (not delete duplicate code); score 2.5; PR gate added |
 | 2026-08-05 | 3.6 / 5 | Search RAG on ACR — Bites 1–7 complete for hot LLM paths |
 | 2026-08-05 | 3.5 / 5 | SUE paper_analysis on ACR + Gateway + ledger; phase1 pipeline ledger |

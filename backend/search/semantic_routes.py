@@ -54,7 +54,7 @@ def create_semantic_search_blueprint(
 
         query_emb = None
         try:
-            query_emb = embed_texts([q])[0]
+            query_emb = embed_texts([q], uid)[0]
         except Exception:
             pass
 

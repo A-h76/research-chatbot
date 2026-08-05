@@ -26,7 +26,7 @@ Debt lists *what hurts*. Roadmaps *what users get*. **Evolution** tracks *archit
 
 | Area | Current | Target | Priority | Notes |
 |------|---------|--------|----------|-------|
-| **AI Invocation** | Hot LLM paths: **one implementation** (`resolve_*` → `invoke_*` / Gateway). Shim list: `responses_text`, `embed` / `embed_texts`, session semantic search | **All LLM** → Capability Router → Gateway (shims retired or ADR) | **High** | Bites 1–7 done 2026-08-05 — not “delete chat path” |
+| **AI Invocation** | Utility shims on ACR (Bite 8): compare/gaps, project research, embed, memory/titles/metadata. Remaining: writing assistant fallback, session `/api/search` embed in `search/routes.py` | **All LLM** → Capability Router → Gateway (shims retired or ADR) | **High** | Bites 1–8 done 2026-08-05 |
 | **Cost Ledger** | Dual write: **CostLedger** ($) + **AI Ledger** (provenance) | AI Ledger owns attribution → CostLedger = billing adapter → **one write façade** | **High** | Unify after all paths record AI Ledger |
 | **Upload** | Two HTTP stacks + two storage façades (ADR-0014) | **Shared upload service** — two APIs OK, **one business implementation** | **High** | Not one endpoint; one `apply_pdf_bytes` / policy |
 | **Discovery** | Providers + shared scholarly ops; some custom attach/import bits | **Resolver pipeline** — provider supplies metadata only; shared import after acquisition | **High** | PubMed / Drive / OneDrive → same `enqueue_import` spine |
@@ -97,7 +97,7 @@ See [`ENGINEERING-CONSTITUTION-v1.md`](ENGINEERING-CONSTITUTION-v1.md) §2.
 
 | Date | Area | Change |
 |------|------|--------|
-| 2026-08-05 | **Governance** | Architecture Health v2: canonical pipelines, capability ownership, drift check, what-NOT-to-score |
+| 2026-08-05 | **AI Invocation** | Bite 8: utility_engine — compare/gaps, project research, embed, memory/titles/metadata on ACR + ledger |
 | 2026-08-05 | **Search** | `invoke_rag_llm` + `resolve_search_execution`; `POST /api/rag` ACR + ledger + `ai_execution` |
 | 2026-08-05 | **SUE / Analyze Paper** | `invoke_paper_analysis_llm` + `record_phase1_pipeline_execution`; worker + upload analyze route |
 | 2026-08-05 | **Evidence** | `execute_evidence_extraction` + `resolve_evidence_extract_execution`; projector ledger + `ai_execution` on sync extract |

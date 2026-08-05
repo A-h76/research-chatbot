@@ -34,6 +34,20 @@ def _mock_llm(paper_id: int) -> str:
     )
 
 
+class _MockGateway:
+    def __init__(self, paper_id: int = 0):
+        self.paper_id = paper_id
+
+    def call(self, **kwargs):
+        return {
+            "content": _mock_llm(self.paper_id),
+            "prompt_tokens": 10,
+            "completion_tokens": 20,
+            "total_tokens": 30,
+            "cost": 0.01,
+        }
+
+
 @pytest.fixture
 def research_svc():
     from backend.analysis_pipeline.summary import build_phase1_prompt_context
@@ -47,7 +61,8 @@ def research_svc():
         DerivedAnalysis=server.DerivedAnalysis,
         AnalysisPipelineResult=server.AnalysisPipelineResult,
         get_prompt_builder=server.get_prompt_builder,
-        responses_text=lambda *a, **k: _mock_llm(0),
+        ai_gateway=_MockGateway(),
+        get_model_registry=lambda db: object(),
         utility_model="test-model",
         build_phase1_prompt_context=build_phase1_prompt_context,
     )
@@ -166,11 +181,7 @@ def test_research_preset_returns_claims(
     project_id = researcher_with_papers["project_id"]
     fid = researcher_with_papers["paper_ids"][0]
 
-    monkeypatch.setattr(
-        research_svc,
-        "responses_text",
-        lambda *a, **k: _mock_llm(fid),
-    )
+    monkeypatch.setattr(research_svc, "ai_gateway", _MockGateway(fid))
 
     payload, err = research_svc.start_research(
         project_id,
@@ -240,13 +251,15 @@ def test_research_cache_hit(research_svc, sync_research_threads, researcher_with
     uid = researcher_with_papers["user_id"]
     project_id = researcher_with_papers["project_id"]
     fid = researcher_with_papers["paper_ids"][0]
+    gw = _MockGateway(fid)
     calls = {"n": 0}
 
-    def counting_llm(*a, **k):
-        calls["n"] += 1
-        return _mock_llm(fid)
+    class _CountingGW(_MockGateway):
+        def call(self, **kwargs):
+            calls["n"] += 1
+            return super().call(**kwargs)
 
-    monkeypatch.setattr(research_svc, "responses_text", counting_llm)
+    monkeypatch.setattr(research_svc, "ai_gateway", _CountingGW(fid))
 
     first, err1 = research_svc.start_research(
         project_id, uid, preset="evidence", query="", file_ids=None, force=False
@@ -273,8 +286,8 @@ def test_research_http(researcher_with_papers, monkeypatch):
 
     monkeypatch.setattr(
         server.project_research_service,
-        "responses_text",
-        lambda *a, **k: _mock_llm(fid),
+        "ai_gateway",
+        _MockGateway(fid),
     )
 
     resp = client.post(f"/api/projects/{pid}/research", json={"preset": "evidence"})
