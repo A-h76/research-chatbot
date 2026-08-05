@@ -8,7 +8,10 @@ import { cn } from "@/lib/utils";
 
 function formatProcessedAgo(iso: string | null | undefined): string | null {
   if (!iso) return null;
-  const t = Date.parse(iso);
+  // Naive API timestamps are UTC — treat as such so UTC+N locales don't show N hours ago.
+  const normalized =
+    /(?:Z|[+-]\d{2}:?\d{2})$/i.test(iso.trim()) ? iso.trim() : `${iso.trim().replace(/ /, "T")}Z`;
+  const t = Date.parse(normalized);
   if (Number.isNaN(t)) return null;
   const mins = Math.max(0, Math.round((Date.now() - t) / 60_000));
   if (mins < 1) return "just now";

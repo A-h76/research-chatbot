@@ -100,6 +100,7 @@ def create_documents_blueprint(
     limiter=None,
     import_spine=None,
     upload_service=None,
+    Project=None,
 ):
     bp = Blueprint("documents", __name__, url_prefix="/api/documents")
     log = logging.getLogger(__name__)
@@ -182,6 +183,24 @@ def create_documents_blueprint(
         facade = _jwt_facade()
         key = facade.new_document_key(user_id, filename)
 
+        # Trust Sprint: honor project_id (FE already sends it on project uploads).
+        raw_project_id = request.form.get("project_id")
+        project_id = None
+        if raw_project_id not in (None, ""):
+            if Project is None:
+                return jsonify({"error": "validation", "message": "project_id not supported"}), 400
+            from security.authz import resolve_owned_project_id
+
+            db_pre = SessionLocal()
+            try:
+                project_id, denied = resolve_owned_project_id(
+                    db_pre, Project, raw_project_id, user_id
+                )
+                if denied:
+                    return jsonify({"error": "forbidden", "message": "project_not_found"}), 403
+            finally:
+                db_pre.close()
+
         db = SessionLocal()
         try:
             result = _upload_svc().store_jwt_bytes_and_register(
@@ -193,6 +212,7 @@ def create_documents_blueprint(
                 mime=mime,
                 kind=kind_for_extension(ext),
                 key=key,
+                project_id=project_id,
                 batch_source="api_documents",
             )
             if not result.ok:

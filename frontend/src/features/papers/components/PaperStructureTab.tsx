@@ -571,7 +571,7 @@ export function PaperStructureTab({
   focusRef?: string | null;
 }) {
   const { pipeline, derived, isLoading: pipelineLoading, isError: pipelineError, error: pipelineErr } =
-    usePipeline(fileId);
+    usePipeline(fileId, { metaStatus: metaStatus ?? null });
 
   const hasDuPhase =
     pipeline != null &&

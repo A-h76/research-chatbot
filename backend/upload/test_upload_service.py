@@ -144,9 +144,11 @@ def test_session_and_jwt_paths_converge_on_register(monkeypatch):
         filename="b.pdf",
         mime="application/pdf",
         kind="document",
+        project_id=77,
         batch_source="api_documents",
     )
     assert r2.ok
+    assert r2.user_file.project_id == 77
     assert "library" in seen
     assert "api_documents" in seen
 

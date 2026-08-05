@@ -182,11 +182,9 @@ class UploadService:
             "kind": kind or "document",
             "path": path,
             "size": int(size or 0),
+            "project_id": project_id,
+            "conversation_id": conversation_id,
         }
-        if hasattr(self.UserFile, "project_id"):
-            uf_kwargs["project_id"] = project_id
-        if hasattr(self.UserFile, "conversation_id"):
-            uf_kwargs["conversation_id"] = conversation_id
         if hasattr(self.UserFile, "checksum_sha256"):
             uf_kwargs["checksum_sha256"] = checksum_sha256
         uf = self.UserFile(**uf_kwargs)
@@ -295,6 +293,7 @@ class UploadService:
         mime: str,
         kind: str,
         key: str | None = None,
+        project_id: int | None = None,
         batch: Any | None = None,
         batch_source: str = "api_documents",
         create_batch: bool = True,
@@ -307,6 +306,7 @@ class UploadService:
                 user_id,
                 source=batch_source,
                 file_count=0,
+                project_id=project_id,
                 increment=False,
             )
             batch.file_count = (batch.file_count or 0) + 1
@@ -326,6 +326,7 @@ class UploadService:
             kind=kind,
             path=object_key,
             size=size,
+            project_id=project_id,
             batch=batch,
             batch_source=batch_source,
             create_batch=False,

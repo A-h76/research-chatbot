@@ -44,6 +44,8 @@ export interface PipelineDocument {
   phases: string[];
   phase_results: Record<string, PhaseResult>;
   prompt_context?: string;
+  /** ISO UTC when the pipeline row was last updated (optional; Trust Sprint). */
+  updated_at?: string;
 }
 
 /** GET /api/documents/:id/phases/:phase */

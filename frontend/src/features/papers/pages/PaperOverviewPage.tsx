@@ -186,8 +186,9 @@ export function PaperOverviewPage() {
 
   const { data: file, isLoading: fileLoading } = useFile(id);
   const { data: analysis, isLoading: analysisLoading } = usePaperAnalysis(id);
-  const { derived: pipelineDerived } = usePipeline(id, {
+  const { derived: pipelineDerived, pipeline } = usePipeline(id, {
     fileContentHash: null,
+    metaStatus: file?.meta_status ?? null,
   });
   const patchFile = usePatchFile();
   const citationFromPaper = useCitationFromPaper();
@@ -450,7 +451,11 @@ export function PaperOverviewPage() {
           <PipelineStatusPanel
             derived={pipelineDerived}
             metaStatus={file.meta_status}
-            updatedAt={analysis?.updated_at ?? file.created_at}
+            updatedAt={
+              pipeline?.updated_at ??
+              file.updated_at ??
+              file.created_at
+            }
           />
         )}
 
@@ -545,7 +550,9 @@ export function PaperOverviewPage() {
             <PipelineStatusPanel
               derived={pipelineDerived}
               metaStatus={file.meta_status}
-              updatedAt={analysis?.updated_at ?? file.created_at}
+              updatedAt={
+                pipeline?.updated_at ?? file.updated_at ?? file.created_at
+              }
             />
           )}
 

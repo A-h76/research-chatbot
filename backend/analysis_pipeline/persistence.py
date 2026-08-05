@@ -57,6 +57,7 @@ def load_analysis_result(db, AnalysisPipelineResult, file_id: int) -> Optional[A
         total_processing_time_ms=float(row.total_processing_time_ms or 0),
         errors=[row.error] if row.error else [],
         created_at=row.created_at or datetime.now(timezone.utc),
+        updated_at=getattr(row, "updated_at", None) or row.created_at,
     )
 
 

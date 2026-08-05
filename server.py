@@ -2550,6 +2550,7 @@ app.register_blueprint(
         limiter=limiter,
         import_spine=_import_spine,
         upload_service=_upload_service,
+        Project=Project,
     )
 )
 
@@ -2565,6 +2566,7 @@ app.register_blueprint(
         limiter=limiter,
         import_spine=_import_spine,
         upload_service=_upload_service,
+        Project=Project,
     )
 )
 

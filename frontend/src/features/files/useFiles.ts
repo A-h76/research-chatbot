@@ -38,6 +38,15 @@ export function useLibraryStats(projectId?: number | null) {
 export function useFile(id: number | null) {
   return useQuery({
     queryKey: id ? queryKeys.file(id) : ["files", "none"],
+    queryFn: () => filesApi.get(id!),
+    enabled: id != null,
+    refetchInterval: (q) => {
+      const meta = (q.state.data as UserFile | undefined)?.meta_status;
+      if (meta === "pending" || meta === "running") return 2500;
+      return false;
+    },
+  });
+}
     queryFn:  () => filesApi.get(id!),
     enabled:  id !== null,
   });

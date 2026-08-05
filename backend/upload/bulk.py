@@ -60,6 +60,7 @@ def create_bulk_upload_blueprint(
     limiter=None,
     import_spine=None,
     upload_service=None,
+    Project=None,
 ):
     bp = Blueprint("bulk_upload", __name__, url_prefix="/api/uploads")
 
@@ -136,6 +137,23 @@ def create_bulk_upload_blueprint(
             total_bytes += size
             prepared.append((data, ext, mime, size, f.filename))
 
+        raw_project_id = request.form.get("project_id")
+        project_id = None
+        if raw_project_id not in (None, ""):
+            if Project is None:
+                return jsonify({"error": "validation", "message": "project_id not supported"}), 400
+            from security.authz import resolve_owned_project_id
+
+            db_pre = SessionLocal()
+            try:
+                project_id, denied = resolve_owned_project_id(
+                    db_pre, Project, raw_project_id, user_id
+                )
+                if denied:
+                    return jsonify({"error": "forbidden", "message": "project_not_found"}), 403
+            finally:
+                db_pre.close()
+
         try:
             quota_service.check_storage_quota(user_id, total_bytes)
         except QuotaExceededError as e:
@@ -168,6 +186,7 @@ def create_bulk_upload_blueprint(
                 user_id,
                 source="bulk_upload",
                 file_count=len(prepared),
+                project_id=project_id,
                 increment=False,
             )
 
@@ -185,6 +204,7 @@ def create_bulk_upload_blueprint(
                     mime=mime,
                     kind=kind_for_extension(ext),
                     key=key,
+                    project_id=project_id,
                     batch=batch,
                     batch_source="bulk_upload",
                     create_batch=False,

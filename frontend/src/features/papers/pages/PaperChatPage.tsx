@@ -29,7 +29,10 @@ import type { Attachment } from "@/types/api";
 // ── Paper header strip ────────────────────────────────────────────────────
 function PaperHeader({ fileId }: { fileId: number }) {
   const { data: file } = useFile(fileId);
-  const { derived } = usePipeline(fileId, { fileContentHash: null });
+  const { derived, pipeline } = usePipeline(fileId, {
+    fileContentHash: null,
+    metaStatus: file?.meta_status ?? null,
+  });
   const navigate = useNavigate();
 
   if (!file) return null;
@@ -101,7 +104,7 @@ function PaperHeader({ fileId }: { fileId: number }) {
           <PipelineStatusPanel
             derived={derived}
             metaStatus={file.meta_status}
-            updatedAt={file.created_at}
+            updatedAt={pipeline?.updated_at ?? file.updated_at ?? file.created_at}
             compact
           />
         </div>

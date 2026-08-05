@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -5,6 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { LibraryUploadZone } from "./LibraryUploadZone";
 import { LibraryUploadQueue } from "./LibraryUploadQueue";
 import type { LibraryUploadItem } from "../hooks/useLibraryUpload";
@@ -16,6 +18,7 @@ export function UploadPapersDialog({
   onFiles,
   uploadItems,
   onClearFinished,
+  projectId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -23,14 +26,25 @@ export function UploadPapersDialog({
   onFiles: (files: FileList | File[]) => void;
   uploadItems: LibraryUploadItem[];
   onClearFinished: () => void;
+  /** When set, next-step copy is project-scoped. */
+  projectId?: number | null;
 }) {
+  const uploaded = uploadItems.filter((i) => i.status === "uploaded" && i.fileId != null);
+  const failed = uploadItems.filter((i) => i.status === "failed");
+  const inFlight = uploadItems.filter(
+    (i) => i.status === "uploading" || i.status === "queued",
+  );
+  const firstId = uploaded[0]?.fileId ?? null;
+  const showNext = uploaded.length > 0 && inFlight.length === 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Upload papers</DialogTitle>
           <DialogDescription>
-            Drop PDFs here or browse. They’ll appear in your library and start processing.
+            Drop PDFs here or browse. They’ll appear in your{" "}
+            {projectId != null ? "project" : "library"} and start processing.
           </DialogDescription>
         </DialogHeader>
         <LibraryUploadZone
@@ -43,6 +57,47 @@ export function UploadPapersDialog({
         />
         {uploadItems.length > 0 && (
           <LibraryUploadQueue items={uploadItems} onClearFinished={onClearFinished} />
+        )}
+
+        {showNext && (
+          <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                {uploaded.length} paper{uploaded.length === 1 ? "" : "s"} uploaded
+                {failed.length > 0 ? ` · ${failed.length} failed` : ""}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Processing runs in the background. Next recommended step:
+              </p>
+            </div>
+            <ol className="list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
+              <li>Open a paper and watch status until Chat Ready</li>
+              <li>Review Research Profile / Structure</li>
+              <li>Ask Dhund or extract Evidence</li>
+            </ol>
+            <div className="flex flex-wrap gap-2">
+              {firstId != null && (
+                <Button asChild size="sm">
+                  <Link to={`/papers/${firstId}`} onClick={() => onOpenChange(false)}>
+                    Open first paper
+                  </Link>
+                </Button>
+              )}
+              {projectId != null && (
+                <Button asChild size="sm" variant="outline">
+                  <Link
+                    to={`/projects/${projectId}`}
+                    onClick={() => onOpenChange(false)}
+                  >
+                    Back to project
+                  </Link>
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
+                Done
+              </Button>
+            </div>
+          </div>
         )}
       </DialogContent>
     </Dialog>

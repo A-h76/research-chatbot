@@ -620,6 +620,7 @@ export function FilesPage() {
         onFiles={(f) => void upload(f)}
         uploadItems={uploadItems}
         onClearFinished={clearFinished}
+        projectId={currentProjectId}
       />
 
       <Dialog

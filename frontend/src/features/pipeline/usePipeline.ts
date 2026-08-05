@@ -24,13 +24,18 @@ export type UsePipelineOptions = {
   poll?: boolean;
   /** Forwarded to adaptPipeline (hash mismatch → stale). */
   fileContentHash?: string | null;
+  /**
+   * UserFile.meta_status — when pipeline row is still 404, keep polling while
+   * meta is pending/running (Trust Sprint: don't wait for Chat remount).
+   */
+  metaStatus?: string | null;
 };
 
 /**
  * GET /api/documents/:id/pipeline — `data` is null when Phase 1 has never run (404).
  */
 export function usePipeline(fileId: number | null, options: UsePipelineOptions = {}) {
-  const { enabled = true, poll = true, fileContentHash } = options;
+  const { enabled = true, poll = true, fileContentHash, metaStatus } = options;
   const [enqueuePending, setEnqueuePending] = useState(false);
   const enqueueRef = useRef(false);
 
@@ -42,7 +47,15 @@ export function usePipeline(fileId: number | null, options: UsePipelineOptions =
     refetchInterval: (q) => {
       if (!poll) return false;
       if (enqueueRef.current && q.state.data == null) return POLL_MS;
-      return shouldPollPipeline(q.state.data) ? POLL_MS : false;
+      if (shouldPollPipeline(q.state.data)) return POLL_MS;
+      // Trust Sprint: poll while worker hasn't written AnalysisPipelineResult yet.
+      if (
+        q.state.data == null &&
+        (metaStatus === "pending" || metaStatus === "running")
+      ) {
+        return POLL_MS;
+      }
+      return false;
     },
   });
 
@@ -63,9 +76,11 @@ export function usePipeline(fileId: number | null, options: UsePipelineOptions =
     () =>
       adaptPipeline(query.data ?? null, {
         fileContentHash,
-        enqueuePending,
+        enqueuePending:
+          enqueuePending ||
+          (query.data == null && (metaStatus === "pending" || metaStatus === "running")),
       }),
-    [query.data, fileContentHash, enqueuePending],
+    [query.data, fileContentHash, enqueuePending, metaStatus],
   );
 
   return {

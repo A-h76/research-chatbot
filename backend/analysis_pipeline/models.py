@@ -43,11 +43,15 @@ class AnalysisResult:
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime | None = None
 
     def phase(self, name: str) -> Any:
         return self.phase_results.get(name)
 
     def to_api_dict(self) -> dict[str, Any]:
+        stamp = self.updated_at or self.created_at
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
         return {
             "file_id": self.file_id,
             "content_hash": self.content_hash,
@@ -58,4 +62,5 @@ class AnalysisResult:
             "errors": self.errors,
             "phases": list(self.phase_results.keys()),
             "phase_results": self.phase_results,
+            "updated_at": stamp.isoformat().replace("+00:00", "Z"),
         }

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { FileText, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -69,6 +69,10 @@ export function ProjectPapersPanel({ projectId }: { projectId: number }) {
   }, [papers]);
   const { byId: pipelineById } = usePipelines(paperIds, metaById);
   const { items: uploadItems, isUploading, upload, clearFinished } = useProjectUpload(projectId);
+  const uploaded = uploadItems.filter((i) => i.status === "uploaded" && i.fileId != null);
+  const inFlight = uploadItems.filter((i) => i.status === "uploading" || i.status === "queued");
+  const showNext = uploaded.length > 0 && inFlight.length === 0;
+  const firstId = uploaded[0]?.fileId ?? null;
 
   if (isLoading) {
     return (
@@ -106,6 +110,28 @@ export function ProjectPapersPanel({ projectId }: { projectId: number }) {
         inputId={`project-${projectId}-upload`}
       />
       <LibraryUploadQueue items={uploadItems} onClearFinished={clearFinished} />
+
+      {showNext && (
+        <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+          <p className="text-sm font-medium">
+            {uploaded.length} paper{uploaded.length === 1 ? "" : "s"} in this project
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Processing continues in the background. Open a paper to watch status, then ask Dhund or
+            extract Evidence.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {firstId != null && (
+              <Button asChild size="sm">
+                <Link to={`/papers/${firstId}`}>Open first paper</Link>
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={clearFinished}>
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      )}
 
       {paperItems.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center text-sm text-muted-foreground">
