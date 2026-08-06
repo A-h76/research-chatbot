@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   Beaker,
@@ -12,21 +12,21 @@ import {
   Tags,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/common/EmptyState";
 import { AiStateBadge, isPipelineError, usePipeline, usePipelinePhase } from "@/features/pipeline";
 import { cn } from "@/lib/utils";
+import { PaperPhaseEmpty } from "./PaperPhaseEmpty";
 import {
   buildProfileSummary,
   buildResearchContextLine,
   confidenceBand,
   formatClassificationLabel,
   formatConfidence,
-  formatConfidenceBand,
+  formatProfileStatusBand,
   humanizeEvidenceLine,
-  isConfidentDecision,
   mapClassification,
   orderedProfileDecisions,
   profileDecisionLabel,
+  profileDecisionStatus,
   profileDecisionSummary,
   profilePossibleLabel,
   type AnalysisSummaryView,
@@ -67,14 +67,21 @@ function ProfileSummaryCard({ text }: { text: string }) {
   );
 }
 
-function ProfileIdentityRow({ decision }: { decision: ClassificationDecisionView }) {
+function ProfileIdentityRow({
+  decision,
+  peers,
+}: {
+  decision: ClassificationDecisionView;
+  peers: ClassificationDecisionView[];
+}) {
   const [whyOpen, setWhyOpen] = useState(false);
   const titleId = `profile-decision-${decision.family}-title`;
   const labelId = `profile-decision-${decision.family}-label`;
-  const confident = isConfidentDecision(decision);
+  const status = profileDecisionStatus(decision, peers);
+  const confident = status === "identified";
   const band = confidenceBand(confident ? decision.confidence : undefined);
-  const label = profileDecisionLabel(decision);
-  const possible = profilePossibleLabel(decision);
+  const label = profileDecisionLabel(decision, peers);
+  const possible = profilePossibleLabel(decision, peers);
   const evidence = decision.evidence.map(humanizeEvidenceLine).filter(Boolean);
   const Icon = FAMILY_ICON[decision.family];
 
@@ -94,7 +101,9 @@ function ProfileIdentityRow({ decision }: { decision: ClassificationDecisionView
             >
               {decision.familyTitle}
             </h3>
-            <p className="text-[10px] text-muted-foreground">{formatConfidenceBand(band)}</p>
+            <p className="text-[10px] text-muted-foreground">
+              {formatProfileStatusBand(status, band)}
+            </p>
           </header>
           <p
             id={labelId}
@@ -106,10 +115,13 @@ function ProfileIdentityRow({ decision }: { decision: ClassificationDecisionView
             {label}
           </p>
           <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
-            {profileDecisionSummary(decision)}
+            {profileDecisionSummary(decision, peers)}
           </p>
 
-          {(evidence.length > 0 || possible || decision.reasoning) && (
+          {(evidence.length > 0 ||
+            possible ||
+            decision.reasoning ||
+            status === "not_applicable") && (
             <div className="mt-2">
               <button
                 type="button"
@@ -134,6 +146,11 @@ function ProfileIdentityRow({ decision }: { decision: ClassificationDecisionView
                         <> ({formatConfidence(decision.confidence)})</>
                       )}
                       . Shown as not identified until confidence improves.
+                    </p>
+                  )}
+                  {status === "not_applicable" && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {profileDecisionSummary(decision, peers)}
                     </p>
                   )}
                   {evidence.length > 0 ? (
@@ -394,7 +411,7 @@ function ResearchProfileReady({
                 i >= 2 && "sm:border-b-0",
               )}
             >
-              <ProfileIdentityRow decision={d} />
+              <ProfileIdentityRow decision={d} peers={view.decisions} />
             </div>
           ))}
         </div>
@@ -451,6 +468,7 @@ export function PaperClassificationTab({
   metaStatus?: string | null;
   focusRef?: string | null;
 }) {
+  const navigate = useNavigate();
   const { pipeline, derived, isLoading: pipelineLoading, isError: pipelineError, error: pipelineErr } =
     usePipeline(fileId);
 
@@ -528,14 +546,13 @@ export function PaperClassificationTab({
     return (
       <div className="space-y-4">
         <AiStateBadge derived={derived} metaStatus={metaStatus} />
-        <EmptyState
+        <PaperPhaseEmpty
           icon={<Tags className="size-8" />}
           title="No research profile yet"
-          description={
-            waitingOnPipeline
-              ? "Profiling is still running. This tab will fill in when the phase completes."
-              : "No profile is available for this paper yet. Run Phase 1 analysis to understand document type and domain."
-          }
+          waiting={waitingOnPipeline}
+          waitingDescription="Profiling is still running. Domain, document type, and study design will appear here."
+          idleDescription="No research profile for this paper yet. Open Overview to start analysis when the manuscript is ready."
+          onOpenOverview={() => navigate(`/papers/${fileId}`)}
         />
       </div>
     );

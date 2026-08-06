@@ -4,11 +4,12 @@
  * (that lives in Writing Studio).
  */
 import { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { AlertCircle, Scale } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/common/EmptyState";
 import { AiStateBadge, isPipelineError, usePipeline, usePipelinePhase } from "@/features/pipeline";
 import { cn } from "@/lib/utils";
+import { PaperPhaseEmpty } from "./PaperPhaseEmpty";
 import {
   formatConfidence,
   formatLabel,
@@ -304,11 +305,11 @@ function EvidenceReady({
             id="evidence-skipped-heading"
             className="text-[15px] font-semibold tracking-tight text-foreground"
           >
-            {view.skipTitle ?? "No formal evidence grade"}
+            {view.skipTitle ?? "Not Assessed"}
           </h2>
           <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
             {view.skipReason ??
-              "Dhund did not produce a formal evidence grade for this paper. Chat and extract tools can still use the manuscript text."}
+              "No statistical evidence extraction is currently supported for this document type."}
           </p>
           {view.warnings.length > 0 && (
             <ul className="mt-4 space-y-2" role="list">
@@ -330,6 +331,15 @@ function EvidenceReady({
 
   const overallConf = formatConfidence(view.overallGrade?.confidence);
   const summaryConf = formatConfidence(view.summaryConfidence);
+  const overallDisplay = view.overallGrade?.displayValue ?? "Not Assessed";
+  const studyQualityDisplay =
+    view.studyQuality && view.studyQuality !== "unknown"
+      ? formatLabel(view.studyQuality)
+      : "Not Assessed";
+  const studyQualityReason =
+    !view.studyQuality || view.studyQuality === "unknown"
+      ? "Study quality was not assessed for this paper — insufficient structured signals or document type outside the grading path."
+      : null;
 
   return (
     <div className="space-y-8">
@@ -340,13 +350,16 @@ function EvidenceReady({
         <div className="grid gap-3 sm:grid-cols-3">
           <MetaCard
             title="Overall grade"
-            ariaLabel={`Overall grade ${view.overallGrade?.displayValue ?? "unavailable"}`}
+            ariaLabel={`Overall grade ${overallDisplay}`}
           >
-            <p className="text-2xl font-medium text-foreground">
-              {view.overallGrade?.displayValue ?? "—"}
-            </p>
+            <p className="text-2xl font-medium text-foreground">{overallDisplay}</p>
             {view.overallGrade?.description && (
               <p className="text-sm text-foreground/85">{view.overallGrade.description}</p>
+            )}
+            {!view.overallGrade?.displayValue && (
+              <p className="text-sm text-muted-foreground">
+                No overall evidence grade was produced for this paper.
+              </p>
             )}
             {overallConf && (
               <p className="text-xs text-muted-foreground">Grade confidence {overallConf}</p>
@@ -354,11 +367,12 @@ function EvidenceReady({
           </MetaCard>
           <MetaCard
             title="Study quality"
-            ariaLabel={`Study quality ${view.studyQuality ?? "unavailable"}`}
+            ariaLabel={`Study quality ${studyQualityDisplay}`}
           >
-            <p className="text-2xl font-medium text-foreground">
-              {view.studyQuality ? formatLabel(view.studyQuality) : "—"}
-            </p>
+            <p className="text-2xl font-medium text-foreground">{studyQualityDisplay}</p>
+            {studyQualityReason && (
+              <p className="text-sm text-muted-foreground">{studyQualityReason}</p>
+            )}
           </MetaCard>
           <MetaCard
             title="Document confidence"
@@ -490,6 +504,7 @@ export function PaperEvidenceTab({
   metaStatus?: string | null;
   focusRef?: string | null;
 }) {
+  const navigate = useNavigate();
   const { pipeline, derived, isLoading: pipelineLoading, isError: pipelineError, error: pipelineErr } =
     usePipeline(fileId);
 
@@ -556,14 +571,13 @@ export function PaperEvidenceTab({
     return (
       <div className="space-y-4">
         <AiStateBadge derived={derived} metaStatus={metaStatus} />
-        <EmptyState
+        <PaperPhaseEmpty
           icon={<Scale className="size-8" />}
           title="No evidence grading yet"
-          description={
-            waitingOnPipeline
-              ? "Evidence grading is still running. This tab will fill in when the phase completes."
-              : "No evidence_grading result is available for this paper. Run Phase 1 analysis to grade evidence quality."
-          }
+          waiting={waitingOnPipeline}
+          waitingDescription="Evidence grading is still running. Grades and frameworks will appear when this stage finishes."
+          idleDescription="No evidence grade for this paper yet. Some document types are Not Assessed by design — open Overview to run analysis or check Evidence after processing."
+          onOpenOverview={() => navigate(`/papers/${fileId}`)}
         />
       </div>
     );

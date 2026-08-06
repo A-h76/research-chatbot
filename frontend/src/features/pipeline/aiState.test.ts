@@ -5,6 +5,7 @@ import {
   resolveAiStepper,
   runningHeadline,
   readyHeadline,
+  describePipelineProgress,
   AI_STATE_LABELS,
 } from "./aiState";
 import type { PipelineDocument, PipelineDerived } from "./types";
@@ -136,5 +137,38 @@ describe("resolveAiStepper", () => {
     };
     const nodes = resolveAiStepper(derived);
     expect(nodes.some((n) => n.state === "error")).toBe(true);
+  });
+});
+
+describe("describePipelineProgress", () => {
+  it("explains queue and running stages without phase ids", () => {
+    const queued = adaptPipeline(doc({ status: "pending", phases: [] }));
+    expect(describePipelineProgress(queued)).toMatch(/queue/i);
+    expect(describePipelineProgress(queued)).not.toMatch(/document_understanding/);
+
+    const running = adaptPipeline(
+      doc({ status: "running", phases: ["document_understanding"] }),
+    );
+    // remaining should start at classification after DU completes in phases list —
+    // adaptPipeline derives remaining from status; assert human copy only.
+    const hint = describePipelineProgress(running);
+    expect(hint).toBeTruthy();
+    expect(hint).not.toMatch(/_/);
+  });
+
+  it("returns null when ready", () => {
+    const ready = adaptPipeline(
+      doc({
+        status: "done",
+        phases: [
+          "document_understanding",
+          "classification",
+          "analysis_context",
+          "evidence_grading",
+          "knowledge_graph",
+        ],
+      }),
+    );
+    expect(describePipelineProgress(ready)).toBeNull();
   });
 });

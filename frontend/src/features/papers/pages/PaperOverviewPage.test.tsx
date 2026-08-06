@@ -6,6 +6,7 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { PaperOverviewPage } from "./PaperOverviewPage";
+import { UIProvider } from "@/context/UIContext";
 import type { UserFile } from "@/types/api";
 
 afterEach(() => cleanup());
@@ -67,12 +68,14 @@ function renderPage(entry = "/papers/9?tab=narrative") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[entry]}>
-        <Routes>
-          <Route path="/papers/:fileId" element={<PaperOverviewPage />} />
-          <Route path="/papers/:fileId/chat" element={<div>chat-page</div>} />
-        </Routes>
-      </MemoryRouter>
+      <UIProvider>
+        <MemoryRouter initialEntries={[entry]}>
+          <Routes>
+            <Route path="/papers/:fileId" element={<PaperOverviewPage />} />
+            <Route path="/papers/:fileId/chat" element={<div>chat-page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </UIProvider>
     </QueryClientProvider>,
   );
 }

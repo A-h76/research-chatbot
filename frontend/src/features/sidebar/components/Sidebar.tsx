@@ -407,7 +407,14 @@ export function SidebarContents({
                 const status = researchStatus(p.id, files);
                 const count = paperCountFor(p.id, files);
                 const active =
-                  activeResearchId === p.id && path.startsWith("/projects/");
+                  activeResearchId === p.id &&
+                  (path.startsWith("/projects/") ||
+                    path.startsWith("/papers/") ||
+                    path.startsWith("/writing") ||
+                    path.startsWith("/library") ||
+                    path.startsWith("/files") ||
+                    path.startsWith("/c/") ||
+                    path.startsWith("/chat"));
                 return (
                   <div key={p.id}>
                     <button

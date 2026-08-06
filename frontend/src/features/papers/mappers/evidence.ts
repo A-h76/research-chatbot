@@ -159,9 +159,9 @@ export function humanizeEvidenceSkipReason(raw: string | undefined): {
   const text = (raw ?? "").trim().toLowerCase();
   if (!text) {
     return {
-      title: "No formal evidence grade",
+      title: "Not Assessed",
       detail:
-        "Dhund did not produce a formal evidence grade for this paper. Chat and extract tools can still use the manuscript text.",
+        "No statistical evidence extraction or formal evidence grade is available for this paper yet. Chat and extract tools can still use the manuscript text.",
     };
   }
   if (
@@ -172,14 +172,14 @@ export function humanizeEvidenceSkipReason(raw: string | undefined): {
     text.includes("narrative reviews, editorials")
   ) {
     return {
-      title: "No formal evidence grade",
+      title: "Not Assessed",
       detail:
-        "Formal evidence grading (study quality, GRADE-style frameworks) was not run for this document type. That is common for narrative reviews, editorials, and papers outside clinical-trial or systematic-review pipelines.",
+        "No statistical evidence extraction is currently supported for this document type. Formal grading (study quality, GRADE-style frameworks) is typically reserved for clinical trials and systematic reviews.",
     };
   }
   if (text.includes("skipped") || text.includes("insufficient") || text.includes("too little")) {
     return {
-      title: "Evidence grading unavailable",
+      title: "Not Assessed",
       detail:
         "There was not enough structured evidence signal to produce a reliable grade for this paper.",
     };
@@ -191,7 +191,7 @@ export function humanizeEvidenceSkipReason(raw: string | undefined): {
     .replace(/_/g, " ")
     .trim();
   return {
-    title: "No formal evidence grade",
+    title: "Not Assessed",
     detail: cleaned.charAt(0).toUpperCase() + cleaned.slice(1),
   };
 }

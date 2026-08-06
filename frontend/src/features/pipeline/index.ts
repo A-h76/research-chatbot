@@ -31,6 +31,7 @@ export {
   resolveAiState,
   resolveAiStepper,
   resolveAiStateFromDocument,
+  describePipelineProgress,
   aiStateTokenClass,
   aiStateFromUploadStatus,
   type AiStateId,

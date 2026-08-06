@@ -324,10 +324,17 @@ function OverviewTab({
       )}
 
       {pipeTotal > 0 && (
-        <div className="rounded-md border border-border bg-card px-3 py-2.5 text-xs text-muted-foreground">
-          Pipeline: {pipeline_summary.done} ready · {pipeline_summary.running} running ·{" "}
-          {pipeline_summary.pending} pending
-          {pipeline_summary.failed > 0 ? ` · ${pipeline_summary.failed} failed` : ""}
+        <div className="dhund-enter rounded-md border border-border bg-card px-3 py-2.5 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Corpus pipeline · </span>
+          {pipeline_summary.done} ready
+          {pipeline_summary.running > 0 ? ` · ${pipeline_summary.running} running` : ""}
+          {pipeline_summary.pending > 0 ? ` · ${pipeline_summary.pending} queued` : ""}
+          {pipeline_summary.failed > 0 ? ` · ${pipeline_summary.failed} need attention` : ""}
+          {pipeline_summary.running + pipeline_summary.pending > 0 ? (
+            <span className="mt-1 block text-[11px]">
+              Processing continues in the background — open a paper to watch stage-by-stage progress.
+            </span>
+          ) : null}
         </div>
       )}
 
@@ -366,7 +373,16 @@ function OverviewTab({
           </button>
         </div>
         {recent_papers.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No papers yet — add some from the Papers tab.</p>
+          <div className="rounded-md border border-dashed border-border px-3 py-4">
+            <p className="text-sm text-muted-foreground">No papers yet.</p>
+            <button
+              type="button"
+              onClick={() => onTab("papers")}
+              className="mt-2 text-xs font-medium text-primary hover:underline"
+            >
+              Next · Add papers →
+            </button>
+          </div>
         ) : (
           <div className="space-y-0.5">
             {recent_papers.map((p) => (
@@ -388,7 +404,16 @@ function OverviewTab({
           </button>
         </div>
         {recent_notes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No notes yet.</p>
+          <div className="rounded-md border border-dashed border-border px-3 py-4">
+            <p className="text-sm text-muted-foreground">No notes yet.</p>
+            <button
+              type="button"
+              onClick={() => onTab("notes")}
+              className="mt-2 text-xs font-medium text-primary hover:underline"
+            >
+              Next · Capture a note →
+            </button>
+          </div>
         ) : (
           <div className="space-y-2">
             {recent_notes.map((n) => (
@@ -415,9 +440,18 @@ function OverviewTab({
           </button>
         </div>
         {recent_insights.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            AI insights from project research will appear here.
-          </p>
+          <div className="rounded-md border border-dashed border-border px-3 py-4">
+            <p className="text-sm text-muted-foreground">
+              Insights appear after you run project research over your papers.
+            </p>
+            <button
+              type="button"
+              onClick={() => onTab("research")}
+              className="mt-2 text-xs font-medium text-primary hover:underline"
+            >
+              Next · Open Research →
+            </button>
+          </div>
         ) : (
           <div className="space-y-2">
             {recent_insights.map((i) => (
@@ -461,6 +495,7 @@ export function ProjectDetailPage() {
   }
 
   function openPaper(fileId: number) {
+    if (id != null) setCurrentProjectId(id);
     navigate(`/papers/${fileId}`);
   }
 

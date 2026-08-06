@@ -45,6 +45,22 @@ export const CONFIDENCE_FLOOR = 0.4;
 
 export type ConfidenceBand = "high" | "medium" | "low" | "none";
 
+/** Researcher-facing status for a Research Profile decision row. */
+export type ProfileDecisionStatus = "identified" | "not_applicable" | "not_identified";
+
+/** Document types where a clinical/empirical study design is usually not expected. */
+const DOC_TYPES_WITHOUT_STUDY_DESIGN = new Set([
+  "editorial",
+  "letter",
+  "white_paper",
+  "book_chapter",
+  "technical_report",
+  "narrative_review",
+]);
+
+/** Domains where “study design” often means model/system work, not clinical design. */
+const COMPUTATIONAL_DOMAINS = new Set(["ai_ml", "computer_science"]);
+
 export function confidenceBand(n: number | undefined): ConfidenceBand {
   if (n == null || n <= 0) return "none";
   if (n >= 0.7) return "high";
@@ -65,6 +81,16 @@ export function formatConfidenceBand(band: ConfidenceBand): string {
   }
 }
 
+/** Band label that respects Not Applicable (Sprint 3 semantics). */
+export function formatProfileStatusBand(
+  status: ProfileDecisionStatus,
+  band: ConfidenceBand,
+): string {
+  if (status === "not_applicable") return "Not applicable";
+  if (status === "not_identified") return "Not identified";
+  return formatConfidenceBand(band);
+}
+
 /** Known short / acronym labels — formatting only, never invents a classification. */
 const LABEL_DISPLAY: Record<string, string> = {
   rct: "RCT",
@@ -83,6 +109,17 @@ const LABEL_DISPLAY: Record<string, string> = {
   meta_analysis: "Meta-Analysis",
   clinical_guideline: "Clinical Guideline",
   research_article: "Research Article",
+  case_report: "Case Report",
+  case_control: "Case–Control",
+  cross_sectional: "Cross-Sectional",
+  mixed_methods: "Mixed Methods",
+  bench_experiment: "Bench Experiment",
+  computer_science: "Computer Science",
+  cyber_security: "Cybersecurity",
+  social_science: "Social Science",
+  white_paper: "White Paper",
+  technical_report: "Technical Report",
+  book_chapter: "Book Chapter",
 };
 
 export function formatClassificationLabel(raw: string): string {
@@ -124,15 +161,69 @@ export function isConfidentDecision(d: ClassificationDecisionView): boolean {
   return true;
 }
 
-/** Primary label for Research Profile rows — never "Unknown". */
-export function profileDecisionLabel(d: ClassificationDecisionView): string {
-  if (isConfidentDecision(d)) return d.displayLabel ?? formatClassificationLabel(d.label!);
+function peerLabel(
+  peers: ClassificationDecisionView[],
+  family: DecisionFamilyKey,
+): string | undefined {
+  const peer = peers.find((p) => p.family === family);
+  if (!peer || !isConfidentDecision(peer)) return undefined;
+  return peer.label?.toLowerCase();
+}
+
+/**
+ * Distinguish “we looked and it does not apply” from “we could not tell”.
+ * Uses sibling decisions (document type / domain) for context — never invents labels.
+ */
+export function profileDecisionStatus(
+  d: ClassificationDecisionView,
+  peers: ClassificationDecisionView[] = [],
+): ProfileDecisionStatus {
+  if (isConfidentDecision(d)) return "identified";
+
+  if (d.family === "reporting_guideline" && /^none$/i.test(d.label ?? "")) {
+    return "not_applicable";
+  }
+
+  if (d.family === "study_design") {
+    if (/^(none|n\/a)$/i.test(d.label ?? "")) return "not_applicable";
+
+    const docType = peerLabel(peers, "document_type");
+    if (docType && DOC_TYPES_WITHOUT_STUDY_DESIGN.has(docType)) {
+      return "not_applicable";
+    }
+
+    const domain = peerLabel(peers, "domain");
+    if (
+      domain &&
+      COMPUTATIONAL_DOMAINS.has(domain) &&
+      (!d.label || /^(unknown|none|null|n\/a)$/i.test(d.label))
+    ) {
+      return "not_applicable";
+    }
+  }
+
+  return "not_identified";
+}
+
+/** Primary label for Research Profile rows — never bare "Unknown". */
+export function profileDecisionLabel(
+  d: ClassificationDecisionView,
+  peers: ClassificationDecisionView[] = [],
+): string {
+  const status = profileDecisionStatus(d, peers);
+  if (status === "identified") {
+    return d.displayLabel ?? formatClassificationLabel(d.label!);
+  }
+  if (status === "not_applicable") return "Not applicable";
   return "Not identified";
 }
 
 /** Weak backend guess shown only inside Why / Details — not as the hero label. */
-export function profilePossibleLabel(d: ClassificationDecisionView): string | undefined {
-  if (isConfidentDecision(d)) return undefined;
+export function profilePossibleLabel(
+  d: ClassificationDecisionView,
+  peers: ClassificationDecisionView[] = [],
+): string | undefined {
+  if (profileDecisionStatus(d, peers) !== "not_identified") return undefined;
   if (d.label && !/^(unknown|none|null|n\/a)$/i.test(d.label)) {
     return d.displayLabel ?? formatClassificationLabel(d.label);
   }
@@ -150,25 +241,50 @@ export function humanizeEvidenceLine(line: string): string {
 }
 
 /** Researcher-facing summary under each identity row (not raw classifier prose). */
-export function profileDecisionSummary(d: ClassificationDecisionView): string {
-  const confident = isConfidentDecision(d);
+export function profileDecisionSummary(
+  d: ClassificationDecisionView,
+  peers: ClassificationDecisionView[] = [],
+): string {
+  const status = profileDecisionStatus(d, peers);
+  const docType = peerLabel(peers, "document_type");
+  const domain = peerLabel(peers, "domain");
+
   switch (d.family) {
     case "domain":
-      return confident
-        ? "Detected from terminology and subject matter throughout the manuscript."
-        : "No research domain could be confidently detected.";
+      if (status === "identified") {
+        return "Detected from terminology and subject matter throughout the manuscript.";
+      }
+      return "No research domain could be confidently detected.";
     case "document_type":
-      return confident
-        ? "How this manuscript presents itself as a scholarly document."
-        : "Document type could not be confidently identified.";
+      if (status === "identified") {
+        return "How this manuscript presents itself as a scholarly document.";
+      }
+      return "Document type could not be confidently identified.";
     case "study_design":
-      return confident
-        ? "How the work appears to be organized methodologically."
-        : "No study design could be confidently detected.";
+      if (status === "identified") {
+        return "How the work appears to be organized methodologically.";
+      }
+      if (status === "not_applicable") {
+        if (domain && COMPUTATIONAL_DOMAINS.has(domain)) {
+          return "This paper proposes and evaluates a computational model or system rather than following a clinical or observational study design.";
+        }
+        if (docType === "narrative_review") {
+          return "Narrative reviews synthesize literature and typically do not report a primary empirical study design.";
+        }
+        if (docType === "editorial" || docType === "letter") {
+          return "Editorials and letters are commentary, not empirical study reports.";
+        }
+        return "A formal study design is not expected for this document type.";
+      }
+      return "No study design could be confidently detected.";
     case "reporting_guideline":
-      return confident
-        ? "Reporting standard associated with this document type when present."
-        : "No reporting guideline identified — common for many review and narrative papers.";
+      if (status === "identified") {
+        return "Reporting standard associated with this document type when present.";
+      }
+      if (status === "not_applicable") {
+        return "No reporting guideline is expected for this document type.";
+      }
+      return "A reporting guideline may apply, but none could be confidently detected.";
   }
 }
 
@@ -251,8 +367,16 @@ export function buildProfileSummary(view: ClassificationViewModel): string | nul
   }
 
   const gaps: string[] = [];
-  if (!design) gaps.push("no study design");
-  if (!reporting) gaps.push("no reporting guideline");
+  const designDecision = byFamily.get("study_design");
+  const reportingDecision = byFamily.get("reporting_guideline");
+  const designStatus = designDecision
+    ? profileDecisionStatus(designDecision, view.decisions)
+    : "not_identified";
+  const reportingStatus = reportingDecision
+    ? profileDecisionStatus(reportingDecision, view.decisions)
+    : "not_identified";
+  if (!design && designStatus === "not_identified") gaps.push("no study design");
+  if (!reporting && reportingStatus === "not_identified") gaps.push("no reporting guideline");
   if (gaps.length > 0 && (docType || domain || design || topics.length > 0)) {
     const expected =
       docType && /review|guideline|editorial|opinion|perspective/i.test(docType)
@@ -263,6 +387,9 @@ export function buildProfileSummary(view: ClassificationViewModel): string | nul
     sentences.push(
       `${gapPhrase.charAt(0).toUpperCase()}${gapPhrase.slice(1)} ${verb} detected${expected}.`,
     );
+  }
+  if (designStatus === "not_applicable" && (docType || domain)) {
+    sentences.push("A formal clinical study design is not applicable here.");
   }
   if (reporting && design) {
     sentences.push(`Reporting appears aligned with ${reporting}.`);

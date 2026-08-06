@@ -9,6 +9,8 @@ import {
   humanizeEvidenceLine,
   isConfidentDecision,
   profileDecisionLabel,
+  profileDecisionStatus,
+  profileDecisionSummary,
   orderedProfileDecisions,
   buildProfileSummary,
   buildResearchContextLine,
@@ -192,11 +194,45 @@ describe("Research Profile presentation helpers", () => {
     const view = mapClassification(SAMPLE_CLASSIFICATION)!;
     const domain = view.decisions.find((d) => d.family === "domain")!;
     expect(isConfidentDecision(domain)).toBe(false);
-    expect(profileDecisionLabel(domain)).toBe("Not identified");
+    expect(profileDecisionLabel(domain, view.decisions)).toBe("Not identified");
 
     const docType = view.decisions.find((d) => d.family === "document_type")!;
     expect(isConfidentDecision(docType)).toBe(true);
-    expect(profileDecisionLabel(docType)).toBe("Research Article");
+    expect(profileDecisionLabel(docType, view.decisions)).toBe("Research Article");
+  });
+
+  it("marks study design Not applicable for AI/ML papers without a design", () => {
+    const view = mapClassification({
+      document_type: { label: "research_article", confidence: 0.8, evidence: [] },
+      domain: { label: "ai_ml", confidence: 0.9, evidence: [] },
+      study_design: { label: "unknown", confidence: 0, evidence: [] },
+      reporting_guideline: { label: "none", confidence: 1, evidence: [] },
+      detected_keywords: ["transformer"],
+      candidate_labels: {},
+      warnings: [],
+    })!;
+    const design = view.decisions.find((d) => d.family === "study_design")!;
+    const reporting = view.decisions.find((d) => d.family === "reporting_guideline")!;
+    expect(profileDecisionStatus(design, view.decisions)).toBe("not_applicable");
+    expect(profileDecisionLabel(design, view.decisions)).toBe("Not applicable");
+    expect(profileDecisionSummary(design, view.decisions)).toMatch(/computational model/i);
+    expect(profileDecisionStatus(reporting, view.decisions)).toBe("not_applicable");
+    expect(profileDecisionLabel(reporting, view.decisions)).toBe("Not applicable");
+  });
+
+  it("marks study design Not applicable for editorials", () => {
+    const view = mapClassification({
+      document_type: { label: "editorial", confidence: 0.85, evidence: [] },
+      domain: { label: "medicine", confidence: 0.7, evidence: [] },
+      study_design: { label: "unknown", confidence: 0, evidence: [] },
+      reporting_guideline: { label: "unknown", confidence: 0, evidence: [] },
+      detected_keywords: [],
+      candidate_labels: {},
+      warnings: [],
+    })!;
+    const design = view.decisions.find((d) => d.family === "study_design")!;
+    expect(profileDecisionLabel(design, view.decisions)).toBe("Not applicable");
+    expect(profileDecisionSummary(design, view.decisions)).toMatch(/commentary/i);
   });
 
   it("orders identity Domain-first and humanizes evidence chrome", () => {

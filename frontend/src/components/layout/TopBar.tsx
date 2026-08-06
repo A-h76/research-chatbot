@@ -1,30 +1,41 @@
+import { useEffect } from "react";
 import { useLocation, useParams, useNavigate } from "react-router-dom";
 import { Menu, PanelLeftOpen, PanelRight, ChevronRight, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./ThemeToggle";
 import { useUI } from "@/context/UIContext";
 import { useFile } from "@/features/files/useFiles";
-import { useProjects } from "@/features/projects/useProjects";
-import { cn } from "@/lib/utils";
 
 // Dynamic breadcrumb for /papers/:fileId
 function PaperBreadcrumb() {
   const { fileId }    = useParams<{ fileId: string }>();
   const { data: file } = useFile(fileId ? Number(fileId) : null);
   const navigate       = useNavigate();
+  const { setCurrentProjectId } = useUI();
   const title = file?.title || file?.name || "Paper";
   const parent = file?.project;
+  const projectId = parent?.id ?? file?.project_id ?? null;
+
+  // Keep workspace scoped when deep-linking into a paper.
+  useEffect(() => {
+    if (projectId != null) setCurrentProjectId(projectId);
+  }, [projectId, setCurrentProjectId]);
 
   return (
     <div className="flex items-center gap-1.5 text-sm">
-      {parent ? (
+      {parent || projectId != null ? (
         <button
           type="button"
-          onClick={() => navigate(`/projects/${parent.id}`)}
+          onClick={() => {
+            if (projectId != null) {
+              setCurrentProjectId(projectId);
+              navigate(`/projects/${projectId}`);
+            }
+          }}
           className="max-w-[18ch] truncate text-muted-foreground transition-colors hover:text-foreground"
-          title={parent.name}
+          title={parent?.name ?? "Project"}
         >
-          {parent.emoji} {parent.name}
+          {parent ? `${parent.emoji} ${parent.name}` : "Project"}
         </button>
       ) : (
         <button
@@ -60,8 +71,7 @@ function PaperBreadcrumb() {
 ];
 
 export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void }) {
-  const { sidebarCollapsed, setSidebarCollapsed, rightPanelOpen, setRightPanelOpen, currentProjectId } = useUI();
-  const { data: projects = [] } = useProjects();
+  const { sidebarCollapsed, setSidebarCollapsed, rightPanelOpen, setRightPanelOpen } = useUI();
   const location = useLocation();
   const path     = location.pathname;
 
@@ -76,15 +86,6 @@ export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void 
   const isPaperPage    = path.startsWith("/papers/") && !path.includes("/chat");
   const isPaperChat    = path.startsWith("/papers/") && path.includes("/chat");
   const isChat         = path.startsWith("/c/") || path.startsWith("/chat") || isPaperChat;
-  const isLibraryScope =
-    path.startsWith("/library") ||
-    path.startsWith("/files") ||
-    path.startsWith("/papers/");
-
-  // Active project name shown as a subtle chip when library or chat is scoped
-  const activeProject = currentProjectId
-    ? projects.find((p) => p.id === currentProjectId)
-    : null;
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
@@ -113,17 +114,6 @@ export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void 
         staticTitle && (
           <h1 className="ml-1 text-[13px] font-medium text-muted-foreground">{staticTitle}</h1>
         )
-      )}
-
-      {/* Project scope chip */}
-      {activeProject && (isLibraryScope || isChat) && (
-        <span className={cn(
-          "hidden sm:inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground",
-          "ml-2",
-        )}>
-          {activeProject.emoji}
-          <span className="max-w-[12ch] truncate">{activeProject.name}</span>
-        </span>
       )}
 
       <div className="ml-auto flex items-center gap-1">

@@ -412,8 +412,34 @@
   .ai-state-pulse {
     animation: ai-state-pulse 1.2s ease-in-out infinite;
   }
+
+  /* Sprint 4 — calm entrance for empty / chrome surfaces */
+  @keyframes dhund-enter {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .dhund-enter {
+    animation: dhund-enter 0.35s ease-out both;
+  }
+
+  @keyframes dhund-progress-indeterminate {
+    0% { transform: translateX(-120%); }
+    100% { transform: translateX(220%); }
+  }
+  .dhund-progress-indeterminate {
+    animation: dhund-progress-indeterminate 1.4s ease-in-out infinite;
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .ai-state-pulse {
+    .ai-state-pulse,
+    .dhund-enter,
+    .dhund-progress-indeterminate {
       animation: none;
     }
   }

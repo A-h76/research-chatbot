@@ -29,7 +29,7 @@ export function ConfidenceBandBadge({
       : BAND_COPY[normalized]
     : band
       ? String(band)
-      : "Unknown confidence";
+      : "Not assessed";
 
   return (
     <span

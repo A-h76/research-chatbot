@@ -100,6 +100,53 @@ export function runningHeadline(d: PipelineDerived): AiStateResolved {
 }
 
 /**
+ * Researcher-facing progress line — what is happening *now*, not phase ids.
+ * Returns null when idle/ready (no chrome needed).
+ */
+export function describePipelineProgress(
+  derived?: PipelineDerived | null,
+  metaStatus?: string | null,
+): string | null {
+  if (derived?.isError) return null;
+
+  if (derived && !derived.isAbsent) {
+    if (derived.isQueued) {
+      return "In queue — analysis starts shortly. You can keep browsing this paper.";
+    }
+    if (derived.isRunning) {
+      const next = derived.remaining[0];
+      switch (next) {
+        case undefined:
+        case "document_understanding":
+          return "Extracting structure, abstract, and method signals…";
+        case "classification":
+        case "analysis_context":
+          return "Building research profile (domain, document type, study design)…";
+        case "medical_understanding":
+          return "Extracting entities and scientific signals…";
+        case "evidence_grading":
+          return "Assessing evidence quality where applicable…";
+        case "knowledge_graph":
+          return "Linking concepts into a knowledge graph…";
+        case "prompt_assembly":
+          return "Preparing chat context from extracted evidence…";
+        default:
+          return "Analysis in progress…";
+      }
+    }
+    return null;
+  }
+
+  if (metaStatus === "pending") {
+    return "Queued for analysis — tabs fill in as each stage completes.";
+  }
+  if (metaStatus === "running") {
+    return "Analysis is running — this tab will update when its stage finishes.";
+  }
+  return null;
+}
+
+/**
  * Composite headline state for badges (Library / Dashboard / Project rows).
  */
 export function resolveAiState(input: ResolveAiStateInput): AiStateResolved {

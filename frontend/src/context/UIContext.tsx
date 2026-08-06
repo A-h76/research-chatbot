@@ -14,6 +14,7 @@ export const SIDEBAR_SNAP_COLLAPSE = 120;
 
 const SIDEBAR_WIDTH_KEY = "dhund.sidebarWidth";
 const SIDEBAR_COLLAPSED_KEY = "dhund.sidebarCollapsed";
+const CURRENT_PROJECT_KEY = "dhund.currentProjectId";
 
 function clampExpandedWidth(n: number): number {
   return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(n)));
@@ -36,6 +37,17 @@ function readStoredCollapsed(): boolean {
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
   } catch {
     return false;
+  }
+}
+
+function readStoredProjectId(): number | null {
+  try {
+    const raw = localStorage.getItem(CURRENT_PROJECT_KEY);
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
   }
 }
 
@@ -65,7 +77,17 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsedState] = useState(readStoredCollapsed);
   const [sidebarWidth, setSidebarWidthState] = useState(readStoredSidebarWidth);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [currentProjectId, setCurrentProjectId] = useState<number | null>(null);
+  const [currentProjectId, setCurrentProjectIdState] = useState<number | null>(readStoredProjectId);
+
+  const setCurrentProjectId = (id: number | null) => {
+    setCurrentProjectIdState(id);
+    try {
+      if (id == null) localStorage.removeItem(CURRENT_PROJECT_KEY);
+      else localStorage.setItem(CURRENT_PROJECT_KEY, String(id));
+    } catch {
+      /* ignore */
+    }
+  };
   const [activeView, setActiveView] = useState<ActiveView>("chat");
   const [defaultModel, setDefaultModelState] = useState<string | null>(
     () => localStorage.getItem("defModel"),

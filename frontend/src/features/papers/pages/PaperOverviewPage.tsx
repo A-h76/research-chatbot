@@ -14,6 +14,7 @@ import { isTypingTarget } from "@/lib/keyboard";
 import { useFile, usePaperAnalysis, usePatchFile, useAnalyzeDocument } from "@/features/files/useFiles";
 import { useCitationFromPaper } from "@/features/citations/useCitations";
 import { useCreateConversation } from "@/features/chat/hooks/useConversation";
+import { useUI } from "@/context/UIContext";
 import type { MetadataInputValue } from "@/features/analysis/components/MetadataInput";
 import { analysisToMarkdown } from "@/features/analysis/toAnalysisMarkdown";
 import { toast } from "@/components/common/Toast";
@@ -190,6 +191,7 @@ export function PaperOverviewPage() {
     fileContentHash: null,
     metaStatus: file?.meta_status ?? null,
   });
+  const { currentProjectId, setCurrentProjectId } = useUI();
   const patchFile = usePatchFile();
   const citationFromPaper = useCitationFromPaper();
   const analyzeDocument = useAnalyzeDocument();
@@ -197,6 +199,12 @@ export function PaperOverviewPage() {
   const qc = useQueryClient();
   const [fulltextBusy, setFulltextBusy] = useState(false);
   const autoRetryDone = useRef<number | null>(null);
+
+  const fileProjectId = file?.project?.id ?? file?.project_id ?? null;
+
+  useEffect(() => {
+    if (fileProjectId != null) setCurrentProjectId(fileProjectId);
+  }, [fileProjectId, setCurrentProjectId]);
 
   const needsFullText =
     !!file &&
@@ -360,9 +368,13 @@ export function PaperOverviewPage() {
         <button
           type="button"
           onClick={() => {
-            if (file.project?.id) navigate(`/projects/${file.project.id}`);
-            else if (file.project_id) navigate(`/projects/${file.project_id}`);
-            else navigate("/library");
+            const pid = file.project?.id ?? file.project_id ?? currentProjectId;
+            if (pid != null) {
+              setCurrentProjectId(pid);
+              navigate(`/projects/${pid}`);
+            } else {
+              navigate("/library");
+            }
           }}
           className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground transition-colors"
         >
@@ -374,7 +386,7 @@ export function PaperOverviewPage() {
               <span className="text-muted-foreground/60">/</span>
               <span>Paper</span>
             </span>
-          ) : file.project_id ? (
+          ) : file.project_id || currentProjectId ? (
             <span>Project / Paper</span>
           ) : (
             "Library"

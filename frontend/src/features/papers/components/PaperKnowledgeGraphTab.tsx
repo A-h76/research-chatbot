@@ -1,9 +1,10 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AlertCircle, Focus, Network, Search, ZoomIn, ZoomOut } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/common/EmptyState";
 import { AiStateBadge, isPipelineError, usePipeline, usePipelinePhase } from "@/features/pipeline";
 import { cn } from "@/lib/utils";
+import { PaperPhaseEmpty } from "./PaperPhaseEmpty";
 import {
   filterKnowledgeGraph,
   formatConfidence,
@@ -744,6 +745,7 @@ export function PaperKnowledgeGraphTab({
   metaStatus?: string | null;
   focusRef?: string | null;
 }) {
+  const navigate = useNavigate();
   const { pipeline, derived, isLoading: pipelineLoading, isError: pipelineError, error: pipelineErr } =
     usePipeline(fileId);
 
@@ -808,14 +810,13 @@ export function PaperKnowledgeGraphTab({
     return (
       <div className="space-y-4">
         <AiStateBadge derived={derived} metaStatus={metaStatus} />
-        <EmptyState
+        <PaperPhaseEmpty
           icon={<Network className="size-8" />}
           title="No knowledge graph yet"
-          description={
-            waitingOnPipeline
-              ? "Knowledge graph construction is still running. This tab will fill in when the phase completes."
-              : "No knowledge_graph result is available for this paper. Run Phase 1 analysis to build the graph."
-          }
+          waiting={waitingOnPipeline}
+          waitingDescription="Knowledge graph construction is still running. Concepts and relationships will appear when ready."
+          idleDescription="No knowledge graph for this paper yet. Open Overview to start analysis when this manuscript is ready."
+          onOpenOverview={() => navigate(`/papers/${fileId}`)}
         />
       </div>
     );

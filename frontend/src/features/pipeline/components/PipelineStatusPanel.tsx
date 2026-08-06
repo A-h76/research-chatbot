@@ -1,5 +1,5 @@
 import { PipelineStepper } from "./PipelineStepper";
-import { resolveAiState } from "../aiState";
+import { describePipelineProgress, resolveAiState } from "../aiState";
 import { isPipelineProcessing } from "../isPipelineProcessing";
 import type { PipelineDerived } from "../types";
 import { useState } from "react";
@@ -50,13 +50,16 @@ export function PipelineStatusPanel({
   const expanded = showExpandedByDefault ? true : open;
   const headline = resolveAiState({ derived, metaStatus });
   const ago = formatProcessedAgo(updatedAt);
+  const progressHint = showExpandedByDefault
+    ? describePipelineProgress(derived, metaStatus)
+    : null;
 
   if (showExpandedByDefault) {
     return (
       <section
         aria-label="Pipeline progress"
         className={cn(
-          "rounded-lg border border-border bg-card",
+          "dhund-enter rounded-lg border border-border bg-card",
           compact ? "px-3 py-2.5" : "px-3 py-3.5 sm:px-4",
           className,
         )}
@@ -72,7 +75,20 @@ export function PipelineStatusPanel({
             {derived.isError ? " — needs attention" : "…"}
           </p>
         )}
+        {!compact && !derived.isError && (
+          <p className="mb-2.5 text-[13px] font-medium text-foreground">
+            {headline.label}
+            {progressHint ? (
+              <span className="mt-0.5 block text-[12px] font-normal text-muted-foreground">
+                {progressHint}
+              </span>
+            ) : null}
+          </p>
+        )}
         <PipelineStepper derived={derived} metaStatus={metaStatus} />
+        {compact && progressHint && !derived.isError && (
+          <p className="mt-2 text-[11px] text-muted-foreground">{progressHint}</p>
+        )}
         {derived.isError && derived.errors.length > 0 && (
           <p className="mt-2 text-xs text-sem-error" role="alert">
             {derived.errors[0]}

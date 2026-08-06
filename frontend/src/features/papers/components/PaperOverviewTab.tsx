@@ -13,7 +13,7 @@ import type { UserFile } from "@/types/api";
 import { useNotes } from "@/features/notes/useNotes";
 import { usePipeline, usePipelinePhase } from "@/features/pipeline";
 import { mapStructure } from "../mappers/structure";
-import { mapClassification } from "../mappers/classification";
+import { mapClassification, profileDecisionLabel } from "../mappers/classification";
 import {
   enrichEntitiesWithScientificProfile,
   mapEntities,
@@ -148,6 +148,42 @@ export function PaperOverviewTab({
         : entities.summary.interventionCount + entities.summary.outcomeCount)
     : null;
 
+  const peers = classification?.decisions ?? [];
+  const studyTypeLabel = studyType ? profileDecisionLabel(studyType, peers) : null;
+  const studyDesignLabel = studyDesign ? profileDecisionLabel(studyDesign, peers) : null;
+  const domainLabel = domain ? profileDecisionLabel(domain, peers) : null;
+  const studyTypeShow =
+    studyTypeLabel && studyTypeLabel !== "Not identified" && studyTypeLabel !== "Not applicable"
+      ? studyTypeLabel
+      : null;
+  const domainShow =
+    domainLabel && domainLabel !== "Not identified" && domainLabel !== "Not applicable"
+      ? domainLabel
+      : null;
+  const studyDesignShow =
+    studyDesignLabel &&
+    studyDesignLabel !== "Not identified" &&
+    studyDesignLabel !== "Not applicable"
+      ? studyDesignLabel
+      : null;
+
+  const evidenceSkipped = Boolean(evidence?.skipped);
+  const evidenceGrade =
+    evidence?.overallGrade?.displayValue ??
+    (evidence?.studyQuality && evidence.studyQuality !== "unknown"
+      ? formatLabel(evidence.studyQuality)
+      : null);
+  const evidenceLabel = evidenceSkipped
+    ? "Not Assessed"
+    : evidenceGrade ?? (evidence?.hasContent ? "Not Assessed" : null);
+  const evidenceHint = evidenceSkipped
+    ? evidence?.skipReason ?? "Open Evidence for why"
+    : evidence?.summaryConfidence != null
+      ? formatConfidence(evidence.summaryConfidence)
+      : evidenceGrade
+        ? undefined
+        : evidence?.skipReason ?? "No formal grade yet";
+
   return (
     <div className="space-y-5">
       {/* 1. StatStrip — scan first */}
@@ -158,25 +194,15 @@ export function PaperOverviewTab({
         </div>
       ) : (
         <PaperStatStrip
-          evidenceLabel={
-            evidence?.overallGrade?.displayValue ??
-            (evidence?.studyQuality ? formatLabel(evidence.studyQuality) : null)
-          }
-          evidenceHint={
-            evidence?.summaryConfidence != null
-              ? formatConfidence(evidence.summaryConfidence)
-              : evidence?.studyQuality
-                ? formatLabel(evidence.studyQuality)
-                : null
-          }
+          evidenceLabel={evidenceLabel}
+          evidenceHint={evidenceHint}
           entityCount={entityCount}
           entitySkipped={Boolean(entities?.skipped && !entities.summary.scientificEntityCount)}
           graphNodes={graph && !graph.skipped ? graph.summary.nodeCount : null}
           graphEdges={graph && !graph.skipped ? graph.summary.edgeCount : null}
-          classificationLabel={domain?.displayLabel ?? studyType?.displayLabel ?? null}
+          classificationLabel={domainShow ?? studyTypeShow ?? null}
           classificationHint={
-            [studyDesign?.displayLabel, studyType?.displayLabel].filter(Boolean).join(" · ") ||
-            null
+            [studyDesignShow, studyTypeShow].filter(Boolean).join(" · ") || null
           }
           onJump={onJumpTab}
         />
@@ -209,15 +235,13 @@ export function PaperOverviewTab({
       </div>
 
       {/* 3. Summary */}
-      {(abstractText || studyType || domain) && (
+      {(abstractText || studyTypeShow || domainShow) && (
         <section aria-labelledby="overview-summary-heading">
           <SectionLabel>Summary</SectionLabel>
           <div className="rounded-lg border border-border bg-card px-4 py-3 space-y-2">
-            {(studyType || domain) && (
+            {(studyTypeShow || domainShow) && (
               <p className="text-[13px] text-muted-foreground">
-                {[studyType?.displayLabel, domain?.displayLabel, studyDesign?.displayLabel]
-                  .filter(Boolean)
-                  .join(" · ")}
+                {[studyTypeShow, domainShow, studyDesignShow].filter(Boolean).join(" · ")}
               </p>
             )}
             {abstractText ? (
@@ -275,54 +299,81 @@ export function PaperOverviewTab({
           </section>
         )}
 
-      {/* 3c. Methodology hint (2.2) */}
+      {/* 3c. Method + Evaluation hints (Sprint 3) */}
       {structure?.methodologyProfile?.hasContent && (
-        <section aria-labelledby="overview-methodology-heading">
-          <SectionLabel>Methodology</SectionLabel>
-          <div className="space-y-2 rounded-lg border border-border bg-card px-4 py-3">
-            {structure.methodologyProfile.studyDesign ? (
-              <p className="text-[13px] leading-relaxed text-foreground/90">
-                <span className="font-medium text-muted-foreground">Design · </span>
-                {structure.methodologyProfile.studyDesign.label?.replace(/_/g, " ") ||
-                  structure.methodologyProfile.studyDesign.text}
-              </p>
-            ) : null}
-            {structure.methodologyProfile.sampleSize ? (
-              <p className="text-[13px] leading-relaxed text-foreground/90">
-                <span className="font-medium text-muted-foreground">Sample · </span>
-                {structure.methodologyProfile.sampleSize.text}
-              </p>
-            ) : null}
-            {structure.methodologyProfile.population ? (
-              <p className="text-[13px] leading-relaxed text-foreground/90">
-                <span className="font-medium text-muted-foreground">Population · </span>
-                {structure.methodologyProfile.population.text}
-              </p>
-            ) : null}
-            {structure.methodologyProfile.dataset && !structure.methodologyProfile.population ? (
-              <p className="text-[13px] leading-relaxed text-foreground/90">
-                <span className="font-medium text-muted-foreground">Dataset · </span>
-                {structure.methodologyProfile.dataset.text}
-              </p>
-            ) : null}
-            {structure.methodologyProfile.metrics.slice(0, 3).length > 0 ? (
-              <p className="text-[13px] leading-relaxed text-foreground/90">
-                <span className="font-medium text-muted-foreground">Metrics · </span>
-                {structure.methodologyProfile.metrics
-                  .slice(0, 3)
-                  .map((m) => m.text)
-                  .join(", ")}
-              </p>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => onJumpTab("structure")}
-              className="text-[12px] text-primary hover:underline"
-            >
-              Open Structure →
-            </button>
-          </div>
-        </section>
+        <>
+          {(structure.methodologyProfile.studyDesign ||
+            structure.methodologyProfile.sampleSize ||
+            structure.methodologyProfile.population ||
+            structure.methodologyProfile.dataset ||
+            structure.methodologyProfile.experimentalSetup) && (
+            <section aria-labelledby="overview-method-heading">
+              <SectionLabel>Method</SectionLabel>
+              <div className="space-y-2 rounded-lg border border-border bg-card px-4 py-3">
+                {structure.methodologyProfile.studyDesign ? (
+                  <p className="text-[13px] leading-relaxed text-foreground/90">
+                    <span className="font-medium text-muted-foreground">Design · </span>
+                    {structure.methodologyProfile.studyDesign.label?.replace(/_/g, " ") ||
+                      structure.methodologyProfile.studyDesign.text}
+                  </p>
+                ) : null}
+                {structure.methodologyProfile.sampleSize ? (
+                  <p className="text-[13px] leading-relaxed text-foreground/90">
+                    <span className="font-medium text-muted-foreground">Sample · </span>
+                    {structure.methodologyProfile.sampleSize.text}
+                  </p>
+                ) : null}
+                {structure.methodologyProfile.population ? (
+                  <p className="text-[13px] leading-relaxed text-foreground/90">
+                    <span className="font-medium text-muted-foreground">Population · </span>
+                    {structure.methodologyProfile.population.text}
+                  </p>
+                ) : null}
+                {structure.methodologyProfile.dataset &&
+                !structure.methodologyProfile.population ? (
+                  <p className="text-[13px] leading-relaxed text-foreground/90">
+                    <span className="font-medium text-muted-foreground">Dataset · </span>
+                    {structure.methodologyProfile.dataset.text}
+                  </p>
+                ) : null}
+                {structure.methodologyProfile.experimentalSetup ? (
+                  <p className="text-[13px] leading-relaxed text-foreground/90">
+                    <span className="font-medium text-muted-foreground">Setup · </span>
+                    {structure.methodologyProfile.experimentalSetup.text}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => onJumpTab("structure")}
+                  className="text-[12px] text-primary hover:underline"
+                >
+                  Open Structure →
+                </button>
+              </div>
+            </section>
+          )}
+          {structure.methodologyProfile.metrics.length > 0 && (
+            <section aria-labelledby="overview-evaluation-heading">
+              <SectionLabel>Evaluation</SectionLabel>
+              <div className="space-y-2 rounded-lg border border-border bg-card px-4 py-3">
+                <p className="text-[13px] leading-relaxed text-foreground/90">
+                  <span className="font-medium text-muted-foreground">Metrics · </span>
+                  {structure.methodologyProfile.metrics
+                    .slice(0, 4)
+                    .map((m) => m.label?.replace(/_/g, " ") || m.text)
+                    .join(", ")}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onJumpTab("structure")}
+                  className="text-[12px] text-primary hover:underline"
+                >
+                  Open Structure →
+                </button>
+              </div>
+            </section>
+          )}
+        </>
       )}
 
       {/* 3d. Statistical findings hint (2.3) */}

@@ -1,9 +1,10 @@
 import { useDeferredValue, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AlertCircle, Search, Tags } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/common/EmptyState";
 import { AiStateBadge, isPipelineError, usePipeline, usePipelinePhase } from "@/features/pipeline";
 import { cn } from "@/lib/utils";
+import { PaperPhaseEmpty } from "./PaperPhaseEmpty";
 import {
   enrichEntitiesWithScientificProfile,
   filterClinicalGroups,
@@ -520,6 +521,7 @@ export function PaperEntitiesTab({
   metaStatus?: string | null;
   focusRef?: string | null;
 }) {
+  const navigate = useNavigate();
   const [query, setQuery] = useState("");
 
   const { pipeline, derived, isLoading: pipelineLoading, isError: pipelineError, error: pipelineErr } =
@@ -605,14 +607,13 @@ export function PaperEntitiesTab({
     return (
       <div className="space-y-4">
         <AiStateBadge derived={derived} metaStatus={metaStatus} />
-        <EmptyState
+        <PaperPhaseEmpty
           icon={<Tags className="size-8" />}
           title="No entities yet"
-          description={
-            waitingOnPipeline
-              ? "Entity extraction is still running. This tab will fill in when the phase completes."
-              : "No entity signals are available for this paper yet. Run Phase 1 analysis to extract medical and scientific entities."
-          }
+          waiting={waitingOnPipeline}
+          waitingDescription="Entity extraction is still running. Clinical and scientific signals will appear when ready."
+          idleDescription="No entities extracted yet. Open Overview to start analysis when this manuscript is ready."
+          onOpenOverview={() => navigate(`/papers/${fileId}`)}
         />
       </div>
     );

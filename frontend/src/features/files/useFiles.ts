@@ -47,10 +47,6 @@ export function useFile(id: number | null) {
     },
   });
 }
-    queryFn:  () => filesApi.get(id!),
-    enabled:  id !== null,
-  });
-}
 
 export function usePaperAnalysis(fileId: number | null, enabled = true) {
   return useQuery({

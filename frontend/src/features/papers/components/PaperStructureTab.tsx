@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AlertCircle, ChevronDown, ChevronRight, FileText, Layers } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/common/EmptyState";
 import { AiStateBadge, isPipelineError, usePipeline, usePipelinePhase } from "@/features/pipeline";
 import { cn } from "@/lib/utils";
+import { PaperPhaseEmpty } from "./PaperPhaseEmpty";
 import {
   mapStructure,
   type DocumentUnderstandingView,
@@ -125,52 +126,84 @@ function MethodFieldRow({ label, field }: { label: string; field: MethodologyFie
 }
 
 function MethodologyPanel({ profile }: { profile: MethodologyProfileView }) {
+  const hasMethod =
+    Boolean(
+      profile.studyDesign ||
+        profile.population ||
+        profile.sampleSize ||
+        profile.intervention ||
+        profile.controls ||
+        profile.dataset ||
+        profile.experimentalSetup ||
+        profile.variables.length ||
+        profile.codeAvailable ||
+        profile.datasetAvailable,
+    );
+  const hasEvaluation = profile.metrics.length > 0;
+
   return (
-    <section aria-labelledby="structure-methodology-heading" className="space-y-3">
-      <h2 id="structure-methodology-heading">
-        <SectionHeading>Methodology</SectionHeading>
-      </h2>
-      <div className="space-y-4 rounded-xl border border-border bg-card px-4 py-3">
-        <MethodFieldRow label="Study design" field={profile.studyDesign} />
-        <MethodFieldRow label="Population" field={profile.population} />
-        <MethodFieldRow label="Sample size" field={profile.sampleSize} />
-        <MethodFieldRow label="Intervention" field={profile.intervention} />
-        <MethodFieldRow label="Controls" field={profile.controls} />
-        <MethodFieldRow label="Dataset" field={profile.dataset} />
-        <MethodFieldRow label="Experimental setup" field={profile.experimentalSetup} />
-        <FramingList label="Variables" items={profile.variables} />
-        <FramingList label="Metrics" items={profile.metrics} />
-        {(profile.codeAvailable || profile.datasetAvailable) && (
-          <div className="space-y-1.5 border-t border-border pt-3">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Author-stated availability
-            </p>
-            <ul className="list-disc space-y-1 pl-4 text-sm text-foreground/90">
-              {profile.codeAvailable ? (
-                <li>
-                  Code · {profile.codeAvailable.text}
-                  {profile.codeAvailable.source ? (
-                    <span className="ml-1 text-[11px] text-muted-foreground">
-                      ({profile.codeAvailable.source})
-                    </span>
+    <div className="space-y-6">
+      {hasMethod ? (
+        <section aria-labelledby="structure-methodology-heading" className="space-y-3">
+          <h2 id="structure-methodology-heading">
+            <SectionHeading>Method</SectionHeading>
+          </h2>
+          <div className="space-y-4 rounded-xl border border-border bg-card px-4 py-3">
+            <MethodFieldRow label="Study design" field={profile.studyDesign} />
+            <MethodFieldRow label="Population" field={profile.population} />
+            <MethodFieldRow label="Sample size" field={profile.sampleSize} />
+            <MethodFieldRow label="Intervention" field={profile.intervention} />
+            <MethodFieldRow label="Controls" field={profile.controls} />
+            <MethodFieldRow label="Training data / Dataset" field={profile.dataset} />
+            <MethodFieldRow label="Experimental setup" field={profile.experimentalSetup} />
+            <FramingList label="Variables" items={profile.variables} />
+            {(profile.codeAvailable || profile.datasetAvailable) && (
+              <div className="space-y-1.5 border-t border-border pt-3">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Author-stated availability
+                </p>
+                <ul className="list-disc space-y-1 pl-4 text-sm text-foreground/90">
+                  {profile.codeAvailable ? (
+                    <li>
+                      Code · {profile.codeAvailable.text}
+                      {profile.codeAvailable.source ? (
+                        <span className="ml-1 text-[11px] text-muted-foreground">
+                          ({profile.codeAvailable.source})
+                        </span>
+                      ) : null}
+                    </li>
                   ) : null}
-                </li>
-              ) : null}
-              {profile.datasetAvailable ? (
-                <li>
-                  Dataset · {profile.datasetAvailable.text}
-                  {profile.datasetAvailable.source ? (
-                    <span className="ml-1 text-[11px] text-muted-foreground">
-                      ({profile.datasetAvailable.source})
-                    </span>
+                  {profile.datasetAvailable ? (
+                    <li>
+                      Dataset · {profile.datasetAvailable.text}
+                      {profile.datasetAvailable.source ? (
+                        <span className="ml-1 text-[11px] text-muted-foreground">
+                          ({profile.datasetAvailable.source})
+                        </span>
+                      ) : null}
+                    </li>
                   ) : null}
-                </li>
-              ) : null}
-            </ul>
+                </ul>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    </section>
+        </section>
+      ) : null}
+
+      {hasEvaluation ? (
+        <section aria-labelledby="structure-evaluation-heading" className="space-y-3">
+          <h2 id="structure-evaluation-heading">
+            <SectionHeading>Evaluation</SectionHeading>
+          </h2>
+          <div className="space-y-4 rounded-xl border border-border bg-card px-4 py-3">
+            <FramingList label="Metrics" items={profile.metrics} />
+            <p className="text-[11px] text-muted-foreground">
+              Reported evaluation measures — not a Dhund quality judgment.
+            </p>
+          </div>
+        </section>
+      ) : null}
+    </div>
   );
 }
 
@@ -268,7 +301,7 @@ function bandLabel(band: string): string {
     case "weak":
       return "Weak";
     default:
-      return "Unknown";
+      return "Not assessed";
   }
 }
 
@@ -570,6 +603,7 @@ export function PaperStructureTab({
   metaStatus?: string | null;
   focusRef?: string | null;
 }) {
+  const navigate = useNavigate();
   const { pipeline, derived, isLoading: pipelineLoading, isError: pipelineError, error: pipelineErr } =
     usePipeline(fileId, { metaStatus: metaStatus ?? null });
 
@@ -662,14 +696,13 @@ export function PaperStructureTab({
     return (
       <div className="space-y-4">
         <AiStateBadge derived={derived} metaStatus={metaStatus} />
-        <EmptyState
+        <PaperPhaseEmpty
           icon={<Layers className="size-8" />}
           title="No structure yet"
-          description={
-            waitingOnPipeline
-              ? "Document understanding is still running. This tab will fill in when the phase completes."
-              : "No document_understanding result is available for this paper. Run Phase 1 analysis to extract structure."
-          }
+          waiting={waitingOnPipeline}
+          waitingDescription="Document understanding is still running. Abstract, sections, and method signals will appear here."
+          idleDescription="Structure has not been extracted yet. Open Overview to start analysis when this manuscript is ready."
+          onOpenOverview={() => navigate(`/papers/${fileId}`)}
         />
       </div>
     );

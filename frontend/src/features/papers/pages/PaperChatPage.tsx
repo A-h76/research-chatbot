@@ -34,6 +34,12 @@ function PaperHeader({ fileId }: { fileId: number }) {
     metaStatus: file?.meta_status ?? null,
   });
   const navigate = useNavigate();
+  const { setCurrentProjectId } = useUI();
+
+  useEffect(() => {
+    const pid = file?.project?.id ?? file?.project_id ?? null;
+    if (pid != null) setCurrentProjectId(pid);
+  }, [file?.project?.id, file?.project_id, setCurrentProjectId]);
 
   if (!file) return null;
 

@@ -173,8 +173,8 @@ describe("mapEvidence", () => {
     expect(view.skipped).toBe(true);
     expect(view.hasContent).toBe(true);
     expect(view.assessments.publicationBias).toBeUndefined();
-    expect(view.skipTitle).toBe("No formal evidence grade");
-    expect(view.skipReason).toMatch(/narrative reviews/i);
+    expect(view.skipTitle).toBe("Not Assessed");
+    expect(view.skipReason).toMatch(/document type/i);
     expect(view.skipReason).not.toMatch(/routing profile|evidence_grading/i);
   });
 });
@@ -184,7 +184,7 @@ describe("humanizeEvidenceSkipReason", () => {
     const copy = humanizeEvidenceSkipReason(
       "evidence grading not required (routing profile does not include evidence_grading)",
     );
-    expect(copy.title).toBe("No formal evidence grade");
+    expect(copy.title).toBe("Not Assessed");
     expect(copy.detail).not.toMatch(/routing profile|evidence_grading/i);
   });
 });

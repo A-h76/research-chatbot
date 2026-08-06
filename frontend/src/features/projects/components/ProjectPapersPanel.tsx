@@ -8,6 +8,7 @@ import { LibraryUploadQueue } from "@/features/files/components/LibraryUploadQue
 import { useProjectUpload } from "@/features/files/hooks/useProjectUpload";
 import { useFiles } from "@/features/files/useFiles";
 import { AiStateBadge, usePipelines, type AiStateResolved } from "@/features/pipeline";
+import { useUI } from "@/context/UIContext";
 import { cn } from "@/lib/utils";
 import type { UserFile } from "@/types/api";
 
@@ -53,12 +54,23 @@ function PaperListRow({
 /** Lazy-loaded full paper list for a project workspace. */
 export function ProjectPapersPanel({ projectId }: { projectId: number }) {
   const navigate = useNavigate();
+  const { setCurrentProjectId } = useUI();
   const { data, isLoading } = useFiles({
     project_id: projectId,
     kind: "document",
     limit: 500,
     sort: "recent",
   });
+
+  function openPaper(fileId: number) {
+    setCurrentProjectId(projectId);
+    navigate(`/papers/${fileId}`);
+  }
+
+  function openLibrary() {
+    setCurrentProjectId(projectId);
+    navigate("/library");
+  }
   const papers = data?.items;
   const paperItems = papers ?? [];
   const paperIds = useMemo(() => (papers ?? []).map((f) => f.id), [papers]);
@@ -97,7 +109,7 @@ export function ProjectPapersPanel({ projectId }: { projectId: number }) {
           variant="outline"
           size="sm"
           className="gap-1.5 shrink-0"
-          onClick={() => navigate("/library")}
+          onClick={openLibrary}
         >
           <Library className="size-3.5" /> Library
         </Button>
@@ -123,7 +135,12 @@ export function ProjectPapersPanel({ projectId }: { projectId: number }) {
           <div className="flex flex-wrap gap-2">
             {firstId != null && (
               <Button asChild size="sm">
-                <Link to={`/papers/${firstId}`}>Open first paper</Link>
+                <Link
+                  to={`/papers/${firstId}`}
+                  onClick={() => setCurrentProjectId(projectId)}
+                >
+                  Open first paper
+                </Link>
               </Button>
             )}
             <Button size="sm" variant="ghost" onClick={clearFinished}>
@@ -134,8 +151,20 @@ export function ProjectPapersPanel({ projectId }: { projectId: number }) {
       )}
 
       {paperItems.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center text-sm text-muted-foreground">
-          No papers in this project yet. Upload above or assign from the library.
+        <div className="dhund-enter rounded-xl border border-dashed border-border px-6 py-10 text-center">
+          <p className="text-sm font-medium text-foreground">No papers in this project yet</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            Upload PDFs above, or assign existing library papers so chat and writing stay scoped
+            here.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={openLibrary}>
+              <Library className="size-3.5" /> Browse library
+            </Button>
+          </div>
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            Next · Drop files on the upload zone — processing continues in the background.
+          </p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -144,7 +173,7 @@ export function ProjectPapersPanel({ projectId }: { projectId: number }) {
               key={f.id}
               file={f}
               aiState={pipelineById.get(f.id)?.aiState}
-              onClick={() => navigate(`/papers/${f.id}`)}
+              onClick={() => openPaper(f.id)}
             />
           ))}
         </div>
