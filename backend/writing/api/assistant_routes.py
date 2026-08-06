@@ -119,24 +119,39 @@ def create_writing_assistant_blueprint(
         )
         from backend.ai.utility_engine import invoke_prompt_llm
 
-        plan = resolve_writing_assistant_execution(action=action, quality_mode=quality_mode)
-        db = SessionLocal()
         try:
-            registry = get_model_registry(db)
-            content, provenance = invoke_prompt_llm(
-                ai_gateway=ai_gateway,
-                model_registry=registry,
-                prompt=prompt,
-                plan=plan,
-                prompt_version=PROMPT_VERSION_WRITING_ASSISTANT,
-                path="writing_assistant",
-                task="section_generator",
-                user_id=uid,
-                quality_mode=quality_mode,
-                extra={"action": action},
+            plan = resolve_writing_assistant_execution(action=action, quality_mode=quality_mode)
+            db = SessionLocal()
+            try:
+                registry = get_model_registry(db)
+                content, provenance = invoke_prompt_llm(
+                    ai_gateway=ai_gateway,
+                    model_registry=registry,
+                    prompt=prompt,
+                    plan=plan,
+                    prompt_version=PROMPT_VERSION_WRITING_ASSISTANT,
+                    path="writing_assistant",
+                    task="section_generator",
+                    user_id=uid,
+                    quality_mode=quality_mode,
+                    extra={"action": action},
+                )
+            finally:
+                db.close()
+        except Exception as exc:
+            log.exception("writing_assistant failed action=%s", action)
+            detail = str(exc).strip() or "Writing assistant failed."
+            # Never return HTML error pages to the SPA — always JSON.
+            status = 429 if "quota" in detail.lower() or "budget" in detail.lower() else 502
+            return (
+                jsonify(
+                    {
+                        "error": "writing_assistant_failed",
+                        "detail": detail[:400],
+                    }
+                ),
+                status,
             )
-        finally:
-            db.close()
 
         if not isinstance(content, str) or not content.strip():
             return (

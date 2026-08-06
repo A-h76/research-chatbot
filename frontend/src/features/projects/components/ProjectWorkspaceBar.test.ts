@@ -18,12 +18,14 @@ describe("resolveWorkspaceActive", () => {
   it("highlights writing vs evidence focus", () => {
     expect(resolveWorkspaceActive("/writing", "", 1)).toBe("writing");
     expect(resolveWorkspaceActive("/writing", "?focus=evidence", 1)).toBe("evidence");
+    expect(resolveWorkspaceActive("/writing", "?focus=review", 1)).toBe("evidence");
+    expect(resolveWorkspaceActive("/writing", "?tab=export", 1)).toBe("writing");
   });
 
-  it("highlights paper tabs without double-matching papers", () => {
+  it("highlights paper tabs; graph demoted to papers chip", () => {
     expect(resolveWorkspaceActive("/papers/9", "", 1)).toBe("papers");
     expect(resolveWorkspaceActive("/papers/9", "?tab=evidence", 1)).toBe("evidence");
-    expect(resolveWorkspaceActive("/papers/9", "?tab=graph", 1)).toBe("graph");
+    expect(resolveWorkspaceActive("/papers/9", "?tab=graph", 1)).toBe("papers");
     expect(resolveWorkspaceActive("/papers/9/chat", "", 1)).toBe("chat");
   });
 

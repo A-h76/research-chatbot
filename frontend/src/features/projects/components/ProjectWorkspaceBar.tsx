@@ -1,15 +1,19 @@
-import { NavLink, useLocation, useParams } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   FileText,
   Brain,
   PenLine,
   MessageSquare,
-  Share2,
   StickyNote,
 } from "lucide-react";
 import { useUI } from "@/context/UIContext";
 import { useProjects, useProjectHub } from "../useProjects";
+import {
+  projectEvidenceUrl,
+  projectHubUrl,
+  projectWritingUrl,
+} from "../projectWorkspaceNav";
 import { cn } from "@/lib/utils";
 
 export type WorkspaceItemId =
@@ -17,7 +21,6 @@ export type WorkspaceItemId =
   | "evidence"
   | "writing"
   | "chat"
-  | "graph"
   | "notes";
 
 /** True when path is the project hub (`/projects/:id`), not a nested route. */
@@ -36,19 +39,21 @@ export function resolveWorkspaceActive(
   const focus = params.get("focus");
 
   if (path.startsWith("/writing")) {
-    return focus === "evidence" ? "evidence" : "writing";
+    if (focus === "evidence" || focus === "review") return "evidence";
+    if (tab === "export") return "writing";
+    return "writing";
   }
   if (path.startsWith("/papers/")) {
     if (path.includes("/chat")) return "chat";
     if (tab === "evidence") return "evidence";
-    if (tab === "graph") return "graph";
+    // Graph remains on paper ?tab=graph but is not a primary workspace chip.
     return "papers";
   }
   if (path.startsWith("/library") || path.startsWith("/files")) return "papers";
   if (path.startsWith("/c/") || path.startsWith("/chat")) return "chat";
 
   if (path.startsWith(`/projects/${projectId}`)) {
-    // Hub tabs own Papers/Notes/Chat — no workspace chip highlight on hub.
+    // Hub tabs own Papers/Notes/Ask — no workspace chip highlight on hub.
     if (isProjectHubPath(path, projectId)) return null;
     if (tab === "chat") return "chat";
     if (tab === "notes") return "notes";
@@ -67,7 +72,6 @@ export function ProjectWorkspaceBar() {
   const { data: projects = [] } = useProjects();
   const { data: hub } = useProjectHub(currentProjectId);
   const location = useLocation();
-  const { fileId } = useParams<{ fileId?: string }>();
   const path = location.pathname;
   const search = location.search;
   const reduceMotion = useReducedMotion();
@@ -83,10 +87,6 @@ export function ProjectWorkspaceBar() {
   if (!project) return null;
 
   const paperCount = hub?.stats.papers;
-  const paperGraphHref =
-    fileId && path.startsWith("/papers/")
-      ? `/papers/${fileId}?tab=graph`
-      : `/projects/${currentProjectId}?tab=papers`;
 
   const active = resolveWorkspaceActive(path, search, currentProjectId);
   const onHub = isProjectHubPath(path, currentProjectId);
@@ -101,37 +101,31 @@ export function ProjectWorkspaceBar() {
       id: "papers",
       label: paperCount != null ? `Papers (${paperCount})` : "Papers",
       icon: <FileText className="size-3.5" />,
-      to: `/projects/${currentProjectId}?tab=papers`,
+      to: projectHubUrl(currentProjectId, "papers"),
     },
     {
       id: "evidence",
       label: "Evidence",
       icon: <Brain className="size-3.5" />,
-      to: "/writing?focus=evidence",
+      to: projectEvidenceUrl(currentProjectId),
     },
     {
       id: "writing",
       label: "Writing",
       icon: <PenLine className="size-3.5" />,
-      to: "/writing",
+      to: projectWritingUrl(currentProjectId),
     },
     {
       id: "chat",
-      label: "Chat",
+      label: "Ask",
       icon: <MessageSquare className="size-3.5" />,
-      to: `/projects/${currentProjectId}?tab=chat`,
-    },
-    {
-      id: "graph",
-      label: "Knowledge Graph",
-      icon: <Share2 className="size-3.5" />,
-      to: paperGraphHref,
+      to: projectHubUrl(currentProjectId, "chat"),
     },
     {
       id: "notes",
       label: "Notes",
       icon: <StickyNote className="size-3.5" />,
-      to: `/projects/${currentProjectId}?tab=notes`,
+      to: projectHubUrl(currentProjectId, "notes"),
     },
   ];
 

@@ -378,19 +378,14 @@ function DraftTab() {
     setLoading(true);
     setActiveAction(action);
     try {
-      const res = await fetch("/api/writing", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, text: input }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.error || "Failed");
+      const data = await writingApi.transform(action, input);
       setResult(data.result);
       setWarning(data.warning || "");
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Writing assistant failed");
+      toast.error(mapWritingError(e) || (e instanceof Error ? e.message : "Writing assistant failed"));
     } finally {
       setLoading(false);
+      setActiveAction(null);
     }
   }
 
@@ -604,18 +599,22 @@ function DraftTab() {
     return () => window.removeEventListener("keydown", onKey);
   }, [activeId, currentProjectId]);
 
-  /** ⌘K deep-links: ?action=lit-review · ?focus=evidence */
+  /** ⌘K / journey deep-links: ?action=lit-review · ?focus=evidence|review */
   useEffect(() => {
     const action = searchParams.get("action");
     const focusTarget = searchParams.get("focus");
 
-    if (focusTarget === "evidence") {
+    if (focusTarget === "evidence" || focusTarget === "review") {
       const next = new URLSearchParams(searchParams);
       next.delete("focus");
       setSearchParams(next, { replace: true });
       setEvidenceOpen(true);
       window.requestAnimationFrame(() => {
-        document.getElementById("writing-evidence-rail")?.scrollIntoView({
+        const target =
+          focusTarget === "review"
+            ? document.querySelector("[aria-label='Research Reviewer']")
+            : document.getElementById("writing-evidence-rail");
+        (target as HTMLElement | null)?.scrollIntoView({
           behavior: "smooth",
           block: "nearest",
         });

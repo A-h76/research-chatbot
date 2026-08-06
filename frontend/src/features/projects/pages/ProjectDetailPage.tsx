@@ -16,10 +16,20 @@ import {
   HelpCircle,
   Sparkles,
   PenLine,
+  MoreHorizontal,
+  Download,
+  FlaskConical,
+  ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ProjectDialog } from "../components/ProjectDialog";
 import { ProjectQuestionsPanel } from "../components/ProjectQuestionsPanel";
 import { ProjectPapersPanel } from "../components/ProjectPapersPanel";
@@ -28,6 +38,14 @@ import { ProjectInsightsPanel } from "../components/ProjectInsightsPanel";
 import { ProjectResearchConsole } from "../components/ProjectResearchConsole";
 import { ProjectChatPanel } from "../components/ProjectChatPanel";
 import { useProjectHub } from "../useProjects";
+import {
+  deriveProjectWorkspaceStage,
+  projectEvidenceUrl,
+  projectExportUrl,
+  projectReviewUrl,
+  projectWritingUrl,
+  projectWorkspaceStageLabel,
+} from "../projectWorkspaceNav";
 import { useUI } from "@/context/UIContext";
 import { ApiError } from "@/lib/apiClient";
 import { cn, formatDate } from "@/lib/utils";
@@ -52,14 +70,38 @@ export type ProjectTab =
   | "research"
   | "chat";
 
-const TABS: { id: ProjectTab; label: string; icon: React.ReactNode }[] = [
+/** In-page journey panels (primary strip). */
+const JOURNEY_TABS: { id: ProjectTab; label: string; icon: React.ReactNode }[] = [
   { id: "overview", label: "Overview", icon: <FolderKanban className="size-3.5" /> },
   { id: "papers", label: "Papers", icon: <FileText className="size-3.5" /> },
+  { id: "research", label: "Research", icon: <GitCompare className="size-3.5" /> },
+];
+
+type JourneyLinkId = "evidence" | "writing" | "review" | "export";
+
+const JOURNEY_LINKS: { id: JourneyLinkId; label: string; icon: React.ReactNode }[] = [
+  { id: "evidence", label: "Evidence", icon: <Brain className="size-3.5" /> },
+  { id: "writing", label: "Writing", icon: <PenLine className="size-3.5" /> },
+  { id: "review", label: "Review", icon: <FlaskConical className="size-3.5" /> },
+  { id: "export", label: "Export", icon: <Download className="size-3.5" /> },
+];
+
+/** Secondary surfaces — overflow “More”. */
+const MORE_TABS: { id: ProjectTab; label: string; icon: React.ReactNode }[] = [
   { id: "notes", label: "Notes", icon: <StickyNote className="size-3.5" /> },
   { id: "questions", label: "Questions", icon: <HelpCircle className="size-3.5" /> },
-  { id: "insights", label: "Insights & Memory", icon: <Sparkles className="size-3.5" /> },
-  { id: "research", label: "Research", icon: <GitCompare className="size-3.5" /> },
-  { id: "chat", label: "Chat", icon: <MessageSquare className="size-3.5" /> },
+  { id: "insights", label: "Insights", icon: <Sparkles className="size-3.5" /> },
+  { id: "chat", label: "Ask", icon: <MessageSquare className="size-3.5" /> },
+];
+
+const HUB_TAB_IDS: ProjectTab[] = [
+  "overview",
+  "papers",
+  "notes",
+  "questions",
+  "insights",
+  "research",
+  "chat",
 ];
 
 function StatBadge({
@@ -168,7 +210,7 @@ function GettingStartedChecklist({
       title: "Add papers to this project",
       detail: "Upload PDFs or assign papers from your library.",
       action: () => onTab("papers"),
-      label: "Go to Papers",
+      label: "Next · Papers",
     },
     {
       title: "Wait for analysis to finish",
@@ -178,9 +220,9 @@ function GettingStartedChecklist({
     },
     {
       title: "Write an evidence-grounded draft",
-      detail: "Review evidence on the Writing desk, generate a draft, revise, and save.",
+      detail: "Open Evidence, draft on Writing, then Review and Export.",
       action: onWriteDraft,
-      label: "Open Writing",
+      label: "Next · Writing",
     },
   ];
 
@@ -188,7 +230,7 @@ function GettingStartedChecklist({
     <section className="rounded-md border border-border bg-muted/20 p-3.5">
       <h2 className="text-sm font-semibold">Getting started</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Research workflow — complete these steps to unlock project research.
+        Journey: Papers → Research → Evidence → Writing → Review → Export.
       </p>
       <ol className="mt-3 space-y-2.5">
         {steps.map((step, i) => (
@@ -222,12 +264,18 @@ function OverviewTab({
   onTab,
   onWriteDraft,
   onReviewEvidence,
+  onOpenResearch,
+  nextLabel,
+  onNext,
 }: {
   hub: ProjectHub;
   onOpenPaper: (id: number) => void;
   onTab: (t: ProjectTab) => void;
   onWriteDraft: () => void;
   onReviewEvidence: () => void;
+  onOpenResearch: () => void;
+  nextLabel: string;
+  onNext: () => void;
 }) {
   const {
     project,
@@ -255,18 +303,28 @@ function OverviewTab({
       {stats.papers > 0 && (
         <section className="rounded-md border border-border bg-muted/20 p-3.5">
           <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-            What am I working on?
+            Next step
           </p>
-          <h2 className="mt-1 text-sm font-semibold">Literature review workflow</h2>
+          <h2 className="mt-1 text-sm font-semibold">{nextLabel}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Project → Evidence → Draft → Revise → Save — without leaving Dhund.
+            {analysis_summary.ready}/{stats.papers} papers analysed
+            {pipeline_summary.running + pipeline_summary.pending > 0
+              ? ` · ${pipeline_summary.running + pipeline_summary.pending} still processing`
+              : ""}
+            . Continue Evidence → Writing → Review → Export when ready.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" className="gap-1.5" onClick={onWriteDraft}>
-              <PenLine className="size-3.5" /> Write draft
+            <Button size="sm" className="gap-1.5" onClick={onNext}>
+              <ArrowRight className="size-3.5" /> {nextLabel}
             </Button>
             <Button size="sm" variant="outline" className="gap-1.5" onClick={onReviewEvidence}>
-              <CheckCircle2 className="size-3.5" /> Review evidence
+              <Brain className="size-3.5" /> Evidence
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={onWriteDraft}>
+              <PenLine className="size-3.5" /> Writing
+            </Button>
+            <Button size="sm" variant="ghost" className="gap-1.5" onClick={onOpenResearch}>
+              <GitCompare className="size-3.5" /> Research
             </Button>
           </div>
         </section>
@@ -283,6 +341,11 @@ function OverviewTab({
 
       <div className="flex flex-wrap gap-4">
         <StatBadge icon={<FileText className="size-4" />} value={stats.papers} label="papers" />
+        <StatBadge
+          icon={<CheckCircle2 className="size-4" />}
+          value={analysis_summary.ready}
+          label="ready"
+        />
         <StatBadge icon={<StickyNote className="size-4" />} value={stats.notes} label="notes" />
         <StatBadge
           icon={<HelpCircle className="size-4" />}
@@ -465,6 +528,64 @@ function OverviewTab({
   );
 }
 
+function ProjectContextBar({
+  hub,
+  nextLabel,
+  onNext,
+}: {
+  hub: ProjectHub;
+  nextLabel: string;
+  onNext: () => void;
+}) {
+  const { project, stats, analysis_summary } = hub;
+  const stage = deriveProjectWorkspaceStage({
+    papers: stats.papers,
+    analysisReady: analysis_summary.ready,
+    notes: stats.notes,
+    openQuestions: stats.open_questions,
+    insights: stats.insights,
+    chats: stats.chats,
+  });
+  const goal =
+    (project.description?.trim() ||
+      (project.instructions?.trim()
+        ? project.instructions.trim().slice(0, 140) +
+          (project.instructions.trim().length > 140 ? "…" : "")
+        : "")) ||
+    "No project goal set yet — edit to add one.";
+
+  return (
+    <div
+      className="flex flex-col gap-2.5 rounded-md border border-border bg-muted/20 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
+      data-testid="project-context-bar"
+    >
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="rounded border border-border bg-background px-1.5 py-0.5 text-[11px] font-medium text-foreground">
+            {projectWorkspaceStageLabel(stage)}
+          </span>
+          <span className="text-[11px] tabular-nums text-muted-foreground">
+            {analysis_summary.ready}/{stats.papers} ready
+          </span>
+          <span className="text-[11px] tabular-nums text-muted-foreground">
+            · {stats.notes} notes
+          </span>
+          <span className="text-[11px] tabular-nums text-muted-foreground">
+            · {stats.open_questions} questions
+          </span>
+        </div>
+        <p className="truncate text-[12px] text-muted-foreground" title={goal}>
+          {goal}
+        </p>
+      </div>
+      <Button size="sm" className="shrink-0 gap-1.5" onClick={onNext}>
+        <ArrowRight className="size-3.5" />
+        Next · {nextLabel}
+      </Button>
+    </div>
+  );
+}
+
 export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -483,9 +604,11 @@ export function ProjectDetailPage() {
   const tabParam = searchParams.get("tab") as ProjectTab | null;
   const activeTab: ProjectTab = useMemo(() => {
     if (tabParam === "compare") return "research";
-    if (tabParam && TABS.some((t) => t.id === tabParam)) return tabParam;
+    if (tabParam && HUB_TAB_IDS.includes(tabParam)) return tabParam;
     return "overview";
   }, [tabParam]);
+
+  const moreActive = MORE_TABS.some((t) => t.id === activeTab);
 
   function setTab(t: ProjectTab) {
     if (t === "overview") {
@@ -500,23 +623,66 @@ export function ProjectDetailPage() {
     navigate(`/papers/${fileId}`);
   }
 
-  function openWriting(opts?: { focus?: "evidence"; action?: "lit-review" }) {
+  function openJourneyLink(link: JourneyLinkId) {
     if (!id) return;
     setCurrentProjectId(id);
-    const params = new URLSearchParams();
-    if (opts?.focus) params.set("focus", opts.focus);
-    if (opts?.action) params.set("action", opts.action);
-    const qs = params.toString();
-    navigate(qs ? `/writing?${qs}` : "/writing");
+    switch (link) {
+      case "evidence":
+        navigate(projectEvidenceUrl(id));
+        break;
+      case "writing":
+        navigate(projectWritingUrl(id));
+        break;
+      case "review":
+        navigate(projectReviewUrl(id));
+        break;
+      case "export":
+        navigate(projectExportUrl(id));
+        break;
+    }
   }
 
   function openWriteDraft() {
-    openWriting({ action: "lit-review" });
+    if (!id) return;
+    setCurrentProjectId(id);
+    navigate(projectWritingUrl(id, { action: "lit-review" }));
   }
 
   function openReviewEvidence() {
-    openWriting({ focus: "evidence" });
+    if (!id) return;
+    setCurrentProjectId(id);
+    navigate(projectEvidenceUrl(id));
   }
+
+  const nextAction = useMemo(() => {
+    if (!hub) {
+      return { label: "Add papers", run: () => setTab("papers") };
+    }
+    const { stats, analysis_summary, recent_papers } = hub;
+    const stage = deriveProjectWorkspaceStage({
+      papers: stats.papers,
+      analysisReady: analysis_summary.ready,
+      notes: stats.notes,
+      openQuestions: stats.open_questions,
+      insights: stats.insights,
+      chats: stats.chats,
+    });
+    if (stage === "papers") {
+      return { label: "Add papers", run: () => setTab("papers") };
+    }
+    if (stage === "analysing") {
+      return {
+        label: "Open research",
+        run: () =>
+          recent_papers[0] ? openPaper(recent_papers[0].id) : setTab("papers"),
+      };
+    }
+    if (stage === "research") {
+      return { label: "Open Research", run: () => setTab("research") };
+    }
+    return { label: "Write draft", run: openWriteDraft };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hub, id]);
 
   if (isLoading) {
     return (
@@ -584,7 +750,15 @@ export function ProjectDetailPage() {
     );
   }
 
-  const { project, stats, recent_papers } = hub;
+  const { project } = hub;
+
+  const navBtnClass = (active: boolean) =>
+    cn(
+      "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] transition-colors",
+      active
+        ? "bg-accent-soft font-medium text-foreground"
+        : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+    );
 
   return (
     <div className="scrollbar-thin h-full overflow-y-auto" data-density="high">
@@ -603,7 +777,7 @@ export function ProjectDetailPage() {
           className="space-y-3"
         >
           <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-            What am I working on?
+            Research workspace
           </p>
           <div className="flex items-start gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted/30 text-2xl">
@@ -611,9 +785,6 @@ export function ProjectDetailPage() {
             </div>
             <div className="min-w-0 flex-1">
               <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
-              {project.description && (
-                <p className="mt-1 text-sm text-muted-foreground">{project.description}</p>
-              )}
               {project.created_at && (
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   Created {formatDate(project.created_at)}
@@ -630,41 +801,58 @@ export function ProjectDetailPage() {
             </Button>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={() =>
-                recent_papers[0] ? openPaper(recent_papers[0].id) : setTab("papers")
-              }
-              className="gap-2"
-            >
-              <FileText className="size-4" />
-              {stats.papers > 0 ? "Open research" : "Add papers"}
-            </Button>
-            <Button variant="outline" onClick={openWriteDraft} className="gap-2">
-              <PenLine className="size-4" /> Write draft
-            </Button>
-          </div>
+          <ProjectContextBar
+            hub={hub}
+            nextLabel={nextAction.label}
+            onNext={nextAction.run}
+          />
         </motion.div>
 
-        {/* Workspace tabs — deeper data lazy-loaded when opened */}
         <div className="sticky top-0 z-10 -mx-1 border-b border-border bg-background/95 px-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <nav className="flex gap-0.5 overflow-x-auto scrollbar-thin py-1" aria-label="Project sections">
-            {TABS.map((t) => (
+          <nav className="flex gap-0.5 overflow-x-auto scrollbar-thin py-1" aria-label="Research journey">
+            {JOURNEY_TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={cn(
-                  "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] transition-colors",
-                  activeTab === t.id
-                    ? "bg-accent-soft font-medium text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-                )}
+                className={navBtnClass(activeTab === t.id)}
               >
                 {t.icon}
                 {t.label}
               </button>
             ))}
+            {JOURNEY_LINKS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => openJourneyLink(t.id)}
+                className={navBtnClass(false)}
+              >
+                {t.icon}
+                {t.label}
+              </button>
+            ))}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(navBtnClass(moreActive), "outline-none")}
+                aria-label="More project sections"
+              >
+                <MoreHorizontal className="size-3.5" />
+                More
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[10rem]">
+                {MORE_TABS.map((t) => (
+                  <DropdownMenuItem
+                    key={t.id}
+                    onClick={() => setTab(t.id)}
+                    className="gap-2"
+                  >
+                    {t.icon}
+                    {t.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </nav>
         </div>
 
@@ -677,6 +865,9 @@ export function ProjectDetailPage() {
             onTab={setTab}
             onWriteDraft={openWriteDraft}
             onReviewEvidence={openReviewEvidence}
+            onOpenResearch={() => setTab("research")}
+            nextLabel={nextAction.label}
+            onNext={nextAction.run}
           />
         )}
 

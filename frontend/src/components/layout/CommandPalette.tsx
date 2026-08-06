@@ -40,6 +40,11 @@ import {
 } from "lucide-react";
 import { useAllFiles } from "@/features/files/useFiles";
 import { useProjects } from "@/features/projects/useProjects";
+import {
+  projectExportUrl,
+  projectReviewUrl,
+  projectWritingUrl,
+} from "@/features/projects/projectWorkspaceNav";
 import { useConversations } from "@/features/chat/hooks/useConversation";
 import { useMe } from "@/features/profile/useMe";
 import { useUI } from "@/context/UIContext";
@@ -201,6 +206,20 @@ export function CommandPalette() {
     navigate(path);
   }
 
+  function writingPath(
+    opts?: { focus?: "evidence" | "review"; tab?: "export"; action?: "lit-review" },
+  ): string {
+    if (currentProjectId != null) {
+      return projectWritingUrl(currentProjectId, opts);
+    }
+    const params = new URLSearchParams();
+    if (opts?.focus) params.set("focus", opts.focus);
+    if (opts?.tab) params.set("tab", opts.tab);
+    if (opts?.action) params.set("action", opts.action);
+    const qs = params.toString();
+    return qs ? `/writing?${qs}` : "/writing";
+  }
+
   function run(fn: () => void) {
     setOpen(false);
     fn();
@@ -292,7 +311,7 @@ export function CommandPalette() {
         keywords: "write literature review manuscript draft",
         icon: PenLine,
         show: true,
-        run: () => go("/writing?action=lit-review"),
+        run: () => go(writingPath({ action: "lit-review" })),
       },
       {
         id: "upload",
@@ -398,7 +417,7 @@ export function CommandPalette() {
         keywords: "writing desk draft manuscript",
         icon: Wand2,
         show: true,
-        run: () => go("/writing"),
+        run: () => go(writingPath()),
       },
       {
         id: "notes",
@@ -447,7 +466,7 @@ export function CommandPalette() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [me?.is_admin],
+    [me?.is_admin, currentProjectId],
   );
 
   const knowledge: Cmd[] = useMemo(
@@ -469,7 +488,11 @@ export function CommandPalette() {
         icon: FlaskConical,
         show: true,
         run: () =>
-          go(paperId ? `/papers/${paperId}?tab=evidence` : "/writing?focus=evidence"),
+          go(
+            paperId
+              ? `/papers/${paperId}?tab=evidence`
+              : writingPath({ focus: "evidence" }),
+          ),
       },
       {
         id: "paper-graph",
@@ -518,7 +541,7 @@ export function CommandPalette() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [paperId],
+    [paperId, currentProjectId],
   );
 
   const skills: Cmd[] = useMemo(
@@ -557,7 +580,12 @@ export function CommandPalette() {
         keywords: "review verify evidence writing",
         icon: FlaskConical,
         show: true,
-        run: () => go("/writing?focus=evidence"),
+        run: () =>
+          go(
+            currentProjectId != null
+              ? projectReviewUrl(currentProjectId)
+              : writingPath({ focus: "review" }),
+          ),
       },
       {
         id: "skill-write",
@@ -566,7 +594,7 @@ export function CommandPalette() {
         keywords: "write literature review",
         icon: PenLine,
         show: true,
-        run: () => go("/writing?action=lit-review"),
+        run: () => go(writingPath({ action: "lit-review" })),
       },
       {
         id: "skill-matrix",
@@ -584,11 +612,16 @@ export function CommandPalette() {
         keywords: "export markdown download",
         icon: FileDown,
         show: true,
-        run: () => go("/writing?tab=export"),
+        run: () =>
+          go(
+            currentProjectId != null
+              ? projectExportUrl(currentProjectId)
+              : writingPath({ tab: "export" }),
+          ),
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [paperId],
+    [paperId, currentProjectId],
   );
 
   const directCommands: Cmd[] = useMemo(

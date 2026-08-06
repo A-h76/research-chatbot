@@ -64,7 +64,16 @@ async function request<T>(url: string, opts: RequestInit = {}): Promise<T> {
     handleUnauthorized();
     throw new ApiError("session_expired", 401);
   }
-  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = (await res.json().catch(() => {
+    // Proxy/HTML error pages produce "<!doctype..." — avoid opaque JSON parse crashes.
+    return {
+      error: "invalid_response",
+      detail:
+        res.status >= 500
+          ? "Server error. If this persists, check that the backend is running."
+          : "Server returned a non-JSON response.",
+    };
+  })) as Record<string, unknown>;
   if (!res.ok) {
     const code = typeof body.error === "string" ? body.error : undefined;
     const message = String(body.detail || body.error || body.message || "request_failed");
@@ -72,6 +81,12 @@ async function request<T>(url: string, opts: RequestInit = {}): Promise<T> {
       code,
       body,
       quota: parseQuota(body),
+    });
+  }
+  if (body.error === "invalid_response") {
+    throw new ApiError(String(body.detail || "invalid_response"), res.status || 502, {
+      code: "invalid_response",
+      body,
     });
   }
   return body as T;

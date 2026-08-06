@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useLocation, useParams, useNavigate } from "react-router-dom";
-import { Menu, PanelLeftOpen, PanelRight, ChevronRight, Search } from "lucide-react";
+import { Menu, PanelLeftOpen, PanelRight, ChevronRight, Search, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./ThemeToggle";
 import { useUI } from "@/context/UIContext";
@@ -73,6 +73,7 @@ function PaperBreadcrumb() {
 export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void }) {
   const { sidebarCollapsed, setSidebarCollapsed, rightPanelOpen, setRightPanelOpen } = useUI();
   const location = useLocation();
+  const navigate = useNavigate();
   const path     = location.pathname;
 
   const isHome         = path === "/" || path === "/projects";
@@ -117,6 +118,18 @@ export function TopBar({ onOpenMobileDrawer }: { onOpenMobileDrawer: () => void 
       )}
 
       <div className="ml-auto flex items-center gap-1">
+        {!isChat && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-2.5 text-[12px]"
+            onClick={() => navigate("/chat")}
+            title="Ask Dhund"
+          >
+            <MessageSquare className="size-3.5 text-primary" />
+            <span className="hidden sm:inline">Ask Dhund</span>
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"

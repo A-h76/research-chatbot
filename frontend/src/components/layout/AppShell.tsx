@@ -3,7 +3,6 @@ import { Sidebar } from "@/features/sidebar/components/Sidebar";
 import { MobileDrawer } from "./MobileDrawer";
 import { TopBar } from "./TopBar";
 import { CommandPalette } from "./CommandPalette";
-import { AskDhundFab } from "./AskDhundFab";
 import { RightPanel } from "@/features/right-panel/components/RightPanel";
 import { OnboardingWizard } from "@/features/onboarding/OnboardingWizard";
 import { ProjectWorkspaceBar } from "@/features/projects/components/ProjectWorkspaceBar";
@@ -47,7 +46,6 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
       </div>
       <RightPanel />
       <CommandPalette />
-      <AskDhundFab />
       {!me.onboarding_completed && <OnboardingWizard me={me} />}
     </div>
   );
