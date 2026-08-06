@@ -51,8 +51,11 @@ export function ResearchPipelineBeam({
       <p className="mt-1 text-xs text-muted-foreground">
         From research question to publishable output — one continuous flow.
       </p>
-      <BeamCanvas className="mt-5 overflow-x-auto" beams={beams}>
-        <div className="flex min-w-max items-center justify-start gap-3 px-1 py-3">
+      <BeamCanvas
+        className="mt-5 w-full overflow-x-auto overflow-y-hidden scrollbar-none"
+        beams={beams}
+      >
+        <div className="flex w-full min-w-0 items-stretch justify-between gap-1 px-0.5 py-3 sm:gap-1.5">
           {RESEARCH_PIPELINE_STEPS.map((label, i) => (
             <FlowNode
               key={label}
@@ -60,6 +63,7 @@ export function ResearchPipelineBeam({
               label={label}
               active={i === activeIndex}
               done={i < activeIndex}
+              className="min-w-0 flex-1 max-w-none px-1.5 py-1.5 sm:px-2 sm:py-2"
             />
           ))}
         </div>

@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { resolveWorkspaceActive } from "./ProjectWorkspaceBar";
+import {
+  isProjectHubPath,
+  resolveWorkspaceActive,
+} from "./ProjectWorkspaceBar";
+
+describe("isProjectHubPath", () => {
+  it("matches the project hub only", () => {
+    expect(isProjectHubPath("/projects/3", 3)).toBe(true);
+    expect(isProjectHubPath("/projects/3/", 3)).toBe(true);
+    expect(isProjectHubPath("/projects/3", 9)).toBe(false);
+    expect(isProjectHubPath("/projects/3/settings", 3)).toBe(false);
+    expect(isProjectHubPath("/papers/9", 3)).toBe(false);
+  });
+});
 
 describe("resolveWorkspaceActive", () => {
   it("highlights writing vs evidence focus", () => {
@@ -14,10 +27,11 @@ describe("resolveWorkspaceActive", () => {
     expect(resolveWorkspaceActive("/papers/9/chat", "", 1)).toBe("chat");
   });
 
-  it("highlights project hub tabs", () => {
-    expect(resolveWorkspaceActive("/projects/3", "?tab=papers", 3)).toBe("papers");
-    expect(resolveWorkspaceActive("/projects/3", "?tab=notes", 3)).toBe("notes");
-    expect(resolveWorkspaceActive("/projects/3", "?tab=chat", 3)).toBe("chat");
+  it("does not highlight chips on the project hub (tabs own sections)", () => {
+    expect(resolveWorkspaceActive("/projects/3", "?tab=papers", 3)).toBeNull();
+    expect(resolveWorkspaceActive("/projects/3", "?tab=notes", 3)).toBeNull();
+    expect(resolveWorkspaceActive("/projects/3", "?tab=chat", 3)).toBeNull();
     expect(resolveWorkspaceActive("/projects/3", "", 3)).toBeNull();
+    expect(resolveWorkspaceActive("/projects/3/", "?tab=papers", 3)).toBeNull();
   });
 });

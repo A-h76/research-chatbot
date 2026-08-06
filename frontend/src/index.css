@@ -404,6 +404,26 @@
     background: transparent;
   }
 
+  /* Hide scrollbars while keeping overflow scroll (touch / shift-wheel). */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
   /* AI State Language — pulse only for Uploading / Understanding / Classifying */
   @keyframes ai-state-pulse {
     0%, 100% { opacity: 1; }

@@ -11,7 +11,6 @@ import {
   BookMarked,
   BookOpen,
   FolderKanban,
-  Library,
   GitCompare,
   StickyNote,
   HelpCircle,
@@ -501,24 +500,6 @@ export function ProjectDetailPage() {
     navigate(`/papers/${fileId}`);
   }
 
-  function openLibrary() {
-    if (!id) return;
-    setCurrentProjectId(id);
-    navigate("/library");
-  }
-
-  function openAsk() {
-    if (!id) return;
-    setCurrentProjectId(id);
-    setTab("chat");
-  }
-
-  function openCompare() {
-    if (!id) return;
-    setCurrentProjectId(id);
-    setTab("research");
-  }
-
   function openWriting(opts?: { focus?: "evidence"; action?: "lit-review" }) {
     if (!id) return;
     setCurrentProjectId(id);
@@ -658,15 +639,6 @@ export function ProjectDetailPage() {
             >
               <FileText className="size-4" />
               {stats.papers > 0 ? "Open research" : "Add papers"}
-            </Button>
-            <Button variant="outline" onClick={openLibrary} className="gap-2">
-              <Library className="size-4" /> Library
-            </Button>
-            <Button variant="outline" onClick={openAsk} className="gap-2">
-              <MessageSquare className="size-4" /> Ask in project
-            </Button>
-            <Button variant="outline" onClick={openCompare} className="gap-2">
-              <GitCompare className="size-4" /> Research
             </Button>
             <Button variant="outline" onClick={openWriteDraft} className="gap-2">
               <PenLine className="size-4" /> Write draft

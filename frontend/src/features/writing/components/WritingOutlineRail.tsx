@@ -10,15 +10,6 @@ import {
   type WritingSectionType,
 } from "@/features/evidence/hooks/useGroundedWriting";
 
-const WORKFLOW = [
-  "Outline",
-  "Evidence",
-  "Write",
-  "Verify",
-  "Accept",
-  "Export",
-] as const;
-
 type VersionItem = {
   id: number;
   version_no: number;
@@ -48,28 +39,11 @@ export function WritingOutlineRail({
   return (
     <aside
       className={cn(
-        "flex min-h-0 flex-col gap-3 rounded-lg border border-border bg-muted/20 p-3",
+        "flex min-h-0 flex-col gap-3 overflow-y-auto rounded-lg border border-border bg-muted/20 p-3",
         className,
       )}
       aria-label="Outline"
     >
-      <div>
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Workflow
-        </p>
-        <ol className="mt-1.5 space-y-0.5">
-          {WORKFLOW.map((step, i) => (
-            <li
-              key={step}
-              className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
-            >
-              <span className="tabular-nums text-[10px] opacity-60">{i + 1}.</span>
-              {step}
-            </li>
-          ))}
-        </ol>
-      </div>
-
       <div>
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           Outline

@@ -11,6 +11,13 @@ import { useModels } from "@/features/models/useModels";
 import { useMe } from "@/features/profile/useMe";
 import { useUI } from "@/context/UIContext";
 import { toast } from "@/components/common/Toast";
+import type { ConversationSummary } from "@/types/api";
+
+/** Default title for empty stubs that never received an auto-title. */
+function isUntitledStub(c: ConversationSummary): boolean {
+  const t = (c.title || "").trim().toLowerCase();
+  return !t || t === "new chat" || t === "untitled" || t === "untitled chat";
+}
 
 /** Project-scoped chat list + new conversation. */
 export function ProjectChatPanel({ projectId }: { projectId: number }) {
@@ -21,15 +28,29 @@ export function ProjectChatPanel({ projectId }: { projectId: number }) {
   const { data: allConvos = [], isLoading } = useConversations();
   const createConvo = useCreateConversation();
 
-  const convos = useMemo(
+  const projectConvos = useMemo(
     () =>
-      allConvos
-        .filter((c) => c.project_id === projectId && c.file_id == null)
-        .slice(0, 20),
+      allConvos.filter((c) => c.project_id === projectId && c.file_id == null),
     [allConvos, projectId],
   );
 
+  /** Named chats only — hide empty "New chat" stubs from the list. */
+  const namedConvos = useMemo(
+    () => projectConvos.filter((c) => !isUntitledStub(c)).slice(0, 20),
+    [projectConvos],
+  );
+
+  /** Most recent empty stub to reuse instead of creating duplicates. */
+  const emptyStub = useMemo(
+    () => projectConvos.find((c) => isUntitledStub(c)) ?? null,
+    [projectConvos],
+  );
+
   async function startChat() {
+    if (emptyStub) {
+      navigate(`/c/${emptyStub.id}`);
+      return;
+    }
     try {
       const model =
         defaultModel || me?.default_model || modelsData?.models[0] || "gpt-4o-mini";
@@ -58,7 +79,8 @@ export function ProjectChatPanel({ projectId }: { projectId: number }) {
         <div>
           <h2 className="text-sm font-semibold">Project chat</h2>
           <p className="text-xs text-muted-foreground">
-            Retrieval is limited to papers in this project.
+            Retrieval is limited to papers in this project. Chats get a name after
+            the first reply.
           </p>
         </div>
         <Button
@@ -71,11 +93,12 @@ export function ProjectChatPanel({ projectId }: { projectId: number }) {
         </Button>
       </div>
 
-      {convos.length === 0 ? (
+      {namedConvos.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center space-y-3">
           <MessageSquare className="mx-auto size-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
-            No project conversations yet. Ask questions across your corpus.
+            No project conversations yet. Ask questions across your corpus — the
+            chat will be named from your first exchange.
           </p>
           <Button variant="outline" size="sm" onClick={() => void startChat()}>
             Start chatting
@@ -83,7 +106,7 @@ export function ProjectChatPanel({ projectId }: { projectId: number }) {
         </div>
       ) : (
         <ul className="space-y-1">
-          {convos.map((c) => (
+          {namedConvos.map((c) => (
             <li key={c.id}>
               <button
                 type="button"
@@ -92,7 +115,7 @@ export function ProjectChatPanel({ projectId }: { projectId: number }) {
               >
                 <MessageSquare className="size-4 shrink-0 text-primary" />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                  {c.title || "Untitled chat"}
+                  {c.title}
                 </span>
               </button>
             </li>

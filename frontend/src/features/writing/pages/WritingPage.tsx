@@ -6,7 +6,7 @@ import {
   Wand2, Loader2, Copy, Download, RefreshCw,
   BookOpen, GraduationCap, Minimize2, Maximize2,
   AlignLeft, FileText, MessageSquare, StickyNote, AlertTriangle,
-  Quote, Plus,
+  Quote, Plus, ListTree, PanelRight,
 } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
@@ -131,6 +131,8 @@ function DraftTab() {
   const [groundedBaseline, setGroundedBaseline] = useState<string | null>(null);
   const [editsSinceInsert, setEditsSinceInsert] = useState(0);
   const [confirmDeleteDoc, setConfirmDeleteDoc] = useState(false);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const litReviewBtnRef = useRef<HTMLButtonElement | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -156,9 +158,18 @@ function DraftTab() {
       savedAt: new Date().toISOString(),
     });
     setReviewerRefresh((n) => n + 1);
+    setEvidenceOpen(true);
     // Only when a new grounded result arrives — not on every manuscript keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: grounded.last identity
   }, [grounded.last, activeId]);
+
+  useEffect(() => {
+    if (grounded.last) setEvidenceOpen(true);
+  }, [grounded.last]);
+
+  useEffect(() => {
+    if (grounded.isPending) setEvidenceOpen(true);
+  }, [grounded.isPending]);
 
   const docsQuery = useQuery({
     queryKey: ["writing", "documents", currentProjectId ?? "all", lifecycleView],
@@ -602,6 +613,7 @@ function DraftTab() {
       const next = new URLSearchParams(searchParams);
       next.delete("focus");
       setSearchParams(next, { replace: true });
+      setEvidenceOpen(true);
       window.requestAnimationFrame(() => {
         document.getElementById("writing-evidence-rail")?.scrollIntoView({
           behavior: "smooth",
@@ -649,296 +661,202 @@ function DraftTab() {
   ]);
 
   return (
-    <div className="space-y-3" data-density="low">
+    <div className="flex min-h-0 flex-1 flex-col gap-2" data-density="low">
       {currentProjectId == null && (
-        <div className="rounded-md border border-border bg-card p-3 text-[12px] text-muted-foreground">
+        <div className="shrink-0 rounded-md border border-border bg-card p-3 text-[12px] text-muted-foreground">
           Select a project to open the writing desk. Documents are always project-scoped.
         </div>
       )}
       {currentProjectId != null && docsQuery.isLoading ? (
-        <WritingDeskSkeleton />
+        <WritingDeskSkeleton className="min-h-0 flex-1" />
       ) : (
         <>
-      {isOffline && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-[12px] text-blue-900 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"
-        >
-          You are offline. Changes stay local until the connection returns.
-        </div>
-      )}
+          {isOffline && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="shrink-0 rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-[12px] text-blue-900 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"
+            >
+              You are offline. Changes stay local until the connection returns.
+            </div>
+          )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 rounded border border-border p-1">
-          {(
-            [
-              { key: "active" as const, label: "Active" },
-              { key: "archived" as const, label: "Archived" },
-              { key: "deleted" as const, label: "Deleted" },
-            ] as const
-          ).map((it) => (
+          {saveState === "conflict" && (
+            <div
+              role="alert"
+              className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+            >
+              <span>
+                Another version was saved elsewhere. Reload the latest from the server
+                before continuing (local unsaved text will be replaced).
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 border-amber-400/60 bg-transparent text-[11px]"
+                onClick={async () => {
+                  if (activeId == null || currentProjectId == null) return;
+                  try {
+                    const res = await writingApi.listDocuments(currentProjectId, {
+                      status: lifecycleView === "active" ? undefined : lifecycleView,
+                      includeArchived: lifecycleView !== "active",
+                      includeDeleted: lifecycleView === "deleted",
+                    });
+                    qc.setQueryData(
+                      ["writing", "documents", currentProjectId, lifecycleView],
+                      res,
+                    );
+                    await qc.invalidateQueries({
+                      queryKey: ["writing", "versions", activeId],
+                    });
+                    const latest = res.items.find((d) => d.id === activeId);
+                    if (latest) {
+                      setDraftTitle(latest.title || "Untitled draft");
+                      setInput(latest.content || "");
+                      setVersion(latest.current_version || 1);
+                    }
+                    setSaveState("saved");
+                    toast.success("Reloaded latest from server");
+                  } catch {
+                    toast.error("Could not reload document");
+                  }
+                }}
+              >
+                <RefreshCw className="size-3" /> Reload latest
+              </Button>
+            </div>
+          )}
+
+          {/* Thin writing toolbar */}
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border pb-2">
+            <div className="flex items-center gap-0.5 rounded border border-border p-0.5">
+              {(
+                [
+                  { key: "active" as const, label: "Active" },
+                  { key: "archived" as const, label: "Archived" },
+                  { key: "deleted" as const, label: "Deleted" },
+                ] as const
+              ).map((it) => (
+                <button
+                  key={it.key}
+                  type="button"
+                  onClick={() => setLifecycleView(it.key)}
+                  className={cn(
+                    "rounded px-1.5 py-0.5 text-[11px]",
+                    lifecycleView === it.key
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted/50",
+                  )}
+                >
+                  {it.label}
+                </button>
+              ))}
+            </div>
+            <select
+              aria-label="Select writing document"
+              className="h-8 min-w-[140px] max-w-[200px] rounded-md border border-border bg-card px-2 text-[12px]"
+              value={activeId ?? ""}
+              onChange={(e) => {
+                const nextId = Number(e.target.value || 0);
+                const doc = (docs ?? []).find((x) => x.id === nextId);
+                if (!doc) return;
+                setActiveId(doc.id);
+                setDraftTitle(doc.title || "Untitled draft");
+                setInput(doc.content || "");
+                setVersion(doc.current_version || 1);
+              }}
+            >
+              {(docs ?? []).map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.title || "Untitled draft"}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1 text-[11px]"
+              onClick={() => createDoc.mutate()}
+              disabled={createDoc.isPending || currentProjectId == null}
+            >
+              <Plus className="size-3.5" /> New
+            </Button>
+            {activeDoc?.status === "active" && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2 text-[11px]"
+                onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "archived" })}
+              >
+                Archive
+              </Button>
+            )}
+            {activeDoc?.status === "archived" && (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 px-2 text-[11px]"
+                  onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "active" })}
+                >
+                  Restore
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 px-2 text-[11px]"
+                  onClick={() => setConfirmDeleteDoc(true)}
+                >
+                  Delete
+                </Button>
+              </>
+            )}
+            {activeDoc?.status === "deleted" && (
+              <span className="text-[11px] text-muted-foreground">Read-only</span>
+            )}
+
+            <span className="mx-1 hidden h-4 w-px bg-border sm:block" aria-hidden />
+
             <button
-              key={it.key}
+              ref={litReviewBtnRef}
               type="button"
-              onClick={() => setLifecycleView(it.key)}
-              className={cn(
-                "rounded px-2 py-1 text-[11px]",
-                lifecycleView === it.key
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted/50",
-              )}
-            >
-              {it.label}
-            </button>
-          ))}
-        </div>
-        <select
-          aria-label="Select writing document"
-          className="h-8 min-w-[180px] rounded-md border border-border bg-card px-2 text-[12px]"
-          value={activeId ?? ""}
-          onChange={(e) => {
-            const nextId = Number(e.target.value || 0);
-            const doc = (docs ?? []).find((x) => x.id === nextId);
-            if (!doc) return;
-            setActiveId(doc.id);
-            setDraftTitle(doc.title || "Untitled draft");
-            setInput(doc.content || "");
-            setVersion(doc.current_version || 1);
-          }}
-        >
-          {(docs ?? []).map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.title || "Untitled draft"}
-            </option>
-          ))}
-        </select>
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8 gap-1 text-[11px]"
-          onClick={() => createDoc.mutate()}
-          disabled={createDoc.isPending || currentProjectId == null}
-        >
-          <Plus className="size-3.5" /> New draft
-        </Button>
-        {activeDoc?.status === "active" && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 px-2 text-[11px]"
-            onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "archived" })}
-          >
-            Archive
-          </Button>
-        )}
-        {activeDoc?.status === "archived" && (
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 px-2 text-[11px]"
-              onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "active" })}
-            >
-              Restore
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 px-2 text-[11px]"
-              onClick={() => setConfirmDeleteDoc(true)}
-            >
-              Delete
-            </Button>
-          </>
-        )}
-        {activeDoc?.status === "deleted" && (
-          <span className="text-[11px] text-muted-foreground">Deleted drafts are read-only.</span>
-        )}
-        <span className="ml-auto text-[11px] text-muted-foreground" role="status" aria-live="polite">
-          {saveState === "scheduled"
-            ? "Save scheduled"
-            : saveState === "saving"
-              ? "Saving…"
-              : saveState === "conflict"
-                ? "Conflict detected"
-                : saveState === "error"
-                  ? "Save failed"
-                  : saveState === "dirty"
-                    ? "Unsaved changes"
-                    : "Saved"}
-        </span>
-      </div>
-
-      {saveState === "conflict" && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
-        >
-          <span>
-            Another version was saved elsewhere. Reload the latest from the server
-            before continuing (local unsaved text will be replaced).
-          </span>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 shrink-0 border-amber-400/60 bg-transparent text-[11px]"
-            onClick={async () => {
-              if (activeId == null || currentProjectId == null) return;
-              try {
-                const res = await writingApi.listDocuments(currentProjectId, {
-                  status: lifecycleView === "active" ? undefined : lifecycleView,
-                  includeArchived: lifecycleView !== "active",
-                  includeDeleted: lifecycleView === "deleted",
-                });
-                qc.setQueryData(
-                  ["writing", "documents", currentProjectId, lifecycleView],
-                  res,
-                );
-                await qc.invalidateQueries({
-                  queryKey: ["writing", "versions", activeId],
-                });
-                const latest = res.items.find((d) => d.id === activeId);
-                if (latest) {
-                  setDraftTitle(latest.title || "Untitled draft");
-                  setInput(latest.content || "");
-                  setVersion(latest.current_version || 1);
-                }
-                setSaveState("saved");
-                toast.success("Reloaded latest from server");
-              } catch {
-                toast.error("Could not reload document");
+              id="write-literature-review"
+              disabled={
+                grounded.isPending ||
+                activeId == null ||
+                currentProjectId == null ||
+                activeDoc?.status === "deleted"
               }
-            }}
-          >
-            <RefreshCw className="size-3" /> Reload latest
-          </Button>
-        </div>
-      )}
-
-      <ResearchConfidenceStrip
-        metrics={grounded.last?.metrics}
-        review={grounded.last?.review}
-        reviewerVersion={grounded.last?.review?.reviewer_version}
-      />
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          ref={litReviewBtnRef}
-          type="button"
-          id="write-literature-review"
-          disabled={
-            grounded.isPending ||
-            activeId == null ||
-            currentProjectId == null ||
-            activeDoc?.status === "deleted"
-          }
-          title="Write this outline section from accepted EvidenceObjects"
-          className={cn(
-            "inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium transition-colors",
-            grounded.isPending
-              ? "bg-primary/90 text-primary-foreground"
-              : "bg-primary text-primary-foreground hover:opacity-90",
-            "disabled:opacity-50",
-          )}
-          onClick={runGroundedGenerate}
-        >
-          {grounded.isPending ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <FlaskConicalIcon />
-          )}
-          Write {sectionType === "literature_review" ? "literature review" : sectionType.replaceAll("_", " ")}
-        </button>
-        <span className="text-[12px] text-muted-foreground">
-          Outline → Evidence → Verify → Accept · click [#id] markers to inspect
-        </span>
-      </div>
-
-      <details className="rounded-md border border-border bg-card/50 px-3 py-2">
-        <summary className="cursor-pointer text-[12px] font-medium text-muted-foreground">
-          Style transforms (not evidence-backed)
-        </summary>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          Style-only edits do not cite EvidenceObjects. Use Write grounded draft for research-backed
-          prose.
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 pb-1">
-          {ACTIONS.map(({ key, label, icon, desc }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => run(key)}
-              disabled={loading}
-              title={`${desc} (not evidence-backed)`}
+              title="Write this outline section from accepted EvidenceObjects"
               className={cn(
-                "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
-                loading && activeAction === key
-                  ? "border-primary bg-accent-soft text-primary"
-                  : "border-border bg-card text-foreground hover:bg-muted/50",
-                loading && activeAction !== key && "opacity-50",
+                "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors",
+                grounded.isPending
+                  ? "bg-primary/90 text-primary-foreground"
+                  : "bg-primary text-primary-foreground hover:opacity-90",
+                "disabled:opacity-50",
               )}
+              onClick={runGroundedGenerate}
             >
-              {loading && activeAction === key ? (
+              {grounded.isPending ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : (
-                <span className="text-muted-foreground">{icon}</span>
+                <FlaskConicalIcon />
               )}
-              {label}
+              Write{" "}
+              {sectionType === "literature_review"
+                ? "literature review"
+                : sectionType.replaceAll("_", " ")}
             </button>
-          ))}
-        </div>
-      </details>
 
-      {/* Writing desk: Outline | Manuscript | Evidence */}
-      <div className="grid min-h-[28rem] gap-3 lg:grid-cols-[220px_minmax(0,1fr)_300px]">
-        <WritingOutlineRail
-          sectionType={sectionType}
-          onSectionTypeChange={setSectionType}
-          versions={versionsQuery.data?.items ?? []}
-          onRestoreVersion={(id) => restoreVersion.mutate(id)}
-        />
-
-        <div className="flex min-h-0 flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <input
-              value={draftTitle}
-              onChange={(e) => setDraftTitle(e.target.value)}
-              className="h-8 flex-1 rounded-md border border-border bg-background px-2.5 text-[13px] font-medium text-foreground"
-              placeholder="Manuscript title"
-            />
-            {input ? (
-              <span className="text-[11px] tabular-nums text-muted-foreground">{input.length}</span>
-            ) : null}
-          </div>
-
-          {grounded.isPending ? (
-            <ResearchProgressStage
-              active
-              liveMetric={
-                grounded.jobStatus ||
-                "Organising accepted EvidenceObjects for this section"
-              }
-            />
-          ) : grounded.last?.status === "ok" ? (
-            <ResearchProgressStage
-              active={false}
-              doneLabel={
-                (grounded.last.section_type || sectionType) === "literature_review"
-                  ? "Literature Review Ready"
-                  : `${(grounded.last.section_type || sectionType).replaceAll("_", " ")} ready`
-              }
-            />
-          ) : null}
-
-          <div className="flex flex-wrap items-center gap-1.5">
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="h-7 gap-1 text-[11px]"
-              disabled={activeId == null || currentProjectId == null || activeDoc?.status === "deleted"}
+              className="h-8 gap-1 text-[11px]"
+              disabled={
+                activeId == null || currentProjectId == null || activeDoc?.status === "deleted"
+              }
               title="Insert citation (Ctrl+Shift+C)"
               onClick={() => setCitePickerOpen(true)}
             >
@@ -948,7 +866,7 @@ function DraftTab() {
               type="button"
               size="sm"
               variant="ghost"
-              className="h-7 text-[11px]"
+              className="h-8 text-[11px]"
               disabled={activeId == null || activeDoc?.status === "deleted"}
               title="Remove selected [#id] marker and binding"
               onClick={() => void removeSelectedCite()}
@@ -959,8 +877,8 @@ function DraftTab() {
               type="button"
               size="sm"
               variant="ghost"
-              className="h-7 text-[11px]"
-              title="Jump to Evidence Inspector (uses caret [#id] or selection)"
+              className="h-8 text-[11px]"
+              title="Open Evidence Inspector"
               onClick={() => {
                 const el = editorRef.current;
                 if (el) {
@@ -974,196 +892,424 @@ function DraftTab() {
                     setCiteHoverPreview(`Evidence #${eid} — Inspector rail`);
                   }
                 }
-                document
-                  .getElementById("writing-evidence-rail")
-                  ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                setEvidenceOpen(true);
+                window.requestAnimationFrame(() => {
+                  document
+                    .getElementById("writing-evidence-rail")
+                    ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                });
               }}
             >
               Inspect
             </Button>
-            <span className="text-[10px] text-muted-foreground">Ctrl+Shift+C · [#id] = grounded</span>
+
+            <Button
+              type="button"
+              size="sm"
+              variant={outlineOpen ? "secondary" : "ghost"}
+              className="h-8 gap-1 text-[11px]"
+              aria-pressed={outlineOpen}
+              title="Toggle outline"
+              onClick={() => setOutlineOpen((v) => !v)}
+            >
+              <ListTree className="size-3.5" /> Outline
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={evidenceOpen ? "secondary" : "ghost"}
+              className="h-8 gap-1 text-[11px]"
+              aria-pressed={evidenceOpen}
+              title="Toggle evidence & reviewer"
+              onClick={() => setEvidenceOpen((v) => !v)}
+            >
+              <PanelRight className="size-3.5" /> Evidence
+            </Button>
+
+            <span
+              className="ml-auto text-[11px] text-muted-foreground"
+              role="status"
+              aria-live="polite"
+            >
+              {saveState === "scheduled"
+                ? "Save scheduled"
+                : saveState === "saving"
+                  ? "Saving…"
+                  : saveState === "conflict"
+                    ? "Conflict detected"
+                    : saveState === "error"
+                      ? "Save failed"
+                      : saveState === "dirty"
+                        ? "Unsaved changes"
+                        : "Saved"}
+            </span>
           </div>
 
-          {citePickerOpen && currentProjectId != null ? (
-            <CitationInsertPicker
-              open={citePickerOpen}
-              projectId={currentProjectId}
-              onClose={() => setCitePickerOpen(false)}
-              onInsert={handleCiteInsert}
-              className="mb-1"
-            />
-          ) : null}
-
-          {citeHoverPreview ? (
-            <p className="rounded-md border border-border bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
-              Preview: {citeHoverPreview}
+          <details className="shrink-0 rounded-md border border-border bg-card/50 px-3 py-1.5">
+            <summary className="cursor-pointer text-[12px] font-medium text-muted-foreground">
+              Style transforms (not evidence-backed)
+            </summary>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Style-only edits do not cite EvidenceObjects. Use Write grounded draft for
+              research-backed prose.
             </p>
-          ) : null}
-
-          <div
-            className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-[#f7f8fa] p-4 sm:p-6 dark:bg-[#161b22]"
-            data-density="low"
-          >
-            <textarea
-              ref={editorRef}
-              value={input}
-              onChange={(e) => {
-                const next = e.target.value;
-                setInput(next);
-                if (groundedBaseline != null) {
-                  setEditsSinceInsert(Math.abs(next.length - groundedBaseline.length));
-                }
-              }}
-              onSelect={() => {
-                const el = editorRef.current;
-                if (!el) return;
-                const start = el.selectionStart ?? 0;
-                const end = el.selectionEnd ?? 0;
-                if (end > start) setSelectedText(el.value.slice(start, end));
-                const eid = selectedEvidenceMarkerId(input, start, end);
-                if (eid != null) {
-                  setCiteHoverPreview(`Evidence #${eid} — use Inspect to open the Evidence rail`);
-                }
-              }}
-              onMouseUp={() => {
-                const el = editorRef.current;
-                if (!el) return;
-                const start = el.selectionStart ?? 0;
-                const end = el.selectionEnd ?? 0;
-                if (end > start) setSelectedText(el.value.slice(start, end));
-              }}
-              onKeyDown={(e) => {
-                if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c") {
-                  e.preventDefault();
-                  setCitePickerOpen(true);
-                }
-              }}
-              placeholder="Manuscript — write or paste your literature review. Click Write literature review to draft from evidence."
-              rows={18}
-              aria-label="Manuscript editor"
-              disabled={activeDoc?.status === "deleted"}
-              className="relative z-[1] mx-auto min-h-[24rem] w-full max-w-[65ch] flex-1 resize-y border-0 bg-transparent px-1 py-2 text-[15px] leading-[1.55] tracking-[-0.011em] text-foreground outline-none placeholder:text-muted-foreground focus:ring-0"
-            />
-          </div>
-
-          {warning && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[12px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {warning}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 pb-1">
+              {ACTIONS.map(({ key, label, icon, desc }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => run(key)}
+                  disabled={loading}
+                  title={`${desc} (not evidence-backed)`}
+                  className={cn(
+                    "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
+                    loading && activeAction === key
+                      ? "border-primary bg-accent-soft text-primary"
+                      : "border-border bg-card text-foreground hover:bg-muted/50",
+                    loading && activeAction !== key && "opacity-50",
+                  )}
+                >
+                  {loading && activeAction === key ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <span className="text-muted-foreground">{icon}</span>
+                  )}
+                  {label}
+                </button>
+              ))}
             </div>
-          )}
+          </details>
 
-          {loading ? (
-            <div
-              role="status"
-              aria-busy="true"
-              aria-label="Applying style transform"
-              className="space-y-2 rounded-lg border border-border p-3"
-            >
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="h-3.5 w-full" />
-              <Skeleton className="h-3.5 w-[92%]" />
-              <Skeleton className="h-3.5 w-[78%]" />
-              <Skeleton className="h-3.5 w-2/3" />
-            </div>
-          ) : result ? (
-            <div className="rounded-lg border border-border bg-card p-2">
-              <div className="mb-1 flex items-center justify-between">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-amber-800 dark:text-amber-200">
-                  Style output · not evidence-backed
-                </p>
-                <div className="flex gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 gap-1 text-[11px]"
-                    onClick={() => {
-                      setInput(result);
-                      setResult("");
-                      toast.success("Moved to manuscript");
-                    }}
-                  >
-                    <RefreshCw className="size-3" /> Use
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 gap-1 text-[11px]"
-                    onClick={() => {
-                      copy(result);
-                      toast.success("Copied");
-                    }}
-                  >
-                    <Copy className="size-3" /> Copy
-                  </Button>
-                </div>
-              </div>
-              <motion.textarea
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                value={result}
-                onChange={(e) => setResult(e.target.value)}
-                rows={8}
-                className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-[13px] leading-relaxed outline-none focus:border-ring"
+          {/* Desk: optional docks + dominant manuscript */}
+          <div className="flex min-h-0 flex-1 gap-2">
+            {outlineOpen ? (
+              <WritingOutlineRail
+                className="hidden w-[220px] shrink-0 lg:flex"
+                sectionType={sectionType}
+                onSectionTypeChange={setSectionType}
+                versions={versionsQuery.data?.items ?? []}
+                onRestoreVersion={(id) => restoreVersion.mutate(id)}
               />
-            </div>
-          ) : null}
-        </div>
+            ) : null}
 
-        <div className="flex min-h-0 flex-col gap-2 overflow-auto">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Evidence &amp; reviewer
-          </p>
-
-          {grounded.last && (
-            <div
-              className={cn(
-                "rounded-lg border p-3 text-[12px]",
-                grounded.last.status === "ok"
-                  ? "border-emerald-700/30 bg-emerald-500/5"
-                  : "border-amber-700/30 bg-amber-500/5",
-              )}
-              role="status"
-            >
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <p className="font-medium text-foreground">
-                  {grounded.last.status === "ok"
-                    ? "Grounded draft"
-                    : "Blocked — insufficient evidence"}
-                </p>
-                <span className="text-[10px] uppercase text-muted-foreground">
-                  {grounded.last.mode}
-                </span>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+              <div className="flex shrink-0 items-center gap-2">
+                <input
+                  value={draftTitle}
+                  onChange={(e) => setDraftTitle(e.target.value)}
+                  className="h-8 flex-1 rounded-md border border-border bg-background px-2.5 text-[13px] font-medium text-foreground"
+                  placeholder="Manuscript title"
+                />
+                {input ? (
+                  <span className="text-[11px] tabular-nums text-muted-foreground">
+                    {input.length}
+                  </span>
+                ) : null}
               </div>
-              {grounded.last.status === "blocked" ? (
-                <p className="text-muted-foreground">
-                  {grounded.last.blocked_reason || "insufficient_evidence"}. Extract and accept
-                  evidence from Research Ready papers, then retry.
+
+              {grounded.isPending ? (
+                <ResearchProgressStage
+                  active
+                  liveMetric={
+                    grounded.jobStatus ||
+                    "Organising accepted EvidenceObjects for this section"
+                  }
+                />
+              ) : grounded.last?.status === "ok" ? (
+                <ResearchProgressStage
+                  active={false}
+                  doneLabel={
+                    (grounded.last.section_type || sectionType) === "literature_review"
+                      ? "Literature Review Ready"
+                      : `${(grounded.last.section_type || sectionType).replaceAll("_", " ")} ready`
+                  }
+                />
+              ) : null}
+
+              {citePickerOpen && currentProjectId != null ? (
+                <CitationInsertPicker
+                  open={citePickerOpen}
+                  projectId={currentProjectId}
+                  onClose={() => setCitePickerOpen(false)}
+                  onInsert={handleCiteInsert}
+                  className="mb-1 shrink-0"
+                />
+              ) : null}
+
+              {citeHoverPreview ? (
+                <p className="shrink-0 rounded-md border border-border bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
+                  Preview: {citeHoverPreview}
                 </p>
-              ) : (
-                <>
-                  <GroundedDraftVerify
-                    writing={grounded.last}
-                    onRevise={runGroundedGenerate}
-                    onAcceptSection={acceptGroundedSection}
-                    acceptAllowed={grounded.last.accept_allowed !== false}
-                    onInspectEvidence={(binding) => {
-                      const text = (binding.claim || binding.quote || "").trim();
-                      if (text) setSelectedText(text.slice(0, 2000));
-                      document
-                        .getElementById("writing-evidence-rail")
-                        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                    }}
-                  />
-                  {grounded.last.accept_allowed === false ? (
-                    <p className="mt-2 text-[11px] font-medium text-amber-800 dark:text-amber-200">
-                      Accept disabled — Research Reviewer found grounding errors. Revise before
-                      inserting into the manuscript.
+              ) : null}
+
+              <div
+                className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-[#f7f8fa] p-4 sm:p-6 dark:bg-[#161b22]"
+                data-density="low"
+              >
+                <textarea
+                  ref={editorRef}
+                  value={input}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setInput(next);
+                    if (groundedBaseline != null) {
+                      setEditsSinceInsert(Math.abs(next.length - groundedBaseline.length));
+                    }
+                  }}
+                  onSelect={() => {
+                    const el = editorRef.current;
+                    if (!el) return;
+                    const start = el.selectionStart ?? 0;
+                    const end = el.selectionEnd ?? 0;
+                    if (end > start) setSelectedText(el.value.slice(start, end));
+                    const eid = selectedEvidenceMarkerId(input, start, end);
+                    if (eid != null) {
+                      setCiteHoverPreview(
+                        `Evidence #${eid} — use Inspect to open the Evidence rail`,
+                      );
+                    }
+                  }}
+                  onMouseUp={() => {
+                    const el = editorRef.current;
+                    if (!el) return;
+                    const start = el.selectionStart ?? 0;
+                    const end = el.selectionEnd ?? 0;
+                    if (end > start) setSelectedText(el.value.slice(start, end));
+                  }}
+                  onKeyDown={(e) => {
+                    if (
+                      (e.ctrlKey || e.metaKey) &&
+                      e.shiftKey &&
+                      e.key.toLowerCase() === "c"
+                    ) {
+                      e.preventDefault();
+                      setCitePickerOpen(true);
+                    }
+                  }}
+                  placeholder="Manuscript — write or paste your literature review. Click Write literature review to draft from evidence."
+                  aria-label="Manuscript editor"
+                  disabled={activeDoc?.status === "deleted"}
+                  className="relative z-[1] mx-auto h-full min-h-0 w-full max-w-[65ch] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-[15px] leading-[1.55] tracking-[-0.011em] text-foreground outline-none placeholder:text-muted-foreground focus:ring-0"
+                />
+              </div>
+
+              {warning && (
+                <div className="flex shrink-0 items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[12px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {warning}
+                </div>
+              )}
+
+              {loading ? (
+                <div
+                  role="status"
+                  aria-busy="true"
+                  aria-label="Applying style transform"
+                  className="shrink-0 space-y-2 rounded-lg border border-border p-3"
+                >
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-3.5 w-full" />
+                  <Skeleton className="h-3.5 w-[92%]" />
+                  <Skeleton className="h-3.5 w-[78%]" />
+                  <Skeleton className="h-3.5 w-2/3" />
+                </div>
+              ) : result ? (
+                <div className="shrink-0 rounded-lg border border-border bg-card p-2">
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                      Style output · not evidence-backed
                     </p>
-                  ) : null}
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 gap-1 text-[11px]"
+                        onClick={() => {
+                          setInput(result);
+                          setResult("");
+                          toast.success("Moved to manuscript");
+                        }}
+                      >
+                        <RefreshCw className="size-3" /> Use
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 gap-1 text-[11px]"
+                        onClick={() => {
+                          copy(result);
+                          toast.success("Copied");
+                        }}
+                      >
+                        <Copy className="size-3" /> Copy
+                      </Button>
+                    </div>
+                  </div>
+                  <motion.textarea
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    value={result}
+                    onChange={(e) => setResult(e.target.value)}
+                    rows={8}
+                    className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-[13px] leading-relaxed outline-none focus:border-ring"
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            {evidenceOpen ? (
+              <div className="flex min-h-0 w-full shrink-0 flex-col gap-2 overflow-y-auto scrollbar-none lg:w-[320px]">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Evidence &amp; reviewer
+                </p>
+
+                {(grounded.last?.metrics || grounded.last?.review) && (
+                  <ResearchConfidenceStrip
+                    metrics={grounded.last?.metrics}
+                    review={grounded.last?.review}
+                    reviewerVersion={grounded.last?.review?.reviewer_version}
+                  />
+                )}
+
+                {grounded.last && (
+                  <div
+                    className={cn(
+                      "rounded-lg border p-3 text-[12px]",
+                      grounded.last.status === "ok"
+                        ? "border-emerald-700/30 bg-emerald-500/5"
+                        : "border-amber-700/30 bg-amber-500/5",
+                    )}
+                    role="status"
+                  >
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <p className="font-medium text-foreground">
+                        {grounded.last.status === "ok"
+                          ? "Grounded draft"
+                          : "Blocked — insufficient evidence"}
+                      </p>
+                      <span className="text-[10px] uppercase text-muted-foreground">
+                        {grounded.last.mode}
+                      </span>
+                    </div>
+                    {grounded.last.status === "blocked" ? (
+                      <p className="text-muted-foreground">
+                        {grounded.last.blocked_reason || "insufficient_evidence"}. Extract and
+                        accept evidence from Research Ready papers, then retry.
+                      </p>
+                    ) : (
+                      <>
+                        <GroundedDraftVerify
+                          writing={grounded.last}
+                          onRevise={runGroundedGenerate}
+                          onAcceptSection={acceptGroundedSection}
+                          acceptAllowed={grounded.last.accept_allowed !== false}
+                          onInspectEvidence={(binding) => {
+                            const text = (binding.claim || binding.quote || "").trim();
+                            if (text) setSelectedText(text.slice(0, 2000));
+                            document
+                              .getElementById("writing-evidence-rail")
+                              ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                          }}
+                        />
+                        {grounded.last.accept_allowed === false ? (
+                          <p className="mt-2 text-[11px] font-medium text-amber-800 dark:text-amber-200">
+                            Accept disabled — Research Reviewer found grounding errors. Revise
+                            before inserting into the manuscript.
+                          </p>
+                        ) : null}
+                        <ResearchReviewerPanel
+                          className="mt-2"
+                          documentId={activeId}
+                          liveReview={grounded.last.review}
+                          refreshKey={reviewerRefresh}
+                          onFocusSection={(sectionId: string) => {
+                            document
+                              .getElementById(`writing-section-${sectionId}`)
+                              ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                          }}
+                        />
+                        {grounded.last.warnings?.length ? (
+                          <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-200">
+                            {grounded.last.warnings.join(" ")}
+                          </p>
+                        ) : null}
+                        <p className="mt-2 text-[10px] text-muted-foreground">
+                          {grounded.last.disclaimer}
+                        </p>
+                        {(grounded.last.ai_execution ||
+                          grounded.last.draft_metadata?.ai_execution) && (
+                          <AiExecutionBeamInspector
+                            className="mt-3"
+                            compact
+                            execution={
+                              (grounded.last.ai_execution ||
+                                grounded.last.draft_metadata?.ai_execution) as {
+                                research_job?: string;
+                                capability?: string;
+                                execution_policy?: string;
+                                provider?: string;
+                                model?: string;
+                                prompt_version?: string;
+                                router_version?: string;
+                                execution_id?: string;
+                              }
+                            }
+                          />
+                        )}
+                        {editsSinceInsert > 0 ? (
+                          <p className="mt-1 text-[10px] text-muted-foreground">
+                            Char edits since insert: {editsSinceInsert}
+                          </p>
+                        ) : null}
+                        <div className="mt-2 flex gap-1">
+                          <Button
+                            size="sm"
+                            className="h-7 text-[11px]"
+                            disabled={grounded.last.accept_allowed === false}
+                            onClick={() => void acceptGroundedIntoManuscript()}
+                          >
+                            Accept into manuscript
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-[11px]"
+                            onClick={() => {
+                              if (groundedBaseline != null) {
+                                trackWritingEvent("edits_before_export", {
+                                  section_type: sectionType,
+                                  edits_since_insert: editsSinceInsert,
+                                  char_delta: Math.abs(
+                                    input.length - groundedBaseline.length,
+                                  ),
+                                });
+                              }
+                              grounded.clear();
+                              setGroundedBaseline(null);
+                              setEditsSinceInsert(0);
+                            }}
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <div id="writing-evidence-rail" className="min-h-0">
+                  <EvidenceInspectorPanel
+                    result={evidenceExplain.result}
+                    status={evidenceExplain.status}
+                    stickyText={selectedText}
+                    documentId={activeId}
+                    projectId={currentProjectId}
+                    onBound={() => setEvidenceRefresh((n) => n + 1)}
+                  />
+                </div>
+                {activeId != null && !grounded.last ? (
                   <ResearchReviewerPanel
                     className="mt-2"
                     documentId={activeId}
-                    liveReview={grounded.last.review}
                     refreshKey={reviewerRefresh}
                     onFocusSection={(sectionId: string) => {
                       document
@@ -1171,94 +1317,10 @@ function DraftTab() {
                         ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
                     }}
                   />
-                  {grounded.last.warnings?.length ? (
-                    <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-200">
-                      {grounded.last.warnings.join(" ")}
-                    </p>
-                  ) : null}
-                  <p className="mt-2 text-[10px] text-muted-foreground">{grounded.last.disclaimer}</p>
-                  {(grounded.last.ai_execution || grounded.last.draft_metadata?.ai_execution) && (
-                    <AiExecutionBeamInspector
-                      className="mt-3"
-                      compact
-                      execution={
-                        (grounded.last.ai_execution ||
-                          grounded.last.draft_metadata?.ai_execution) as {
-                          research_job?: string;
-                          capability?: string;
-                          execution_policy?: string;
-                          provider?: string;
-                          model?: string;
-                          prompt_version?: string;
-                          router_version?: string;
-                          execution_id?: string;
-                        }
-                      }
-                    />
-                  )}
-                  {editsSinceInsert > 0 ? (
-                    <p className="mt-1 text-[10px] text-muted-foreground">
-                      Char edits since insert: {editsSinceInsert}
-                    </p>
-                  ) : null}
-                  <div className="mt-2 flex gap-1">
-                    <Button
-                      size="sm"
-                      className="h-7 text-[11px]"
-                      disabled={grounded.last.accept_allowed === false}
-                      onClick={() => void acceptGroundedIntoManuscript()}
-                    >
-                      Accept into manuscript
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 text-[11px]"
-                      onClick={() => {
-                        if (groundedBaseline != null) {
-                          trackWritingEvent("edits_before_export", {
-                            section_type: sectionType,
-                            edits_since_insert: editsSinceInsert,
-                            char_delta: Math.abs(input.length - groundedBaseline.length),
-                          });
-                        }
-                        grounded.clear();
-                        setGroundedBaseline(null);
-                        setEditsSinceInsert(0);
-                      }}
-                    >
-                      Dismiss
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          <div id="writing-evidence-rail" className="min-h-0">
-            <EvidenceInspectorPanel
-              result={evidenceExplain.result}
-              status={evidenceExplain.status}
-              stickyText={selectedText}
-              documentId={activeId}
-              projectId={currentProjectId}
-              onBound={() => setEvidenceRefresh((n) => n + 1)}
-            />
+                ) : null}
+              </div>
+            ) : null}
           </div>
-          {activeId != null && !grounded.last ? (
-            <ResearchReviewerPanel
-              className="mt-2"
-              documentId={activeId}
-              refreshKey={reviewerRefresh}
-              onFocusSection={(sectionId: string) => {
-                document
-                  .getElementById(`writing-section-${sectionId}`)
-                  ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-              }}
-            />
-          ) : null}
-          </div>
-        </div>
         </>
       )}
 
@@ -1609,12 +1671,8 @@ export function WritingPage() {
   }
 
   return (
-    <PageContainer
-      title="Writing"
-      description="Literature review desk — outline, manuscript, and evidence."
-      dense
-    >
-      <div className="mb-4 flex items-center gap-1 border-b border-border">
+    <PageContainer title="Writing" dense maxWidth="full" fill>
+      <div className="mb-2 flex shrink-0 items-center gap-1 border-b border-border">
         {(
           [
             { key: "draft" as const, label: "Draft" },
@@ -1636,7 +1694,13 @@ export function WritingPage() {
           </button>
         ))}
       </div>
-      {tab === "draft" ? <DraftTab /> : <ExportTab />}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {tab === "draft" ? <DraftTab /> : (
+          <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+            <ExportTab />
+          </div>
+        )}
+      </div>
     </PageContainer>
   );
 }

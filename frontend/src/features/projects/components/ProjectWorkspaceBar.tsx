@@ -20,6 +20,11 @@ export type WorkspaceItemId =
   | "graph"
   | "notes";
 
+/** True when path is the project hub (`/projects/:id`), not a nested route. */
+export function isProjectHubPath(path: string, projectId: number): boolean {
+  return path === `/projects/${projectId}` || path === `/projects/${projectId}/`;
+}
+
 /** Which workspace chip is active for the current route (exclusive). */
 export function resolveWorkspaceActive(
   path: string,
@@ -43,6 +48,8 @@ export function resolveWorkspaceActive(
   if (path.startsWith("/c/") || path.startsWith("/chat")) return "chat";
 
   if (path.startsWith(`/projects/${projectId}`)) {
+    // Hub tabs own Papers/Notes/Chat — no workspace chip highlight on hub.
+    if (isProjectHubPath(path, projectId)) return null;
     if (tab === "chat") return "chat";
     if (tab === "notes") return "notes";
     if (tab === "papers") return "papers";
@@ -82,6 +89,7 @@ export function ProjectWorkspaceBar() {
       : `/projects/${currentProjectId}?tab=papers`;
 
   const active = resolveWorkspaceActive(path, search, currentProjectId);
+  const onHub = isProjectHubPath(path, currentProjectId);
 
   const items: {
     id: WorkspaceItemId;
@@ -131,6 +139,7 @@ export function ProjectWorkspaceBar() {
     <motion.div
       className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/30 px-3 py-1.5"
       data-testid="project-workspace-bar"
+      data-hub-identity={onHub ? "true" : undefined}
       initial={reduceMotion ? false : { opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
@@ -146,29 +155,33 @@ export function ProjectWorkspaceBar() {
         <span className="truncate">{project.name}</span>
       </NavLink>
 
-      <span className="hidden h-4 w-px shrink-0 bg-border sm:block" aria-hidden />
+      {!onHub && (
+        <>
+          <span className="hidden h-4 w-px shrink-0 bg-border sm:block" aria-hidden />
 
-      <nav
-        className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-none"
-        aria-label="Project workspace"
-      >
-        {items.map((item) => (
-          <NavLink
-            key={item.id}
-            to={item.to}
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12px] transition-colors",
-              active === item.id
-                ? "bg-background font-medium text-foreground shadow-sm ring-1 ring-border"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
+          <nav
+            className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-none"
+            aria-label="Project workspace"
           >
-            {item.icon}
-            <span className="hidden sm:inline">{item.label}</span>
-            <span className="sm:hidden">{item.label.split(" ")[0]}</span>
-          </NavLink>
-        ))}
-      </nav>
+            {items.map((item) => (
+              <NavLink
+                key={item.id}
+                to={item.to}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12px] transition-colors",
+                  active === item.id
+                    ? "bg-background font-medium text-foreground shadow-sm ring-1 ring-border"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                {item.icon}
+                <span className="hidden sm:inline">{item.label}</span>
+                <span className="sm:hidden">{item.label.split(" ")[0]}</span>
+              </NavLink>
+            ))}
+          </nav>
+        </>
+      )}
     </motion.div>
   );
 }
