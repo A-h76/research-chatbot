@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Wand2, Loader2, Copy, Download, RefreshCw,
   BookOpen, GraduationCap, Minimize2, Maximize2,
   AlignLeft, FileText, MessageSquare, StickyNote, AlertTriangle,
-  Quote, Plus, ListTree, PanelRight,
+  Quote, Plus,
 } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
@@ -21,7 +20,6 @@ import { useClipboard } from "@/hooks/useClipboard";
 import { writingApi } from "../api";
 import { toast } from "@/components/common/Toast";
 import { cn } from "@/lib/utils";
-import { AiExecutionBeamInspector } from "@/features/research-flow";
 import type { WritingAction } from "@/types/api";
 import { trackWritingEvent } from "../utils/telemetry";
 import {
@@ -33,7 +31,6 @@ import {
 import { mapWritingError } from "../utils/errorMap";
 import { trackWorkflowEvent } from "@/lib/workflowTelemetry";
 import { loadResearchPrefs } from "@/features/settings/lib/researchPrefs";
-import { EvidenceInspectorPanel } from "@/features/evidence/components/EvidenceInspectorPanel";
 import { useEvidenceExplain } from "@/features/evidence/hooks/useEvidenceExplain";
 import { useGroundedWriting, type WritingSectionType, type GroundedWritingSection } from "@/features/evidence/hooks/useGroundedWriting";
 import { evidenceApi } from "@/features/evidence/api";
@@ -48,9 +45,12 @@ import {
   selectedEvidenceMarkerId,
 } from "@/features/writing/utils/citeDraftHelpers";
 import { ResearchProgressStage } from "@/features/writing/components/ResearchProgressStage";
-import { ResearchConfidenceStrip } from "@/features/writing/components/ResearchConfidenceStrip";
-import { ResearchReviewerPanel } from "@/features/writing/components/ResearchReviewerPanel";
-import { WritingOutlineRail } from "@/features/writing/components/WritingOutlineRail";
+import { WritingStudioTabs, type WritingStudioTabId } from "@/features/writing/components/WritingStudioTabs";
+import { WritingStudioFooter } from "@/features/writing/components/WritingStudioFooter";
+import { WritingManuscriptEditor } from "@/features/writing/components/WritingManuscriptEditor";
+import { WritingNotesTab } from "@/features/writing/components/WritingNotesTab";
+import { WritingOutlineTab } from "@/features/writing/components/WritingOutlineTab";
+import { ResearchIntelligencePanel } from "@/features/writing/components/ResearchIntelligencePanel";
 import {
   downloadMarkdownFile,
   downloadTextFile,
@@ -106,7 +106,7 @@ function buildAutosaveKey(
   return `doc-${docId}-v${version}-${hash}`;
 }
 
-function DraftTab() {
+function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
   const { currentProjectId } = useUI();
   const qc = useQueryClient();
   const { copy } = useClipboard();
@@ -129,10 +129,10 @@ function DraftTab() {
   const [citeHoverPreview, setCiteHoverPreview] = useState<string | null>(null);
   const [sectionType, setSectionType] = useState<WritingSectionType>("literature_review");
   const [groundedBaseline, setGroundedBaseline] = useState<string | null>(null);
-  const [editsSinceInsert, setEditsSinceInsert] = useState(0);
+  const [, setEditsSinceInsert] = useState(0);
   const [confirmDeleteDoc, setConfirmDeleteDoc] = useState(false);
-  const [outlineOpen, setOutlineOpen] = useState(false);
-  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [evidenceOpen, setEvidenceOpen] = useState(true);
+  const [selectedCiteId, setSelectedCiteId] = useState<number | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const litReviewBtnRef = useRef<HTMLButtonElement | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -661,6 +661,19 @@ function DraftTab() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2" data-density="low">
+      {studioTab === "notes" ? (
+        <WritingNotesTab projectId={currentProjectId} />
+      ) : null}
+      {studioTab === "outline" ? (
+        <WritingOutlineTab
+          sectionType={sectionType}
+          onSectionTypeChange={setSectionType}
+          versions={versionsQuery.data?.items ?? []}
+          onRestoreVersion={(id) => restoreVersion.mutate(id)}
+        />
+      ) : null}
+      {studioTab === "manuscript" ? (
+        <>
       {currentProjectId == null && (
         <div className="shrink-0 rounded-md border border-border bg-card p-3 text-[12px] text-muted-foreground">
           Select a project to open the writing desk. Documents are always project-scoped.
@@ -877,7 +890,7 @@ function DraftTab() {
               size="sm"
               variant="ghost"
               className="h-8 text-[11px]"
-              title="Open Evidence Inspector"
+              title="Open Research Intelligence for selection"
               onClick={() => {
                 const el = editorRef.current;
                 if (el) {
@@ -887,42 +900,15 @@ function DraftTab() {
                     el.selectionEnd,
                   );
                   if (eid != null) {
+                    setSelectedCiteId(eid);
                     setSelectedText(`[#${eid}]`);
-                    setCiteHoverPreview(`Evidence #${eid} — Inspector rail`);
+                    setCiteHoverPreview(`Evidence #${eid}`);
                   }
                 }
                 setEvidenceOpen(true);
-                window.requestAnimationFrame(() => {
-                  document
-                    .getElementById("writing-evidence-rail")
-                    ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                });
               }}
             >
               Inspect
-            </Button>
-
-            <Button
-              type="button"
-              size="sm"
-              variant={outlineOpen ? "secondary" : "ghost"}
-              className="h-8 gap-1 text-[11px]"
-              aria-pressed={outlineOpen}
-              title="Toggle outline"
-              onClick={() => setOutlineOpen((v) => !v)}
-            >
-              <ListTree className="size-3.5" /> Outline
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={evidenceOpen ? "secondary" : "ghost"}
-              className="h-8 gap-1 text-[11px]"
-              aria-pressed={evidenceOpen}
-              title="Toggle evidence & reviewer"
-              onClick={() => setEvidenceOpen((v) => !v)}
-            >
-              <PanelRight className="size-3.5" /> Evidence
             </Button>
 
             <span
@@ -979,31 +965,16 @@ function DraftTab() {
             </div>
           </details>
 
-          {/* Desk: optional docks + dominant manuscript */}
-          <div className="flex min-h-0 flex-1 gap-2">
-            {outlineOpen ? (
-              <WritingOutlineRail
-                className="hidden w-[220px] shrink-0 lg:flex"
-                sectionType={sectionType}
-                onSectionTypeChange={setSectionType}
-                versions={versionsQuery.data?.items ?? []}
-                onRestoreVersion={(id) => restoreVersion.mutate(id)}
-              />
-            ) : null}
-
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-              <div className="flex shrink-0 items-center gap-2">
+          {/* Desk: manuscript + Research Intelligence */}
+          <div className="flex min-h-0 flex-1 gap-0 overflow-hidden rounded-md border border-border">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
                 <input
                   value={draftTitle}
                   onChange={(e) => setDraftTitle(e.target.value)}
                   className="h-8 flex-1 rounded-md border border-border bg-background px-2.5 text-[13px] font-medium text-foreground"
                   placeholder="Manuscript title"
                 />
-                {input ? (
-                  <span className="text-[11px] tabular-nums text-muted-foreground">
-                    {input.length}
-                  </span>
-                ) : null}
               </div>
 
               {grounded.isPending ? (
@@ -1031,49 +1002,37 @@ function DraftTab() {
                   projectId={currentProjectId}
                   onClose={() => setCitePickerOpen(false)}
                   onInsert={handleCiteInsert}
-                  className="mb-1 shrink-0"
+                  className="mx-3 mt-2 shrink-0"
                 />
               ) : null}
 
               {citeHoverPreview ? (
-                <p className="shrink-0 rounded-md border border-border bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
+                <p className="mx-3 mt-1 shrink-0 rounded-md border border-border bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
                   Preview: {citeHoverPreview}
                 </p>
               ) : null}
 
               <div
-                className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-[#f7f8fa] p-4 sm:p-6 dark:bg-[#161b22]"
+                className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[#fafafa] p-4 sm:p-6 dark:bg-[#12151a]"
                 data-density="low"
               >
-                <textarea
-                  ref={editorRef}
+                <WritingManuscriptEditor
+                  editorRef={editorRef}
                   value={input}
-                  onChange={(e) => {
-                    const next = e.target.value;
+                  selectedCiteId={selectedCiteId}
+                  disabled={activeDoc?.status === "deleted"}
+                  onCiteSelect={(eid) => {
+                    setSelectedCiteId(eid);
+                    setSelectedText(`[#${eid}]`);
+                    setCiteHoverPreview(`Evidence #${eid}`);
+                    setEvidenceOpen(true);
+                    setEvidenceRefresh((n) => n + 1);
+                  }}
+                  onChange={(next) => {
                     setInput(next);
                     if (groundedBaseline != null) {
                       setEditsSinceInsert(Math.abs(next.length - groundedBaseline.length));
                     }
-                  }}
-                  onSelect={() => {
-                    const el = editorRef.current;
-                    if (!el) return;
-                    const start = el.selectionStart ?? 0;
-                    const end = el.selectionEnd ?? 0;
-                    if (end > start) setSelectedText(el.value.slice(start, end));
-                    const eid = selectedEvidenceMarkerId(input, start, end);
-                    if (eid != null) {
-                      setCiteHoverPreview(
-                        `Evidence #${eid} — use Inspect to open the Evidence rail`,
-                      );
-                    }
-                  }}
-                  onMouseUp={() => {
-                    const el = editorRef.current;
-                    if (!el) return;
-                    const start = el.selectionStart ?? 0;
-                    const end = el.selectionEnd ?? 0;
-                    if (end > start) setSelectedText(el.value.slice(start, end));
                   }}
                   onKeyDown={(e) => {
                     if (
@@ -1085,15 +1044,11 @@ function DraftTab() {
                       setCitePickerOpen(true);
                     }
                   }}
-                  placeholder="Manuscript — write or paste your literature review. Click Write literature review to draft from evidence."
-                  aria-label="Manuscript editor"
-                  disabled={activeDoc?.status === "deleted"}
-                  className="relative z-[1] mx-auto h-full min-h-0 w-full max-w-[65ch] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-[15px] leading-[1.55] tracking-[-0.011em] text-foreground outline-none placeholder:text-muted-foreground focus:ring-0"
                 />
               </div>
 
               {warning && (
-                <div className="flex shrink-0 items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[12px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                <div className="mx-3 mb-2 flex shrink-0 items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[12px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                   <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {warning}
                 </div>
               )}
@@ -1103,16 +1058,14 @@ function DraftTab() {
                   role="status"
                   aria-busy="true"
                   aria-label="Applying style transform"
-                  className="shrink-0 space-y-2 rounded-lg border border-border p-3"
+                  className="mx-3 mb-2 shrink-0 space-y-2 rounded-lg border border-border p-3"
                 >
                   <Skeleton className="h-3 w-24" />
                   <Skeleton className="h-3.5 w-full" />
                   <Skeleton className="h-3.5 w-[92%]" />
-                  <Skeleton className="h-3.5 w-[78%]" />
-                  <Skeleton className="h-3.5 w-2/3" />
                 </div>
               ) : result ? (
-                <div className="shrink-0 rounded-lg border border-border bg-card p-2">
+                <div className="mx-3 mb-2 shrink-0 rounded-lg border border-border bg-card p-2">
                   <div className="mb-1 flex items-center justify-between">
                     <p className="text-[11px] font-medium uppercase tracking-wide text-amber-800 dark:text-amber-200">
                       Style output · not evidence-backed
@@ -1128,14 +1081,14 @@ function DraftTab() {
                           toast.success("Moved to manuscript");
                         }}
                       >
-                        <RefreshCw className="size-3" /> Use
+                        Use
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
                         className="h-7 gap-1 text-[11px]"
                         onClick={() => {
-                          copy(result);
+                          void copy(result);
                           toast.success("Copied");
                         }}
                       >
@@ -1143,181 +1096,76 @@ function DraftTab() {
                       </Button>
                     </div>
                   </div>
-                  <motion.textarea
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
+                  <textarea
                     value={result}
                     onChange={(e) => setResult(e.target.value)}
-                    rows={8}
+                    rows={6}
                     className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-[13px] leading-relaxed outline-none focus:border-ring"
                   />
                 </div>
               ) : null}
+
+              {grounded.last && grounded.last.status === "ok" ? (
+                <div className="mx-3 mb-2 shrink-0 rounded-lg border border-border p-3 text-[12px]">
+                  <GroundedDraftVerify
+                    writing={grounded.last}
+                    onRevise={runGroundedGenerate}
+                    onAcceptSection={acceptGroundedSection}
+                    acceptAllowed={grounded.last.accept_allowed !== false}
+                    onInspectEvidence={(binding) => {
+                      const eid = binding.evidence_id;
+                      if (typeof eid === "number") {
+                        setSelectedCiteId(eid);
+                        setSelectedText(`[#${eid}]`);
+                      } else {
+                        const text = (binding.claim || binding.quote || "").trim();
+                        if (text) setSelectedText(text.slice(0, 2000));
+                      }
+                      setEvidenceOpen(true);
+                    }}
+                  />
+                  <div className="mt-2 flex gap-1">
+                    <Button
+                      size="sm"
+                      className="h-7 text-[11px]"
+                      disabled={grounded.last.accept_allowed === false}
+                      onClick={() => void acceptGroundedIntoManuscript()}
+                    >
+                      Accept into manuscript
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-[11px]"
+                      onClick={() => {
+                        grounded.clear();
+                        setGroundedBaseline(null);
+                        setEditsSinceInsert(0);
+                      }}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              <WritingStudioFooter content={input} saveState={saveState} />
             </div>
 
             {evidenceOpen ? (
-              <div className="flex min-h-0 w-full shrink-0 flex-col gap-2 overflow-y-auto scrollbar-none lg:w-[320px]">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Evidence &amp; reviewer
-                </p>
-
-                {(grounded.last?.metrics || grounded.last?.review) && (
-                  <ResearchConfidenceStrip
-                    metrics={grounded.last?.metrics}
-                    review={grounded.last?.review}
-                    reviewerVersion={grounded.last?.review?.reviewer_version}
-                  />
-                )}
-
-                {grounded.last && (
-                  <div
-                    className={cn(
-                      "rounded-lg border p-3 text-[12px]",
-                      grounded.last.status === "ok"
-                        ? "border-emerald-700/30 bg-emerald-500/5"
-                        : "border-amber-700/30 bg-amber-500/5",
-                    )}
-                    role="status"
-                  >
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <p className="font-medium text-foreground">
-                        {grounded.last.status === "ok"
-                          ? "Grounded draft"
-                          : "Blocked — insufficient evidence"}
-                      </p>
-                      <span className="text-[10px] uppercase text-muted-foreground">
-                        {grounded.last.mode}
-                      </span>
-                    </div>
-                    {grounded.last.status === "blocked" ? (
-                      <p className="text-muted-foreground">
-                        {grounded.last.blocked_reason || "insufficient_evidence"}. Extract and
-                        accept evidence from Research Ready papers, then retry.
-                      </p>
-                    ) : (
-                      <>
-                        <GroundedDraftVerify
-                          writing={grounded.last}
-                          onRevise={runGroundedGenerate}
-                          onAcceptSection={acceptGroundedSection}
-                          acceptAllowed={grounded.last.accept_allowed !== false}
-                          onInspectEvidence={(binding) => {
-                            const text = (binding.claim || binding.quote || "").trim();
-                            if (text) setSelectedText(text.slice(0, 2000));
-                            document
-                              .getElementById("writing-evidence-rail")
-                              ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                          }}
-                        />
-                        {grounded.last.accept_allowed === false ? (
-                          <p className="mt-2 text-[11px] font-medium text-amber-800 dark:text-amber-200">
-                            Accept disabled — Research Reviewer found grounding errors. Revise
-                            before inserting into the manuscript.
-                          </p>
-                        ) : null}
-                        <ResearchReviewerPanel
-                          className="mt-2"
-                          documentId={activeId}
-                          liveReview={grounded.last.review}
-                          refreshKey={reviewerRefresh}
-                          onFocusSection={(sectionId: string) => {
-                            document
-                              .getElementById(`writing-section-${sectionId}`)
-                              ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                          }}
-                        />
-                        {grounded.last.warnings?.length ? (
-                          <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-200">
-                            {grounded.last.warnings.join(" ")}
-                          </p>
-                        ) : null}
-                        <p className="mt-2 text-[10px] text-muted-foreground">
-                          {grounded.last.disclaimer}
-                        </p>
-                        {(grounded.last.ai_execution ||
-                          grounded.last.draft_metadata?.ai_execution) && (
-                          <AiExecutionBeamInspector
-                            className="mt-3"
-                            compact
-                            execution={
-                              (grounded.last.ai_execution ||
-                                grounded.last.draft_metadata?.ai_execution) as {
-                                research_job?: string;
-                                capability?: string;
-                                execution_policy?: string;
-                                provider?: string;
-                                model?: string;
-                                prompt_version?: string;
-                                router_version?: string;
-                                execution_id?: string;
-                              }
-                            }
-                          />
-                        )}
-                        {editsSinceInsert > 0 ? (
-                          <p className="mt-1 text-[10px] text-muted-foreground">
-                            Char edits since insert: {editsSinceInsert}
-                          </p>
-                        ) : null}
-                        <div className="mt-2 flex gap-1">
-                          <Button
-                            size="sm"
-                            className="h-7 text-[11px]"
-                            disabled={grounded.last.accept_allowed === false}
-                            onClick={() => void acceptGroundedIntoManuscript()}
-                          >
-                            Accept into manuscript
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-[11px]"
-                            onClick={() => {
-                              if (groundedBaseline != null) {
-                                trackWritingEvent("edits_before_export", {
-                                  section_type: sectionType,
-                                  edits_since_insert: editsSinceInsert,
-                                  char_delta: Math.abs(
-                                    input.length - groundedBaseline.length,
-                                  ),
-                                });
-                              }
-                              grounded.clear();
-                              setGroundedBaseline(null);
-                              setEditsSinceInsert(0);
-                            }}
-                          >
-                            Dismiss
-                          </Button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                <div id="writing-evidence-rail" className="min-h-0">
-                  <EvidenceInspectorPanel
-                    result={evidenceExplain.result}
-                    status={evidenceExplain.status}
-                    stickyText={selectedText}
-                    documentId={activeId}
-                    projectId={currentProjectId}
-                    onBound={() => setEvidenceRefresh((n) => n + 1)}
-                  />
-                </div>
-                {activeId != null && !grounded.last ? (
-                  <ResearchReviewerPanel
-                    className="mt-2"
-                    documentId={activeId}
-                    refreshKey={reviewerRefresh}
-                    onFocusSection={(sectionId: string) => {
-                      document
-                        .getElementById(`writing-section-${sectionId}`)
-                        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                    }}
-                  />
-                ) : null}
-              </div>
+              <ResearchIntelligencePanel
+                selectedEvidenceId={selectedCiteId}
+                explainResult={evidenceExplain.result}
+                explainStatus={evidenceExplain.status}
+                stickyText={selectedText}
+                documentId={activeId}
+                projectId={currentProjectId}
+                onBound={() => setEvidenceRefresh((n) => n + 1)}
+                reviewerRefresh={reviewerRefresh}
+                groundedMetrics={grounded.last?.metrics}
+                groundedReview={grounded.last?.review}
+                onClose={() => setEvidenceOpen(false)}
+              />
             ) : null}
           </div>
         </>
@@ -1338,9 +1186,12 @@ function DraftTab() {
           await updateStatus.mutateAsync({ id: activeDoc.id, status: "deleted" });
         }}
       />
+        </>
+      ) : null}
     </div>
   );
 }
+
 
 function ExportTab() {
   const { currentProjectId } = useUI();
@@ -1643,61 +1494,56 @@ function ExportTab() {
   );
 }
 
-type Tab = "draft" | "export";
+type StudioSurface = WritingStudioTabId;
 
-/** Writing desk — Outline | Manuscript | Evidence (UI_UX_VISION_BETA_v1.0). */
+/** Writing Studio — familiar three-pane research writing interaction model. */
 export function WritingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const [tab, setTab] = useState<Tab>(tabParam === "export" ? "export" : "draft");
+  const [tab, setTab] = useState<StudioSurface>(() => {
+    if (tabParam === "export") return "export";
+    if (tabParam === "notes") return "notes";
+    if (tabParam === "outline") return "outline";
+    return "manuscript";
+  });
 
   useEffect(() => {
     const action = searchParams.get("action");
     const focus = searchParams.get("focus");
-    if (action === "lit-review" || focus === "evidence") {
-      setTab("draft");
+    if (action === "lit-review" || focus === "evidence" || focus === "review") {
+      setTab("manuscript");
       return;
     }
-    if (tabParam === "export" || tabParam === "draft") setTab(tabParam);
+    if (tabParam === "export" || tabParam === "notes" || tabParam === "outline") {
+      setTab(tabParam);
+    } else if (tabParam === "draft" || !tabParam) {
+      setTab("manuscript");
+    }
   }, [tabParam, searchParams]);
 
-  function selectTab(key: Tab) {
+  function selectTab(key: StudioSurface) {
     setTab(key);
     const next = new URLSearchParams(searchParams);
-    if (key === "draft") next.delete("tab");
+    if (key === "manuscript") next.delete("tab");
     else next.set("tab", key);
     setSearchParams(next, { replace: true });
   }
 
   return (
-    <PageContainer title="Writing" dense maxWidth="full" fill>
-      <div className="mb-2 flex shrink-0 items-center gap-1 border-b border-border">
-        {(
-          [
-            { key: "draft" as const, label: "Draft" },
-            { key: "export" as const, label: "Export" },
-          ] as const
-        ).map(({ key, label }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => selectTab(key)}
-            className={cn(
-              "border-b-2 px-3 py-2 text-[13px] font-medium transition-colors",
-              tab === key
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {tab === "draft" ? <DraftTab /> : (
+    <PageContainer dense maxWidth="full" fill>
+      <WritingStudioTabs
+        active={tab === "export" ? "export" : tab}
+        onChange={(t) => selectTab(t)}
+        showExport
+        onExport={() => selectTab("export")}
+      />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-2">
+        {tab === "export" ? (
           <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
             <ExportTab />
           </div>
+        ) : (
+          <DraftTab studioTab={tab} />
         )}
       </div>
     </PageContainer>

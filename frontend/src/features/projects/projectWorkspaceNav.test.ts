@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  countCitationMarkers,
+  countWords,
   deriveProjectWorkspaceStage,
+  isWritingStudioPath,
   projectEvidenceUrl,
   projectExportUrl,
   projectHubUrl,
   projectReviewUrl,
   projectWritingUrl,
   projectWorkspaceStageLabel,
+  resolveJourneyActive,
 } from "./projectWorkspaceNav";
 
 describe("projectWorkspaceNav", () => {
@@ -64,5 +68,25 @@ describe("projectWorkspaceNav", () => {
       }),
     ).toBe("writing");
     expect(projectWorkspaceStageLabel("analysing")).toBe("Analysing");
+  });
+
+  it("detects writing studio paths and journey active states", () => {
+    expect(isWritingStudioPath("/writing")).toBe(true);
+    expect(isWritingStudioPath("/projects/3/writing")).toBe(true);
+    expect(isWritingStudioPath("/projects/3")).toBe(false);
+
+    expect(resolveJourneyActive("/writing", "", 3)).toBe("writing");
+    expect(resolveJourneyActive("/writing", "?focus=evidence", 3)).toBe("evidence");
+    expect(resolveJourneyActive("/library", "", 3)).toBe("library");
+    expect(resolveJourneyActive("/projects/3", "?tab=research", 3)).toBe("research");
+    expect(resolveJourneyActive("/projects/3", "?tab=chat", 3)).toBe("chat");
+    expect(resolveJourneyActive("/settings", "", 3)).toBe("settings");
+  });
+
+  it("counts words and citation markers", () => {
+    expect(countWords("")).toBe(0);
+    expect(countWords("hello world")).toBe(2);
+    expect(countCitationMarkers("See [#12] and [#13].")).toBe(2);
+    expect(countCitationMarkers("no cites")).toBe(0);
   });
 });

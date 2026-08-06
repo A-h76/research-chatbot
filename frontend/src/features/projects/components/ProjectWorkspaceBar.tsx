@@ -78,6 +78,8 @@ export function ProjectWorkspaceBar() {
 
   if (currentProjectId == null) return null;
   if (path.startsWith("/settings") || path.startsWith("/admin")) return null;
+  // Writing Studio owns journey chrome — avoid duplicate chips.
+  if (path.startsWith("/writing")) return null;
 
   const project =
     projects.find((p) => p.id === currentProjectId) ??

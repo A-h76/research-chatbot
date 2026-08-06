@@ -730,3 +730,14 @@
     display: none;
   }
 }
+
+/* Writing Studio — industry-standard research writing shell */
+.writing-studio-cite-chip {
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  color: var(--primary);
+  border-radius: 0.2rem;
+  font-weight: 500;
+}
+.writing-studio-intelligence {
+  background: var(--background);
+}
