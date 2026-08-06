@@ -25,12 +25,14 @@ describe("projectsApi.hub", () => {
         unread: 0,
         reading: 0,
         read: 0,
+        cross_paper_ready: 0,
       },
       recent_papers: [],
       recent_notes: [],
       open_questions: [],
       recent_insights: [],
       pipeline_summary: { done: 0, running: 0, pending: 0, failed: 0, partial: 0 },
+      analysis_summary: { ready: 0, running: 0, pending: 0, failed: 0 },
       unread_activity: [],
     };
     vi.stubGlobal(

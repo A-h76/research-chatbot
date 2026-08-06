@@ -238,6 +238,7 @@ function OverviewTab({
     recent_insights,
     open_questions,
     pipeline_summary,
+    analysis_summary,
   } = hub;
   const pipeTotal =
     pipeline_summary.done +
@@ -326,13 +327,14 @@ function OverviewTab({
       {pipeTotal > 0 && (
         <div className="dhund-enter rounded-md border border-border bg-card px-3 py-2.5 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">Corpus pipeline · </span>
-          {pipeline_summary.done} ready
-          {pipeline_summary.running > 0 ? ` · ${pipeline_summary.running} running` : ""}
-          {pipeline_summary.pending > 0 ? ` · ${pipeline_summary.pending} queued` : ""}
-          {pipeline_summary.failed > 0 ? ` · ${pipeline_summary.failed} need attention` : ""}
+          {analysis_summary.ready} ready for cross-paper research
+          {analysis_summary.running > 0 ? ` · ${analysis_summary.running} analysing` : ""}
+          {analysis_summary.pending > 0 ? ` · ${analysis_summary.pending} waiting` : ""}
+          {analysis_summary.failed > 0 ? ` · ${analysis_summary.failed} need attention` : ""}
           {pipeline_summary.running + pipeline_summary.pending > 0 ? (
             <span className="mt-1 block text-[11px]">
-              Processing continues in the background — open a paper to watch stage-by-stage progress.
+              Upload/extract may finish before structured analysis — open a paper to watch
+              stage-by-stage progress.
             </span>
           ) : null}
         </div>

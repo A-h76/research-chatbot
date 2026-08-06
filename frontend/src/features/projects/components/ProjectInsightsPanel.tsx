@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Archive,
   FileText,
@@ -14,9 +14,11 @@ import type { ProjectMemory, ProjectMemoryKind } from "@/types/api";
 import {
   useDeleteProjectMemory,
   usePatchProjectMemory,
+  useProjectHub,
   useProjectInsights,
   useProjectMemory,
 } from "../useProjects";
+import { projectResearchUrl } from "../projectResearchNavigation";
 
 const KIND_SECTIONS: { kind: ProjectMemoryKind | "pinned"; title: string }[] = [
   { kind: "pinned", title: "Pinned" },
@@ -110,8 +112,59 @@ function MemoryCard({
   );
 }
 
+function InsightsResearchCta({
+  projectId,
+  canRunResearch,
+}: {
+  projectId: number;
+  canRunResearch: boolean;
+}) {
+  const navigate = useNavigate();
+
+  if (canRunResearch) {
+    return (
+      <div className="flex flex-wrap justify-center gap-2 pt-2">
+        <Button
+          size="sm"
+          onClick={() => navigate(projectResearchUrl(projectId, { preset: "evidence" }))}
+        >
+          Run first synthesis
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => navigate(projectResearchUrl(projectId))}
+        >
+          Open Research
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap justify-center gap-2 pt-2">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => navigate(`/projects/${projectId}?tab=papers`)}
+      >
+        Check paper status
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => navigate(projectResearchUrl(projectId))}
+      >
+        Research tab
+      </Button>
+    </div>
+  );
+}
+
 /** Insights (DerivedAnalysis) + Research Memory — distinct models, one tab. */
 export function ProjectInsightsPanel({ projectId }: { projectId: number }) {
+  const { data: hub } = useProjectHub(projectId);
+  const canRunResearch = (hub?.stats.cross_paper_ready ?? 0) >= 2;
   const {
     data: insights,
     isLoading: insightsLoading,
@@ -209,9 +262,17 @@ export function ProjectInsightsPanel({ projectId }: { projectId: number }) {
                 {items.length > 0 ? ` (${items.length})` : ""}
               </h3>
               {items.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  Run project research to promote findings here.
-                </p>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    Run project research to promote findings here.
+                  </p>
+                  {section.kind === "finding" ? (
+                    <InsightsResearchCta
+                      projectId={projectId}
+                      canRunResearch={canRunResearch}
+                    />
+                  ) : null}
+                </div>
               ) : (
                 <div className="space-y-2">
                   {items.map((m) => (
@@ -242,6 +303,10 @@ export function ProjectInsightsPanel({ projectId }: { projectId: number }) {
           <div className="rounded-xl border border-dashed border-border px-6 py-8 text-center space-y-2">
             <Sparkles className="mx-auto size-7 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">No research runs yet.</p>
+            <p className="text-xs text-muted-foreground">
+              Research runs appear here after you ask cross-paper questions in the Research tab.
+            </p>
+            <InsightsResearchCta projectId={projectId} canRunResearch={canRunResearch} />
           </div>
         ) : (
           <div className="space-y-2">

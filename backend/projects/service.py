@@ -47,6 +47,7 @@ class ProjectService:
     DerivedAnalysis: Any
     ProjectQuestion: Any
     AnalysisPipelineResult: Any | None = None
+    PaperAnalysis: Any | None = None
 
     def get_owned(self, db: Any, project_id: int, user_id: int) -> Any | None:
         p = db.get(self.Project, project_id)
@@ -285,6 +286,21 @@ class ProjectService:
 
             rs_counts = {"unread": 0, "reading": 0, "read": 0}
             pipeline = {"done": 0, "running": 0, "pending": 0, "failed": 0, "partial": 0}
+            analysis_pipeline = {"ready": 0, "running": 0, "pending": 0, "failed": 0}
+            cross_paper_ready = 0
+            analysis_status_map: dict[int, str] = {}
+            if self.PaperAnalysis is not None and papers:
+                from backend.library.paper_analysis import (
+                    batch_paper_analysis_status,
+                    cross_paper_research_ready,
+                )
+
+                analysis_status_map = batch_paper_analysis_status(
+                    db,
+                    [f.id for f in papers],
+                    self.PaperAnalysis,
+                    self.select,
+                )
             for f in papers:
                 rs = f.reading_status or "unread"
                 if rs in rs_counts:
@@ -294,6 +310,15 @@ class ProjectService:
                     pipeline[ms] += 1
                 else:
                     pipeline["pending"] += 1
+                pa_status = analysis_status_map.get(f.id, "pending")
+                if pa_status == "done":
+                    analysis_pipeline["ready"] += 1
+                elif pa_status in analysis_pipeline:
+                    analysis_pipeline[pa_status] += 1
+                else:
+                    analysis_pipeline["pending"] += 1
+                if cross_paper_research_ready(pa_status):
+                    cross_paper_ready += 1
 
             open_questions = [self.serialize_question(q) for q in open_qs[:_OPEN_QUESTIONS_HUB]]
             recent_papers = [self._paper_brief(f) for f in papers[:_RECENT_PAPERS]]
@@ -350,12 +375,14 @@ class ProjectService:
                     "unread": rs_counts["unread"],
                     "reading": rs_counts["reading"],
                     "read": rs_counts["read"],
+                    "cross_paper_ready": cross_paper_ready,
                 },
                 "recent_papers": recent_papers,
                 "recent_notes": recent_notes,
                 "open_questions": open_questions,
                 "recent_insights": recent_insights,
                 "pipeline_summary": pipeline,
+                "analysis_summary": analysis_pipeline,
                 "unread_activity": unread_activity,
             }
         finally:
@@ -516,6 +543,7 @@ def create_project_service(
     DerivedAnalysis,
     ProjectQuestion,
     AnalysisPipelineResult=None,
+    PaperAnalysis=None,
 ) -> ProjectService:
     return ProjectService(
         SessionLocal=SessionLocal,
@@ -528,4 +556,5 @@ def create_project_service(
         DerivedAnalysis=DerivedAnalysis,
         ProjectQuestion=ProjectQuestion,
         AnalysisPipelineResult=AnalysisPipelineResult,
+        PaperAnalysis=PaperAnalysis,
     )

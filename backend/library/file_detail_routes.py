@@ -37,6 +37,15 @@ def create_file_detail_blueprint(
             if not x or x.user_id != session["user_id"]:
                 return jsonify({"error": "not_found"}), 404
             payload = file_to_dict(x)
+            from backend.library.paper_analysis import batch_paper_analysis_status, enrich_file_payload
+
+            status_map = batch_paper_analysis_status(
+                db,
+                [x.id],
+                PaperAnalysis,
+                select_fn,
+            )
+            enrich_file_payload(payload, status_map.get(x.id, "pending"))
             if x.project_id:
                 p = db.get(Project, x.project_id)
                 if p and p.user_id == session["user_id"]:

@@ -41,13 +41,28 @@ def create_library_overview_blueprint(
             params.file_ids = file_ids
         db = SessionLocal()
         try:
+            from backend.library.paper_analysis import (
+                batch_paper_analysis_status,
+                enrich_file_payload,
+            )
+
             total, page = search_library(db, UserFile, params)
+            status_map = batch_paper_analysis_status(
+                db,
+                [x.id for x in page],
+                PaperAnalysis,
+                select_fn,
+            )
+            items = [
+                enrich_file_payload(file_to_dict(x), status_map.get(x.id, "pending"))
+                for x in page
+            ]
             return jsonify(
                 {
                     "total": total,
                     "offset": params.offset,
                     "limit": params.limit,
-                    "items": [file_to_dict(x) for x in page],
+                    "items": items,
                 }
             )
         finally:

@@ -115,6 +115,7 @@ export interface ProjectHub {
     unread: number;
     reading: number;
     read: number;
+    cross_paper_ready: number;
   };
   recent_papers: ProjectHubPaper[];
   recent_notes: ProjectHubNote[];
@@ -126,6 +127,12 @@ export interface ProjectHub {
     pending: number;
     failed: number;
     partial: number;
+  };
+  analysis_summary: {
+    ready: number;
+    running: number;
+    pending: number;
+    failed: number;
   };
   unread_activity: ProjectHubActivity[];
 }
@@ -275,6 +282,10 @@ export interface UserFile {
     | "research_ready";
   research_readiness_label?: string;
   has_pdf?: boolean;
+  /** PaperAnalysis.status — required for cross-paper project research. */
+  paper_analysis_status?: "pending" | "running" | "done" | "failed";
+  /** True when structured analysis is complete (matches backend research gate). */
+  cross_paper_research_ready?: boolean;
   /** UFTR provenance — soft full-text resolution state */
   fulltext?: FullTextResolution | null;
   lifecycle_label?: string;

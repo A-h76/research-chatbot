@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { queryKeys } from "@/lib/queryKeys";
 import { filesApi, type AnalyzeDocumentBody, type LibraryListParams } from "./api";
-import type { UserFile } from "@/types/api";
+import type { PaperAnalysis, UserFile } from "@/types/api";
 
 // ── Library list (paginated + filtered) ──────────────────────────────────────
 export function useFiles(params: LibraryListParams = {}) {
@@ -59,6 +60,39 @@ export function usePaperAnalysis(fileId: number | null, enabled = true) {
       return s === "pending" || s === "running" ? 3000 : false;
     },
   });
+}
+
+/** Batch analysis fetch for project note suggestions (shared query keys). */
+export function usePaperAnalyses(fileIds: number[]) {
+  const unique = useMemo(
+    () => [...new Set(fileIds.filter((id) => Number.isFinite(id) && id > 0))],
+    [fileIds],
+  );
+
+  const results = useQueries({
+    queries: unique.map((fileId) => ({
+      queryKey: queryKeys.fileAnalysis(fileId),
+      queryFn: () => filesApi.getAnalysis(fileId),
+      staleTime: 60_000,
+      retry: 1,
+    })),
+  });
+
+  const dataSig = results.map((r) => `${r.dataUpdatedAt}:${r.status}`).join("|");
+
+  const byId = useMemo(() => {
+    const map = new Map<number, PaperAnalysis | null>();
+    unique.forEach((fileId, i) => {
+      map.set(fileId, (results[i]?.data as PaperAnalysis | undefined) ?? null);
+    });
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataSig captures results
+  }, [unique, dataSig]);
+
+  return {
+    byId,
+    isLoading: results.some((r) => r.isLoading),
+  };
 }
 
 // Polls GET /api/uploads/batch/<id>/status every 2s while the batch is

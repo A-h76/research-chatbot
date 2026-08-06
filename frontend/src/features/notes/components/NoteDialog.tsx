@@ -17,6 +17,8 @@ interface NoteDialogProps {
   note?: Note | null;          // null/undefined = create mode
   projectId?: number | null;
   fileId?: number | null;
+  initialTitle?: string;
+  initialContent?: string;
 }
 
 export function NoteDialog({
@@ -25,6 +27,8 @@ export function NoteDialog({
   note,
   projectId,
   fileId,
+  initialTitle,
+  initialContent,
 }: NoteDialogProps) {
   const createNote = useCreateNote();
   const updateNote = useUpdateNote();
@@ -34,10 +38,10 @@ export function NoteDialog({
 
   useEffect(() => {
     if (open) {
-      setTitle(note?.title   ?? "");
-      setContent(note?.content ?? "");
+      setTitle(note?.title ?? initialTitle ?? "");
+      setContent(note?.content ?? initialContent ?? "");
     }
-  }, [open, note]);
+  }, [open, note, initialTitle, initialContent]);
 
   async function save() {
     const trimmedContent = content.trim();

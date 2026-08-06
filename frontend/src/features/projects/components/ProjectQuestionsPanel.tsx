@@ -1,8 +1,25 @@
 import { useState } from "react";
-import { Check, Circle, HelpCircle, Pause, Plus, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import {
+  Check,
+  Circle,
+  HelpCircle,
+  MessageSquare,
+  Pause,
+  Plus,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { toast } from "@/components/common/Toast";
+import {
+  useCreateConversation,
+} from "@/features/chat/hooks/useConversation";
+import { useModels } from "@/features/models/useModels";
+import { useMe } from "@/features/profile/useMe";
+import { useUI } from "@/context/UIContext";
 import { cn } from "@/lib/utils";
 import type { ProjectQuestion, ProjectQuestionStatus } from "@/types/api";
 import {
@@ -11,6 +28,7 @@ import {
   useProjectQuestions,
   useUpdateQuestion,
 } from "../useProjects";
+import { projectResearchUrl } from "../projectResearchNavigation";
 
 const STATUS_META: Record<
   ProjectQuestionStatus,
@@ -37,11 +55,15 @@ function QuestionRow({
   question,
   onStatus,
   onDelete,
+  onAnswerWithResearch,
+  onAskInChat,
   busy,
 }: {
   question: ProjectQuestion;
   onStatus: (status: ProjectQuestionStatus) => void;
   onDelete: () => void;
+  onAnswerWithResearch: () => void;
+  onAskInChat: () => void;
   busy: boolean;
 }) {
   const meta = STATUS_META[question.status] ?? STATUS_META.open;
@@ -52,6 +74,28 @@ function QuestionRow({
         <p className="min-w-0 flex-1 text-sm leading-relaxed">{question.text}</p>
       </div>
       <div className="flex flex-wrap items-center gap-1.5 pl-6">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1 text-[11px]"
+          disabled={busy}
+          onClick={onAnswerWithResearch}
+        >
+          <Sparkles className="size-3" />
+          Answer with Research
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1 text-[11px]"
+          disabled={busy}
+          onClick={onAskInChat}
+        >
+          <MessageSquare className="size-3" />
+          Ask in Chat
+        </Button>
         {(["open", "answered", "parked"] as ProjectQuestionStatus[]).map((s) => (
           <button
             key={s}
@@ -86,6 +130,11 @@ function QuestionRow({
 
 /** Lazy-loaded Questions tab — full list via GET …/questions, not hub fan-out. */
 export function ProjectQuestionsPanel({ projectId }: { projectId: number }) {
+  const navigate = useNavigate();
+  const { defaultModel } = useUI();
+  const { data: me } = useMe();
+  const { data: modelsData } = useModels();
+  const createConvo = useCreateConversation();
   const { data, isLoading } = useProjectQuestions(projectId, true);
   const createQ = useCreateQuestion(projectId);
   const updateQ = useUpdateQuestion(projectId);
@@ -94,13 +143,35 @@ export function ProjectQuestionsPanel({ projectId }: { projectId: number }) {
   const [toDelete, setToDelete] = useState<ProjectQuestion | null>(null);
 
   const items = data?.items ?? [];
-  const busy = createQ.isPending || updateQ.isPending || deleteQ.isPending;
+  const busy =
+    createQ.isPending ||
+    updateQ.isPending ||
+    deleteQ.isPending ||
+    createConvo.isPending;
 
   async function submit() {
     const text = draft.trim();
     if (!text) return;
     await createQ.mutateAsync({ text, source: "manual" });
     setDraft("");
+  }
+
+  function answerWithResearch(text: string) {
+    navigate(projectResearchUrl(projectId, { query: text }));
+  }
+
+  async function askInChat(text: string) {
+    try {
+      const model =
+        defaultModel || me?.default_model || modelsData?.models[0] || "gpt-4o-mini";
+      const conv = await createConvo.mutateAsync({
+        model,
+        project_id: projectId,
+      });
+      navigate(`/c/${conv.id}`, { state: { draftMessage: text } });
+    } catch {
+      toast.error("Could not start chat");
+    }
   }
 
   if (isLoading) {
@@ -121,6 +192,16 @@ export function ProjectQuestionsPanel({ projectId }: { projectId: number }) {
           Track what you still need to answer. Notes stay freeform; questions are
           the research agenda.
         </p>
+      </div>
+
+      <div className="rounded-lg border border-border bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
+        Dhund won&apos;t answer these automatically. Use{" "}
+        <span className="font-medium text-foreground">Answer with Research</span> for
+        cross-paper evidence from your papers, or{" "}
+        <span className="font-medium text-foreground">Ask in Chat</span> for a
+        conversational draft — then mark{" "}
+        <span className="font-medium text-foreground">Answered</span> when you&apos;re
+        satisfied.
       </div>
 
       <div className="flex gap-2">
@@ -152,7 +233,8 @@ export function ProjectQuestionsPanel({ projectId }: { projectId: number }) {
           <HelpCircle className="mx-auto size-8 text-muted-foreground" />
           <p className="text-sm font-medium">No questions yet</p>
           <p className="text-xs text-muted-foreground">
-            Add the questions this project should answer.
+            Add the questions this project should answer, then use Research or Chat to
+            investigate them.
           </p>
         </div>
       ) : (
@@ -166,6 +248,8 @@ export function ProjectQuestionsPanel({ projectId }: { projectId: number }) {
                 updateQ.mutate({ questionId: q.id, body: { status } })
               }
               onDelete={() => setToDelete(q)}
+              onAnswerWithResearch={() => answerWithResearch(q.text)}
+              onAskInChat={() => void askInChat(q.text)}
             />
           ))}
         </div>

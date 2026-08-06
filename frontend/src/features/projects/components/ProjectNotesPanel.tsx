@@ -8,6 +8,8 @@ import { useDeleteNote, useNotes } from "@/features/notes/useNotes";
 import { toast } from "@/components/common/Toast";
 import { formatDate } from "@/lib/utils";
 import type { Note } from "@/types/api";
+import type { NoteSuggestion } from "../noteSuggestions";
+import { ProjectNoteSuggestions } from "./ProjectNoteSuggestions";
 
 function NoteCard({
   note,
@@ -58,9 +60,36 @@ export function ProjectNotesPanel({ projectId }: { projectId: number }) {
   const deleteNote = useDeleteNote();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Note | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftContent, setDraftContent] = useState("");
+  const [draftFileId, setDraftFileId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
 
   const notes = useMemo(() => data?.items ?? [], [data?.items]);
+
+  function openCreate() {
+    setEditing(null);
+    setDraftTitle("");
+    setDraftContent("");
+    setDraftFileId(null);
+    setDialogOpen(true);
+  }
+
+  function openEdit(note: Note) {
+    setEditing(note);
+    setDraftTitle("");
+    setDraftContent("");
+    setDraftFileId(null);
+    setDialogOpen(true);
+  }
+
+  function reviewSuggestion(s: NoteSuggestion) {
+    setEditing(null);
+    setDraftTitle(s.title);
+    setDraftContent(s.content);
+    setDraftFileId(s.fileId);
+    setDialogOpen(true);
+  }
 
   if (isLoading) {
     return (
@@ -72,55 +101,59 @@ export function ProjectNotesPanel({ projectId }: { projectId: number }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between gap-2">
         <div>
           <h2 className="text-sm font-semibold">Notes ({data?.total ?? notes.length})</h2>
           <p className="text-xs text-muted-foreground">
-            Your writing — not AI-generated findings (see Insights).
+            Your writing — save suggestions below or create notes manually.
           </p>
         </div>
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
-            setEditing(null);
-            setDialogOpen(true);
-          }}
-        >
+        <Button size="sm" className="gap-1.5" onClick={openCreate}>
           <Plus className="size-3.5" /> New note
         </Button>
       </div>
 
-      {notes.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center space-y-2">
-          <StickyNote className="mx-auto size-8 text-muted-foreground" />
-          <p className="text-sm font-medium">No notes yet</p>
-          <p className="text-xs text-muted-foreground">
-            Capture observations, summaries, and ideas as you read.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {notes.map((n) => (
-            <NoteCard
-              key={n.id}
-              note={n}
-              onEdit={() => {
-                setEditing(n);
-                setDialogOpen(true);
-              }}
-              onDelete={() => setDeleteTarget(n)}
-            />
-          ))}
-        </div>
-      )}
+      <ProjectNoteSuggestions
+        projectId={projectId}
+        notes={notes}
+        onReviewSuggestion={reviewSuggestion}
+      />
+
+      <section className="space-y-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Your notes
+        </h3>
+        {notes.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center space-y-2">
+            <StickyNote className="mx-auto size-8 text-muted-foreground" />
+            <p className="text-sm font-medium">No notes yet</p>
+            <p className="text-xs text-muted-foreground">
+              Save a suggested highlight above, or capture your own observations as you read.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {notes.map((n) => (
+              <NoteCard
+                key={n.id}
+                note={n}
+                onEdit={() => openEdit(n)}
+                onDelete={() => setDeleteTarget(n)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
       <NoteDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         note={editing}
         projectId={projectId}
+        fileId={draftFileId}
+        initialTitle={editing ? undefined : draftTitle}
+        initialContent={editing ? undefined : draftContent}
       />
 
       <ConfirmDialog

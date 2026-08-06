@@ -53,6 +53,7 @@ export function Composer({
   conversationId,
   projectId,
   autoFocus,
+  initialDraft,
   /** Paper-scoped chat: hide web search + memory (answers are paper-only). */
   paperScoped,
 }: {
@@ -64,9 +65,10 @@ export function Composer({
   conversationId?: number | null;
   projectId?: number | null;
   autoFocus?: boolean;
+  initialDraft?: string;
   paperScoped?: boolean;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialDraft ?? "");
   const [pending, setPending] = useState<PendingFile[]>([]);
   // Set once a document batch is accepted (POST /api/uploads/bulk 201);
   // <BulkUploadProgress> below owns polling it from there, replacing the
@@ -83,6 +85,10 @@ export function Composer({
   useEffect(() => {
     if (autoFocus) textareaRef.current?.focus();
   }, [autoFocus]);
+
+  useEffect(() => {
+    if (initialDraft?.trim()) setText(initialDraft);
+  }, [initialDraft]);
 
   const autoGrow = () => {
     const el = textareaRef.current;

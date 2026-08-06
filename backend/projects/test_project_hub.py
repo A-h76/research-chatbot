@@ -24,6 +24,7 @@ def project_svc():
         DerivedAnalysis=server.DerivedAnalysis,
         ProjectQuestion=server.ProjectQuestion,
         AnalysisPipelineResult=server.AnalysisPipelineResult,
+        PaperAnalysis=server.PaperAnalysis,
     )
 
 

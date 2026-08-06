@@ -2603,6 +2603,7 @@ project_service = create_project_service(
     DerivedAnalysis=DerivedAnalysis,
     ProjectQuestion=ProjectQuestion,
     AnalysisPipelineResult=AnalysisPipelineResult,
+    PaperAnalysis=PaperAnalysis,
 )
 # project_research_service + projects blueprint registered after responses_text().
 

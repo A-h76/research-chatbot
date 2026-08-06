@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { MessageList, type LiveStream } from "./MessageList";
@@ -19,6 +19,8 @@ import { normalizeReasoningEffort, supportsTemperature } from "@/lib/modelCapabi
 /** D6 T3 — demoted global / project inquiry conversation. */
 export function ConversationView({ conversationId }: { conversationId: number }) {
   const qc = useQueryClient();
+  const location = useLocation();
+  const draftMessage = (location.state as { draftMessage?: string } | null)?.draftMessage;
   const { data: conv, isLoading } = useConversation(conversationId);
   const updateConv = useUpdateConversation();
   const { defaultSearchMode } = useUI();
@@ -191,6 +193,7 @@ export function ConversationView({ conversationId }: { conversationId: number })
           onStop={stream.stop}
           conversationId={conversationId}
           projectId={conv.project_id}
+          initialDraft={draftMessage}
         />
         <p className="mt-2 text-center text-[11px] text-muted-foreground">
           {projectId
