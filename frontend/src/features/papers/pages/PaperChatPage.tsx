@@ -110,7 +110,7 @@ function PaperHeader({ fileId }: { fileId: number }) {
           <PipelineStatusPanel
             derived={derived}
             metaStatus={file.meta_status}
-            updatedAt={pipeline?.updated_at ?? file.updated_at ?? file.created_at}
+            updatedAt={pipeline?.updated_at ?? file.created_at}
             compact
           />
         </div>

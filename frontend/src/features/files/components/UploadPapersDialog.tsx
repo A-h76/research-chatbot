@@ -6,7 +6,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { LibraryUploadZone } from "./LibraryUploadZone";
 import { LibraryUploadQueue } from "./LibraryUploadQueue";
 import type { LibraryUploadItem } from "../hooks/useLibraryUpload";
@@ -31,9 +32,7 @@ export function UploadPapersDialog({
 }) {
   const uploaded = uploadItems.filter((i) => i.status === "uploaded" && i.fileId != null);
   const failed = uploadItems.filter((i) => i.status === "failed");
-  const inFlight = uploadItems.filter(
-    (i) => i.status === "uploading" || i.status === "queued",
-  );
+  const inFlight = uploadItems.filter((i) => i.status === "uploading");
   const firstId = uploaded[0]?.fileId ?? null;
   const showNext = uploaded.length > 0 && inFlight.length === 0;
 
@@ -77,21 +76,22 @@ export function UploadPapersDialog({
             </ol>
             <div className="flex flex-wrap gap-2">
               {firstId != null && (
-                <Button asChild size="sm">
-                  <Link to={`/papers/${firstId}`} onClick={() => onOpenChange(false)}>
-                    Open first paper
-                  </Link>
-                </Button>
+                <Link
+                  to={`/papers/${firstId}`}
+                  onClick={() => onOpenChange(false)}
+                  className={cn(buttonVariants({ size: "sm" }))}
+                >
+                  Open first paper
+                </Link>
               )}
               {projectId != null && (
-                <Button asChild size="sm" variant="outline">
-                  <Link
-                    to={`/projects/${projectId}`}
-                    onClick={() => onOpenChange(false)}
-                  >
-                    Back to project
-                  </Link>
-                </Button>
+                <Link
+                  to={`/projects/${projectId}`}
+                  onClick={() => onOpenChange(false)}
+                  className={cn(buttonVariants({ size: "sm", variant: "outline" }))}
+                >
+                  Back to project
+                </Link>
               )}
               <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
                 Done

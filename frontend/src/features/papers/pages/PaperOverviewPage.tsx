@@ -463,11 +463,7 @@ export function PaperOverviewPage() {
           <PipelineStatusPanel
             derived={pipelineDerived}
             metaStatus={file.meta_status}
-            updatedAt={
-              pipeline?.updated_at ??
-              file.updated_at ??
-              file.created_at
-            }
+            updatedAt={pipeline?.updated_at ?? file.created_at}
           />
         )}
 
@@ -562,9 +558,7 @@ export function PaperOverviewPage() {
             <PipelineStatusPanel
               derived={pipelineDerived}
               metaStatus={file.meta_status}
-              updatedAt={
-                pipeline?.updated_at ?? file.updated_at ?? file.created_at
-              }
+              updatedAt={pipeline?.updated_at ?? file.created_at}
             />
           )}
 

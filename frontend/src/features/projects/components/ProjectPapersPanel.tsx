@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FileText, Library } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LibraryUploadZone } from "@/features/files/components/LibraryUploadZone";
 import { LibraryUploadQueue } from "@/features/files/components/LibraryUploadQueue";
@@ -82,7 +82,7 @@ export function ProjectPapersPanel({ projectId }: { projectId: number }) {
   const { byId: pipelineById } = usePipelines(paperIds, metaById);
   const { items: uploadItems, isUploading, upload, clearFinished } = useProjectUpload(projectId);
   const uploaded = uploadItems.filter((i) => i.status === "uploaded" && i.fileId != null);
-  const inFlight = uploadItems.filter((i) => i.status === "uploading" || i.status === "queued");
+  const inFlight = uploadItems.filter((i) => i.status === "uploading");
   const showNext = uploaded.length > 0 && inFlight.length === 0;
   const firstId = uploaded[0]?.fileId ?? null;
 
@@ -134,14 +134,13 @@ export function ProjectPapersPanel({ projectId }: { projectId: number }) {
           </p>
           <div className="flex flex-wrap gap-2">
             {firstId != null && (
-              <Button asChild size="sm">
-                <Link
-                  to={`/papers/${firstId}`}
-                  onClick={() => setCurrentProjectId(projectId)}
-                >
-                  Open first paper
-                </Link>
-              </Button>
+              <Link
+                to={`/papers/${firstId}`}
+                onClick={() => setCurrentProjectId(projectId)}
+                className={cn(buttonVariants({ size: "sm" }))}
+              >
+                Open first paper
+              </Link>
             )}
             <Button size="sm" variant="ghost" onClick={clearFinished}>
               Dismiss
