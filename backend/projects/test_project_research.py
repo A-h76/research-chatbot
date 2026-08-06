@@ -170,8 +170,9 @@ def test_research_too_few_ready(research_svc, sync_research_threads, researcher)
         file_ids=None,
         force=False,
     )
-    assert payload is None
     assert err == "too_few_ready"
+    assert isinstance(payload, dict)
+    assert payload.get("candidate_count", 0) < 2
 
 
 def test_research_preset_returns_claims(
@@ -243,8 +244,8 @@ def test_research_rejects_paper_outside_project(
         file_ids=[orphan_id, in_project],
         force=False,
     )
-    assert payload is None
     assert err == "too_few_ready"
+    assert isinstance(payload, dict)
 
 
 def test_research_cache_hit(research_svc, sync_research_threads, researcher_with_papers, monkeypatch):
@@ -275,6 +276,44 @@ def test_research_cache_hit(research_svc, sync_research_threads, researcher_with
     assert second["id"] == first["id"]
     assert second["status"] == "done"
     assert calls["n"] == 1
+
+
+def test_research_packs_many_large_analyses(
+    research_svc, sync_research_threads, researcher_with_papers, monkeypatch
+):
+    """Regression: huge per-paper JSON must not drop below 2 packed papers."""
+    uid = researcher_with_papers["user_id"]
+    project_id = researcher_with_papers["project_id"]
+    paper_ids = researcher_with_papers["paper_ids"]
+
+    db = server.SessionLocal()
+    try:
+        for fid in paper_ids:
+            pa = db.execute(
+                select(server.PaperAnalysis).where(server.PaperAnalysis.file_id == fid)
+            ).scalar_one()
+            huge = {
+                "executive_summary": "x" * 12_000,
+                "methodology": "y" * 12_000,
+                "results": "z" * 12_000,
+            }
+            pa.data = json.dumps(huge)
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setattr(research_svc, "ai_gateway", _MockGateway(paper_ids[0]))
+
+    payload, err = research_svc.start_research(
+        project_id,
+        uid,
+        preset="evidence",
+        query="",
+        file_ids=paper_ids,
+        force=False,
+    )
+    assert err is None, payload
+    assert payload["status"] == "done"
 
 
 def test_research_http(researcher_with_papers, monkeypatch):

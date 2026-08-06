@@ -104,6 +104,158 @@ def _analysis_completeness(analysis: dict[str, Any]) -> int:
     return score
 
 
+_ANALYSIS_PACK_PRIORITY = (
+    "executive_summary",
+    "key_contributions",
+    "methodology",
+    "results",
+    "limitations",
+    "research_objective",
+    "problem_statement",
+    "abstract_explained",
+    "experiments",
+    "dataset",
+    "strengths",
+    "future_work",
+    "keywords",
+    "important_terms",
+)
+
+
+def _truncate_str(s: str, max_len: int) -> str:
+    if len(s) <= max_len:
+        return s
+    if max_len <= 1:
+        return s[:max_len]
+    return s[: max_len - 1] + "…"
+
+
+def _truncate_value(val: Any, max_len: int) -> Any:
+    if val is None:
+        return val
+    if isinstance(val, str):
+        return _truncate_str(val, max_len)
+    if isinstance(val, list):
+        out: list[Any] = []
+        used = 0
+        for item in val:
+            if isinstance(item, str):
+                chunk = _truncate_str(item, max(80, max_len - used))
+                if not chunk:
+                    break
+                out.append(chunk)
+                used += len(chunk)
+                if used >= max_len:
+                    break
+            else:
+                out.append(item)
+        return out
+    return val
+
+
+def _compact_analysis(analysis: dict[str, Any], max_chars: int) -> dict[str, Any]:
+    """Shrink structured analysis so its JSON encoding fits ``max_chars``."""
+    if not analysis or max_chars <= 0:
+        return {}
+    raw = json.dumps(analysis, ensure_ascii=False)
+    if len(raw) <= max_chars:
+        return analysis
+
+    compact: dict[str, Any] = {}
+    keys = [k for k in _ANALYSIS_PACK_PRIORITY if k in analysis]
+    keys.extend(k for k in analysis if k not in keys)
+    per_key = max(120, max_chars // max(len(keys), 1))
+    for key in keys:
+        compact[key] = _truncate_value(analysis[key], per_key)
+        if len(json.dumps(compact, ensure_ascii=False)) > max_chars:
+            compact.pop(key, None)
+            per_key = max(80, per_key // 2)
+            compact[key] = _truncate_value(analysis[key], per_key)
+            while len(json.dumps(compact, ensure_ascii=False)) > max_chars and per_key > 40:
+                per_key //= 2
+                compact[key] = _truncate_value(analysis[key], per_key)
+            if len(json.dumps(compact, ensure_ascii=False)) > max_chars:
+                compact.pop(key, None)
+    return compact
+
+
+def _paper_json_blob(
+    candidate: dict[str, Any],
+    analysis: dict[str, Any],
+    *,
+    phase1_max: int,
+) -> dict[str, Any]:
+    blob: dict[str, Any] = {
+        "file_id": candidate["file_id"],
+        "title": candidate["title"],
+        "authors": candidate["authors"],
+        "year": candidate["year"],
+        "analysis": analysis,
+    }
+    hint = candidate.get("phase1_hint") or ""
+    if hint:
+        blob["phase1_sections"] = _truncate_str(hint, phase1_max)
+    return blob
+
+
+def _pack_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fit up to ``_MAX_PAPERS`` analysis-ready papers within the JSON budget.
+
+    Always includes at least ``_MIN_PAPERS`` when that many candidates exist,
+    compacting per-paper analysis instead of dropping papers after the first.
+    """
+    if not candidates:
+        return []
+
+    selected = candidates[:_MAX_PAPERS]
+    count = len(selected)
+    must = min(_MIN_PAPERS, count)
+    meta_overhead = 220
+    phase1_max = 500
+
+    def pack_subset(items: list[dict[str, Any]], budgets: list[int]) -> tuple[list[dict[str, Any]], int]:
+        packed: list[dict[str, Any]] = []
+        total = 0
+        for candidate, budget in zip(items, budgets):
+            hint_room = phase1_max if candidate.get("phase1_hint") else 0
+            analysis_budget = max(60, budget - meta_overhead - hint_room)
+            analysis = _compact_analysis(candidate.get("analysis") or {}, analysis_budget)
+            blob = _paper_json_blob(candidate, analysis, phase1_max=phase1_max)
+            piece = json.dumps(blob, ensure_ascii=False)
+            packed.append({**candidate, "analysis": analysis, "json_blob": blob})
+            total += len(piece)
+        return packed, total
+
+    budgets = [max(200, _MAX_PAPERS_JSON_CHARS // count)] * count
+    packed, total = pack_subset(selected, budgets)
+
+    while total > _MAX_PAPERS_JSON_CHARS and budgets[0] > 80:
+        budgets = [max(80, b - 100) for b in budgets]
+        packed, total = pack_subset(selected, budgets)
+
+    if total > _MAX_PAPERS_JSON_CHARS and count > must:
+        core = selected[:must]
+        core_budgets = [max(80, _MAX_PAPERS_JSON_CHARS // must)] * must
+        packed, total = pack_subset(core, core_budgets)
+        while total > _MAX_PAPERS_JSON_CHARS and (core_budgets[0] > 60 or phase1_max > 0):
+            if phase1_max > 0:
+                phase1_max = max(0, phase1_max - 100)
+            else:
+                core_budgets = [max(60, b - 80) for b in core_budgets]
+            packed, total = pack_subset(core, core_budgets)
+
+        for candidate in selected[must:]:
+            if total >= int(_MAX_PAPERS_JSON_CHARS * 0.98):
+                break
+            budget = max(80, _MAX_PAPERS_JSON_CHARS - total)
+            extra, extra_total = pack_subset([candidate], [budget])
+            if extra and total + extra_total <= _MAX_PAPERS_JSON_CHARS:
+                packed.extend(extra)
+                total += extra_total
+
+    return packed
+
+
 def _first_author_citation(authors: str, year: str) -> str:
     first = (authors or "").split(";")[0].strip()
     if not first and not year:
@@ -201,8 +353,8 @@ class ProjectResearchService:
         project_id: int,
         user_id: int,
         file_ids: list[int] | None,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, str]]:
-        """Return (ready_blobs, skipped, analysis_versions)."""
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, str], int]:
+        """Return (ready_blobs, skipped, analysis_versions, candidate_count)."""
         q = self.select(self.UserFile).where(
             self.UserFile.user_id == user_id,
             self.UserFile.project_id == project_id,
@@ -269,26 +421,9 @@ class ProjectResearchService:
         )
         candidates = candidates[:_MAX_PAPERS]
 
-        # Token budget: pack highest-value papers first
-        packed: list[dict[str, Any]] = []
-        used = 0
-        for c in candidates:
-            blob = {
-                "file_id": c["file_id"],
-                "title": c["title"],
-                "authors": c["authors"],
-                "year": c["year"],
-                "analysis": c["analysis"],
-            }
-            if c["phase1_hint"]:
-                blob["phase1_sections"] = c["phase1_hint"]
-            piece = json.dumps(blob, ensure_ascii=False)
-            if packed and used + len(piece) > _MAX_PAPERS_JSON_CHARS:
-                break
-            packed.append({**c, "json_blob": blob})
-            used += len(piece)
+        packed = _pack_candidates(candidates)
 
-        return packed, skipped, analysis_versions
+        return packed, skipped, analysis_versions, len(candidates)
 
     def _normalize_claims(
         self,
@@ -552,12 +687,19 @@ class ProjectResearchService:
             if requested_ids and len(requested_ids) > _MAX_PAPERS:
                 return None, "too_many"
 
-            packed, skipped, analysis_versions = self._resolve_papers(
+            packed, skipped, analysis_versions, candidate_count = self._resolve_papers(
                 db, project_id, user_id, requested_ids or None
             )
 
             if len(packed) < _MIN_PAPERS:
-                return None, "too_few_ready"
+                return (
+                    {
+                        "skipped": skipped,
+                        "candidate_count": candidate_count,
+                        "packed_count": len(packed),
+                    },
+                    "too_few_ready",
+                )
 
             valid_ids = [c["file_id"] for c in packed]
             project_file_ids = set(valid_ids)

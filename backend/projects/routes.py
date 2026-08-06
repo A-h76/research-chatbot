@@ -198,11 +198,24 @@ def create_projects_blueprint(
                     400,
                 )
             if err == "too_few_ready":
+                meta = payload if isinstance(payload, dict) else {}
+                skipped = meta.get("skipped") or []
+                candidate_count = int(meta.get("candidate_count") or 0)
+                packed_count = int(meta.get("packed_count") or 0)
+                detail = "At least 2 papers need a completed analysis."
+                if candidate_count >= 2 and packed_count < 2:
+                    detail = (
+                        "Selected papers are ready but could not be packed for research. "
+                        "Try selecting fewer papers."
+                    )
                 return (
                     jsonify(
                         {
                             "error": "too_few_ready",
-                            "detail": "At least 2 papers need a completed analysis.",
+                            "detail": detail,
+                            "skipped": skipped,
+                            "candidate_count": candidate_count,
+                            "packed_count": packed_count,
                         }
                     ),
                     400,
