@@ -1,20 +1,20 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { LibraryHealthSkeleton } from "@/components/common/ResearchSkeletons";
 import { libraryBridgeApi } from "../libraryBridgeApi";
 import { cn } from "@/lib/utils";
 
-type Metric = {
+type Signal = {
+  key: string;
   label: string;
-  value: number;
-  hint?: string;
+  value: string;
   tone?: "default" | "emphasis" | "warn";
+  onClick?: () => void;
 };
 
 /**
- * Research Readiness — actionable corpus overview (not a dashboard chart card).
+ * Slim research-progress strip — secondary to the corpus list.
+ * Not a SaaS metric dashboard.
  */
 export function LibraryHealthStrip({
   projectId,
@@ -41,85 +41,87 @@ export function LibraryHealthStrip({
     (data.need_pdf ?? 0) +
     (data.processing ?? 0) +
     Math.max(0, unreadCount ?? 0);
+  const chatPct =
+    data.total > 0 ? Math.round((data.research_ready / data.total) * 100) : 0;
 
-  const metrics: Metric[] = [
-    { label: "Papers", value: data.total },
+  const signals: Signal[] = [
     {
-      label: "Chat Ready",
-      value: data.research_ready,
-      tone: data.research_ready > 0 ? "emphasis" : "default",
-      hint: "Indexed and ready to ask",
+      key: "papers",
+      label: "Papers",
+      value: data.total.toLocaleString(),
     },
     {
-      label: "Research Profiles",
-      value: profiles,
-      hint: "Analysed papers",
+      key: "chat",
+      label: "Chat ready",
+      value: `${chatPct}%`,
+      tone: chatPct >= 80 ? "emphasis" : "default",
     },
     {
-      label: "Evidence Coverage",
-      value: evidenceCoverage,
-      hint: "Papers with extractable evidence",
+      key: "evidence",
+      label: "Evidence",
+      value: evidenceCoverage.toLocaleString(),
     },
     {
-      label: "Needs Review",
-      value: needingReview,
+      key: "profiles",
+      label: "Profiles",
+      value: profiles.toLocaleString(),
+    },
+    {
+      key: "review",
+      label: "Needs review",
+      value: needingReview.toLocaleString(),
       tone: needingReview > 0 ? "warn" : "default",
-      hint: "PDF missing, processing, or unread",
+      onClick:
+        needingReview > 0
+          ? () => {
+              if (data.need_pdf > 0) onFilterNeedsReview?.();
+              else navigate("/home");
+            }
+          : undefined,
     },
   ];
 
-  const continueTarget =
-    data.need_pdf > 0
-      ? { label: "Need full text", run: () => onFilterNeedsReview?.() }
-      : data.processing > 0
-        ? { label: "Continue Research", run: () => navigate("/home") }
-        : data.research_ready > 0
-          ? { label: "Continue Research", run: () => navigate("/home") }
-          : { label: "Continue Research", run: () => navigate("/library") };
-
   return (
     <section
-      aria-label="Research readiness"
-      className="border-b border-border pb-3"
+      aria-label="Research progress"
+      className="border-t border-border/70 pt-3"
       data-density="high"
     >
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h2 className="text-[13px] font-semibold tracking-tight text-foreground">
-            Research readiness
-          </h2>
-          <p className="mt-0.5 text-[12px] text-muted-foreground">
-            How far your corpus is toward grounded research work.
-          </p>
-        </div>
-        <Button
-          size="sm"
-          className="h-7 gap-1.5 text-[12px]"
-          onClick={continueTarget.run}
-        >
-          {continueTarget.label}
-          <ArrowRight className="size-3.5" />
-        </Button>
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3 lg:grid-cols-5">
-        {metrics.map((m) => (
-          <div key={m.label} className="min-w-0">
-            <p
-              className={cn(
-                "text-[18px] font-semibold tracking-tight tabular-nums leading-none",
-                m.tone === "emphasis" && "text-primary",
-                m.tone === "warn" && needingReview > 0 && "text-sem-warn",
-                m.tone === "default" && "text-foreground",
-              )}
-              title={m.hint}
-            >
-              {m.value.toLocaleString()}
-            </p>
-            <p className="mt-1 text-[11px] font-medium text-muted-foreground">
-              {m.label}
-            </p>
-          </div>
+      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Research progress
+      </p>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
+        {signals.map((s, i) => (
+          <span key={s.key} className="inline-flex items-center gap-2">
+            {i > 0 ? (
+              <span className="text-border" aria-hidden>
+                ·
+              </span>
+            ) : null}
+            {s.onClick ? (
+              <button
+                type="button"
+                onClick={s.onClick}
+                className={cn(
+                  "inline-flex items-baseline gap-1.5 rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  s.tone === "warn" && "text-sem-warn hover:text-sem-warn",
+                )}
+              >
+                <span className="tabular-nums text-foreground/90">{s.value}</span>
+                <span>{s.label}</span>
+              </button>
+            ) : (
+              <span
+                className={cn(
+                  "inline-flex items-baseline gap-1.5",
+                  s.tone === "emphasis" && "text-primary",
+                )}
+              >
+                <span className="tabular-nums text-foreground/90">{s.value}</span>
+                <span>{s.label}</span>
+              </span>
+            )}
+          </span>
         ))}
       </div>
     </section>

@@ -19,6 +19,7 @@ import {
   FlaskConical,
   MessageSquare,
   Folder,
+  ArrowLeft,
 } from "lucide-react";
 import { AccountMenu } from "./AccountMenu";
 import {
@@ -30,10 +31,11 @@ import {
   SIDEBAR_WIDTH_MIN,
 } from "@/context/UIContext";
 import { useAllFiles } from "@/features/files/useFiles";
-import { useProjects, useProjectHub } from "@/features/projects/useProjects";
+import { useProjects } from "@/features/projects/useProjects";
 import {
   PROJECT_JOURNEY_SECONDARY,
   PROJECT_JOURNEY_WORKFLOW,
+  isProjectWorkspacePath,
   resolveJourneyActive,
   type JourneyNavId,
 } from "@/features/projects/projectWorkspaceNav";
@@ -72,10 +74,6 @@ function researchStatus(projectId: number, files: UserFile[]): ResearchStatus {
       p.meta_status === "failed",
   );
   return needsReview ? "review" : "ready";
-}
-
-function paperCountFor(projectId: number, files: UserFile[]): number {
-  return files.filter((f) => f.kind === "document" && f.project_id === projectId).length;
 }
 
 const STATUS_DOT: Record<ResearchStatus, string> = {
@@ -122,6 +120,7 @@ function PlaceItem({
   icon,
   label,
   active,
+  emphasis,
   onClick,
   trailing,
   showLabel,
@@ -129,6 +128,8 @@ function PlaceItem({
   icon: React.ReactNode;
   label: string;
   active?: boolean;
+  /** Project root — slightly stronger than journey children. */
+  emphasis?: boolean;
   onClick: () => void;
   trailing?: React.ReactNode;
   showLabel: boolean;
@@ -143,59 +144,29 @@ function PlaceItem({
         ICON_INSET,
         active
           ? "bg-sidebar-accent font-medium text-sidebar-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
-          : "font-normal text-muted-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+          : emphasis
+            ? "font-medium text-sidebar-foreground/90 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
+            : "font-normal text-muted-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
       )}
     >
       <span
         className={cn(
           "flex size-4 shrink-0 items-center justify-center [&_svg]:size-4",
-          active
+          active || emphasis
             ? "text-primary"
             : "text-muted-foreground/45 group-hover:text-muted-foreground/70",
         )}
       >
         {icon}
       </span>
-      <FadeLabel show={showLabel} className="flex-1 truncate">
+      <FadeLabel
+        show={showLabel}
+        className={cn("flex-1 truncate", emphasis && "font-semibold tracking-tight")}
+      >
         {label}
       </FadeLabel>
       {showLabel ? trailing : null}
     </button>
-  );
-}
-
-function ResearchContextCard({
-  projectId,
-  show,
-}: {
-  projectId: number;
-  show: boolean;
-}) {
-  const { data: hub } = useProjectHub(projectId);
-  if (!hub || !show) return null;
-
-  const papers = hub.stats.papers;
-  const evidence = hub.stats.insights + hub.stats.open_questions;
-  const writingReady = hub.pipeline_summary.done > 0 && hub.stats.papers > 0;
-
-  return (
-    <div className="mx-1 mt-1 rounded-md bg-sidebar-accent/60 px-2.5 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
-        Scope
-      </p>
-      <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
-        <p>
-          <span className="tabular-nums text-sidebar-foreground/90">{papers}</span> papers
-        </p>
-        <p>
-          <span className="tabular-nums text-sidebar-foreground/90">{evidence}</span> evidence
-          signals
-        </p>
-        <p className={writingReady ? "text-emerald-600 dark:text-emerald-400/90" : undefined}>
-          {writingReady ? "Writing ready" : "Building corpus"}
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -218,7 +189,6 @@ export function SidebarContents({
   const navigate = useNavigate();
   const location = useLocation();
   const path = location.pathname;
-  const showMeta = showLabel && density === "rich";
 
   const { data: projects = [] } = useProjects();
   const { data: files = [] } = useAllFiles();
@@ -236,21 +206,18 @@ export function SidebarContents({
       if (b.id === activeResearchId) return 1;
       return b.id - a.id;
     });
-    // When a project is open, Current Project owns the active one —
-    // Research list is for switching to others.
-    const pool =
-      activeResearchId != null
-        ? sorted.filter((p) => p.id !== activeResearchId)
-        : sorted;
-    return pool.slice(0, RESEARCH_LIST_LIMIT);
+    return sorted.slice(0, RESEARCH_LIST_LIMIT);
   }, [projects, activeResearchId]);
 
   const isHome = path === "/home";
   const isLibrary =
     path.startsWith("/library") ||
     path.startsWith("/files") ||
-    (path.startsWith("/papers/") && !path.includes("/chat"));
+    (path.startsWith("/papers/") && !path.includes("/chat") && activeResearchId == null);
   const isSettings = path.startsWith("/settings");
+  const isProjectsList = path === "/projects" || path === "/projects/";
+  const inProjectShell =
+    activeResearchId != null && isProjectWorkspacePath(path, activeResearchId);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -387,188 +354,165 @@ export function SidebarContents({
           )}
         </div>
 
-        <div>
-          <FadeLabel show={showLabel}>
-            <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-              Global
-            </p>
-          </FadeLabel>
-          <div className="space-y-0.5">
-            <PlaceItem
-              showLabel={showLabel}
-              icon={<Home />}
-              label="Home"
-              active={isHome}
-              onClick={() => go("library", "/home")}
-            />
-            <PlaceItem
-              showLabel={showLabel}
-              icon={<Library />}
-              label="Library"
-              active={isLibrary}
-              onClick={() => go("library", "/library")}
-            />
-            <PlaceItem
-              showLabel={showLabel}
-              icon={<Search />}
-              label="Search"
-              onClick={openPalette}
-              trailing={
-                <kbd className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/80">
-                  ⌘K
-                </kbd>
-              }
-            />
-          </div>
-        </div>
-
-        {activeResearchId != null ? (
-          <div>
-            <FadeLabel show={showLabel}>
-              <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                Current project
-              </p>
-            </FadeLabel>
+        {inProjectShell && activeResearchId != null ? (
+          <>
             <div className="space-y-0.5">
-              {(() => {
-                const activeProject =
-                  projects.find((p) => p.id === activeResearchId) ?? null;
-                const journeyActive = resolveJourneyActive(
-                  path,
-                  location.search,
-                  activeResearchId,
-                );
-                return (
-                  <>
-                    <PlaceItem
-                      showLabel={showLabel}
-                      icon={<Folder />}
-                      label={activeProject?.name ?? "Project"}
-                      active={
-                        path === `/projects/${activeResearchId}` ||
-                        path.startsWith(`/projects/${activeResearchId}?`)
-                      }
-                      onClick={() => {
-                        const p = activeProject;
-                        if (p) openProject(p);
-                        else go("projects", `/projects/${activeResearchId}`);
-                      }}
-                    />
-                    {[...PROJECT_JOURNEY_WORKFLOW, ...PROJECT_JOURNEY_SECONDARY].map(
-                      (item) => (
-                        <PlaceItem
-                          key={item.id}
-                          showLabel={showLabel}
-                          icon={JOURNEY_ICONS[item.id] ?? <FileText />}
-                          label={item.label}
-                          active={journeyActive === item.id}
-                          onClick={() => {
-                            setCurrentProjectId(activeResearchId);
-                            navigate(item.href(activeResearchId));
-                            setCreateOpen(false);
-                          }}
-                        />
-                      ),
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-        ) : null}
-
-        <div>
-          <FadeLabel show={showLabel}>
-            <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-              Research
-            </p>
-          </FadeLabel>
-          <div className="space-y-0.5">
-            {researchProjects.length === 0 ? (
               <button
                 type="button"
-                title="Start research"
-                onClick={() => go("projects", "/projects?new=1")}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] text-muted-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                  ICON_INSET,
-                )}
-              >
-                <Plus className="size-4 shrink-0 text-muted-foreground/45" />
-                <FadeLabel show={showLabel}>Start research</FadeLabel>
-              </button>
-            ) : (
-              researchProjects.map((p) => {
-                const status = researchStatus(p.id, files);
-                const count = paperCountFor(p.id, files);
-                const active = activeResearchId === p.id;
-                return (
-                  <div key={p.id}>
-                    <button
-                      type="button"
-                      title={`${p.name} · ${STATUS_LABEL[status]}`}
-                      onClick={() => openProject(p)}
-                      className={cn(
-                        "group relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] transition-colors duration-200",
-                        ICON_INSET,
-                        active
-                          ? "bg-sidebar-accent font-medium text-sidebar-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
-                          : "text-muted-foreground/75 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "size-1.5 shrink-0 rounded-full",
-                          STATUS_DOT[status],
-                          !active && "opacity-70",
-                        )}
-                        aria-hidden
-                      />
-                      <FadeLabel show={showLabel} className="min-w-0 flex-1 truncate">
-                        {p.emoji ? `${p.emoji} ` : ""}
-                        {p.name}
-                      </FadeLabel>
-                    </button>
-                    {showMeta && (
-                      <p className="truncate pl-8 text-[11px] text-muted-foreground/80">
-                        {count} paper{count === 1 ? "" : "s"}
-                        {active ? ` · ${STATUS_LABEL[status]}` : ""}
-                      </p>
-                    )}
-                    {active && activeResearchId != null && showMeta ? (
-                      <ResearchContextCard
-                        projectId={activeResearchId}
-                        show={showMeta}
-                      />
-                    ) : null}
-                  </div>
-                );
-              })
-            )}
-            {projects.length > 0 && (
-              <button
-                type="button"
-                title={
-                  projects.length > RESEARCH_LIST_LIMIT
-                    ? "View all research"
-                    : "All research"
-                }
-                onClick={() => go("projects", "/projects")}
+                title="Back to Home"
+                onClick={() => go("library", "/home")}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[12px] text-muted-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
                   ICON_INSET,
                 )}
               >
-                <FolderKanban className="size-4 shrink-0 text-muted-foreground/45" />
-                <FadeLabel show={showLabel}>
-                  {projects.length > RESEARCH_LIST_LIMIT
-                    ? "View all research…"
-                    : "All research"}
-                </FadeLabel>
+                <ArrowLeft className="size-3.5 shrink-0 text-muted-foreground/50" />
+                <FadeLabel show={showLabel}>Home</FadeLabel>
               </button>
-            )}
-          </div>
-        </div>
+            </div>
+
+            <div>
+              <FadeLabel show={showLabel}>
+                <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                  Project
+                </p>
+              </FadeLabel>
+              <div className="space-y-0.5">
+                {(() => {
+                  const activeProject =
+                    projects.find((p) => p.id === activeResearchId) ?? null;
+                  const journeyActive = resolveJourneyActive(
+                    path,
+                    location.search,
+                    activeResearchId,
+                  );
+                  return (
+                    <>
+                      <PlaceItem
+                        showLabel={showLabel}
+                        icon={<Folder />}
+                        label={activeProject?.name ?? "Project"}
+                        emphasis
+                        active={
+                          path === `/projects/${activeResearchId}` ||
+                          path === `/projects/${activeResearchId}/`
+                        }
+                        onClick={() => {
+                          const p = activeProject;
+                          if (p) openProject(p);
+                          else go("projects", `/projects/${activeResearchId}`);
+                        }}
+                      />
+                      {[...PROJECT_JOURNEY_WORKFLOW, ...PROJECT_JOURNEY_SECONDARY].map(
+                        (item) => (
+                          <PlaceItem
+                            key={item.id}
+                            showLabel={showLabel}
+                            icon={JOURNEY_ICONS[item.id] ?? <FileText />}
+                            label={item.label}
+                            active={journeyActive === item.id}
+                            onClick={() => {
+                              setCurrentProjectId(activeResearchId);
+                              navigate(item.href(activeResearchId));
+                              setCreateOpen(false);
+                            }}
+                          />
+                        ),
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="space-y-0.5">
+              <PlaceItem
+                showLabel={showLabel}
+                icon={<Home />}
+                label="Home"
+                active={isHome}
+                onClick={() => go("library", "/home")}
+              />
+              <PlaceItem
+                showLabel={showLabel}
+                icon={<FolderKanban />}
+                label="Projects"
+                active={isProjectsList}
+                onClick={() => go("projects", "/projects")}
+              />
+              <PlaceItem
+                showLabel={showLabel}
+                icon={<Library />}
+                label="Library"
+                active={isLibrary}
+                onClick={() => go("library", "/library")}
+              />
+              <PlaceItem
+                showLabel={showLabel}
+                icon={<Search />}
+                label="Search"
+                onClick={openPalette}
+                trailing={
+                  <kbd className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/80">
+                    ⌘K
+                  </kbd>
+                }
+              />
+            </div>
+
+            <div>
+              <FadeLabel show={showLabel}>
+                <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                  Recent projects
+                </p>
+              </FadeLabel>
+              <div className="space-y-0.5">
+                {researchProjects.length === 0 ? (
+                  <button
+                    type="button"
+                    title="Start research"
+                    onClick={() => go("projects", "/projects?new=1")}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] text-muted-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                      ICON_INSET,
+                    )}
+                  >
+                    <Plus className="size-4 shrink-0 text-muted-foreground/45" />
+                    <FadeLabel show={showLabel}>New project</FadeLabel>
+                  </button>
+                ) : (
+                  researchProjects.map((p) => {
+                    const status = researchStatus(p.id, files);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        title={`${p.name} · ${STATUS_LABEL[status]}`}
+                        onClick={() => openProject(p)}
+                        className={cn(
+                          "group relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] transition-colors duration-200",
+                          ICON_INSET,
+                          "text-muted-foreground/75 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+                        )}
+                      >
+                        <span
+                          className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status])}
+                          aria-hidden
+                        />
+                        <FadeLabel show={showLabel} className="min-w-0 flex-1 truncate">
+                          {p.emoji ? `${p.emoji} ` : ""}
+                          {p.name}
+                        </FadeLabel>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </nav>
 
       <div className="mt-auto shrink-0 space-y-0.5 border-t border-sidebar-border/60 p-1.5 pt-2">

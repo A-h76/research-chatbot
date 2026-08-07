@@ -5,22 +5,19 @@ type Signal = {
   key: string;
   label: string;
   value: string;
-  hint: string;
   tab: PaperTabId;
 };
 
 /**
- * D4 — Scientific StatStrip. Jumps to workspace tabs; not decorative cards.
+ * Compact scientific status strip — reading stays the hero, not a dashboard.
  */
 export function PaperStatStrip({
   evidenceLabel,
-  evidenceHint,
   entityCount,
   entitySkipped,
   graphNodes,
   graphEdges,
   classificationLabel,
-  classificationHint,
   onJump,
   className,
 }: {
@@ -38,66 +35,63 @@ export function PaperStatStrip({
   const signals: Signal[] = [
     {
       key: "evidence",
-      label: "Evidence quality",
-      value: evidenceLabel ?? "—",
-      hint: evidenceHint ?? "Open Evidence",
+      label: "Quality",
+      value: evidenceLabel ?? "Not assessed",
       tab: "evidence",
     },
     {
       key: "entities",
-      label: "Knowledge coverage",
-      value: entitySkipped ? "Skipped" : entityCount != null ? String(entityCount) : "—",
-      hint: entitySkipped ? "Not extracted" : "entities extracted",
+      label: "Entities",
+      value: entitySkipped
+        ? "Skipped"
+        : entityCount != null
+          ? String(entityCount)
+          : "—",
       tab: "entities",
     },
     {
       key: "graph",
-      label: "Relationship network",
-      value: graphNodes != null ? String(graphNodes) : "—",
-      hint:
+      label: "Links",
+      value:
         graphNodes != null
-          ? `${graphEdges ?? 0} connected edges`
-          : "Open Graph",
+          ? `${graphEdges ?? 0} edges`
+          : "—",
       tab: "graph",
     },
     {
       key: "classification",
       label: "Profile",
       value: classificationLabel ?? "—",
-      hint: classificationHint ?? "Open Research Profile",
       tab: "classification",
     },
   ];
 
   return (
-    <section aria-label="Scientific signals" className={cn(className)}>
-      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Scientific signals
-      </p>
-      <div className="grid overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-2 lg:grid-cols-4">
-        {signals.map((s, i) => (
+    <div
+      role="group"
+      aria-label="Scientific signals"
+      className={cn(
+        "flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground",
+        className,
+      )}
+    >
+      {signals.map((s, i) => (
+        <span key={s.key} className="inline-flex items-center gap-2">
+          {i > 0 ? (
+            <span className="text-border" aria-hidden>
+              ·
+            </span>
+          ) : null}
           <button
-            key={s.key}
             type="button"
             onClick={() => onJump(s.tab)}
-            className={cn(
-              "p-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-              i < signals.length - 1 && "border-b border-border sm:border-b-0",
-              i % 2 === 0 && "sm:border-r",
-              i < 2 && "lg:border-b-0",
-              i < 3 && "lg:border-r",
-            )}
+            className="inline-flex items-baseline gap-1.5 rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              {s.label}
-            </p>
-            <p className="mt-1 truncate text-[15px] font-semibold tabular-nums text-foreground">
-              {s.value}
-            </p>
-            <p className="mt-0.5 truncate text-[12px] text-muted-foreground">{s.hint}</p>
+            <span className="font-medium text-muted-foreground/80">{s.label}</span>
+            <span className="tabular-nums text-foreground/90">{s.value}</span>
           </button>
-        ))}
-      </div>
-    </section>
+        </span>
+      ))}
+    </div>
   );
 }

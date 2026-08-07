@@ -6,7 +6,6 @@ import { TopBar } from "./TopBar";
 import { CommandPalette } from "./CommandPalette";
 import { RightPanel } from "@/features/right-panel/components/RightPanel";
 import { OnboardingWizard } from "@/features/onboarding/OnboardingWizard";
-import { ProjectWorkspaceBar } from "@/features/projects/components/ProjectWorkspaceBar";
 import { isWritingStudioPath } from "@/features/projects/projectWorkspaceNav";
 import { useUI } from "@/context/UIContext";
 import { isTypingTarget } from "@/lib/keyboard";
@@ -42,7 +41,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
       <MobileDrawer me={me} open={mobileOpen} onOpenChange={setMobileOpen} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar onOpenMobileDrawer={() => setMobileOpen(true)} me={me} />
-        {!writingStudio && <ProjectWorkspaceBar />}
+        {/* Project journey lives only in the sidebar — no second nav chrome. */}
         <main
           id="main-content"
           tabIndex={-1}

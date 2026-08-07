@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   BookOpen, Calendar,
-  ChevronLeft, BookMarked, ExternalLink,
+  BookMarked, ExternalLink,
   MessageSquare, ArrowRight,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -191,7 +191,7 @@ export function PaperOverviewPage() {
     fileContentHash: null,
     metaStatus: file?.meta_status ?? null,
   });
-  const { currentProjectId, setCurrentProjectId } = useUI();
+  const { setCurrentProjectId } = useUI();
   const patchFile = usePatchFile();
   const citationFromPaper = useCitationFromPaper();
   const analyzeDocument = useAnalyzeDocument();
@@ -364,35 +364,7 @@ export function PaperOverviewPage() {
 
   return (
     <div className="scrollbar-thin h-full overflow-y-auto bg-background" data-density="medium">
-      <div className="mx-auto max-w-5xl space-y-4 px-5 py-5 sm:px-8">
-        <button
-          type="button"
-          onClick={() => {
-            const pid = file.project?.id ?? file.project_id ?? currentProjectId;
-            if (pid != null) {
-              setCurrentProjectId(pid);
-              navigate(`/projects/${pid}`);
-            } else {
-              navigate("/library");
-            }
-          }}
-          className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ChevronLeft className="size-4" />
-          {file.project ? (
-            <span className="inline-flex items-center gap-1.5">
-              <span aria-hidden>{file.project.emoji}</span>
-              <span className="max-w-[28ch] truncate">{file.project.name}</span>
-              <span className="text-muted-foreground/60">/</span>
-              <span>Paper</span>
-            </span>
-          ) : file.project_id || currentProjectId ? (
-            <span>Project / Paper</span>
-          ) : (
-            "Library"
-          )}
-        </button>
-
+      <div className="mx-auto max-w-5xl space-y-2.5 px-5 py-3 sm:px-8">
         <ObjectHeader
           title={displayTitle}
           meta={
@@ -408,12 +380,12 @@ export function PaperOverviewPage() {
                 onChange={handleStatusChange}
               />
               {file.year && (
-                <span className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[12px] text-muted-foreground">
+                <span className="inline-flex items-center gap-1 text-[12px] text-muted-foreground">
                   <Calendar className="size-3" /> {file.year}
                 </span>
               )}
               {file.venue && (
-                <span className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[12px] text-muted-foreground">
+                <span className="inline-flex items-center gap-1 text-[12px] text-muted-foreground">
                   <BookOpen className="size-3" />
                   <span className="max-w-[22ch] truncate">{file.venue}</span>
                 </span>
@@ -423,11 +395,22 @@ export function PaperOverviewPage() {
                   href={`https://doi.org/${file.doi}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[12px] text-primary hover:underline"
+                  className="inline-flex items-center gap-1 text-[12px] text-primary hover:underline"
                 >
                   DOI <ExternalLink className="size-3" />
                 </a>
               )}
+              {/* Extract only when Research Ready — no permanent chrome for a secondary action */}
+              {(file.project_id || file.project?.id) &&
+              file.research_readiness === "research_ready" ? (
+                <ExtractEvidenceButton
+                  projectId={file.project?.id ?? file.project_id}
+                  fileId={id}
+                  readiness={file.research_readiness}
+                  showProgress={false}
+                  className="[&_button]:border-0 [&_button]:bg-transparent [&_button]:px-1.5 [&_button]:shadow-none [&_button]:text-muted-foreground hover:[&_button]:text-foreground"
+                />
+              ) : null}
             </>
           }
         />
@@ -443,20 +426,6 @@ export function PaperOverviewPage() {
           />
         ) : null}
 
-        {(file.project_id || file.project?.id) && (
-          <div className="flex flex-wrap items-center gap-2">
-            <ExtractEvidenceButton
-              projectId={file.project?.id ?? file.project_id}
-              fileId={id}
-              readiness={file.research_readiness}
-            />
-            <span className="text-[11px] text-muted-foreground">
-              Auto-runs after Phase 1 when Research Ready · or extract manually → candidate
-              EvidenceObjects (review in Writing Inspector)
-            </span>
-          </div>
-        )}
-
         {/* D3: processing → expanded above tabs; ready → collapsed below stage */}
         {(isPipelineProcessing(pipelineDerived, file.meta_status) ||
           pipelineDerived.isError) && (
@@ -467,13 +436,13 @@ export function PaperOverviewPage() {
           />
         )}
 
-        {/* Sticky tabs — primary product navigation */}
-        <div className="sticky top-0 z-10 -mx-1 bg-background/95 px-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        {/* Sticky tabs — primary paper navigation, flush under title */}
+        <div className="sticky top-0 z-10 -mx-1 border-b border-border/50 bg-background/95 px-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <PaperWorkspaceTabList active={activeTab} onSelect={selectTab} />
         </div>
 
         {/* Active tab content */}
-        <div className="min-h-[12rem]">
+        <div className="min-h-[12rem] pt-1">
           <PaperTabPanel tab="overview" active={activeTab}>
             <PaperOverviewTab
               file={file}

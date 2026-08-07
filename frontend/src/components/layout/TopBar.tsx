@@ -33,8 +33,9 @@ function PaperBreadcrumb() {
     if (projectId != null) setCurrentProjectId(projectId);
   }, [projectId, setCurrentProjectId]);
 
+  // Project only — paper title is the page hero (ObjectHeader). Avoid project › paper › title stack.
   return (
-    <div className="flex items-center gap-1.5 text-sm">
+    <div className="flex min-w-0 items-center gap-1.5 text-sm">
       {parent || projectId != null ? (
         <button
           type="button"
@@ -44,7 +45,7 @@ function PaperBreadcrumb() {
               navigate(`/projects/${projectId}`);
             }
           }}
-          className="max-w-[18ch] truncate text-muted-foreground transition-colors hover:text-foreground"
+          className="max-w-[28ch] truncate font-medium text-foreground transition-colors hover:text-primary"
           title={parent?.name ?? "Project"}
         >
           {parent ? `${parent.emoji} ${parent.name}` : "Project"}
@@ -58,10 +59,7 @@ function PaperBreadcrumb() {
           Library
         </button>
       )}
-      <ChevronRight className="size-3.5 text-muted-foreground/50" />
-      <span className="max-w-[22ch] truncate font-medium text-foreground" title={title}>
-        {title}
-      </span>
+      <span className="sr-only"> / {title}</span>
     </div>
   );
 }

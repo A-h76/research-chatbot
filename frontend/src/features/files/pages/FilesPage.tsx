@@ -79,29 +79,64 @@ function writeFiltersToUrl(sp: URLSearchParams, filters: LibraryFilterState) {
   for (const t of filters.tag ?? []) sp.append("tag", t);
 }
 
-function ProjectScopeBanner() {
+function CorpusHeader({
+  paperCount,
+  collectionCount,
+  readyCount,
+}: {
+  paperCount: number;
+  collectionCount: number;
+  readyCount?: number;
+}) {
   const { currentProjectId, setCurrentProjectId } = useUI();
   const { data: projects = [] } = useProjects();
-  if (!currentProjectId) return null;
-  const proj = projects.find((p) => p.id === currentProjectId);
-  if (!proj) return null;
+  const proj = currentProjectId
+    ? projects.find((p) => p.id === currentProjectId)
+    : null;
+
+  const stats = [
+    `${paperCount.toLocaleString()} paper${paperCount === 1 ? "" : "s"}`,
+    collectionCount > 0
+      ? `${collectionCount} collection${collectionCount === 1 ? "" : "s"}`
+      : null,
+    readyCount != null && readyCount > 0
+      ? `${readyCount} chat-ready`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <div className="flex items-center gap-2 py-1 text-[13px]">
-      <span className="text-base leading-none">{proj.emoji}</span>
-      <span className="font-medium">{proj.name}</span>
-      <span className="text-muted-foreground">— this project only</span>
-      <button
-        type="button"
-        onClick={() => setCurrentProjectId(null)}
-        className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-      >
-        <X className="size-3" /> Show all
-      </button>
-    </div>
+    <header className="space-y-0.5">
+      <div className="flex items-baseline gap-2">
+        <h1 className="text-[18px] font-semibold tracking-tight text-foreground">
+          {proj ? (
+            <>
+              <span className="mr-1.5 text-base leading-none">{proj.emoji}</span>
+              {proj.name}
+            </>
+          ) : (
+            "Library"
+          )}
+        </h1>
+        {proj ? (
+          <button
+            type="button"
+            onClick={() => setCurrentProjectId(null)}
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            Show all
+          </button>
+        ) : null}
+      </div>
+      <p className="text-[13px] tabular-nums text-muted-foreground">
+        {paperCount > 0 || collectionCount > 0 ? stats : "Your research corpus"}
+      </p>
+    </header>
   );
 }
 
-/** Library — research corpus home (Places IA preserved). */
+/** Library — corpus first, progress second (workspace, not dashboard). */
 export function FilesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -269,20 +304,6 @@ export function FilesPage() {
   const rangeStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const rangeEnd = Math.min((page + 1) * PAGE_SIZE, total);
 
-  const statsLine = hasLibrary
-    ? [
-        `${paperCount.toLocaleString()} paper${paperCount === 1 ? "" : "s"}`,
-        collectionCount > 0
-          ? `${collectionCount} collection${collectionCount === 1 ? "" : "s"}`
-          : null,
-        readyCount != null && readyCount > 0
-          ? `${readyCount} chat-ready`
-          : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "Your research corpus";
-
   function onImported(pid?: number | null) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.files });
     void queryClient.invalidateQueries({ queryKey: ["library"] });
@@ -324,8 +345,14 @@ export function FilesPage() {
   }
 
   return (
-    <PageContainer description={statsLine} dense maxWidth="6xl">
-      <div className="space-y-4" data-density="high">
+    <PageContainer dense maxWidth="6xl">
+      <div className="space-y-3" data-density="high">
+        <CorpusHeader
+          paperCount={paperCount}
+          collectionCount={collectionCount}
+          readyCount={readyCount}
+        />
+
         {hasLibrary && (
           <CollectionToolbar
             q={q}
@@ -394,27 +421,11 @@ export function FilesPage() {
             }
           />
         )}
-        <ProjectScopeBanner />
         <ConnectLibraryPanel
           ref={sourcesRef}
           projectId={currentProjectId}
           onImported={onImported}
         />
-
-        {hasLibrary && (
-          <>
-            <LibraryHealthStrip
-              projectId={currentProjectId}
-              unreadCount={facets?.reading_status?.unread ?? stats?.unread}
-              onFilterNeedsReview={() => {
-                setNeedPdf(true);
-                setStatus("all");
-                setPage(0);
-              }}
-            />
-            <LibraryDuplicatesPanel projectId={currentProjectId} />
-          </>
-        )}
 
         {!hasLibrary && !isLoading ? (
           <div className="mx-auto max-w-md py-16 text-center">
@@ -599,6 +610,7 @@ export function FilesPage() {
                         key={f.id}
                         file={f}
                         project={projects.find((p) => p.id === f.project_id)}
+                        showProject={currentProjectId == null}
                         onDelete={() => setToDelete(f)}
                         aiState={pipelineById.get(f.id)?.aiState}
                         selected={selectedIds.has(f.id)}
@@ -608,6 +620,17 @@ export function FilesPage() {
                   </div>
                 </>
               )}
+
+              <LibraryHealthStrip
+                projectId={currentProjectId}
+                unreadCount={facets?.reading_status?.unread ?? stats?.unread}
+                onFilterNeedsReview={() => {
+                  setNeedPdf(true);
+                  setStatus("all");
+                  setPage(0);
+                }}
+              />
+              <LibraryDuplicatesPanel projectId={currentProjectId} />
             </div>
           </div>
         )}

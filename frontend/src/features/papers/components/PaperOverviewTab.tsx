@@ -42,7 +42,7 @@ function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-/** D4 — Overview = StatStrip → Summary → compact meta (no duplicate Chat cards). */
+/** D4 — Overview = Summary → compact signals → actions (paper is the hero). */
 export function PaperOverviewTab({
   file,
   fileId,
@@ -186,12 +186,30 @@ export function PaperOverviewTab({
 
   return (
     <div className="space-y-5">
-      {/* 1. StatStrip — scan first */}
+      {/* 1. Summary — paper is the hero */}
+      {(abstractText || studyTypeShow || domainShow) && (
+        <section aria-labelledby="overview-summary-heading">
+          <SectionLabel>Summary</SectionLabel>
+          <div className="rounded-lg border border-border bg-card px-4 py-3 space-y-2">
+            {(studyTypeShow || domainShow) && (
+              <p className="text-[13px] text-muted-foreground">
+                {[studyTypeShow, domainShow, studyDesignShow].filter(Boolean).join(" · ")}
+              </p>
+            )}
+            {abstractText ? (
+              <p className="text-[14px] leading-relaxed text-foreground/90 line-clamp-6">
+                {abstractText}
+              </p>
+            ) : (
+              <p className="text-[13px] text-muted-foreground">No abstract extracted yet.</p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* 2. Compact signals */}
       {loadingPhases && !classification && !evidence && !entities ? (
-        <div className="space-y-2" aria-busy="true">
-          <Skeleton className="h-3 w-28" />
-          <Skeleton className="h-16 w-full rounded-lg" />
-        </div>
+        <Skeleton className="h-4 w-64" aria-busy="true" />
       ) : (
         <PaperStatStrip
           evidenceLabel={evidenceLabel}
@@ -208,7 +226,7 @@ export function PaperOverviewTab({
         />
       )}
 
-      {/* 2. Actions — one CTA row, not a marketing card */}
+      {/* 3. Actions */}
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={onChat} disabled={chatPending} size="sm" className="gap-1.5">
           <MessageSquare className="size-3.5" />
@@ -233,27 +251,6 @@ export function PaperOverviewTab({
           Open Evidence →
         </button>
       </div>
-
-      {/* 3. Summary */}
-      {(abstractText || studyTypeShow || domainShow) && (
-        <section aria-labelledby="overview-summary-heading">
-          <SectionLabel>Summary</SectionLabel>
-          <div className="rounded-lg border border-border bg-card px-4 py-3 space-y-2">
-            {(studyTypeShow || domainShow) && (
-              <p className="text-[13px] text-muted-foreground">
-                {[studyTypeShow, domainShow, studyDesignShow].filter(Boolean).join(" · ")}
-              </p>
-            )}
-            {abstractText ? (
-              <p className="text-[14px] leading-relaxed text-foreground/90 line-clamp-6">
-                {abstractText}
-              </p>
-            ) : (
-              <p className="text-[13px] text-muted-foreground">No abstract extracted yet.</p>
-            )}
-          </div>
-        </section>
-      )}
 
       {/* 3b. Scientific framing (2.1) — structured, not Narrative LLM */}
       {structure?.scientificStructure &&

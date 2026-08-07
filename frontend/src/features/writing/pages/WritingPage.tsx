@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Download, RefreshCw,
   BookOpen, FileText, MessageSquare, StickyNote,
-  Quote, Plus,
+  Quote, Plus, MoreHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WritingDeskSkeleton } from "@/components/common/ResearchSkeletons";
@@ -13,6 +13,7 @@ import { useFiles } from "@/features/files/useFiles";
 import { useNotes } from "@/features/notes/useNotes";
 import { useConversations } from "@/features/chat/hooks/useConversation";
 import { useUI } from "@/context/UIContext";
+import { useProjectHub } from "@/features/projects/useProjects";
 import { writingApi } from "../api";
 import { toast } from "@/components/common/Toast";
 import { cn } from "@/lib/utils";
@@ -173,6 +174,30 @@ function DraftTab({
     enabled: currentProjectId != null,
   });
   const docs = docsQuery.data?.items;
+  const { data: projectHub } = useProjectHub(currentProjectId);
+  const acceptedEvidenceQuery = useQuery({
+    queryKey: ["evidence", "library", currentProjectId, "accepted-count"],
+    queryFn: () => evidenceApi.list(currentProjectId as number, { status: "accepted" }),
+    enabled: currentProjectId != null,
+    staleTime: 60_000,
+  });
+  const paperCount = projectHub?.stats.papers ?? 0;
+  const acceptedEvidenceCount =
+    acceptedEvidenceQuery.data?.count ??
+    acceptedEvidenceQuery.data?.items?.length ??
+    0;
+  const groundingLine =
+    currentProjectId == null
+      ? null
+      : acceptedEvidenceCount > 0
+        ? `Grounded in ${acceptedEvidenceCount} accepted evidence item${acceptedEvidenceCount === 1 ? "" : "s"}${
+            paperCount > 0
+              ? ` · ${paperCount} paper${paperCount === 1 ? "" : "s"}`
+              : ""
+          }`
+        : paperCount > 0
+          ? `Evidence available from ${paperCount} paper${paperCount === 1 ? "" : "s"} in this project`
+          : "Add papers to ground this draft in your research";
 
   const activeDoc = (docs ?? []).find((d) => d.id === activeId) ?? null;
 
@@ -783,8 +808,12 @@ function DraftTab({
             </Button>
 
             <details className="relative ml-auto">
-              <summary className="cursor-pointer list-none rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/50 hover:text-foreground [&::-webkit-details-marker]:hidden">
-                More
+              <summary
+                className="flex size-7 cursor-pointer list-none items-center justify-center rounded-md text-muted-foreground hover:bg-muted/50 hover:text-foreground [&::-webkit-details-marker]:hidden"
+                title="More"
+                aria-label="More"
+              >
+                <MoreHorizontal className="size-4" />
               </summary>
               <div className="absolute right-0 z-20 mt-1 min-w-[10rem] rounded-lg border border-border bg-popover p-1 shadow-md">
                 <div className="mb-1 flex gap-0.5 px-1 py-0.5">
@@ -875,6 +904,9 @@ function DraftTab({
                   className="w-full border-0 bg-transparent text-[1.35rem] font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/50"
                   placeholder="Untitled draft"
                 />
+                {groundingLine ? (
+                  <p className="mt-1 text-[12px] text-muted-foreground/75">{groundingLine}</p>
+                ) : null}
               </div>
 
               <WritingManuscriptToolbar

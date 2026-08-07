@@ -207,9 +207,15 @@ export function WritingManuscriptEditor({
         aria-hidden
       >
         {value.length === 0 ? (
-          <span className="text-muted-foreground">
-            Start writing your manuscript. Use the toolbar for Title, Heading 2, bold, and italic.
-          </span>
+          <div className="space-y-3 text-muted-foreground">
+            <p className="text-[15px] leading-[1.65]">Start writing…</p>
+            <ul className="space-y-1.5 text-[13px] leading-relaxed text-muted-foreground/80">
+              <li>Type naturally.</li>
+              <li>Cite evidence as you draft.</li>
+              <li>Select text to inspect supporting sources.</li>
+              <li>The Writing Assistant adapts as you work.</li>
+            </ul>
+          </div>
         ) : (
           lines.map((line, idx) => (
             <div key={`line-${idx}`}>

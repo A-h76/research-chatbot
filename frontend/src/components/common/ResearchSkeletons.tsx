@@ -64,25 +64,17 @@ export function LibraryPapersSkeleton({
   );
 }
 
-/** Library readiness strip while health loads. */
+/** Library progress strip while health loads. */
 export function LibraryHealthSkeleton({ className }: { className?: string }) {
   return (
     <div
       role="status"
       aria-busy="true"
-      aria-label="Loading library health"
-      className={cn("border-b border-border/70 pb-5", className)}
+      aria-label="Loading research progress"
+      className={cn("border-t border-border/70 pt-3", className)}
     >
-      <Skeleton className="h-3.5 w-36" />
-      <Skeleton className="mt-2 h-3 w-56" />
-      <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="space-y-2">
-            <Skeleton className="h-6 w-10" />
-            <Skeleton className="h-2.5 w-16" />
-          </div>
-        ))}
-      </div>
+      <Skeleton className="h-2.5 w-28" />
+      <Skeleton className="mt-2 h-3.5 w-72 max-w-full" />
     </div>
   );
 }

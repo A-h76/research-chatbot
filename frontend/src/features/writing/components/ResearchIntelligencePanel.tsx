@@ -131,15 +131,19 @@ function AssistMode({
 
   if (empty) {
     return (
-      <div className="flex h-full flex-col gap-5">
+      <div className="flex flex-col gap-4">
         <div>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Your draft is empty. Choose how to begin — Dhund will use accepted evidence from this
-            project.
+            Your draft is empty. Choose how to begin.
+          </p>
+          <p className="mt-1 text-[12px] text-muted-foreground/80">
+            Dhund will draft from accepted evidence in this project.
           </p>
         </div>
 
-        <div className="mt-auto space-y-2">
+        <div className="h-px bg-border/50" aria-hidden />
+
+        <div className="space-y-2">
           {onDraft ? (
             <>
               <Button
@@ -167,10 +171,13 @@ function AssistMode({
               </Button>
             </>
           ) : null}
-          <p className="pt-1 text-center text-[12px] text-muted-foreground">
-            Or start typing in the manuscript — the assistant will follow your lead.
-          </p>
         </div>
+
+        <div className="h-px bg-border/50" aria-hidden />
+
+        <p className="text-[12px] leading-relaxed text-muted-foreground">
+          Or start typing in the manuscript — the assistant adapts as you write.
+        </p>
       </div>
     );
   }
@@ -381,7 +388,7 @@ export function ResearchIntelligencePanel({
   return (
     <aside
       className={cn(
-        "writing-studio-intelligence flex h-full min-h-0 w-full shrink-0 flex-col border-l border-border/60 bg-background lg:w-[320px]",
+        "writing-studio-intelligence flex h-full min-h-0 w-full shrink-0 flex-col border-l border-border/60 bg-background lg:w-[268px]",
         className,
       )}
       aria-label="Research Reviewer"

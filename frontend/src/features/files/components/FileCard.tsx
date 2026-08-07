@@ -6,7 +6,7 @@ import {
   MessageSquare,
   GitCompare,
   FolderPlus,
-  ExternalLink,
+  ArrowRight,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -40,39 +40,56 @@ function studyTypeLabel(file: UserFile): string | null {
   return null;
 }
 
-type IntelChip = { id: string; label: string; on?: boolean };
+function relativeAdded(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  const days = Math.floor((Date.now() - t) / 86_400_000);
+  if (days <= 0) return "Added today";
+  if (days === 1) return "Added yesterday";
+  if (days < 7) return `Added ${days}d ago`;
+  if (days < 30) return `Added ${Math.floor(days / 7)}w ago`;
+  return null;
+}
 
-function intelligenceChips(
+/** Compact research-state phrases — not pipeline badge chips. */
+function researchSignals(
   file: UserFile,
   aiState?: AiStateResolved,
-): IntelChip[] {
+): string[] {
   const r = file.research_readiness;
   const aid = aiState?.id;
-  const chatReady = r === "research_ready" || aid === "chat_ready";
+  const out: string[] = [];
+
   const profile =
     r === "analysed" ||
     r === "indexed" ||
     r === "research_ready" ||
     (file.meta_status === "done" && r !== "metadata_only" && r !== "pdf_attached");
+  if (profile) out.push("Profile ✓");
+
   const evidence =
     r === "indexed" ||
     r === "research_ready" ||
     aid === "evidence_ready" ||
     aid === "graph_ready" ||
     aid === "chat_ready";
-  const graph =
-    aid === "graph_ready" || aid === "chat_ready" || r === "research_ready";
+  if (evidence) out.push("Evidence ready");
+  else if (r === "research_ready" || aid === "chat_ready") out.push("Chat ready");
 
-  return [
-    { id: "chat", label: "Chat Ready", on: chatReady },
-    { id: "profile", label: "Research Profile", on: profile },
-    { id: "evidence", label: "Evidence", on: evidence },
-    { id: "graph", label: "Knowledge Graph", on: graph },
-  ];
+  if (
+    r === "metadata_only" ||
+    file.has_pdf === false ||
+    (!r && (file.size === 0 || !file.size))
+  ) {
+    out.push("Needs full text");
+  }
+
+  return out;
 }
 
 /**
- * Dense Library row — corpus intelligence, not a document card.
+ * Library row — research object, not a database/admin record.
  */
 export function FileCard({
   file,
@@ -81,6 +98,7 @@ export function FileCard({
   aiState,
   selected = false,
   onToggleSelect,
+  showProject = true,
 }: {
   file: UserFile;
   project?: Project;
@@ -88,6 +106,8 @@ export function FileCard({
   aiState?: AiStateResolved;
   selected?: boolean;
   onToggleSelect?: (id: number) => void;
+  /** Hide project chip when Library is already scoped to that project. */
+  showProject?: boolean;
 }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -102,9 +122,17 @@ export function FileCard({
       (!readiness && (file.size === 0 || !file.size)));
   const displayTitle = file.title || file.name;
   const authors = file.authors?.split(";")[0]?.trim();
-  const meta = [authors, file.year].filter(Boolean).join(" · ");
   const study = studyTypeLabel(file);
-  const chips = isPaper ? intelligenceChips(file, aiState) : [];
+  const signals = isPaper ? researchSignals(file, aiState) : [];
+  const added = relativeAdded(file.created_at);
+
+  const metaParts = [
+    authors,
+    file.venue ? file.venue : null,
+    file.year,
+    study,
+    showProject && project ? `${project.emoji} ${project.name}` : null,
+  ].filter(Boolean);
 
   const attachPdf = async (pdf: File) => {
     try {
@@ -154,7 +182,7 @@ export function FileCard({
   return (
     <div
       className={cn(
-        "group relative flex w-full items-start gap-2.5 border-b border-border px-1 py-2.5 text-left transition-colors last:border-b-0",
+        "group relative flex w-full items-start gap-2.5 border-b border-border px-1 py-3 text-left transition-colors last:border-b-0",
         selected ? "bg-primary/[0.04]" : "hover:bg-muted/40",
       )}
       data-density="high"
@@ -178,54 +206,63 @@ export function FileCard({
         className="min-w-0 flex-1 text-left focus-visible:outline-none"
       >
         <p
-          className="truncate text-[13px] font-medium leading-snug text-foreground"
+          className="line-clamp-2 text-[14px] font-medium leading-snug text-foreground"
           title={displayTitle}
         >
           {displayTitle}
         </p>
-        <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
-          {meta || (file.title && file.title !== file.name ? file.name : "No metadata yet")}
-          {study ? (
-            <span className="text-muted-foreground/90"> · {study}</span>
-          ) : null}
-          {project ? (
-            <span className="text-muted-foreground/80">
-              {" "}
-              · {project.emoji} {project.name}
-            </span>
-          ) : null}
+        <p className="mt-1 truncate text-[12px] text-muted-foreground">
+          {metaParts.length
+            ? metaParts.join(" · ")
+            : file.title && file.title !== file.name
+              ? file.name
+              : "No metadata yet"}
         </p>
 
-        {chips.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1">
-            {chips.map((c) => (
-              <span
-                key={c.id}
-                className={cn(
-                  "rounded border px-1.5 py-px text-[10px] font-medium tracking-wide",
-                  c.on
-                    ? "border-primary/30 bg-primary/8 text-primary"
-                    : "border-border text-muted-foreground/70",
-                )}
-              >
-                {c.label}
+        {(signals.length > 0 || added || rs !== "read") && (
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
+            {signals.map((s, i) => (
+              <span key={s} className="inline-flex items-center gap-1.5">
+                {i > 0 ? (
+                  <span className="text-border" aria-hidden>
+                    ·
+                  </span>
+                ) : null}
+                <span className="text-foreground/75">{s}</span>
               </span>
             ))}
-          </div>
+            {(signals.length > 0 && (added || rs === "unread" || rs === "reading")) ||
+            (added && (rs === "unread" || rs === "reading")) ? (
+              <span className="text-border" aria-hidden>
+                ·
+              </span>
+            ) : null}
+            {rs === "unread" ? (
+              <span className="font-medium text-foreground/80">Unread</span>
+            ) : rs === "reading" ? (
+              <span className="font-medium text-sem-warn">Reading</span>
+            ) : null}
+            {rs !== "read" && added ? (
+              <span className="text-border" aria-hidden>
+                ·
+              </span>
+            ) : null}
+            {added ? <span>{added}</span> : null}
+          </p>
         )}
       </button>
 
       <div className="flex shrink-0 flex-col items-end gap-1.5 pt-0.5">
-        <span
-          className={cn(
-            "text-[11px] capitalize tabular-nums",
-            rs === "unread" && "font-medium text-foreground",
-            rs === "reading" && "font-medium text-sem-warn",
-            rs === "read" && "text-muted-foreground",
-          )}
-        >
-          {rs}
-        </span>
+        {isPaper && (
+          <button
+            type="button"
+            onClick={open}
+            className="inline-flex items-center gap-1 text-[12px] font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          >
+            Continue
+            <ArrowRight className="size-3.5" />
+          </button>
+        )}
 
         {metadataOnly && (
           <>
@@ -267,11 +304,7 @@ export function FileCard({
           </>
         )}
 
-        {/* Hover actions */}
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-          <IconBtn title="Open" onClick={open}>
-            <ExternalLink className="size-3.5" />
-          </IconBtn>
           {isPaper && (
             <IconBtn
               title="Ask Dhund"
