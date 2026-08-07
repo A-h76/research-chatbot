@@ -5,6 +5,7 @@ import {
   StickyNote,
   ArrowRight,
   Quote,
+  GitCompare,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -242,6 +243,22 @@ export function PaperOverviewTab({
         >
           <Quote className="size-3.5" />
           Cite
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => {
+            try {
+              sessionStorage.setItem("dhund:compare-ids", JSON.stringify([fileId]));
+            } catch {
+              /* ignore */
+            }
+            navigate(`/research/compare?tab=compare&ids=${fileId}`);
+          }}
+        >
+          <GitCompare className="size-3.5" />
+          Research Intelligence
         </Button>
         <button
           type="button"

@@ -16,7 +16,7 @@ export type ResearchPrefs = {
 const KEY = "dhund.researchPrefs";
 
 const DEFAULTS: ResearchPrefs = {
-  showAiCompare: false,
+  showAiCompare: true,
   exportBundle: "md_bib",
   citationStyle: "apa",
   openWritingAfterAccept: false,

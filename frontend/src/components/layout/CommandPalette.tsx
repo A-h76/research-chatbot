@@ -548,12 +548,12 @@ export function CommandPalette() {
     () => [
       {
         id: "skill-compare",
-        label: "Compare",
+        label: "Research Intelligence",
         hint: "Skill",
-        keywords: "compare papers gaps",
+        keywords: "compare papers gaps research intelligence matrix themes",
         icon: GitCompare,
         show: true,
-        run: () => go("/research/compare?tab=matrix"),
+        run: () => go("/research/compare"),
       },
       {
         id: "skill-summarize",

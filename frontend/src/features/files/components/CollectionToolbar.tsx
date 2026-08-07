@@ -71,7 +71,7 @@ export function CollectionToolbar({
           <input
             value={q}
             onChange={(e) => onQChange(e.target.value)}
-            placeholder="Search papers, authors, DOI, PMID, claims…"
+            placeholder="Search papers, authors, DOI, PMID, claims, methods, datasets…"
             className="w-full bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/80"
             aria-label="Search library"
           />

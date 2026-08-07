@@ -677,6 +677,27 @@ function DraftTab({
     docsQuery.isFetching,
   ]);
 
+  /** Research Intelligence → Writing seed (compare / gaps pins). */
+  useEffect(() => {
+    if (activeId == null || activeDoc?.status === "deleted") return;
+    try {
+      const raw = sessionStorage.getItem("dhund:writing-seed");
+      if (!raw) return;
+      const seed = JSON.parse(raw) as { text?: string; label?: string };
+      sessionStorage.removeItem("dhund:writing-seed");
+      const text = (seed.text || "").trim();
+      if (!text) return;
+      const block = `\n\n> ${seed.label || "From Research Intelligence"}\n>\n${text
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n")}\n\n`;
+      setInput((prev) => (prev.trim() ? `${prev.trimEnd()}${block}` : text + "\n\n"));
+      toast.success("Inserted Research Intelligence insight");
+    } catch {
+      /* ignore */
+    }
+  }, [activeId, activeDoc?.status]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-density="low">
       {studioTab === "notes" ? (

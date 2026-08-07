@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { Download, Loader2, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -89,11 +90,62 @@ export function EvidenceGapsPanel({ projectId }: { projectId: number | null }) {
       </div>
 
       {!data.gaps.length ? (
-        <EmptyState
-          icon={<SearchX className="size-7" />}
-          title="No coverage gaps flagged"
-          description="Themes and matrix cells look covered for this corpus — or evidence is still thin."
-        />
+        <div className="rounded-lg border border-border bg-card px-4 py-5">
+          <h3 className="text-[14px] font-semibold tracking-tight text-foreground">
+            No significant gaps detected
+          </h3>
+          <p className="mt-1 text-[13px] text-muted-foreground">Possible reasons:</p>
+          <ul className="mt-3 space-y-2 text-[13px] text-foreground/90">
+            <li className="flex gap-2">
+              <span className="text-primary" aria-hidden>
+                ✓
+              </span>
+              <span>
+                {data.metrics.paper_count < 5
+                  ? `Corpus is still small (${data.metrics.paper_count} paper${data.metrics.paper_count === 1 ? "" : "s"})`
+                  : "Corpus size looks adequate for a first pass"}
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-primary" aria-hidden>
+                ✓
+              </span>
+              <span>
+                {data.metrics.evidence_count === 0
+                  ? "Evidence not extracted yet — themes and matrix stay thin"
+                  : `${data.metrics.evidence_count} evidence item${data.metrics.evidence_count === 1 ? "" : "s"} in scope`}
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-primary" aria-hidden>
+                ✓
+              </span>
+              <span>
+                Theme coverage may be incomplete — open Themes after extraction
+              </span>
+            </li>
+          </ul>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              to="/research/compare?tab=extract"
+              className="inline-flex h-8 items-center rounded-md border border-border px-2.5 text-[12px] font-medium hover:bg-muted/60"
+            >
+              Structured Evidence
+            </Link>
+            <Link
+              to="/research/compare?tab=themes"
+              className="inline-flex h-8 items-center rounded-md border border-border px-2.5 text-[12px] font-medium hover:bg-muted/60"
+            >
+              Themes
+            </Link>
+            <Link
+              to="/library"
+              className="inline-flex h-8 items-center rounded-md border border-border px-2.5 text-[12px] font-medium hover:bg-muted/60"
+            >
+              Library
+            </Link>
+          </div>
+        </div>
       ) : (
         <ul className="space-y-2">
           {data.gaps.map((gap) => (

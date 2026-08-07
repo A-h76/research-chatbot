@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, ArrowRight } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LibraryPapersSkeleton } from "@/components/common/ResearchSkeletons";
@@ -79,36 +79,47 @@ function writeFiltersToUrl(sp: URLSearchParams, filters: LibraryFilterState) {
   for (const t of filters.tag ?? []) sp.append("tag", t);
 }
 
+function relativeCorpusUpdate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  const days = Math.floor((Date.now() - t) / 86_400_000);
+  if (days <= 0) return "Updated today";
+  if (days === 1) return "Updated yesterday";
+  if (days < 7) return `Updated ${days}d ago`;
+  return null;
+}
+
 function CorpusHeader({
   paperCount,
-  collectionCount,
-  readyCount,
+  lastUpdatedAt,
+  onContinue,
+  continueLabel,
 }: {
   paperCount: number;
-  collectionCount: number;
-  readyCount?: number;
+  lastUpdatedAt?: string | null;
+  onContinue?: () => void;
+  continueLabel?: string;
 }) {
-  const { currentProjectId, setCurrentProjectId } = useUI();
+  const { currentProjectId } = useUI();
   const { data: projects = [] } = useProjects();
   const proj = currentProjectId
     ? projects.find((p) => p.id === currentProjectId)
     : null;
 
-  const stats = [
-    `${paperCount.toLocaleString()} paper${paperCount === 1 ? "" : "s"}`,
-    collectionCount > 0
-      ? `${collectionCount} collection${collectionCount === 1 ? "" : "s"}`
+  const updated = relativeCorpusUpdate(lastUpdatedAt);
+  const contextLine = [
+    paperCount > 0
+      ? `${paperCount.toLocaleString()} paper${paperCount === 1 ? "" : "s"}`
       : null,
-    readyCount != null && readyCount > 0
-      ? `${readyCount} chat-ready`
-      : null,
+    updated,
   ]
     .filter(Boolean)
     .join(" · ");
 
   return (
-    <header className="space-y-0.5">
-      <div className="flex items-baseline gap-2">
+    <header className="flex flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0 space-y-0.5">
         <h1 className="text-[18px] font-semibold tracking-tight text-foreground">
           {proj ? (
             <>
@@ -119,19 +130,20 @@ function CorpusHeader({
             "Library"
           )}
         </h1>
-        {proj ? (
-          <button
-            type="button"
-            onClick={() => setCurrentProjectId(null)}
-            className="text-[11px] text-muted-foreground hover:text-foreground"
-          >
-            Show all
-          </button>
-        ) : null}
+        <p className="text-[13px] tabular-nums text-muted-foreground">
+          {contextLine || "Your research corpus"}
+        </p>
       </div>
-      <p className="text-[13px] tabular-nums text-muted-foreground">
-        {paperCount > 0 || collectionCount > 0 ? stats : "Your research corpus"}
-      </p>
+      {onContinue && paperCount > 0 ? (
+        <button
+          type="button"
+          onClick={onContinue}
+          className="inline-flex shrink-0 items-center gap-1 text-[13px] font-medium text-primary transition-colors hover:text-primary/80"
+        >
+          {continueLabel ?? "Continue research"}
+          <ArrowRight className="size-3.5" />
+        </button>
+      ) : null}
     </header>
   );
 }
@@ -291,12 +303,46 @@ export function FilesPage() {
   );
   const hasLibrary = (stats?.total_papers ?? 0) > 0 || total > 0;
   const paperCount = stats?.total_papers ?? total;
-  const collectionCount = collections.length;
-  const readyCount = health?.research_ready;
+  const unreadCount = facets?.reading_status?.unread ?? stats?.unread ?? 0;
+  const lastUpdatedAt =
+    fileItems.reduce<string | null>((best, f) => {
+      if (!f.created_at) return best;
+      if (!best || f.created_at > best) return f.created_at;
+      return best;
+    }, null) ?? health?.generated_at ?? null;
+
+  const continueTarget = (() => {
+    const reading = fileItems.find((f) => f.reading_status === "reading");
+    if (reading) {
+      return {
+        label: "Resume reading",
+        run: () => navigate(`/papers/${reading.id}`),
+      };
+    }
+    const unread = fileItems.find(
+      (f) => f.reading_status === "unread" || !f.reading_status,
+    );
+    if (unread) {
+      return {
+        label: "Resume reading",
+        run: () => navigate(`/papers/${unread.id}`),
+      };
+    }
+    if (currentProjectId != null) {
+      return {
+        label: "Open Research Intelligence",
+        run: () => navigate("/research/compare"),
+      };
+    }
+    return {
+      label: "Continue research",
+      run: () => navigate("/home"),
+    };
+  })();
 
   const STATUS_TABS: { key: StatusFilter; label: string; count?: number }[] = [
     { key: "all", label: "All", count: facets?.total ?? stats?.total_papers },
-    { key: "unread", label: "Unread", count: facets?.reading_status?.unread ?? stats?.unread },
+    { key: "unread", label: "Unread", count: unreadCount },
     { key: "reading", label: "Reading", count: facets?.reading_status?.reading ?? stats?.reading },
     { key: "read", label: "Read", count: facets?.reading_status?.read ?? stats?.read },
   ];
@@ -349,8 +395,9 @@ export function FilesPage() {
       <div className="space-y-3" data-density="high">
         <CorpusHeader
           paperCount={paperCount}
-          collectionCount={collectionCount}
-          readyCount={readyCount}
+          lastUpdatedAt={lastUpdatedAt}
+          onContinue={hasLibrary ? continueTarget.run : undefined}
+          continueLabel={continueTarget.label}
         />
 
         {hasLibrary && (
@@ -393,7 +440,7 @@ export function FilesPage() {
                 /* ignore */
               }
               navigate(
-                `/research/compare?tab=matrix&ids=${selectedList.join(",")}`,
+                `/research/compare?tab=compare&ids=${selectedList.join(",")}`,
               );
             }}
             onBulkAddToCollection={() => setAddToCollectionIds(selectedList)}
@@ -451,17 +498,7 @@ export function FilesPage() {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-            <CollectionsPanel
-              activeId={collectionId}
-              totalPapers={paperCount}
-              onSelect={(id) => {
-                setCollectionId(id);
-                setPage(0);
-                setSelectedIds(new Set());
-              }}
-            />
-            <div className="min-w-0 flex-1 space-y-4">
+          <div className="min-w-0 space-y-4">
               {uploadItems.length > 0 && (
                 <LibraryUploadQueue items={uploadItems} onClearFinished={clearFinished} />
               )}
@@ -486,31 +523,42 @@ export function FilesPage() {
                 </div>
               )}
 
-              <div className="flex items-center gap-1 border-b border-border/70">
-                {STATUS_TABS.map(({ key, label, count }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => {
-                      setStatus(key);
-                      setPage(0);
-                    }}
-                    className={cn(
-                      "relative flex items-center gap-1.5 px-2.5 py-2 text-[13px] font-medium transition-colors",
-                      status === key
-                        ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {label}
-                    {count !== undefined && (
-                      <span className="tabular-nums text-[11px] text-muted-foreground">
-                        {count}
-                      </span>
-                    )}
-                  </button>
-                ))}
-                <div className="ml-auto flex items-center gap-2 pb-1 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-2 border-b border-border/70">
+                <CollectionsPanel
+                  activeId={collectionId}
+                  totalPapers={paperCount}
+                  onSelect={(id) => {
+                    setCollectionId(id);
+                    setPage(0);
+                    setSelectedIds(new Set());
+                  }}
+                />
+                <div className="flex min-w-0 flex-1 items-center gap-1">
+                  {STATUS_TABS.map(({ key, label, count }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        setStatus(key);
+                        setPage(0);
+                      }}
+                      className={cn(
+                        "relative flex items-center gap-1.5 px-2.5 py-2 text-[13px] font-medium transition-colors",
+                        status === key
+                          ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {label}
+                      {count !== undefined && (
+                        <span className="tabular-nums text-[11px] text-muted-foreground">
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 pb-1 text-xs text-muted-foreground">
                   <select
                     value={sort}
                     onChange={(e) => setSort(e.target.value as SortKey)}
@@ -632,7 +680,6 @@ export function FilesPage() {
               />
               <LibraryDuplicatesPanel projectId={currentProjectId} />
             </div>
-          </div>
         )}
       </div>
 

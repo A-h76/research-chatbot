@@ -6,7 +6,6 @@ import {
   PanelRight,
   ChevronRight,
   Search,
-  MessageSquare,
   Bell,
   ChevronDown,
 } from "lucide-react";
@@ -94,8 +93,8 @@ const STATIC_TITLES: { prefix: string; label: string }[] = [
   { prefix: "/citations", label: "Citations" },
   { prefix: "/memory", label: "Memory" },
   { prefix: "/notes", label: "Notes" },
-  { prefix: "/research", label: "Compare & Gaps" },
-  { prefix: "/analysis", label: "Compare & Gaps" },
+  { prefix: "/research", label: "Research Intelligence" },
+  { prefix: "/analysis", label: "Research Intelligence" },
   { prefix: "/settings", label: "Settings" },
   { prefix: "/admin", label: "Admin" },
   { prefix: "/chat", label: "Ask Dhund" },
@@ -228,18 +227,6 @@ export function TopBar({
       )}
 
       <div className="ml-auto flex items-center gap-1">
-        {!isChat && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 px-2.5 text-[12px]"
-            onClick={() => navigate("/chat")}
-            title="Ask Dhund"
-          >
-            <MessageSquare className="size-3.5 text-primary" />
-            <span className="hidden sm:inline">Ask Dhund</span>
-          </Button>
-        )}
         <Button
           variant="ghost"
           size="sm"

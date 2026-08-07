@@ -85,6 +85,15 @@ export function projectExportUrl(projectId: number): string {
   return projectWritingUrl(projectId, { tab: "export" });
 }
 
+/** Research Intelligence workbench (corpus analysis). */
+export function projectResearchIntelligenceUrl(
+  _projectId: number,
+  tab?: string,
+): string {
+  if (!tab || tab === "overview") return "/research/compare";
+  return `/research/compare?tab=${tab}`;
+}
+
 export type JourneyNavId =
   | "library"
   | "papers"
@@ -98,6 +107,8 @@ export type JourneyNavId =
 export type JourneyNavItem = {
   id: JourneyNavId;
   label: string;
+  /** Full brand label for tooltip / aria when rail truncates. */
+  title?: string;
   /** Build href for a project-scoped Writing Studio sidebar. */
   href: (projectId: number) => string;
 };
@@ -105,11 +116,17 @@ export type JourneyNavItem = {
 /**
  * Project workspace journey — research workflow only (no global Library).
  * Library lives in global nav / breadcrumbs once you're inside a project.
+ * Order: Papers → Evidence → Research Intelligence → Writing → Review.
  */
 export const PROJECT_JOURNEY_WORKFLOW: JourneyNavItem[] = [
   { id: "papers", label: "Papers", href: (id) => projectHubUrl(id, "papers") },
-  { id: "research", label: "Research", href: (id) => projectHubUrl(id, "research") },
   { id: "evidence", label: "Evidence", href: (id) => projectEvidenceUrl(id) },
+  {
+    id: "research",
+    label: "Research Intelligence",
+    title: "Research Intelligence",
+    href: (id) => projectResearchIntelligenceUrl(id),
+  },
   { id: "writing", label: "Writing", href: (id) => projectWritingUrl(id) },
   { id: "review", label: "Review", href: (id) => projectReviewUrl(id) },
 ];
@@ -140,6 +157,8 @@ export function isProjectWorkspacePath(path: string, projectId: number): boolean
   }
   // Paper detail while a project is selected — stay in project context
   if (path.startsWith("/papers/")) return true;
+  // Research Intelligence workbench
+  if (path.startsWith("/research") || path.startsWith("/analysis")) return true;
   return false;
 }
 
@@ -156,6 +175,8 @@ export function resolveJourneyActive(
   if (path.startsWith("/settings") || path.startsWith("/admin")) return "settings";
   if (path.startsWith("/library") || path.startsWith("/files")) return "library";
 
+  if (path.startsWith("/research") || path.startsWith("/analysis")) return "research";
+
   if (path.startsWith("/writing") || /\/projects\/\d+\/writing/.test(path)) {
     if (focus === "review") return "review";
     if (focus === "evidence") return "evidence";
@@ -164,6 +185,7 @@ export function resolveJourneyActive(
 
   if (path.startsWith(`/projects/${projectId}`)) {
     if (tab === "papers") return "papers";
+    // Hub console research tab — secondary to RI workbench; still highlight Intelligence
     if (tab === "research" || tab === "compare") return "research";
     if (tab === "chat") return "chat";
     if (tab === "notes" || tab === "questions" || tab === "insights") return "papers";

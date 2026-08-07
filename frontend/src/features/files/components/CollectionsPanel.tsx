@@ -1,15 +1,23 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { FolderPlus, Pencil, Trash2, X } from "lucide-react";
+import { ChevronDown, FolderPlus, Pencil, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { toast } from "@/components/common/Toast";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import { collectionsApi, type LibraryCollection } from "../collectionsApi";
 import { useLibraryCollections } from "../hooks/useLibraryCollections";
 
-/** Lightweight Collections nav — counts, no boxed cards. */
+/**
+ * Collections as an on-demand menu — not a permanent left column.
+ * Frees horizontal space for the paper list (the corpus hero).
+ */
 export function CollectionsPanel({
   activeId,
   onSelect,
@@ -21,6 +29,7 @@ export function CollectionsPanel({
 }) {
   const qc = useQueryClient();
   const { data: collections = [], isLoading } = useLibraryCollections();
+  const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -36,6 +45,7 @@ export function CollectionsPanel({
       setCreating(false);
       setName("");
       onSelect(row.id);
+      setOpen(false);
       toast.success(`Created “${row.name}”`);
     },
     onError: (e: Error) => toast.error(e.message),
@@ -62,10 +72,19 @@ export function CollectionsPanel({
 
   const roots = collections.filter((c) => {
     if (!c.parent_id) return true;
-    // Orphan parents (broken parent_id) → surface as roots so they stay visible
     return !collections.some((p) => p.id === c.parent_id);
   });
   const childrenOf = (id: number) => collections.filter((c) => c.parent_id === id);
+
+  const activeLabel =
+    activeId == null
+      ? "All papers"
+      : (collections.find((c) => c.id === activeId)?.name ?? "Collection");
+
+  function pick(id: number | null) {
+    onSelect(id);
+    setOpen(false);
+  }
 
   function renderRow(c: LibraryCollection, depth = 0) {
     const active = activeId === c.id;
@@ -112,10 +131,10 @@ export function CollectionsPanel({
           <button
             type="button"
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-2 border-l-2 py-1.5 pl-2",
-              active ? "border-primary" : "border-transparent",
+              "flex min-w-0 flex-1 items-center gap-2 rounded-md border-l-2 py-1.5 pl-2",
+              active ? "border-primary bg-muted/50" : "border-transparent",
             )}
-            onClick={() => onSelect(c.id)}
+            onClick={() => pick(c.id)}
           >
             <span className="truncate">{c.name}</span>
             <span className="ml-auto shrink-0 tabular-nums text-[11px] text-muted-foreground/80">
@@ -148,81 +167,100 @@ export function CollectionsPanel({
   }
 
   return (
-    <aside className="w-full shrink-0 sm:w-48 lg:w-52">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-          Collections
-        </h2>
-        <button
+    <div className="inline-flex items-center gap-1">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
           type="button"
-          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="New collection"
-          onClick={() => setCreating(true)}
+          className={cn(
+            "inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium transition-colors",
+            activeId != null
+              ? "bg-muted text-foreground"
+              : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+          )}
         >
-          <FolderPlus className="size-3.5" />
-        </button>
-      </div>
+          Collections
+          <span className="max-w-[12ch] truncate text-muted-foreground">{activeLabel}</span>
+          <ChevronDown className="size-3.5 opacity-70" />
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-64 p-2" sideOffset={6}>
+          <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Collections
+            </p>
+            <button
+              type="button"
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="New collection"
+              onClick={() => setCreating(true)}
+            >
+              <FolderPlus className="size-3.5" />
+            </button>
+          </div>
 
-      <button
-        type="button"
-        onClick={() => onSelect(null)}
-        className={cn(
-          "mb-1 flex w-full items-center gap-2 border-l-2 py-1.5 pl-2 text-left text-[13px]",
-          activeId == null
-            ? "border-primary font-medium text-foreground"
-            : "border-transparent text-muted-foreground hover:text-foreground",
-        )}
-      >
-        <span className="truncate">All papers</span>
-        {totalPapers != null && (
-          <span className="ml-auto shrink-0 tabular-nums text-[11px] text-muted-foreground/80">
-            {totalPapers}
-          </span>
-        )}
-      </button>
-
-      {isLoading ? (
-        <p className="pl-2 text-xs text-muted-foreground">Loading…</p>
-      ) : (
-        <div className="space-y-0.5">{roots.map((c) => renderRow(c))}</div>
-      )}
-
-      {creating && (
-        <div className="mt-2 flex items-center gap-1">
-          <Input
-            value={name}
-            placeholder="Collection name"
-            className="h-7 text-xs"
-            autoFocus
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && name.trim()) createMut.mutate(name.trim());
-              if (e.key === "Escape") setCreating(false);
-            }}
-          />
-          <Button
-            size="sm"
-            className="h-7 px-2"
-            disabled={!name.trim() || createMut.isPending}
-            onClick={() => createMut.mutate(name.trim())}
-          >
-            Add
-          </Button>
           <button
             type="button"
-            className="p-1 text-muted-foreground"
-            onClick={() => setCreating(false)}
+            onClick={() => pick(null)}
+            className={cn(
+              "mb-0.5 flex w-full items-center gap-2 rounded-md border-l-2 py-1.5 pl-2 text-left text-[13px]",
+              activeId == null
+                ? "border-primary bg-muted/50 font-medium text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
           >
-            <X className="size-3.5" />
+            <span className="truncate">All papers</span>
+            {totalPapers != null && (
+              <span className="ml-auto shrink-0 tabular-nums text-[11px] text-muted-foreground/80">
+                {totalPapers}
+              </span>
+            )}
           </button>
-        </div>
-      )}
 
-      {!isLoading && collections.length === 0 && !creating && (
-        <p className="mt-3 pl-2 text-[11px] leading-relaxed text-muted-foreground">
-          Organise papers into collections without copying them.
-        </p>
-      )}
+          {isLoading ? (
+            <p className="px-2 py-1 text-xs text-muted-foreground">Loading…</p>
+          ) : (
+            <div className="max-h-64 space-y-0.5 overflow-y-auto">
+              {roots.map((c) => renderRow(c))}
+            </div>
+          )}
+
+          {creating && (
+            <div className="mt-2 flex items-center gap-1">
+              <Input
+                value={name}
+                placeholder="Collection name"
+                className="h-7 text-xs"
+                autoFocus
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && name.trim()) createMut.mutate(name.trim());
+                  if (e.key === "Escape") setCreating(false);
+                }}
+              />
+              <Button
+                size="sm"
+                className="h-7 px-2"
+                disabled={!name.trim() || createMut.isPending}
+                onClick={() => createMut.mutate(name.trim())}
+              >
+                Add
+              </Button>
+              <button
+                type="button"
+                className="p-1 text-muted-foreground"
+                onClick={() => setCreating(false)}
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )}
+
+          {!isLoading && collections.length === 0 && !creating && (
+            <p className="mt-2 px-1 text-[11px] leading-relaxed text-muted-foreground">
+              Organise papers into collections without copying them.
+            </p>
+          )}
+        </PopoverContent>
+      </Popover>
 
       <ConfirmDialog
         open={toDelete != null}
@@ -238,6 +276,6 @@ export function CollectionsPanel({
           setToDelete(null);
         }}
       />
-    </aside>
+    </div>
   );
 }

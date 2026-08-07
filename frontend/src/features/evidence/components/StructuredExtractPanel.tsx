@@ -8,7 +8,11 @@ import type { ExtractCell, StructuredExtractRow } from "../types";
 
 function CellView({ cell }: { cell: ExtractCell }) {
   if (cell.status === "unknown" || !cell.value) {
-    return <span className="text-[11px] italic text-muted-foreground">unknown</span>;
+    return (
+      <span className="text-[11px] font-medium text-amber-800/90 dark:text-amber-400/90">
+        Not extracted
+      </span>
+    );
   }
   return <p className="text-[12px] leading-snug text-foreground/90">{cell.value}</p>;
 }

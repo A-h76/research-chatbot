@@ -5,7 +5,7 @@
 import { NavLink, useLocation } from "react-router-dom";
 import {
   FileText,
-  Search,
+  Network,
   BookMarked,
   PenLine,
   FlaskConical,
@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 
 const ICONS: Partial<Record<JourneyNavId, React.ReactNode>> = {
   papers: <FileText className="size-4" strokeWidth={1.5} />,
-  research: <Search className="size-4" strokeWidth={1.5} />,
+  research: <Network className="size-4" strokeWidth={1.5} />,
   evidence: <BookMarked className="size-4" strokeWidth={1.5} />,
   writing: <PenLine className="size-4" strokeWidth={1.5} />,
   review: <FlaskConical className="size-4" strokeWidth={1.5} />,
@@ -44,6 +44,7 @@ function JourneyLink({
   return (
     <NavLink
       to={item.href(projectId)}
+      title={item.title ?? item.label}
       className={cn(
         "group relative flex items-center gap-2 rounded-md py-2 pl-2.5 pr-2 text-[13px] transition-colors",
         isActive

@@ -16,8 +16,18 @@ export type ExtractResult = {
 
 function toastFromResult(data: ExtractResult) {
   const created = data.objects_created ?? data.created ?? data.candidate_count ?? 0;
+  const openRi = {
+    label: "Open Research Intelligence",
+    onClick: () => {
+      window.location.assign("/research/compare");
+    },
+  };
+
   if (data.status === "pending" || data.status === "queued") {
-    toast.success("Evidence Extraction queued");
+    toast.success("Evidence Extraction queued", {
+      description: "Research Intelligence will update when extraction finishes.",
+      action: openRi,
+    });
     return;
   }
   if (data.status === "skipped" || data.skipped) {
@@ -32,18 +42,31 @@ function toastFromResult(data: ExtractResult) {
       toast.error("Phase 1 analysis is missing — run analysis first");
       return;
     }
-    toast.success(reason === "already_applied" || reason === "idempotent_reuse" ? "Already extracted (up to date)" : `Skipped: ${reason}`);
+    toast.success(
+      reason === "already_applied" || reason === "idempotent_reuse"
+        ? "Already extracted (up to date)"
+        : `Skipped: ${reason}`,
+      reason === "already_applied" || reason === "idempotent_reuse"
+        ? { action: openRi }
+        : undefined,
+    );
     return;
   }
   if (data.status === "succeeded" && data.reason === "idempotent_reuse") {
-    toast.success("Already extracted (up to date)");
+    toast.success("Already extracted (up to date)", { action: openRi });
     return;
   }
-  toast.success(
-    created > 0
-      ? `Evidence Extraction created ${created} candidate object${created === 1 ? "" : "s"}`
-      : "Evidence Extraction finished (no new candidates)",
-  );
+  if (created > 0) {
+    toast.success("Research Intelligence ready", {
+      description: `${created} evidence candidate${created === 1 ? "" : "s"} created — explore themes, gaps, and the matrix.`,
+      action: openRi,
+      duration: 8000,
+    });
+    return;
+  }
+  toast.success("Evidence Extraction finished (no new candidates)", {
+    action: openRi,
+  });
 }
 
 export function useEvidenceExtract() {

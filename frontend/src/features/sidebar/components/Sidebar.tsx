@@ -3,11 +3,11 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   PanelLeftClose,
-  PanelLeftOpen,
   Library,
   Settings,
   Home,
   Plus,
+  Network,
   Search,
   FolderKanban,
   PenLine,
@@ -30,7 +30,6 @@ import {
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
 } from "@/context/UIContext";
-import { useAllFiles } from "@/features/files/useFiles";
 import { useProjects } from "@/features/projects/useProjects";
 import {
   PROJECT_JOURNEY_SECONDARY,
@@ -41,13 +40,11 @@ import {
 } from "@/features/projects/projectWorkspaceNav";
 import { isTypingTarget } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
-import type { Me, Project, UserFile } from "@/types/api";
-
-const RESEARCH_LIST_LIMIT = 5;
+import type { Me, Project } from "@/types/api";
 
 const JOURNEY_ICONS: Partial<Record<JourneyNavId, React.ReactNode>> = {
   papers: <FileText className="size-4" strokeWidth={1.5} />,
-  research: <Search className="size-4" strokeWidth={1.5} />,
+  research: <Network className="size-4" strokeWidth={1.5} />,
   evidence: <BookMarked className="size-4" strokeWidth={1.5} />,
   writing: <PenLine className="size-4" strokeWidth={1.5} />,
   review: <FlaskConical className="size-4" strokeWidth={1.5} />,
@@ -60,33 +57,6 @@ export type SidebarDensity = "labels" | "rich";
 export function sidebarDensity(width: number): SidebarDensity {
   return width >= 240 ? "rich" : "labels";
 }
-
-type ResearchStatus = "ready" | "review" | "idle";
-
-function researchStatus(projectId: number, files: UserFile[]): ResearchStatus {
-  const papers = files.filter((f) => f.kind === "document" && f.project_id === projectId);
-  if (papers.length === 0) return "idle";
-  const needsReview = papers.some(
-    (p) =>
-      p.reading_status === "unread" ||
-      p.meta_status === "pending" ||
-      p.meta_status === "running" ||
-      p.meta_status === "failed",
-  );
-  return needsReview ? "review" : "ready";
-}
-
-const STATUS_DOT: Record<ResearchStatus, string> = {
-  ready: "bg-emerald-500",
-  review: "bg-amber-400",
-  idle: "bg-muted-foreground/45",
-};
-
-const STATUS_LABEL: Record<ResearchStatus, string> = {
-  ready: "Ready",
-  review: "Needs review",
-  idle: "Idle",
-};
 
 /** Fixed icon column inset — never recenters when the rail folds. */
 const ICON_INSET = "pl-3";
@@ -119,6 +89,7 @@ function FadeLabel({
 function PlaceItem({
   icon,
   label,
+  title,
   active,
   emphasis,
   onClick,
@@ -127,6 +98,7 @@ function PlaceItem({
 }: {
   icon: React.ReactNode;
   label: string;
+  title?: string;
   active?: boolean;
   /** Project root — slightly stronger than journey children. */
   emphasis?: boolean;
@@ -138,7 +110,7 @@ function PlaceItem({
     <button
       type="button"
       onClick={onClick}
-      title={label}
+      title={title ?? label}
       className={cn(
         "group relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] transition-colors duration-200",
         ICON_INSET,
@@ -191,7 +163,6 @@ export function SidebarContents({
   const path = location.pathname;
 
   const { data: projects = [] } = useProjects();
-  const { data: files = [] } = useAllFiles();
 
   const routeProjectId = useMemo(() => {
     const m = path.match(/^\/projects\/(\d+)/);
@@ -199,15 +170,6 @@ export function SidebarContents({
   }, [path]);
 
   const activeResearchId = routeProjectId ?? currentProjectId;
-
-  const researchProjects = useMemo(() => {
-    const sorted = [...projects].sort((a, b) => {
-      if (a.id === activeResearchId) return -1;
-      if (b.id === activeResearchId) return 1;
-      return b.id - a.id;
-    });
-    return sorted.slice(0, RESEARCH_LIST_LIMIT);
-  }, [projects, activeResearchId]);
 
   const isHome = path === "/home";
   const isLibrary =
@@ -410,6 +372,7 @@ export function SidebarContents({
                             showLabel={showLabel}
                             icon={JOURNEY_ICONS[item.id] ?? <FileText />}
                             label={item.label}
+                            title={item.title ?? item.label}
                             active={journeyActive === item.id}
                             onClick={() => {
                               setCurrentProjectId(activeResearchId);
@@ -447,7 +410,10 @@ export function SidebarContents({
                 icon={<Library />}
                 label="Library"
                 active={isLibrary}
-                onClick={() => go("library", "/library")}
+                onClick={() => {
+                  setCurrentProjectId(null);
+                  go("library", "/library");
+                }}
               />
               <PlaceItem
                 showLabel={showLabel}
@@ -460,56 +426,6 @@ export function SidebarContents({
                   </kbd>
                 }
               />
-            </div>
-
-            <div>
-              <FadeLabel show={showLabel}>
-                <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                  Recent projects
-                </p>
-              </FadeLabel>
-              <div className="space-y-0.5">
-                {researchProjects.length === 0 ? (
-                  <button
-                    type="button"
-                    title="Start research"
-                    onClick={() => go("projects", "/projects?new=1")}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] text-muted-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                      ICON_INSET,
-                    )}
-                  >
-                    <Plus className="size-4 shrink-0 text-muted-foreground/45" />
-                    <FadeLabel show={showLabel}>New project</FadeLabel>
-                  </button>
-                ) : (
-                  researchProjects.map((p) => {
-                    const status = researchStatus(p.id, files);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        title={`${p.name} · ${STATUS_LABEL[status]}`}
-                        onClick={() => openProject(p)}
-                        className={cn(
-                          "group relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] transition-colors duration-200",
-                          ICON_INSET,
-                          "text-muted-foreground/75 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
-                        )}
-                      >
-                        <span
-                          className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status])}
-                          aria-hidden
-                        />
-                        <FadeLabel show={showLabel} className="min-w-0 flex-1 truncate">
-                          {p.emoji ? `${p.emoji} ` : ""}
-                          {p.name}
-                        </FadeLabel>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
             </div>
           </>
         )}
@@ -662,18 +578,16 @@ export function Sidebar({ me }: { me: Me }) {
           <SidebarContents me={me} showLabel={showLabel} density={density} />
         </div>
 
-        <button
-          type="button"
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          title={sidebarCollapsed ? "Expand sidebar (⌘B)" : "Collapse sidebar (⌘B)"}
-          className="absolute top-3 right-1.5 z-10 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-        >
-          {sidebarCollapsed ? (
-            <PanelLeftOpen className="size-4" />
-          ) : (
+        {!sidebarCollapsed && (
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(true)}
+            title="Collapse sidebar (⌘B)"
+            className="absolute top-3 right-1.5 z-10 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
             <PanelLeftClose className="size-4" />
-          )}
-        </button>
+          </button>
+        )}
 
         <SidebarResizeHandle onDragWidth={onDragWidth} />
       </div>

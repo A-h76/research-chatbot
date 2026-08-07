@@ -52,36 +52,50 @@ function relativeAdded(iso: string | null | undefined): string | null {
   return null;
 }
 
-/** Compact research-state phrases — not pipeline badge chips. */
-function researchSignals(
+/** Tiny status chips — scannable, not prose weight. */
+type StatusChip = {
+  id: string;
+  label: string;
+  tone: "ready" | "warn" | "muted";
+};
+
+function researchChips(
   file: UserFile,
   aiState?: AiStateResolved,
-): string[] {
+): StatusChip[] {
   const r = file.research_readiness;
   const aid = aiState?.id;
-  const out: string[] = [];
+  const out: StatusChip[] = [];
 
-  const profile =
+  if (
     r === "analysed" ||
     r === "indexed" ||
     r === "research_ready" ||
-    (file.meta_status === "done" && r !== "metadata_only" && r !== "pdf_attached");
-  if (profile) out.push("Profile ✓");
+    (file.meta_status === "done" && r !== "metadata_only" && r !== "pdf_attached")
+  ) {
+    out.push({ id: "profile", label: "Profile", tone: "ready" });
+  }
 
-  const evidence =
+  if (
     r === "indexed" ||
     r === "research_ready" ||
     aid === "evidence_ready" ||
     aid === "graph_ready" ||
-    aid === "chat_ready";
-  if (evidence) out.push("Evidence ready");
+    aid === "chat_ready"
+  ) {
+    out.push({ id: "evidence", label: "Evidence", tone: "ready" });
+  }
+
+  if (r === "research_ready" || aid === "chat_ready") {
+    out.push({ id: "chat", label: "Chat", tone: "ready" });
+  }
 
   if (
     r === "metadata_only" ||
     file.has_pdf === false ||
     (!r && (file.size === 0 || !file.size))
   ) {
-    out.push("Needs full text");
+    out.push({ id: "fulltext", label: "Needs PDF", tone: "warn" });
   }
 
   return out;
@@ -122,7 +136,7 @@ export function FileCard({
   const displayTitle = file.title || file.name;
   const authors = file.authors?.split(";")[0]?.trim();
   const study = studyTypeLabel(file);
-  const signals = isPaper ? researchSignals(file, aiState) : [];
+  const chips = isPaper ? researchChips(file, aiState) : [];
   const added = relativeAdded(file.created_at);
 
   const metaParts = [
@@ -205,12 +219,12 @@ export function FileCard({
         className="min-w-0 flex-1 text-left focus-visible:outline-none"
       >
         <p
-          className="line-clamp-2 text-[14px] font-medium leading-snug text-foreground"
+          className="line-clamp-2 text-[14px] font-semibold leading-snug tracking-tight text-foreground"
           title={displayTitle}
         >
           {displayTitle}
         </p>
-        <p className="mt-1 truncate text-[12px] text-muted-foreground">
+        <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
           {metaParts.length
             ? metaParts.join(" · ")
             : file.title && file.title !== file.name
@@ -218,36 +232,42 @@ export function FileCard({
               : "No metadata yet"}
         </p>
 
-        {(signals.length > 0 || added || rs !== "read") && (
-          <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
-            {signals.map((s, i) => (
-              <span key={s} className="inline-flex items-center gap-1.5">
-                {i > 0 ? (
-                  <span className="text-border" aria-hidden>
-                    ·
-                  </span>
-                ) : null}
-                <span className="text-foreground/75">{s}</span>
+        {(chips.length > 0 || added || rs === "unread" || rs === "reading") && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {chips.map((c) => (
+              <span
+                key={c.id}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-1.5 py-px text-[10px] font-medium",
+                  c.tone === "ready" &&
+                    "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+                  c.tone === "warn" &&
+                    "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-400",
+                  c.tone === "muted" &&
+                    "border-border bg-muted/50 text-muted-foreground",
+                )}
+              >
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    c.tone === "ready" && "bg-emerald-500",
+                    c.tone === "warn" && "bg-amber-500",
+                    c.tone === "muted" && "bg-muted-foreground/50",
+                  )}
+                  aria-hidden
+                />
+                {c.label}
               </span>
             ))}
-            {(signals.length > 0 && (added || rs === "unread" || rs === "reading")) ||
-            (added && (rs === "unread" || rs === "reading")) ? (
-              <span className="text-border" aria-hidden>
-                ·
-              </span>
-            ) : null}
             {rs === "unread" ? (
-              <span className="font-medium text-foreground/80">Unread</span>
+              <span className="text-[11px] font-medium text-muted-foreground">Unread</span>
             ) : rs === "reading" ? (
-              <span className="font-medium text-sem-warn">Reading</span>
+              <span className="text-[11px] font-medium text-sem-warn">Reading</span>
             ) : null}
-            {rs !== "read" && added ? (
-              <span className="text-border" aria-hidden>
-                ·
-              </span>
+            {added ? (
+              <span className="text-[11px] text-muted-foreground/80">{added}</span>
             ) : null}
-            {added ? <span>{added}</span> : null}
-          </p>
+          </div>
         )}
       </button>
 
@@ -314,7 +334,7 @@ export function FileCard({
           )}
           {isPaper && (
             <IconBtn
-              title="Compare"
+              title="Open in Research Intelligence"
               onClick={() => {
                 try {
                   sessionStorage.setItem(
@@ -324,7 +344,7 @@ export function FileCard({
                 } catch {
                   /* ignore */
                 }
-                navigate(`/research/compare?tab=matrix&ids=${file.id}`);
+                navigate(`/research/compare?tab=compare&ids=${file.id}`);
               }}
             >
               <GitCompare className="size-3.5" />

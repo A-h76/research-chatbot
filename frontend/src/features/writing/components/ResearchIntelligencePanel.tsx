@@ -114,20 +114,76 @@ function SupportingCiteCard({
 function AssistMode({
   manuscript,
   writingBusy,
+  projectId,
   onDraft,
   onCite,
   onReview,
 }: {
   manuscript: string;
   writingBusy?: boolean;
+  projectId?: number | null;
   onDraft?: (section: "literature_review" | "introduction") => void;
   onCite?: () => void;
   onReview?: () => void;
 }) {
+  const navigate = useNavigate();
   const words = countWords(manuscript);
   const cites = countCitationMarkers(manuscript);
   const empty = words === 0;
   const established = words >= 400;
+
+  const gapsQ = useQuery({
+    queryKey: ["evidence", "gaps", projectId],
+    queryFn: () => evidenceApi.gaps(projectId as number),
+    enabled: projectId != null,
+  });
+  const topGaps = (gapsQ.data?.gaps ?? []).slice(0, 3);
+
+  const openRi = (
+    <button
+      type="button"
+      onClick={() => navigate("/research/compare")}
+      className="inline-flex items-center gap-1 text-[12px] font-medium text-primary hover:underline"
+    >
+      Open Research Intelligence
+      <ExternalLink className="size-3" />
+    </button>
+  );
+
+  const gapsBlock =
+    topGaps.length > 0 ? (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+            Research gaps
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate("/research/compare?tab=gaps")}
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            View all
+          </button>
+        </div>
+        <ul className="space-y-1.5">
+          {topGaps.map((g) => (
+            <li key={g.id}>
+              <button
+                type="button"
+                onClick={() => navigate("/research/compare?tab=gaps")}
+                className="w-full rounded-md px-2 py-1.5 text-left text-[12px] leading-relaxed text-foreground/90 hover:bg-muted/60"
+              >
+                {g.statement}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : projectId != null && !gapsQ.isLoading ? (
+      <p className="text-[12px] text-muted-foreground">
+        No open gaps yet — extract evidence in Research Intelligence to surface them.
+      </p>
+    ) : null;
 
   if (empty) {
     return (
@@ -175,9 +231,14 @@ function AssistMode({
 
         <div className="h-px bg-border/50" aria-hidden />
 
-        <p className="text-[12px] leading-relaxed text-muted-foreground">
-          Or start typing in the manuscript — the assistant adapts as you write.
-        </p>
+        {gapsBlock}
+
+        <div className="mt-auto space-y-2">
+          {openRi}
+          <p className="text-[12px] leading-relaxed text-muted-foreground">
+            Or start typing in the manuscript — the assistant adapts as you write.
+          </p>
+        </div>
       </div>
     );
   }
@@ -245,8 +306,11 @@ function AssistMode({
         </ul>
       </div>
 
-      {onCite && cites > 0 ? (
-        <div className="mt-auto">
+      {gapsBlock}
+
+      <div className="mt-auto space-y-2">
+        {openRi}
+        {onCite && cites > 0 ? (
           <Button
             type="button"
             variant="outline"
@@ -255,8 +319,8 @@ function AssistMode({
           >
             <PenLine className="size-3.5" /> Insert citation
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -384,6 +448,7 @@ export function ResearchIntelligencePanel({
   }, [explainResult, selectedEvidenceId]);
 
   const primary = fromLibrary ?? fromExplain ?? null;
+  const navigate = useNavigate();
 
   return (
     <aside
@@ -418,6 +483,7 @@ export function ResearchIntelligencePanel({
           <AssistMode
             manuscript={manuscript}
             writingBusy={writingBusy}
+            projectId={projectId}
             onDraft={onDraft}
             onCite={onCite}
             onReview={onReview}
@@ -458,6 +524,14 @@ export function ResearchIntelligencePanel({
               liveReview={groundedReview}
               refreshKey={reviewerRefresh}
             />
+            <button
+              type="button"
+              onClick={() => navigate("/research/compare?tab=gaps")}
+              className="inline-flex items-center gap-1 text-[12px] font-medium text-primary hover:underline"
+            >
+              Explore research gaps
+              <ExternalLink className="size-3" />
+            </button>
             <details className="pt-2">
               <summary className="cursor-pointer text-[12px] text-muted-foreground hover:text-foreground">
                 Advanced evidence tools
