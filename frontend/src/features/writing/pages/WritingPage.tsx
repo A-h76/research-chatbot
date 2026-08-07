@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, Download, RefreshCw,
+  Download, RefreshCw,
   BookOpen, FileText, MessageSquare, StickyNote,
   Quote, Plus,
 } from "lucide-react";
@@ -66,29 +66,6 @@ import {
   canExportGroundedLitReview,
 } from "@/features/writing/utils/groundedMarkdownExport";
 
-function FlaskConicalIcon() {
-  // Local inline icon to avoid depending on lucide version for FlaskConical
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-3.5"
-      aria-hidden
-    >
-      <path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2" />
-      <path d="M8.5 2h7" />
-      <path d="M7 16h10" />
-    </svg>
-  );
-}
-
 function buildAutosaveKey(
   docId: number,
   version: number,
@@ -128,7 +105,6 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
   const [headingLevel, setHeadingLevel] = useState<HeadingLevel>("p");
   const [textColor, setTextColor] = useState("#0f6e6a");
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
-  const litReviewBtnRef = useRef<HTMLButtonElement | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const handledActionRef = useRef<string | null>(null);
   const forcedReviewMode = searchParams.get("focus") === "review";
@@ -398,22 +374,26 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
     });
   }
 
-  function runGroundedGenerate() {
+  function runGroundedGenerate(nextSection?: WritingSectionType) {
     if (activeId == null || currentProjectId == null) {
       toast.error("Select a project document first");
       return;
     }
-    const focus = selectedText.trim() || input.trim();
-    if (!focus) {
-      toast.error("Add manuscript text or select a sentence first");
-      return;
-    }
+    const st = nextSection ?? sectionType;
+    if (nextSection) setSectionType(nextSection);
+    const focus =
+      selectedText.trim() ||
+      input.trim() ||
+      draftTitle.trim() ||
+      (st === "introduction"
+        ? "Write a grounded introduction from accepted project evidence"
+        : "Write a grounded literature review from accepted project evidence");
     grounded.generate({
       projectId: currentProjectId,
       documentId: activeId,
-      selectedText,
-      draftFallback: input,
-      sectionType,
+      selectedText: selectedText.trim() ? selectedText : "",
+      draftFallback: focus,
+      sectionType: st,
     });
   }
 
@@ -643,19 +623,18 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
     next.delete("action");
     setSearchParams(next, { replace: true });
 
-    const seed = selectedText.trim() || input.trim();
-    if (seed) {
-      grounded.generate({
-        projectId: currentProjectId,
-        documentId: activeId,
-        selectedText,
-        draftFallback: input,
-        sectionType,
-      });
-    } else {
-      litReviewBtnRef.current?.focus();
-      toast.error("Add manuscript notes or a research question, then write the literature review");
-    }
+    setSectionType("literature_review");
+    grounded.generate({
+      projectId: currentProjectId,
+      documentId: activeId,
+      selectedText,
+      draftFallback:
+        selectedText.trim() ||
+        input.trim() ||
+        draftTitle.trim() ||
+        "Write a grounded literature review from accepted project evidence",
+      sectionType: "literature_review",
+    });
     // Intentionally keyed on URL + doc readiness, not every keystroke
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -779,39 +758,6 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
             >
               <Plus className="size-3.5" /> New
             </Button>
-
-            <span className="mx-0.5 hidden h-3.5 w-px bg-border/70 sm:block" aria-hidden />
-
-            <button
-              ref={litReviewBtnRef}
-              type="button"
-              id="write-literature-review"
-              disabled={
-                grounded.isPending ||
-                activeId == null ||
-                currentProjectId == null ||
-                activeDoc?.status === "deleted"
-              }
-              title="Write from accepted evidence"
-              className={cn(
-                "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors",
-                grounded.isPending
-                  ? "bg-primary/90 text-primary-foreground"
-                  : "bg-primary text-primary-foreground hover:opacity-90",
-                "disabled:opacity-50",
-              )}
-              onClick={() => {
-                exitReviewFocus();
-                runGroundedGenerate();
-              }}
-            >
-              {grounded.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <FlaskConicalIcon />
-              )}
-              Write from evidence
-            </button>
 
             <Button
               type="button"
@@ -1088,8 +1034,17 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
                 reviewerRefresh={reviewerRefresh}
                 groundedReview={grounded.last?.review}
                 manuscript={input}
-                onWrite={runGroundedGenerate}
+                writingBusy={grounded.isPending}
+                onDraft={(section) => {
+                  exitReviewFocus();
+                  setEvidenceOpen(true);
+                  runGroundedGenerate(section);
+                }}
                 onCite={() => setCitePickerOpen(true)}
+                onReview={() => {
+                  enterReviewFocus();
+                  setEvidenceOpen(true);
+                }}
                 onClose={() => {
                   setEvidenceOpen(false);
                   exitReviewFocus();

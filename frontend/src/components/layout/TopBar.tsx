@@ -17,7 +17,7 @@ import { useUI } from "@/context/UIContext";
 import { useFile } from "@/features/files/useFiles";
 import { useProjectHub } from "@/features/projects/useProjects";
 import { ProjectOverviewPopover } from "@/features/projects/components/ProjectOverviewPopover";
-import { isWritingStudioPath } from "@/features/projects/projectWorkspaceNav";
+import { isProjectWorkspacePath } from "@/features/projects/projectWorkspaceNav";
 import type { Me } from "@/types/api";
 
 function PaperBreadcrumb() {
@@ -117,8 +117,8 @@ export function TopBar({
   const location = useLocation();
   const navigate = useNavigate();
   const path = location.pathname;
-  const writingStudio =
-    currentProjectId != null && isWritingStudioPath(path);
+  const projectWorkspace =
+    currentProjectId != null && isProjectWorkspacePath(path, currentProjectId);
 
   const isHome = path === "/" || path === "/projects";
   const staticTitle = isHome
@@ -132,7 +132,7 @@ export function TopBar({
   const isPaperChat = path.startsWith("/papers/") && path.includes("/chat");
   const isChat = path.startsWith("/c/") || path.startsWith("/chat") || isPaperChat;
 
-  if (writingStudio && currentProjectId != null) {
+  if (projectWorkspace && currentProjectId != null) {
     return (
       <header className="writing-studio-topbar flex h-11 shrink-0 items-center gap-4 border-b border-border/60 px-4">
         <Button

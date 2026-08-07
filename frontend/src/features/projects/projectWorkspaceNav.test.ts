@@ -77,10 +77,30 @@ describe("projectWorkspaceNav", () => {
 
     expect(resolveJourneyActive("/writing", "", 3)).toBe("writing");
     expect(resolveJourneyActive("/writing", "?focus=evidence", 3)).toBe("evidence");
+    expect(resolveJourneyActive("/writing", "?focus=review", 3)).toBe("review");
     expect(resolveJourneyActive("/library", "", 3)).toBe("library");
     expect(resolveJourneyActive("/projects/3", "?tab=research", 3)).toBe("research");
     expect(resolveJourneyActive("/projects/3", "?tab=chat", 3)).toBe("chat");
     expect(resolveJourneyActive("/settings", "", 3)).toBe("settings");
+  });
+
+  it("detects project workspace shell paths", async () => {
+    const { isProjectWorkspacePath, PROJECT_JOURNEY_WORKFLOW, PROJECT_JOURNEY_NAV } =
+      await import("./projectWorkspaceNav");
+    expect(isProjectWorkspacePath("/projects/3/writing", 3)).toBe(true);
+    expect(isProjectWorkspacePath("/projects/3", 3)).toBe(true);
+    expect(isProjectWorkspacePath("/papers/9", 3)).toBe(true);
+    expect(isProjectWorkspacePath("/library", 3)).toBe(false);
+    expect(isProjectWorkspacePath("/projects", 3)).toBe(false);
+    expect(isProjectWorkspacePath("/projects/9", 3)).toBe(false);
+    expect(PROJECT_JOURNEY_WORKFLOW.map((i) => i.id)).toEqual([
+      "papers",
+      "research",
+      "evidence",
+      "writing",
+      "review",
+    ]);
+    expect(PROJECT_JOURNEY_NAV.some((i) => i.id === "library")).toBe(false);
   });
 
   it("counts words and citation markers", () => {

@@ -5,7 +5,7 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Check, ExternalLink, PenLine, Sparkles, X } from "lucide-react";
+import { Check, ExternalLink, Loader2, PenLine, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EvidenceInspectorPanel } from "@/features/evidence/components/EvidenceInspectorPanel";
 import { ConsensusConflictStrip } from "@/features/evidence/components/ConsensusConflictStrip";
@@ -113,49 +113,133 @@ function SupportingCiteCard({
 
 function AssistMode({
   manuscript,
-  onWrite,
+  writingBusy,
+  onDraft,
   onCite,
+  onReview,
 }: {
   manuscript: string;
-  onWrite?: () => void;
+  writingBusy?: boolean;
+  onDraft?: (section: "literature_review" | "introduction") => void;
   onCite?: () => void;
+  onReview?: () => void;
 }) {
   const words = countWords(manuscript);
   const cites = countCitationMarkers(manuscript);
+  const empty = words === 0;
+  const established = words >= 400;
+
+  if (empty) {
+    return (
+      <div className="flex h-full flex-col gap-5">
+        <div>
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
+            Your draft is empty. Choose how to begin — Dhund will use accepted evidence from this
+            project.
+          </p>
+        </div>
+
+        <div className="mt-auto space-y-2">
+          {onDraft ? (
+            <>
+              <Button
+                type="button"
+                id="write-literature-review"
+                className="h-9 w-full gap-1.5 text-[13px]"
+                disabled={writingBusy}
+                onClick={() => onDraft("literature_review")}
+              >
+                {writingBusy ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="size-3.5" />
+                )}
+                Draft literature review
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 w-full gap-1.5 text-[13px]"
+                disabled={writingBusy}
+                onClick={() => onDraft("introduction")}
+              >
+                Generate introduction
+              </Button>
+            </>
+          ) : null}
+          <p className="pt-1 text-center text-[12px] text-muted-foreground">
+            Or start typing in the manuscript — the assistant will follow your lead.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col gap-5">
       <div>
-        <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-          Writing assistant
-        </p>
-        <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-          Keep writing. When you cite evidence or highlight a passage, this panel focuses on what
-          you need next.
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
+          {established
+            ? "You're making solid progress. Use suggestions below — or click a citation to inspect evidence."
+            : "Keep going. Cite as you write, or ask Dhund for a grounded section when you're ready."}
         </p>
       </div>
 
       <div className="space-y-2 rounded-lg bg-muted/40 px-3 py-2.5 text-[12px]">
-        <div className="flex justify-between">
+        <div className="flex justify-between gap-2">
           <span className="text-muted-foreground">Progress</span>
           <span className="tabular-nums text-foreground">
             {words} words · {cites} citations
           </span>
         </div>
-        {cites === 0 ? (
-          <p className="text-muted-foreground">No citations yet — add evidence as you draft.</p>
-        ) : (
-          <p className="text-muted-foreground">Citations stay inspectable — click any [#id].</p>
-        )}
       </div>
 
-      <div className="mt-auto space-y-2">
-        {onWrite ? (
-          <Button type="button" className="h-9 w-full gap-1.5 text-[13px]" onClick={onWrite}>
-            <Sparkles className="size-3.5" /> Write from evidence
-          </Button>
-        ) : null}
-        {onCite ? (
+      <div>
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          Suggestions
+        </p>
+        <ul className="space-y-1">
+          {cites === 0 && onCite ? (
+            <li>
+              <button
+                type="button"
+                className="w-full rounded-md px-2 py-1.5 text-left text-[13px] text-foreground hover:bg-muted/60"
+                onClick={onCite}
+              >
+                Insert first citation
+              </button>
+            </li>
+          ) : null}
+          {!established && onDraft ? (
+            <li>
+              <button
+                type="button"
+                id="write-literature-review"
+                disabled={writingBusy}
+                className="w-full rounded-md px-2 py-1.5 text-left text-[13px] text-foreground hover:bg-muted/60 disabled:opacity-50"
+                onClick={() => onDraft("literature_review")}
+              >
+                {writingBusy ? "Drafting…" : "Draft literature review"}
+              </button>
+            </li>
+          ) : null}
+          {onReview ? (
+            <li>
+              <button
+                type="button"
+                className="w-full rounded-md px-2 py-1.5 text-left text-[13px] text-foreground hover:bg-muted/60"
+                onClick={onReview}
+              >
+                Review manuscript
+              </button>
+            </li>
+          ) : null}
+          <li className="px-2 py-1.5 text-[13px] text-muted-foreground">Continue writing</li>
+        </ul>
+      </div>
+
+      {onCite && cites > 0 ? (
+        <div className="mt-auto">
           <Button
             type="button"
             variant="outline"
@@ -164,8 +248,8 @@ function AssistMode({
           >
             <PenLine className="size-3.5" /> Insert citation
           </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -251,8 +335,10 @@ export function ResearchIntelligencePanel({
   reviewerRefresh,
   groundedReview,
   manuscript = "",
-  onWrite,
+  writingBusy,
+  onDraft,
   onCite,
+  onReview,
   onClose,
   className,
 }: {
@@ -267,8 +353,10 @@ export function ResearchIntelligencePanel({
   reviewerRefresh?: number;
   groundedReview?: Parameters<typeof ResearchReviewerPanel>[0]["liveReview"];
   manuscript?: string;
-  onWrite?: () => void;
+  writingBusy?: boolean;
+  onDraft?: (section: "literature_review" | "introduction") => void;
   onCite?: () => void;
+  onReview?: () => void;
   onClose?: () => void;
   className?: string;
 }) {
@@ -320,7 +408,13 @@ export function ResearchIntelligencePanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2 scrollbar-thin">
         {mode === "assist" ? (
-          <AssistMode manuscript={manuscript} onWrite={onWrite} onCite={onCite} />
+          <AssistMode
+            manuscript={manuscript}
+            writingBusy={writingBusy}
+            onDraft={onDraft}
+            onCite={onCite}
+            onReview={onReview}
+          />
         ) : null}
 
         {mode === "citation" ? (

@@ -748,3 +748,7 @@
 .writing-studio-topbar {
   backdrop-filter: saturate(1.1);
 }
+.writing-studio-nav {
+  /* Slightly cooler mute so the manuscript plane reads as the hero */
+  background: color-mix(in oklab, var(--muted) 55%, var(--background));
+}

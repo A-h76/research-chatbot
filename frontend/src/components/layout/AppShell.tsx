@@ -8,7 +8,7 @@ import { CommandPalette } from "./CommandPalette";
 import { RightPanel } from "@/features/right-panel/components/RightPanel";
 import { OnboardingWizard } from "@/features/onboarding/OnboardingWizard";
 import { ProjectWorkspaceBar } from "@/features/projects/components/ProjectWorkspaceBar";
-import { isWritingStudioPath } from "@/features/projects/projectWorkspaceNav";
+import { isProjectWorkspacePath } from "@/features/projects/projectWorkspaceNav";
 import { useUI } from "@/context/UIContext";
 import { isTypingTarget } from "@/lib/keyboard";
 import type { Me } from "@/types/api";
@@ -17,8 +17,9 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { sidebarCollapsed, setSidebarCollapsed, currentProjectId } = useUI();
   const location = useLocation();
-  const writingStudio =
-    currentProjectId != null && isWritingStudioPath(location.pathname);
+  const projectWorkspace =
+    currentProjectId != null &&
+    isProjectWorkspacePath(location.pathname, currentProjectId);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -34,12 +35,12 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
 
   return (
     <div
-      className={`flex h-screen w-screen overflow-hidden bg-background text-foreground${writingStudio ? " writing-studio" : ""}`}
+      className={`flex h-screen w-screen overflow-hidden bg-background text-foreground${projectWorkspace ? " writing-studio" : ""}`}
     >
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
-      {writingStudio ? (
+      {projectWorkspace ? (
         <div className="hidden md:flex">
           <ProjectJourneySidebar />
         </div>
@@ -49,7 +50,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
       <MobileDrawer me={me} open={mobileOpen} onOpenChange={setMobileOpen} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar onOpenMobileDrawer={() => setMobileOpen(true)} me={me} />
-        {!writingStudio && <ProjectWorkspaceBar />}
+        {!projectWorkspace && <ProjectWorkspaceBar />}
         <main
           id="main-content"
           tabIndex={-1}

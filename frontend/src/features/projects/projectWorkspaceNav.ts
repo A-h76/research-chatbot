@@ -102,19 +102,45 @@ export type JourneyNavItem = {
   href: (projectId: number) => string;
 };
 
-/** Writing Studio left nav — calm research workspace destinations. */
-export const PROJECT_JOURNEY_NAV: JourneyNavItem[] = [
-  { id: "library", label: "Library", href: () => "/library" },
+/**
+ * Project workspace journey — research workflow only (no global Library).
+ * Library lives in global nav / breadcrumbs once you're inside a project.
+ */
+export const PROJECT_JOURNEY_WORKFLOW: JourneyNavItem[] = [
   { id: "papers", label: "Papers", href: (id) => projectHubUrl(id, "papers") },
   { id: "research", label: "Research", href: (id) => projectHubUrl(id, "research") },
   { id: "evidence", label: "Evidence", href: (id) => projectEvidenceUrl(id) },
   { id: "writing", label: "Writing", href: (id) => projectWritingUrl(id) },
   { id: "review", label: "Review", href: (id) => projectReviewUrl(id) },
+];
+
+/** Secondary destinations below the research workflow divider. */
+export const PROJECT_JOURNEY_SECONDARY: JourneyNavItem[] = [
   { id: "chat", label: "Chat", href: (id) => projectHubUrl(id, "chat") },
+];
+
+/** @deprecated Prefer PROJECT_JOURNEY_WORKFLOW + PROJECT_JOURNEY_SECONDARY */
+export const PROJECT_JOURNEY_NAV: JourneyNavItem[] = [
+  ...PROJECT_JOURNEY_WORKFLOW,
+  ...PROJECT_JOURNEY_SECONDARY,
 ];
 
 export function isWritingStudioPath(path: string): boolean {
   return path === "/writing" || path.startsWith("/writing/") || /\/projects\/\d+\/writing/.test(path);
+}
+
+/**
+ * Project shell (journey sidebar) — inside a project environment.
+ * Global Library / Home / Projects list keep the app-wide sidebar.
+ */
+export function isProjectWorkspacePath(path: string, projectId: number): boolean {
+  if (isWritingStudioPath(path)) return true;
+  if (path === `/projects/${projectId}` || path.startsWith(`/projects/${projectId}/`)) {
+    return true;
+  }
+  // Paper detail while a project is selected — stay in project context
+  if (path.startsWith("/papers/")) return true;
+  return false;
 }
 
 /** Which journey item is active for the current route. */
