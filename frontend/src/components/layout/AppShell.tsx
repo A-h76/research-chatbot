@@ -52,7 +52,9 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
       </div>
       <RightPanel />
       <CommandPalette />
-      {!me.onboarding_completed && <OnboardingWizard me={me} />}
+      {!me.onboarding_completed &&
+        location.pathname !== "/" &&
+        location.pathname !== "/home" && <OnboardingWizard me={me} />}
     </div>
   );
 }

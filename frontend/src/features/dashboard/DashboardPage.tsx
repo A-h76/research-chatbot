@@ -9,7 +9,6 @@ import {
   ArrowRight,
   FileText,
   FolderKanban,
-  MessageSquare,
   PenLine,
   Search,
   Upload,
@@ -20,6 +19,7 @@ import { writingApi } from "@/features/writing/api";
 import { projectWritingUrl } from "@/features/projects/projectWorkspaceNav";
 import { useDashboard } from "./useDashboard";
 import { useMe } from "@/features/profile/useMe";
+import { HomeAssistantPanel } from "./components/HomeAssistantPanel";
 import { cn } from "@/lib/utils";
 
 function greetingHour(): string {
@@ -49,46 +49,6 @@ function QuickAction({
       </span>
       <span className="text-[13px] font-medium tracking-tight text-foreground">{label}</span>
     </button>
-  );
-}
-
-function HomeAssistant({
-  firstName,
-  onAsk,
-}: {
-  firstName: string;
-  onAsk: () => void;
-}) {
-  return (
-    <aside
-      className="flex h-full min-h-0 w-full shrink-0 flex-col border-l border-border/50 bg-muted/15 lg:w-[280px]"
-      aria-label="Research Assistant"
-    >
-      <div className="border-b border-border/40 px-4 py-3">
-        <p className="text-[13px] font-semibold tracking-tight text-foreground">
-          Research Assistant
-        </p>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col px-4 py-4">
-        <p className="text-[13px] leading-relaxed text-muted-foreground">
-          {greetingHour()}
-          {firstName ? `, ${firstName}` : ""}.
-        </p>
-        <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-          What are you working on?
-        </p>
-        <div className="mt-auto pt-6">
-          <button
-            type="button"
-            onClick={onAsk}
-            className="flex w-full items-center gap-2 rounded-lg border border-border/70 bg-background px-3 py-2.5 text-left text-[13px] text-muted-foreground transition-colors hover:border-border hover:text-foreground"
-          >
-            <MessageSquare className="size-3.5 shrink-0 opacity-60" />
-            Ask anything…
-          </button>
-        </div>
-      </div>
-    </aside>
   );
 }
 
@@ -168,14 +128,6 @@ export function DashboardPage() {
     navigate,
     setCurrentProjectId,
   ]);
-
-  function openAsk() {
-    if (currentProjectId != null) {
-      navigate(`/projects/${currentProjectId}?tab=chat`);
-    } else {
-      navigate("/chat");
-    }
-  }
 
   function continueDraft() {
     if (topWriting && writingProjectId != null) {
@@ -323,7 +275,7 @@ export function DashboardPage() {
       </div>
 
       <div className="hidden lg:flex">
-        <HomeAssistant firstName={firstName} onAsk={openAsk} />
+        <HomeAssistantPanel firstName={firstName} />
       </div>
     </div>
   );
