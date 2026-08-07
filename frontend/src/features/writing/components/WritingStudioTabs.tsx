@@ -21,7 +21,7 @@ export function WritingStudioTabs({
 }) {
   return (
     <div
-      className="flex shrink-0 items-center gap-1 border-b border-border px-1"
+      className="flex shrink-0 items-center gap-0.5 border-b border-border/50 px-0.5"
       role="tablist"
       aria-label="Writing workspace"
     >
@@ -33,10 +33,10 @@ export function WritingStudioTabs({
           aria-selected={active === t.id}
           onClick={() => onChange(t.id)}
           className={cn(
-            "border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors",
+            "border-b-2 px-3 py-2 text-[13px] font-medium transition-colors",
             active === t.id
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground",
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground/80 hover:text-foreground",
           )}
         >
           {t.label}
@@ -49,10 +49,10 @@ export function WritingStudioTabs({
           aria-selected={active === "export"}
           onClick={onExport}
           className={cn(
-            "ml-auto border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors",
+            "ml-auto border-b-2 px-3 py-2 text-[13px] font-medium transition-colors",
             active === "export"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground",
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground/80 hover:text-foreground",
           )}
         >
           Export

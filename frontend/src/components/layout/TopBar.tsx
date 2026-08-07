@@ -16,6 +16,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { useUI } from "@/context/UIContext";
 import { useFile } from "@/features/files/useFiles";
 import { useProjectHub } from "@/features/projects/useProjects";
+import { ProjectOverviewPopover } from "@/features/projects/components/ProjectOverviewPopover";
 import { isWritingStudioPath } from "@/features/projects/projectWorkspaceNav";
 import type { Me } from "@/types/api";
 
@@ -71,24 +72,19 @@ function WritingStudioBreadcrumb({ projectId }: { projectId: number }) {
   const name = hub?.project.name ?? "Project";
 
   return (
-    <div className="flex min-w-0 items-center gap-1.5 text-sm">
+    <div className="flex min-w-0 items-center gap-1 text-[13px]">
       <button
         type="button"
         onClick={() => navigate("/projects")}
-        className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+        className="shrink-0 text-muted-foreground/80 transition-colors hover:text-foreground"
       >
         Projects
       </button>
-      <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50" />
-      <button
-        type="button"
-        onClick={() => navigate(`/projects/${projectId}`)}
-        className="flex min-w-0 items-center gap-1 font-medium text-foreground"
-        title={name}
-      >
-        <span className="truncate max-w-[28ch]">{name}</span>
-        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      </button>
+      <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/40" />
+      <ProjectOverviewPopover projectId={projectId}>
+        <span className="truncate">{name}</span>
+        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
+      </ProjectOverviewPopover>
     </div>
   );
 }
@@ -138,7 +134,7 @@ export function TopBar({
 
   if (writingStudio && currentProjectId != null) {
     return (
-      <header className="writing-studio-topbar flex h-12 shrink-0 items-center gap-3 border-b border-border px-3">
+      <header className="writing-studio-topbar flex h-11 shrink-0 items-center gap-4 border-b border-border/60 px-4">
         <Button
           variant="ghost"
           size="icon"
@@ -149,33 +145,33 @@ export function TopBar({
           <Menu className="size-4" aria-hidden />
         </Button>
 
-        <span className="hidden shrink-0 text-[14px] font-semibold tracking-tight text-foreground sm:inline">
+        <span className="hidden shrink-0 text-[15px] font-semibold tracking-tight text-foreground sm:inline">
           Dhund
         </span>
 
         <WritingStudioBreadcrumb projectId={currentProjectId} />
 
-        <div className="mx-auto flex min-w-0 max-w-md flex-1 justify-center px-2">
+        <div className="mx-auto flex min-w-0 max-w-lg flex-1 justify-center px-4">
           <button
             type="button"
             onClick={() => window.dispatchEvent(new CustomEvent("soro:command-palette"))}
-            className="flex h-8 w-full max-w-sm items-center gap-2 rounded-md border border-border bg-muted/40 px-3 text-left text-[12px] text-muted-foreground transition-colors hover:bg-muted/70"
+            className="flex h-8 w-full max-w-md items-center gap-2 rounded-full border border-border/70 bg-muted/30 px-3.5 text-left text-[12px] text-muted-foreground transition-colors hover:bg-muted/50"
             title="Command palette (⌘K)"
             aria-label="Open command palette"
           >
-            <Search className="size-3.5 shrink-0" />
+            <Search className="size-3.5 shrink-0 opacity-70" />
             <span className="min-w-0 flex-1 truncate">Search papers, evidence, notes...</span>
-            <kbd className="hidden rounded border border-border bg-background px-1 font-mono text-[10px] sm:inline">
+            <kbd className="hidden rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/80 sm:inline">
               ⌘K
             </kbd>
           </button>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           <Button
             variant="ghost"
             size="icon"
-            className="text-muted-foreground"
+            className="size-8 text-muted-foreground/70"
             title="Notifications"
             aria-label="Notifications"
             disabled

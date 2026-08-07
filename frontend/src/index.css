@@ -731,7 +731,7 @@
   }
 }
 
-/* Writing Studio — industry-standard research writing shell */
+/* Writing Studio — calm research desk (Linear/Notion density) */
 .writing-studio-cite-chip {
   background: color-mix(in oklab, var(--primary) 12%, transparent);
   color: var(--primary);
@@ -740,4 +740,11 @@
 }
 .writing-studio-intelligence {
   background: var(--background);
+}
+.writing-studio .page-container,
+.writing-studio [data-density="low"] {
+  --writing-chrome: color-mix(in oklab, var(--border) 55%, transparent);
+}
+.writing-studio-topbar {
+  backdrop-filter: saturate(1.1);
 }

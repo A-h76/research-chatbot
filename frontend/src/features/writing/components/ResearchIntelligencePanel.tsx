@@ -1,20 +1,22 @@
 /**
- * Research Reviewer panel (Writing Studio right rail).
- * Citation-synced supporting evidence + consensus + confidence + reviewer findings.
+ * Contextual Research Reviewer — one primary task at a time.
+ * Modes: assist (idle) | citation | selection | review
  */
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Check, ExternalLink, X } from "lucide-react";
+import { Check, ExternalLink, PenLine, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EvidenceInspectorPanel } from "@/features/evidence/components/EvidenceInspectorPanel";
 import { ConsensusConflictStrip } from "@/features/evidence/components/ConsensusConflictStrip";
 import { ResearchReviewerPanel } from "@/features/writing/components/ResearchReviewerPanel";
-import { ResearchConfidenceStrip } from "@/features/writing/components/ResearchConfidenceStrip";
 import { useEvidenceReason } from "@/features/evidence/hooks/useEvidenceReason";
 import { evidenceApi } from "@/features/evidence/api";
 import type { EvidenceObjectDTO, ExplainResponse } from "@/features/evidence/types";
+import { countCitationMarkers, countWords } from "@/features/projects/projectWorkspaceNav";
 import { cn } from "@/lib/utils";
+
+export type ReviewerPanelMode = "assist" | "citation" | "selection" | "review";
 
 function confidenceScore(band: string | undefined): number {
   const b = (band || "").toLowerCase();
@@ -40,14 +42,14 @@ function SupportingCiteCard({
     (evidence.confidence_band?.slice(1) || "");
 
   return (
-    <section className="space-y-3" aria-label="Citation evidence">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-sm font-semibold text-foreground">{citationLabel}</p>
+        <p className="text-[14px] font-semibold text-foreground">{citationLabel}</p>
         <span
           className={cn(
             "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
             supporting
-              ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-200"
+              ? "bg-emerald-500/12 text-emerald-800 dark:text-emerald-200"
               : "bg-muted text-muted-foreground",
           )}
         >
@@ -56,7 +58,7 @@ function SupportingCiteCard({
         </span>
       </div>
 
-      <blockquote className="rounded-lg bg-muted/60 px-3.5 py-3 text-[13px] leading-relaxed text-foreground/90">
+      <blockquote className="rounded-lg bg-muted/50 px-3.5 py-3 text-[13px] leading-relaxed text-foreground/90">
         &ldquo;{evidence.quote || evidence.claim}&rdquo;
         {evidence.page != null ? (
           <footer className="mt-2 text-[12px] text-muted-foreground">
@@ -65,19 +67,18 @@ function SupportingCiteCard({
         ) : null}
       </blockquote>
 
-      <div className="space-y-1.5">
-        <p className="text-[12px] font-semibold text-foreground">Source</p>
+      <div className="space-y-1">
+        <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          Source
+        </p>
         <p className="text-[13px] font-semibold leading-snug text-foreground">
           {evidence.file_title || `Paper #${evidence.file_id}`}
         </p>
-        {evidence.study_quality ? (
-          <p className="text-[12px] text-muted-foreground">{evidence.study_quality}</p>
-        ) : null}
         <Button
           type="button"
           size="sm"
           variant="outline"
-          className="mt-1 h-8 gap-1.5 text-[12px]"
+          className="mt-2 h-8 gap-1.5 text-[12px]"
           onClick={() => navigate(`/papers/${evidence.file_id}`)}
         >
           <ExternalLink className="size-3.5" />
@@ -86,33 +87,160 @@ function SupportingCiteCard({
       </div>
 
       <div className="space-y-1.5">
-        <p className="text-[12px] font-semibold text-foreground">Confidence</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          Confidence
+        </p>
         <div className="flex items-center gap-2">
-          <span className="w-10 shrink-0 text-[12px] font-medium text-foreground">
-            {bandLabel || "—"}
-          </span>
+          <span className="w-10 shrink-0 text-[12px] font-medium">{bandLabel || "—"}</span>
           <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full rounded-full bg-primary transition-[width]"
+              className="h-full rounded-full bg-primary"
               style={{ width: `${Math.round(score * 100)}%` }}
             />
           </div>
-          <span className="w-8 shrink-0 text-right text-[12px] tabular-nums text-muted-foreground">
+          <span className="text-[12px] tabular-nums text-muted-foreground">
             {score.toFixed(2)}
           </span>
         </div>
       </div>
 
       <p className="text-[12px] text-muted-foreground">
-        <span className="font-semibold text-foreground">Type</span>
-        <span className="mx-2">·</span>
-        <span className="text-foreground">{evidence.study_type || "—"}</span>
+        Type · <span className="text-foreground">{evidence.study_type || "—"}</span>
       </p>
-    </section>
+    </div>
   );
 }
 
+function AssistMode({
+  manuscript,
+  onWrite,
+  onCite,
+}: {
+  manuscript: string;
+  onWrite?: () => void;
+  onCite?: () => void;
+}) {
+  const words = countWords(manuscript);
+  const cites = countCitationMarkers(manuscript);
+
+  return (
+    <div className="flex h-full flex-col gap-5">
+      <div>
+        <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          Writing assistant
+        </p>
+        <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+          Keep writing. When you cite evidence or highlight a passage, this panel focuses on what
+          you need next.
+        </p>
+      </div>
+
+      <div className="space-y-2 rounded-lg bg-muted/40 px-3 py-2.5 text-[12px]">
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Progress</span>
+          <span className="tabular-nums text-foreground">
+            {words} words · {cites} citations
+          </span>
+        </div>
+        {cites === 0 ? (
+          <p className="text-muted-foreground">No citations yet — add evidence as you draft.</p>
+        ) : (
+          <p className="text-muted-foreground">Citations stay inspectable — click any [#id].</p>
+        )}
+      </div>
+
+      <div className="mt-auto space-y-2">
+        {onWrite ? (
+          <Button type="button" className="h-9 w-full gap-1.5 text-[13px]" onClick={onWrite}>
+            <Sparkles className="size-3.5" /> Write from evidence
+          </Button>
+        ) : null}
+        {onCite ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 w-full gap-1.5 text-[13px]"
+            onClick={onCite}
+          >
+            <PenLine className="size-3.5" /> Insert citation
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SelectionMode({
+  stickyText,
+  explainStatus,
+  explainResult,
+  documentId,
+  projectId,
+  onBound,
+}: {
+  stickyText: string;
+  explainStatus: "idle" | "loading" | "ok" | "error";
+  explainResult: ExplainResponse | null;
+  documentId?: number | null;
+  projectId?: number | null;
+  onBound?: () => void;
+}) {
+  const ri = useEvidenceReason({
+    documentId: documentId ?? null,
+    projectId: projectId ?? null,
+    selectedText: stickyText,
+    enabled: documentId != null && projectId != null && stickyText.trim().length > 0,
+  });
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          Selection
+        </p>
+        <p className="mt-2 line-clamp-4 text-[13px] leading-relaxed text-foreground/85">
+          {stickyText}
+        </p>
+      </div>
+
+      {ri.status !== "idle" ? (
+        <ConsensusConflictStrip
+          status={ri.status}
+          consensus={ri.result?.consensus}
+          conflict={ri.result?.conflict}
+          compact
+        />
+      ) : null}
+
+      <div id="writing-evidence-rail">
+        <EvidenceInspectorPanel
+          result={explainResult}
+          status={explainStatus}
+          stickyText={stickyText}
+          documentId={documentId}
+          projectId={projectId}
+          onBound={onBound}
+        />
+      </div>
+    </div>
+  );
+}
+
+function modeTitle(mode: ReviewerPanelMode): string {
+  switch (mode) {
+    case "citation":
+      return "Evidence";
+    case "selection":
+      return "Evidence suggestions";
+    case "review":
+      return "Review";
+    default:
+      return "Writing assistant";
+  }
+}
+
 export function ResearchIntelligencePanel({
+  mode = "assist",
   selectedEvidenceId,
   explainResult,
   explainStatus,
@@ -121,11 +249,14 @@ export function ResearchIntelligencePanel({
   projectId,
   onBound,
   reviewerRefresh,
-  groundedMetrics,
   groundedReview,
+  manuscript = "",
+  onWrite,
+  onCite,
   onClose,
   className,
 }: {
+  mode?: ReviewerPanelMode;
   selectedEvidenceId?: number | null;
   explainResult: ExplainResponse | null;
   explainStatus: "idle" | "loading" | "ok" | "error";
@@ -134,15 +265,17 @@ export function ResearchIntelligencePanel({
   projectId?: number | null;
   onBound?: () => void;
   reviewerRefresh?: number;
-  groundedMetrics?: Parameters<typeof ResearchConfidenceStrip>[0]["metrics"];
-  groundedReview?: Parameters<typeof ResearchConfidenceStrip>[0]["review"];
+  groundedReview?: Parameters<typeof ResearchReviewerPanel>[0]["liveReview"];
+  manuscript?: string;
+  onWrite?: () => void;
+  onCite?: () => void;
   onClose?: () => void;
   className?: string;
 }) {
   const libraryQuery = useQuery({
     queryKey: ["evidence", "library", projectId],
     queryFn: () => evidenceApi.list(projectId as number),
-    enabled: projectId != null,
+    enabled: projectId != null && mode === "citation",
   });
 
   const fromLibrary = useMemo(() => {
@@ -155,108 +288,92 @@ export function ResearchIntelligencePanel({
     return explainResult?.evidence?.find((e) => e.id === selectedEvidenceId) ?? null;
   }, [explainResult, selectedEvidenceId]);
 
-  const primary = fromLibrary ?? fromExplain ?? explainResult?.evidence?.[0] ?? null;
-
-  const ri = useEvidenceReason({
-    documentId: documentId ?? null,
-    projectId: projectId ?? null,
-    selectedText: stickyText || (primary ? `[#${primary.id}]` : ""),
-    enabled: documentId != null && projectId != null && Boolean(stickyText || primary),
-  });
+  const primary = fromLibrary ?? fromExplain ?? null;
 
   return (
     <aside
       className={cn(
-        "writing-studio-intelligence flex h-full min-h-0 w-full shrink-0 flex-col border-l border-border bg-background lg:w-[340px]",
+        "writing-studio-intelligence flex h-full min-h-0 w-full shrink-0 flex-col border-l border-border/60 bg-background lg:w-[320px]",
         className,
       )}
       aria-label="Research Reviewer"
       data-testid="research-reviewer-panel"
+      data-mode={mode}
     >
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2.5">
-        <h2 className="text-sm font-semibold tracking-tight">Research Reviewer</h2>
+      <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-1 pt-3.5">
+        <h2 className="text-[13px] font-semibold tracking-tight text-foreground">
+          {modeTitle(mode)}
+        </h2>
         {onClose ? (
           <Button
             type="button"
             size="icon"
             variant="ghost"
-            className="size-7"
+            className="size-7 text-muted-foreground"
             onClick={onClose}
-            aria-label="Close Research Reviewer"
+            aria-label="Close panel"
           >
             <X className="size-3.5" />
           </Button>
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 scrollbar-thin">
-        {primary ? (
-          <SupportingCiteCard
-            evidence={primary}
-            citationLabel={`Citation [${primary.id}]`}
-          />
-        ) : (
-          <p className="rounded-md border border-dashed border-border px-3 py-4 text-[12px] text-muted-foreground">
-            Click a citation in the manuscript to review supporting evidence, confidence, and
-            source.
-          </p>
-        )}
-
-        {(stickyText || primary) && ri.status !== "idle" ? (
-          <section className="space-y-1.5">
-            <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Consensus &amp; conflict
-            </h3>
-            <ConsensusConflictStrip
-              status={ri.status}
-              consensus={ri.result?.consensus}
-              conflict={ri.result?.conflict}
-              compact
-            />
-          </section>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2 scrollbar-thin">
+        {mode === "assist" ? (
+          <AssistMode manuscript={manuscript} onWrite={onWrite} onCite={onCite} />
         ) : null}
 
-        {(groundedMetrics || groundedReview) && (
-          <section className="space-y-1.5">
-            <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Draft confidence
-            </h3>
-            <ResearchConfidenceStrip
-              metrics={groundedMetrics}
-              review={groundedReview}
-              reviewerVersion={groundedReview?.reviewer_version}
+        {mode === "citation" ? (
+          primary ? (
+            <SupportingCiteCard
+              evidence={primary}
+              citationLabel={`Citation [${primary.id}]`}
             />
-          </section>
-        )}
+          ) : (
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              Looking up this citation…
+            </p>
+          )
+        ) : null}
 
-        {documentId != null ? (
-          <section className="space-y-1.5">
-            <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Findings
-            </h3>
+        {mode === "selection" ? (
+          <SelectionMode
+            stickyText={stickyText || ""}
+            explainStatus={explainStatus}
+            explainResult={explainResult}
+            documentId={documentId}
+            projectId={projectId}
+            onBound={onBound}
+          />
+        ) : null}
+
+        {mode === "review" && documentId != null ? (
+          <div className="space-y-3">
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              Check unsupported claims and weak evidence before you export.
+            </p>
             <ResearchReviewerPanel
               documentId={documentId}
               liveReview={groundedReview}
               refreshKey={reviewerRefresh}
             />
-          </section>
-        ) : null}
-
-        <details className="rounded-md border border-border">
-          <summary className="cursor-pointer px-2.5 py-2 text-[12px] font-medium text-muted-foreground">
-            Advanced evidence tools
-          </summary>
-          <div id="writing-evidence-rail" className="border-t border-border p-1">
-            <EvidenceInspectorPanel
-              result={explainResult}
-              status={explainStatus}
-              stickyText={stickyText}
-              documentId={documentId}
-              projectId={projectId}
-              onBound={onBound}
-            />
+            <details className="pt-2">
+              <summary className="cursor-pointer text-[12px] text-muted-foreground hover:text-foreground">
+                Advanced evidence tools
+              </summary>
+              <div id="writing-evidence-rail" className="mt-2">
+                <EvidenceInspectorPanel
+                  result={explainResult}
+                  status={explainStatus}
+                  stickyText={stickyText}
+                  documentId={documentId}
+                  projectId={projectId}
+                  onBound={onBound}
+                />
+              </div>
+            </details>
           </div>
-        </details>
+        ) : null}
       </div>
     </aside>
   );

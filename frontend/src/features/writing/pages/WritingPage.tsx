@@ -57,7 +57,7 @@ import { WritingManuscriptEditor } from "@/features/writing/components/WritingMa
 import { WritingManuscriptToolbar } from "@/features/writing/components/WritingManuscriptToolbar";
 import { WritingNotesTab } from "@/features/writing/components/WritingNotesTab";
 import { WritingOutlineTab } from "@/features/writing/components/WritingOutlineTab";
-import { ResearchIntelligencePanel } from "@/features/writing/components/ResearchIntelligencePanel";
+import { ResearchIntelligencePanel, type ReviewerPanelMode } from "@/features/writing/components/ResearchIntelligencePanel";
 import {
   downloadMarkdownFile,
   downloadTextFile,
@@ -130,6 +130,20 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
   const litReviewBtnRef = useRef<HTMLButtonElement | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const handledActionRef = useRef<string | null>(null);
+  const forcedReviewMode = searchParams.get("focus") === "review";
+
+  function exitReviewFocus() {
+    if (searchParams.get("focus") !== "review") return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("focus");
+    setSearchParams(next, { replace: true });
+  }
+
+  function enterReviewFocus() {
+    const next = new URLSearchParams(searchParams);
+    next.set("focus", "review");
+    setSearchParams(next, { replace: true });
+  }
 
   const evidenceExplain = useEvidenceExplain({
     documentId: activeId,
@@ -599,19 +613,18 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
     const focusTarget = searchParams.get("focus");
 
     if (focusTarget === "evidence" || focusTarget === "review") {
-      const next = new URLSearchParams(searchParams);
-      next.delete("focus");
-      setSearchParams(next, { replace: true });
       setEvidenceOpen(true);
+      if (focusTarget === "review") {
+        setSelectedCiteId(null);
+      } else {
+        const next = new URLSearchParams(searchParams);
+        next.delete("focus");
+        setSearchParams(next, { replace: true });
+      }
       window.requestAnimationFrame(() => {
-        const target =
-          focusTarget === "review"
-            ? document.querySelector("[aria-label='Research Reviewer']")
-            : document.getElementById("writing-evidence-rail");
-        (target as HTMLElement | null)?.scrollIntoView({
-          behavior: "smooth",
-          block: "nearest",
-        });
+        document
+          .querySelector("[data-testid='research-reviewer-panel']")
+          ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       });
     }
 
@@ -654,7 +667,7 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
   ]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2" data-density="low">
+    <div className="flex min-h-0 flex-1 flex-col gap-1" data-density="low">
       {studioTab === "notes" ? (
         <WritingNotesTab projectId={currentProjectId} />
       ) : null}
@@ -734,34 +747,11 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
             </div>
           )}
 
-          {/* Thin writing toolbar */}
-          <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border pb-2">
-            <div className="flex items-center gap-0.5 rounded border border-border p-0.5">
-              {(
-                [
-                  { key: "active" as const, label: "Active" },
-                  { key: "archived" as const, label: "Archived" },
-                  { key: "deleted" as const, label: "Deleted" },
-                ] as const
-              ).map((it) => (
-                <button
-                  key={it.key}
-                  type="button"
-                  onClick={() => setLifecycleView(it.key)}
-                  className={cn(
-                    "rounded px-1.5 py-0.5 text-[11px]",
-                    lifecycleView === it.key
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted/50",
-                  )}
-                >
-                  {it.label}
-                </button>
-              ))}
-            </div>
+          {/* Slim action strip — manuscript is the hero */}
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-1 pb-2">
             <select
               aria-label="Select writing document"
-              className="h-8 min-w-[140px] max-w-[200px] rounded-md border border-border bg-card px-2 text-[12px]"
+              className="h-7 max-w-[11rem] rounded-md border-0 bg-transparent px-1 text-[12px] font-medium text-foreground outline-none hover:bg-muted/50"
               value={activeId ?? ""}
               onChange={(e) => {
                 const nextId = Number(e.target.value || 0);
@@ -781,48 +771,15 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
             </select>
             <Button
               size="sm"
-              variant="outline"
-              className="h-8 gap-1 text-[11px]"
+              variant="ghost"
+              className="h-7 px-2 text-[11px] text-muted-foreground"
               onClick={() => createDoc.mutate()}
               disabled={createDoc.isPending || currentProjectId == null}
             >
               <Plus className="size-3.5" /> New
             </Button>
-            {activeDoc?.status === "active" && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8 px-2 text-[11px]"
-                onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "archived" })}
-              >
-                Archive
-              </Button>
-            )}
-            {activeDoc?.status === "archived" && (
-              <>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 px-2 text-[11px]"
-                  onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "active" })}
-                >
-                  Restore
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 px-2 text-[11px]"
-                  onClick={() => setConfirmDeleteDoc(true)}
-                >
-                  Delete
-                </Button>
-              </>
-            )}
-            {activeDoc?.status === "deleted" && (
-              <span className="text-[11px] text-muted-foreground">Read-only</span>
-            )}
 
-            <span className="mx-1 hidden h-4 w-px bg-border sm:block" aria-hidden />
+            <span className="mx-0.5 hidden h-3.5 w-px bg-border/70 sm:block" aria-hidden />
 
             <button
               ref={litReviewBtnRef}
@@ -834,32 +791,32 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
                 currentProjectId == null ||
                 activeDoc?.status === "deleted"
               }
-              title="Write this outline section from accepted EvidenceObjects"
+              title="Write from accepted evidence"
               className={cn(
-                "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors",
+                "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors",
                 grounded.isPending
                   ? "bg-primary/90 text-primary-foreground"
                   : "bg-primary text-primary-foreground hover:opacity-90",
                 "disabled:opacity-50",
               )}
-              onClick={runGroundedGenerate}
+              onClick={() => {
+                exitReviewFocus();
+                runGroundedGenerate();
+              }}
             >
               {grounded.isPending ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : (
                 <FlaskConicalIcon />
               )}
-              Write{" "}
-              {sectionType === "literature_review"
-                ? "literature review"
-                : sectionType.replaceAll("_", " ")}
+              Write from evidence
             </button>
 
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              className="h-8 gap-1 text-[11px]"
+              variant="ghost"
+              className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
               disabled={
                 activeId == null || currentProjectId == null || activeDoc?.status === "deleted"
               }
@@ -868,71 +825,100 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
             >
               <Quote className="size-3" /> Cite
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-8 text-[11px]"
-              disabled={activeId == null || activeDoc?.status === "deleted"}
-              title="Remove selected [#id] marker and binding"
-              onClick={() => void removeSelectedCite()}
-            >
-              Remove cite
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-8 text-[11px]"
-              title="Open Research Reviewer for selection"
-              onClick={() => {
-                const el = editorRef.current;
-                if (el) {
-                  const eid = selectedEvidenceMarkerId(
-                    input,
-                    el.selectionStart,
-                    el.selectionEnd,
-                  );
-                  if (eid != null) {
-                    setSelectedCiteId(eid);
-                    setSelectedText(`[#${eid}]`);
-                    setCiteHoverPreview(`Evidence #${eid}`);
-                  }
-                }
-                setEvidenceOpen(true);
-              }}
-            >
-              Inspect
-            </Button>
 
-            <span
-              className="ml-auto text-[11px] text-muted-foreground"
-              role="status"
-              aria-live="polite"
-            >
-              {saveState === "scheduled"
-                ? "Save scheduled"
-                : saveState === "saving"
-                  ? "Saving…"
-                  : saveState === "conflict"
-                    ? "Conflict detected"
-                    : saveState === "error"
-                      ? "Save failed"
-                      : saveState === "dirty"
-                        ? "Unsaved changes"
-                        : "Saved"}
-            </span>
+            <details className="relative ml-auto">
+              <summary className="cursor-pointer list-none rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/50 hover:text-foreground [&::-webkit-details-marker]:hidden">
+                More
+              </summary>
+              <div className="absolute right-0 z-20 mt-1 min-w-[10rem] rounded-lg border border-border bg-popover p-1 shadow-md">
+                <div className="mb-1 flex gap-0.5 px-1 py-0.5">
+                  {(
+                    [
+                      { key: "active" as const, label: "Active" },
+                      { key: "archived" as const, label: "Archived" },
+                      { key: "deleted" as const, label: "Deleted" },
+                    ] as const
+                  ).map((it) => (
+                    <button
+                      key={it.key}
+                      type="button"
+                      onClick={() => setLifecycleView(it.key)}
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-[10px]",
+                        lifecycleView === it.key
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-muted",
+                      )}
+                    >
+                      {it.label}
+                    </button>
+                  ))}
+                </div>
+                {activeDoc?.status === "active" && (
+                  <button
+                    type="button"
+                    className="block w-full rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-muted"
+                    onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "archived" })}
+                  >
+                    Archive draft
+                  </button>
+                )}
+                {activeDoc?.status === "archived" && (
+                  <>
+                    <button
+                      type="button"
+                      className="block w-full rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-muted"
+                      onClick={() => updateStatus.mutate({ id: activeDoc.id, status: "active" })}
+                    >
+                      Restore
+                    </button>
+                    <button
+                      type="button"
+                      className="block w-full rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-muted"
+                      onClick={() => setConfirmDeleteDoc(true)}
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  className="block w-full rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-muted"
+                  disabled={activeId == null || activeDoc?.status === "deleted"}
+                  onClick={() => void removeSelectedCite()}
+                >
+                  Remove cite
+                </button>
+                <button
+                  type="button"
+                  className="block w-full rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-muted"
+                  onClick={() => {
+                    enterReviewFocus();
+                    setEvidenceOpen(true);
+                  }}
+                >
+                  Open review
+                </button>
+                <button
+                  type="button"
+                  className="block w-full rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-muted"
+                  onClick={() => setEvidenceOpen((v) => !v)}
+                >
+                  {evidenceOpen ? "Hide assistant" : "Show assistant"}
+                </button>
+              </div>
+            </details>
           </div>
 
           {/* Desk: manuscript + Research Reviewer */}
-          <div className="flex min-h-0 flex-1 gap-0 overflow-hidden rounded-md border border-border">
+          <div className="flex min-h-0 flex-1 gap-0 overflow-hidden">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+              <div className="px-6 pt-3 sm:px-10">
                 <input
                   value={draftTitle}
                   onChange={(e) => setDraftTitle(e.target.value)}
-                  className="h-8 flex-1 rounded-md border border-border bg-background px-2.5 text-[13px] font-medium text-foreground"
-                  placeholder="Manuscript title"
+                  className="w-full border-0 bg-transparent text-[1.35rem] font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/50"
+                  placeholder="Untitled draft"
                 />
               </div>
 
@@ -956,8 +942,10 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
                 <ResearchProgressStage
                   active
                   liveMetric={
-                    grounded.jobStatus ||
-                    "Organising accepted EvidenceObjects for this section"
+                    grounded.jobStatus &&
+                    !/EvidenceObject|pipeline|cognitive/i.test(grounded.jobStatus)
+                      ? grounded.jobStatus
+                      : "Organising accepted evidence for this section"
                   }
                 />
               ) : grounded.last?.status === "ok" ? (
@@ -988,7 +976,7 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
               ) : null}
 
               <div
-                className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[#fafafa] p-4 sm:p-6 dark:bg-[#12151a]"
+                className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background px-4 pb-2 pt-1 sm:px-10"
                 data-density="low"
               >
                 <WritingManuscriptEditor
@@ -1000,6 +988,7 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
                     setSelectedCiteId(eid);
                     setSelectedText(`[#${eid}]`);
                     setCiteHoverPreview(`Evidence #${eid}`);
+                    exitReviewFocus();
                     setEvidenceOpen(true);
                     setEvidenceRefresh((n) => n + 1);
                   }}
@@ -1075,6 +1064,15 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
 
             {evidenceOpen ? (
               <ResearchIntelligencePanel
+                mode={
+                  (forcedReviewMode
+                    ? "review"
+                    : selectedCiteId != null
+                      ? "citation"
+                      : selectedText.trim() && !/^\[#\d+\]$/.test(selectedText.trim())
+                        ? "selection"
+                        : "assist") as ReviewerPanelMode
+                }
                 selectedEvidenceId={selectedCiteId}
                 explainResult={evidenceExplain.result}
                 explainStatus={evidenceExplain.status}
@@ -1083,9 +1081,14 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
                 projectId={currentProjectId}
                 onBound={() => setEvidenceRefresh((n) => n + 1)}
                 reviewerRefresh={reviewerRefresh}
-                groundedMetrics={grounded.last?.metrics}
                 groundedReview={grounded.last?.review}
-                onClose={() => setEvidenceOpen(false)}
+                manuscript={input}
+                onWrite={runGroundedGenerate}
+                onCite={() => setCitePickerOpen(true)}
+                onClose={() => {
+                  setEvidenceOpen(false);
+                  exitReviewFocus();
+                }}
               />
             ) : null}
           </div>
@@ -1458,7 +1461,7 @@ export function WritingPage() {
         showExport
         onExport={() => selectTab("export")}
       />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-2">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
         {tab === "export" ? (
           <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
             <ExportTab />

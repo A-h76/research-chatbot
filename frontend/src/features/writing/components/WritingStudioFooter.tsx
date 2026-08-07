@@ -26,7 +26,7 @@ export function WritingStudioFooter({
 
   return (
     <footer
-      className="flex shrink-0 items-center gap-3 border-t border-border bg-muted/30 px-4 py-1.5 text-[12px] text-muted-foreground"
+      className="flex shrink-0 items-center gap-3 border-t border-border/50 px-4 py-1.5 text-[11px] text-muted-foreground/90"
       data-testid="writing-studio-footer"
     >
       <span className="tabular-nums">{words} words</span>

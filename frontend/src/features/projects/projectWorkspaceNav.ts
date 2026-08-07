@@ -91,6 +91,7 @@ export type JourneyNavId =
   | "research"
   | "evidence"
   | "writing"
+  | "review"
   | "chat"
   | "settings";
 
@@ -101,13 +102,14 @@ export type JourneyNavItem = {
   href: (projectId: number) => string;
 };
 
-/** Writing Studio left nav — industry-standard research writing IA. */
+/** Writing Studio left nav — calm research workspace destinations. */
 export const PROJECT_JOURNEY_NAV: JourneyNavItem[] = [
   { id: "library", label: "Library", href: () => "/library" },
   { id: "papers", label: "Papers", href: (id) => projectHubUrl(id, "papers") },
   { id: "research", label: "Research", href: (id) => projectHubUrl(id, "research") },
   { id: "evidence", label: "Evidence", href: (id) => projectEvidenceUrl(id) },
   { id: "writing", label: "Writing", href: (id) => projectWritingUrl(id) },
+  { id: "review", label: "Review", href: (id) => projectReviewUrl(id) },
   { id: "chat", label: "Chat", href: (id) => projectHubUrl(id, "chat") },
 ];
 
@@ -129,7 +131,8 @@ export function resolveJourneyActive(
   if (path.startsWith("/library") || path.startsWith("/files")) return "library";
 
   if (path.startsWith("/writing") || /\/projects\/\d+\/writing/.test(path)) {
-    if (focus === "evidence" || focus === "review") return "evidence";
+    if (focus === "review") return "review";
+    if (focus === "evidence") return "evidence";
     return "writing";
   }
 
