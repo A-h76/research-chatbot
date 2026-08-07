@@ -15,7 +15,6 @@ import {
   Upload,
   Layers,
   FileText,
-  BookMarked,
   FlaskConical,
   MessageSquare,
   Folder,
@@ -45,7 +44,6 @@ import type { Me, Project } from "@/types/api";
 const JOURNEY_ICONS: Partial<Record<JourneyNavId, React.ReactNode>> = {
   papers: <FileText className="size-4" strokeWidth={1.5} />,
   research: <Network className="size-4" strokeWidth={1.5} />,
-  evidence: <BookMarked className="size-4" strokeWidth={1.5} />,
   writing: <PenLine className="size-4" strokeWidth={1.5} />,
   review: <FlaskConical className="size-4" strokeWidth={1.5} />,
   chat: <MessageSquare className="size-4" strokeWidth={1.5} />,

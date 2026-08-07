@@ -482,9 +482,9 @@ export function CommandPalette() {
       },
       {
         id: "writing-evidence",
-        label: "Evidence",
-        hint: "Knowledge",
-        keywords: "evidence inspector verify passages",
+        label: "Evidence inspector",
+        hint: "Writing",
+        keywords: "evidence inspector verify passages cite",
         icon: FlaskConical,
         show: true,
         run: () =>

@@ -1,71 +1,37 @@
-import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowRight,
-  ClipboardList,
-  GitCompare,
-  LayoutDashboard,
-  Loader2,
-  Network,
-  SearchX,
-  Table2,
-} from "lucide-react";
+import { Link } from "react-router-dom";
+import { ArrowRight, LayoutDashboard, Loader2 } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
-import { evidenceApi } from "@/features/evidence/api";
-import { useProjectConsensusConflict } from "@/features/evidence/hooks/useProjectConsensusConflict";
+import { useRiCorpusMetrics } from "../hooks/useRiCorpusMetrics";
+import type { RiTab } from "../researchIntelligenceNav";
 import { cn } from "@/lib/utils";
 
-type LensTab =
-  | "matrix"
-  | "extract"
-  | "themes"
-  | "gaps"
-  | "graph"
-  | "timeline"
-  | "methodology"
-  | "compare";
+type Recommendation = {
+  title: string;
+  reason: string;
+  impact: string;
+  estimate: string;
+  actionLabel: string;
+  tab?: RiTab;
+  href?: string;
+};
 
 /**
- * Research Intelligence Overview — corpus health + suggested next action.
- * GitHub Insights–style landing before diving into lenses.
+ * Mission Control — corpus state + next action.
+ * Not a tool launcher. Answers: what is happening, what should I do next?
  */
 export function ResearchIntelligenceOverview({
   projectId,
   onOpenTab,
-  showCompare,
 }: {
   projectId: number | null;
-  onOpenTab: (tab: LensTab) => void;
+  onOpenTab: (tab: RiTab) => void;
+  /** @deprecated Open shortcuts removed — kept for call-site compat. */
   showCompare?: boolean;
 }) {
-  const enabled = projectId != null;
-  const matrixQ = useQuery({
-    queryKey: ["evidence", "matrix", projectId, ""],
-    queryFn: () => evidenceApi.matrix(projectId as number),
-    enabled,
-    staleTime: 30_000,
-  });
-  const themesQ = useQuery({
-    queryKey: ["evidence", "themes", projectId, ""],
-    queryFn: () => evidenceApi.themes(projectId as number),
-    enabled,
-    staleTime: 30_000,
-  });
-  const gapsQ = useQuery({
-    queryKey: ["evidence", "gaps", projectId],
-    queryFn: () => evidenceApi.gaps(projectId as number),
-    enabled,
-    staleTime: 30_000,
-  });
-  const methodologyQ = useQuery({
-    queryKey: ["evidence", "methodology", projectId, ""],
-    queryFn: () => evidenceApi.methodology(projectId as number),
-    enabled,
-    staleTime: 30_000,
-  });
-  const ri = useProjectConsensusConflict({ projectId, enabled });
+  const m = useRiCorpusMetrics(projectId);
 
-  if (!enabled) {
+  if (projectId == null) {
     return (
       <EmptyState
         icon={<LayoutDashboard className="size-7" />}
@@ -75,86 +41,140 @@ export function ResearchIntelligenceOverview({
     );
   }
 
-  const loading =
-    matrixQ.isLoading || themesQ.isLoading || gapsQ.isLoading || methodologyQ.isLoading;
-
-  if (loading) {
+  if (m.loading) {
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading corpus intelligence…
         </div>
+        <Skeleton className="h-28 w-full rounded-lg" />
         <Skeleton className="h-24 w-full rounded-lg" />
-        <Skeleton className="h-16 w-full rounded-lg" />
       </div>
     );
   }
 
-  const papers = matrixQ.data?.metrics.paper_count ?? 0;
-  const evidence =
-    gapsQ.data?.metrics.evidence_count ?? matrixQ.data?.metrics.papers_with_evidence ?? 0;
-  const themes = themesQ.data?.metrics.theme_count ?? 0;
-  const methods = methodologyQ.data?.metrics.card_count ?? 0;
-  const gaps = gapsQ.data?.metrics.gap_count ?? 0;
-  const unknownCells = matrixQ.data?.metrics.cell_unknown ?? 0;
-  const conflictCount = ri.conflict?.has_conflict ? 1 : 0;
+  const progress = (() => {
+    if (m.papers === 0) return 0;
+    let score = 0;
+    if (m.papers > 0) score += 20;
+    if (m.evidence > 0) score += 30;
+    if (m.themes > 0) score += 15;
+    if ((m.coverage ?? 0) >= 0.5) score += 15;
+    else if ((m.coverage ?? 0) > 0) score += 8;
+    if (m.gaps >= 0 && m.evidence > 0) score += 10;
+    if (m.methods > 0) score += 10;
+    return Math.min(100, score);
+  })();
 
-  const nextAction: {
-    label: string;
-    hint: string;
-    tab?: LensTab;
-    href?: string;
-  } = (() => {
-    if (papers === 0) {
+  const maturity: "empty" | "imported" | "extracted" | "mature" = (() => {
+    if (m.papers === 0) return "empty";
+    if (m.evidence === 0) return "imported";
+    if (m.themes > 0 && (m.gaps > 0 || m.contradictions > 0 || (m.coverage ?? 0) > 0.4)) {
+      return "mature";
+    }
+    return "extracted";
+  })();
+
+  const remainingPapers = Math.max(0, m.papers - m.papersWithEvidence);
+
+  const recommendation: Recommendation = (() => {
+    if (maturity === "empty") {
       return {
-        label: "Add papers to this project",
-        hint: "Research Intelligence needs a corpus to analyse.",
+        title: "Upload papers",
+        reason: "Research Intelligence needs a corpus before it can understand, relate, or synthesise.",
+        impact: "Unlocks extraction, themes, gaps, and comparison.",
+        estimate: "A few minutes",
+        actionLabel: "Open Library",
         href: "/library",
       };
     }
-    if (evidence === 0 || unknownCells > 0) {
+    if (maturity === "imported") {
       return {
-        label: "Open Structured Evidence",
-        hint:
-          evidence === 0
-            ? "Extract evidence so themes, gaps, and the matrix can fill in."
-            : `${unknownCells} matrix cells still need extraction.`,
+        title: "Extract evidence",
+        reason:
+          "Without extraction Dhund cannot discover themes, contradictions, or relationships.",
+        impact: "Fills Matrix, Themes, Graph, Gaps, and Synthesis.",
+        estimate: remainingPapers > 0 ? `~${Math.max(2, remainingPapers)}–${remainingPapers * 2} min` : "3–5 minutes",
+        actionLabel: "Start extraction",
         tab: "extract",
       };
     }
-    if (gaps > 0) {
+    if (m.unknownCells > 8 || remainingPapers > 0) {
       return {
-        label: "Review research gaps",
-        hint: `${gaps} coverage gap${gaps === 1 ? "" : "s"} flagged.`,
+        title: "Finish extraction coverage",
+        reason:
+          remainingPapers > 0
+            ? `${remainingPapers} paper${remainingPapers === 1 ? "" : "s"} still lack extracted evidence.`
+            : `${m.unknownCells} matrix cells are still not extracted.`,
+        impact: "Improves theme quality, gap detection, and compare accuracy.",
+        estimate: "2–4 minutes",
+        actionLabel: "Continue in Structured Evidence",
+        tab: "extract",
+      };
+    }
+    if (m.gaps > 0) {
+      return {
+        title: "Review research gaps",
+        reason: `${m.gaps} coverage gap${m.gaps === 1 ? "" : "s"} detected from themes and matrix density.`,
+        impact: "Clarifies where your literature review or proposal should go next.",
+        estimate: "5–10 minutes",
+        actionLabel: "Open Gap Review",
         tab: "gaps",
       };
     }
+    if (m.hasConflict || m.contradictions > 0) {
+      return {
+        title: "Inspect contradictions",
+        reason: m.conflictSummary || "Conflicting evidence pairs appear in this corpus.",
+        impact: "Prevents overconfident synthesis and surfaces mediators.",
+        estimate: "5 minutes",
+        actionLabel: "Explore Graph",
+        tab: "graph",
+      };
+    }
+    if (maturity === "mature") {
+      return {
+        title: "Compare key papers",
+        reason: "Your corpus is rich enough for side-by-side synthesis.",
+        impact: "Produces differences, agreements, and writing-ready insights.",
+        estimate: "5–8 minutes",
+        actionLabel: "Open Compare Papers",
+        tab: "compare",
+      };
+    }
     return {
-      label: "Open Evidence Matrix",
-      hint: "See what every paper says side by side.",
+      title: "Explore Evidence Matrix",
+      reason: "See method, dataset, findings, and limitations across papers.",
+      impact: "Builds a shared mental model of the corpus.",
+      estimate: "3–5 minutes",
+      actionLabel: "Open Evidence Matrix",
       tab: "matrix",
     };
   })();
 
-  const stats: { label: string; value: number }[] = [
-    { label: "Papers", value: papers },
-    { label: "Evidence", value: evidence },
-    { label: "Themes", value: themes },
-    { label: "Method cards", value: methods },
-    { label: "Gaps", value: gaps },
-  ];
-  if (conflictCount > 0) {
-    stats.push({ label: "Contradictions", value: conflictCount });
+  const discoveries: string[] = [];
+  for (const label of m.themeLabels) discoveries.push(`Theme detected · ${label}`);
+  if (m.methods > 0) discoveries.push(`Method cluster ready · ${m.methods} advisory card${m.methods === 1 ? "" : "s"}`);
+  if (m.hasConflict || m.contradictions > 0) {
+    discoveries.push(
+      m.conflictSummary
+        ? `Contradiction · ${m.conflictSummary}`
+        : `${m.contradictions} contradiction link${m.contradictions === 1 ? "" : "s"}`,
+    );
   }
+  for (const g of m.gapStatements) discoveries.push(`Gap · ${g}`);
 
-  const shortcuts: { label: string; tab: LensTab; icon: typeof Table2 }[] = [
-    { label: "Evidence Matrix", tab: "matrix", icon: Table2 },
-    { label: "Structured Evidence", tab: "extract", icon: ClipboardList },
-    { label: "Graph", tab: "graph", icon: Network },
-    { label: "Research Gaps", tab: "gaps", icon: SearchX },
-  ];
-  if (showCompare) {
-    shortcuts.push({ label: "Compare Papers", tab: "compare", icon: GitCompare });
+  const activity: string[] = [];
+  if (m.evidence > 0) activity.push(`${m.evidence} evidence object${m.evidence === 1 ? "" : "s"} in corpus`);
+  if (m.themes > 0) activity.push(`${m.themes} theme cluster${m.themes === 1 ? "" : "s"} available`);
+  if (m.gaps > 0) activity.push(`${m.gaps} research gap${m.gaps === 1 ? "" : "s"} flagged`);
+  if (m.coverage != null) activity.push(`Matrix coverage ${Math.round(m.coverage * 100)}%`);
+  if (activity.length === 0) {
+    activity.push(
+      maturity === "empty"
+        ? "No research activity yet — start by uploading papers."
+        : "Waiting on first evidence extraction.",
+    );
   }
 
   return (
@@ -164,72 +184,142 @@ export function ResearchIntelligenceOverview({
           Research Intelligence
         </p>
         <h2 className="text-[18px] font-semibold tracking-tight text-foreground">
-          Understand this corpus
+          Mission Control
         </h2>
         <p className="max-w-xl text-[13px] leading-relaxed text-muted-foreground">
-          Synthesis, themes, gaps, relationships, and comparison — grounded in extracted
-          evidence from your project papers.
+          Corpus health, discoveries, and the next best research action — not a menu of tools.
         </p>
       </header>
 
-      <section aria-label="Corpus summary">
-        <div className="flex flex-wrap gap-x-5 gap-y-2 text-[13px]">
-          {stats.map((s) => (
-            <span key={s.label} className="inline-flex items-baseline gap-1.5">
-              <span className="tabular-nums font-semibold text-foreground">{s.value}</span>
-              <span className="text-muted-foreground">{s.label}</span>
+      {/* Corpus health */}
+      <section
+        aria-label="Corpus health"
+        className="rounded-lg border border-border bg-card px-4 py-3.5"
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Corpus health
+          </p>
+          <p className="text-[12px] tabular-nums text-muted-foreground">
+            Research readiness · {progress}%
+          </p>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary/70 transition-[width]"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-[13px]">
+          {(
+            [
+              ["Papers", m.papers],
+              ["Evidence", m.evidence],
+              ["Themes", m.themes],
+              ["Gaps", m.gaps],
+              ["Contradictions", m.contradictions],
+            ] as const
+          ).map(([label, value]) => (
+            <span key={label} className="inline-flex items-baseline gap-1.5">
+              <span className="tabular-nums font-semibold text-foreground">{value}</span>
+              <span className="text-muted-foreground">{label}</span>
             </span>
           ))}
+          {m.coverage != null ? (
+            <span className="inline-flex items-baseline gap-1.5">
+              <span className="tabular-nums font-semibold text-foreground">
+                {Math.round(m.coverage * 100)}%
+              </span>
+              <span className="text-muted-foreground">Coverage</span>
+            </span>
+          ) : null}
         </div>
       </section>
 
+      {/* Recommended next */}
       <section
-        aria-label="Suggested next action"
-        className="rounded-lg border border-border bg-card px-4 py-3"
+        aria-label="Recommended next action"
+        className="rounded-lg border border-primary/25 bg-primary/[0.04] px-4 py-3.5"
       >
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Suggested next
+          Recommended next step
         </p>
-        <p className="mt-1 text-[13px] text-muted-foreground">{nextAction.hint}</p>
-        {nextAction.href ? (
-          <a
-            href={nextAction.href}
-            className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-primary hover:text-primary/80"
-          >
-            {nextAction.label}
-            <ArrowRight className="size-3.5" />
-          </a>
-        ) : (
-          <button
-            type="button"
-            onClick={() => nextAction.tab && onOpenTab(nextAction.tab)}
-            className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-primary hover:text-primary/80"
-          >
-            {nextAction.label}
-            <ArrowRight className="size-3.5" />
-          </button>
-        )}
+        <h3 className="mt-1 text-[15px] font-semibold tracking-tight text-foreground">
+          {recommendation.title}
+        </h3>
+        <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+          {recommendation.reason}
+        </p>
+        <dl className="mt-3 grid gap-2 text-[12px] sm:grid-cols-2">
+          <div>
+            <dt className="text-muted-foreground">Impact</dt>
+            <dd className="text-foreground/90">{recommendation.impact}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Estimated time</dt>
+            <dd className="text-foreground/90">{recommendation.estimate}</dd>
+          </div>
+        </dl>
+        <div className="mt-3">
+          {recommendation.href ? (
+            <Link
+              to={recommendation.href}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/80"
+            >
+              {recommendation.actionLabel}
+              <ArrowRight className="size-3.5" />
+            </Link>
+          ) : (
+            <button
+              type="button"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/80"
+              onClick={() => recommendation.tab && onOpenTab(recommendation.tab)}
+            >
+              {recommendation.actionLabel}
+              <ArrowRight className="size-3.5" />
+            </button>
+          )}
+        </div>
       </section>
 
-      <section aria-label="Open lenses">
+      {/* Discoveries — only when something exists */}
+      {discoveries.length > 0 ? (
+        <section aria-label="Recent discoveries">
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Latest discoveries
+          </p>
+          <ul className="space-y-1.5">
+            {discoveries.slice(0, 6).map((d) => (
+              <li
+                key={d}
+                className={cn(
+                  "rounded-md border border-border/80 bg-card px-3 py-2 text-[13px] text-foreground/90",
+                )}
+              >
+                {d}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section aria-label="Recent activity">
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Open
+          Research state
         </p>
-        <div className="flex flex-wrap gap-2">
-          {shortcuts.map(({ label, tab, icon: Icon }) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => onOpenTab(tab)}
-              className={cn(
-                "inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-[12px] font-medium text-foreground transition-colors hover:bg-muted/60",
-              )}
-            >
-              <Icon className="size-3.5 text-muted-foreground" />
-              {label}
-            </button>
+        <ul className="space-y-1 text-[13px] text-muted-foreground">
+          {activity.map((a) => (
+            <li key={a} className="flex gap-2">
+              <span className="text-foreground/40" aria-hidden>
+                ·
+              </span>
+              <span>{a}</span>
+            </li>
           ))}
-        </div>
+        </ul>
+        <p className="mt-3 text-[12px] text-muted-foreground">
+          Workflow: Understand → Relationships → Insights → Synthesis
+        </p>
       </section>
     </div>
   );

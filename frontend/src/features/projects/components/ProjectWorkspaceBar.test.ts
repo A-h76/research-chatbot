@@ -15,16 +15,16 @@ describe("isProjectHubPath", () => {
 });
 
 describe("resolveWorkspaceActive", () => {
-  it("highlights writing vs evidence focus", () => {
+  it("treats writing focus deep-links as Writing, not a separate Evidence chip", () => {
     expect(resolveWorkspaceActive("/writing", "", 1)).toBe("writing");
-    expect(resolveWorkspaceActive("/writing", "?focus=evidence", 1)).toBe("evidence");
-    expect(resolveWorkspaceActive("/writing", "?focus=review", 1)).toBe("evidence");
+    expect(resolveWorkspaceActive("/writing", "?focus=evidence", 1)).toBe("writing");
+    expect(resolveWorkspaceActive("/writing", "?focus=review", 1)).toBe("writing");
     expect(resolveWorkspaceActive("/writing", "?tab=export", 1)).toBe("writing");
   });
 
-  it("highlights paper tabs; graph demoted to papers chip", () => {
+  it("keeps paper evidence/graph under Papers", () => {
     expect(resolveWorkspaceActive("/papers/9", "", 1)).toBe("papers");
-    expect(resolveWorkspaceActive("/papers/9", "?tab=evidence", 1)).toBe("evidence");
+    expect(resolveWorkspaceActive("/papers/9", "?tab=evidence", 1)).toBe("papers");
     expect(resolveWorkspaceActive("/papers/9", "?tab=graph", 1)).toBe("papers");
     expect(resolveWorkspaceActive("/papers/9/chat", "", 1)).toBe("chat");
   });

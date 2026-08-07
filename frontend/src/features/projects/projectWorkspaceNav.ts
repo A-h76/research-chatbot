@@ -74,6 +74,7 @@ export function projectWritingUrl(
 }
 
 export function projectEvidenceUrl(projectId: number): string {
+  /** Deep-link into Writing’s evidence inspector — not a standalone nav destination. */
   return projectWritingUrl(projectId, { focus: "evidence" });
 }
 
@@ -98,7 +99,6 @@ export type JourneyNavId =
   | "library"
   | "papers"
   | "research"
-  | "evidence"
   | "writing"
   | "review"
   | "chat"
@@ -116,11 +116,13 @@ export type JourneyNavItem = {
 /**
  * Project workspace journey — research workflow only (no global Library).
  * Library lives in global nav / breadcrumbs once you're inside a project.
- * Order: Papers → Evidence → Research Intelligence → Writing → Review.
+ *
+ * Evidence is intentionally not a destination: it is cross-cutting inside
+ * Papers, Research Intelligence, Writing, and Review.
+ * Order: Papers → Research Intelligence → Writing → Review.
  */
 export const PROJECT_JOURNEY_WORKFLOW: JourneyNavItem[] = [
   { id: "papers", label: "Papers", href: (id) => projectHubUrl(id, "papers") },
-  { id: "evidence", label: "Evidence", href: (id) => projectEvidenceUrl(id) },
   {
     id: "research",
     label: "Research Intelligence",
@@ -179,7 +181,7 @@ export function resolveJourneyActive(
 
   if (path.startsWith("/writing") || /\/projects\/\d+\/writing/.test(path)) {
     if (focus === "review") return "review";
-    if (focus === "evidence") return "evidence";
+    // focus=evidence opens the Writing assistant — still a Writing job.
     return "writing";
   }
 

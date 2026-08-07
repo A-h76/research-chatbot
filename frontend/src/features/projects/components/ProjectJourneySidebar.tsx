@@ -6,7 +6,6 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   FileText,
   Network,
-  BookMarked,
   PenLine,
   FlaskConical,
   MessageSquare,
@@ -25,7 +24,6 @@ import { cn } from "@/lib/utils";
 const ICONS: Partial<Record<JourneyNavId, React.ReactNode>> = {
   papers: <FileText className="size-4" strokeWidth={1.5} />,
   research: <Network className="size-4" strokeWidth={1.5} />,
-  evidence: <BookMarked className="size-4" strokeWidth={1.5} />,
   writing: <PenLine className="size-4" strokeWidth={1.5} />,
   review: <FlaskConical className="size-4" strokeWidth={1.5} />,
   chat: <MessageSquare className="size-4" strokeWidth={1.5} />,

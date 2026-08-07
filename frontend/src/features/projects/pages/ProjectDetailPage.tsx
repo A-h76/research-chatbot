@@ -40,8 +40,8 @@ import { ProjectChatPanel } from "../components/ProjectChatPanel";
 import { useProjectHub } from "../useProjects";
 import {
   deriveProjectWorkspaceStage,
-  projectEvidenceUrl,
   projectExportUrl,
+  projectResearchIntelligenceUrl,
   projectReviewUrl,
   projectWritingUrl,
   projectWorkspaceStageLabel,
@@ -77,10 +77,10 @@ const JOURNEY_TABS: { id: ProjectTab; label: string; icon: React.ReactNode }[] =
   { id: "research", label: "Research", icon: <GitCompare className="size-3.5" /> },
 ];
 
-type JourneyLinkId = "evidence" | "writing" | "review" | "export";
+type JourneyLinkId = "research" | "writing" | "review" | "export";
 
 const JOURNEY_LINKS: { id: JourneyLinkId; label: string; icon: React.ReactNode }[] = [
-  { id: "evidence", label: "Evidence", icon: <Brain className="size-3.5" /> },
+  { id: "research", label: "Research Intelligence", icon: <GitCompare className="size-3.5" /> },
   { id: "writing", label: "Writing", icon: <PenLine className="size-3.5" /> },
   { id: "review", label: "Review", icon: <FlaskConical className="size-3.5" /> },
   { id: "export", label: "Export", icon: <Download className="size-3.5" /> },
@@ -220,7 +220,7 @@ function GettingStartedChecklist({
     },
     {
       title: "Write an evidence-grounded draft",
-      detail: "Open Evidence, draft on Writing, then Review and Export.",
+      detail: "Understand the corpus in Research Intelligence, then draft, Review, and Export.",
       action: onWriteDraft,
       label: "Next · Writing",
     },
@@ -230,7 +230,7 @@ function GettingStartedChecklist({
     <section className="rounded-md border border-border bg-muted/20 p-3.5">
       <h2 className="text-sm font-semibold">Getting started</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Journey: Papers → Research → Evidence → Writing → Review → Export.
+        Journey: Papers → Research Intelligence → Writing → Review → Export.
       </p>
       <ol className="mt-3 space-y-2.5">
         {steps.map((step, i) => (
@@ -263,7 +263,6 @@ function OverviewTab({
   onOpenPaper,
   onTab,
   onWriteDraft,
-  onReviewEvidence,
   onOpenResearch,
   nextLabel,
   onNext,
@@ -272,7 +271,6 @@ function OverviewTab({
   onOpenPaper: (id: number) => void;
   onTab: (t: ProjectTab) => void;
   onWriteDraft: () => void;
-  onReviewEvidence: () => void;
   onOpenResearch: () => void;
   nextLabel: string;
   onNext: () => void;
@@ -311,20 +309,17 @@ function OverviewTab({
             {pipeline_summary.running + pipeline_summary.pending > 0
               ? ` · ${pipeline_summary.running + pipeline_summary.pending} still processing`
               : ""}
-            . Continue Evidence → Writing → Review → Export when ready.
+            . Continue Research Intelligence → Writing → Review → Export when ready.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button size="sm" className="gap-1.5" onClick={onNext}>
               <ArrowRight className="size-3.5" /> {nextLabel}
             </Button>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={onReviewEvidence}>
-              <Brain className="size-3.5" /> Evidence
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={onOpenResearch}>
+              <GitCompare className="size-3.5" /> Research Intelligence
             </Button>
             <Button size="sm" variant="outline" className="gap-1.5" onClick={onWriteDraft}>
               <PenLine className="size-3.5" /> Writing
-            </Button>
-            <Button size="sm" variant="ghost" className="gap-1.5" onClick={onOpenResearch}>
-              <GitCompare className="size-3.5" /> Research
             </Button>
           </div>
         </section>
@@ -627,8 +622,8 @@ export function ProjectDetailPage() {
     if (!id) return;
     setCurrentProjectId(id);
     switch (link) {
-      case "evidence":
-        navigate(projectEvidenceUrl(id));
+      case "research":
+        navigate(projectResearchIntelligenceUrl(id));
         break;
       case "writing":
         navigate(projectWritingUrl(id));
@@ -648,10 +643,10 @@ export function ProjectDetailPage() {
     navigate(projectWritingUrl(id, { action: "lit-review" }));
   }
 
-  function openReviewEvidence() {
+  function openResearchIntelligence() {
     if (!id) return;
     setCurrentProjectId(id);
-    navigate(projectEvidenceUrl(id));
+    navigate(projectResearchIntelligenceUrl(id));
   }
 
   const nextAction = useMemo(() => {
@@ -678,7 +673,7 @@ export function ProjectDetailPage() {
       };
     }
     if (stage === "research") {
-      return { label: "Open Research", run: () => setTab("research") };
+      return { label: "Open Research Intelligence", run: openResearchIntelligence };
     }
     return { label: "Write draft", run: openWriteDraft };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -864,8 +859,7 @@ export function ProjectDetailPage() {
             onOpenPaper={openPaper}
             onTab={setTab}
             onWriteDraft={openWriteDraft}
-            onReviewEvidence={openReviewEvidence}
-            onOpenResearch={() => setTab("research")}
+            onOpenResearch={openResearchIntelligence}
             nextLabel={nextAction.label}
             onNext={nextAction.run}
           />

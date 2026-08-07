@@ -76,7 +76,7 @@ describe("projectWorkspaceNav", () => {
     expect(isWritingStudioPath("/projects/3")).toBe(false);
 
     expect(resolveJourneyActive("/writing", "", 3)).toBe("writing");
-    expect(resolveJourneyActive("/writing", "?focus=evidence", 3)).toBe("evidence");
+    expect(resolveJourneyActive("/writing", "?focus=evidence", 3)).toBe("writing");
     expect(resolveJourneyActive("/writing", "?focus=review", 3)).toBe("review");
     expect(resolveJourneyActive("/library", "", 3)).toBe("library");
     expect(resolveJourneyActive("/projects/3", "?tab=research", 3)).toBe("research");
@@ -104,11 +104,11 @@ describe("projectWorkspaceNav", () => {
     expect(isProjectWorkspacePath("/projects/9", 3)).toBe(false);
     expect(PROJECT_JOURNEY_WORKFLOW.map((i) => i.id)).toEqual([
       "papers",
-      "evidence",
       "research",
       "writing",
       "review",
     ]);
+    expect(PROJECT_JOURNEY_WORKFLOW.find((i) => i.label === "Evidence")).toBeUndefined();
     expect(PROJECT_JOURNEY_WORKFLOW.find((i) => i.id === "research")?.label).toBe(
       "Research Intelligence",
     );

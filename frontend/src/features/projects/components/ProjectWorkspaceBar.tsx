@@ -2,7 +2,6 @@ import { NavLink, useLocation } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   FileText,
-  Brain,
   PenLine,
   MessageSquare,
   StickyNote,
@@ -10,7 +9,6 @@ import {
 import { useUI } from "@/context/UIContext";
 import { useProjects, useProjectHub } from "../useProjects";
 import {
-  projectEvidenceUrl,
   projectHubUrl,
   projectWritingUrl,
 } from "../projectWorkspaceNav";
@@ -18,7 +16,6 @@ import { cn } from "@/lib/utils";
 
 export type WorkspaceItemId =
   | "papers"
-  | "evidence"
   | "writing"
   | "chat"
   | "notes";
@@ -39,14 +36,13 @@ export function resolveWorkspaceActive(
   const focus = params.get("focus");
 
   if (path.startsWith("/writing")) {
-    if (focus === "evidence" || focus === "review") return "evidence";
+    if (focus === "review") return "writing";
     if (tab === "export") return "writing";
     return "writing";
   }
   if (path.startsWith("/papers/")) {
     if (path.includes("/chat")) return "chat";
-    if (tab === "evidence") return "evidence";
-    // Graph remains on paper ?tab=graph but is not a primary workspace chip.
+    // Paper evidence / graph tabs stay under Papers — evidence is not a destination.
     return "papers";
   }
   if (path.startsWith("/library") || path.startsWith("/files")) return "papers";
@@ -104,12 +100,6 @@ export function ProjectWorkspaceBar() {
       label: paperCount != null ? `Papers (${paperCount})` : "Papers",
       icon: <FileText className="size-3.5" />,
       to: projectHubUrl(currentProjectId, "papers"),
-    },
-    {
-      id: "evidence",
-      label: "Evidence",
-      icon: <Brain className="size-3.5" />,
-      to: projectEvidenceUrl(currentProjectId),
     },
     {
       id: "writing",
