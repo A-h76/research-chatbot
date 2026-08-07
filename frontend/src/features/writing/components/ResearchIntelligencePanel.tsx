@@ -1,7 +1,6 @@
 /**
- * Research Intelligence — Dhund differentiator around the familiar manuscript.
- * Phase B: Supporting cite card + Consensus/Conflict + Confidence + Reviewer.
- * Reserved slots for Related Papers / Graph / Gaps (later).
+ * Research Reviewer panel (Writing Studio right rail).
+ * Citation-synced supporting evidence + consensus + confidence + reviewer findings.
  */
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
@@ -37,11 +36,11 @@ function SupportingCiteCard({
     evidence.relation === "supports" || evidence.status === "accepted";
   const score = confidenceScore(evidence.confidence_band);
   const bandLabel =
-    evidence.confidence_band?.charAt(0).toUpperCase() +
+    (evidence.confidence_band?.charAt(0).toUpperCase() || "") +
     (evidence.confidence_band?.slice(1) || "");
 
   return (
-    <section className="space-y-3" aria-label="Supporting evidence">
+    <section className="space-y-3" aria-label="Citation evidence">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-semibold text-foreground">{citationLabel}</p>
         <span
@@ -57,7 +56,7 @@ function SupportingCiteCard({
         </span>
       </div>
 
-      <blockquote className="rounded-md bg-muted/50 px-3 py-2.5 text-[13px] leading-relaxed text-foreground/90">
+      <blockquote className="rounded-lg bg-muted/60 px-3.5 py-3 text-[13px] leading-relaxed text-foreground/90">
         &ldquo;{evidence.quote || evidence.claim}&rdquo;
         {evidence.page != null ? (
           <footer className="mt-2 text-[12px] text-muted-foreground">
@@ -66,18 +65,19 @@ function SupportingCiteCard({
         ) : null}
       </blockquote>
 
-      <div className="space-y-1">
-        <p className="text-[13px] font-medium leading-snug text-foreground">
+      <div className="space-y-1.5">
+        <p className="text-[12px] font-semibold text-foreground">Source</p>
+        <p className="text-[13px] font-semibold leading-snug text-foreground">
           {evidence.file_title || `Paper #${evidence.file_id}`}
         </p>
-        {evidence.study_type ? (
-          <p className="text-[12px] text-muted-foreground">{evidence.study_type}</p>
+        {evidence.study_quality ? (
+          <p className="text-[12px] text-muted-foreground">{evidence.study_quality}</p>
         ) : null}
         <Button
           type="button"
           size="sm"
           variant="outline"
-          className="mt-1.5 h-8 gap-1.5 text-[12px]"
+          className="mt-1 h-8 gap-1.5 text-[12px]"
           onClick={() => navigate(`/papers/${evidence.file_id}`)}
         >
           <ExternalLink className="size-3.5" />
@@ -86,35 +86,31 @@ function SupportingCiteCard({
       </div>
 
       <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-[12px]">
-          <span className="text-muted-foreground">Confidence</span>
-          <span className="font-medium tabular-nums text-foreground">
-            {bandLabel || "—"} · {score.toFixed(2)}
+        <p className="text-[12px] font-semibold text-foreground">Confidence</p>
+        <div className="flex items-center gap-2">
+          <span className="w-10 shrink-0 text-[12px] font-medium text-foreground">
+            {bandLabel || "—"}
           </span>
-        </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-[width]"
-            style={{ width: `${Math.round(score * 100)}%` }}
-          />
+          <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-[width]"
+              style={{ width: `${Math.round(score * 100)}%` }}
+            />
+          </div>
+          <span className="w-8 shrink-0 text-right text-[12px] tabular-nums text-muted-foreground">
+            {score.toFixed(2)}
+          </span>
         </div>
       </div>
 
-      {evidence.study_type ? (
-        <p className="text-[12px] text-muted-foreground">
-          Type · <span className="text-foreground">{evidence.study_type}</span>
-        </p>
-      ) : null}
+      <p className="text-[12px] text-muted-foreground">
+        <span className="font-semibold text-foreground">Type</span>
+        <span className="mx-2">·</span>
+        <span className="text-foreground">{evidence.study_type || "—"}</span>
+      </p>
     </section>
   );
 }
-
-const RESERVED = [
-  { id: "related", label: "Related Papers" },
-  { id: "graph", label: "Knowledge Graph" },
-  { id: "gaps", label: "Research Gap" },
-  { id: "suggest", label: "Suggested Improvements" },
-] as const;
 
 export function ResearchIntelligencePanel({
   selectedEvidenceId,
@@ -174,16 +170,11 @@ export function ResearchIntelligencePanel({
         "writing-studio-intelligence flex h-full min-h-0 w-full shrink-0 flex-col border-l border-border bg-background lg:w-[340px]",
         className,
       )}
-      aria-label="Research Intelligence"
-      data-testid="research-intelligence-panel"
+      aria-label="Research Reviewer"
+      data-testid="research-reviewer-panel"
     >
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2.5">
-        <div>
-          <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-            Cognitive layer
-          </p>
-          <h2 className="text-sm font-semibold tracking-tight">Research Intelligence</h2>
-        </div>
+        <h2 className="text-sm font-semibold tracking-tight">Research Reviewer</h2>
         {onClose ? (
           <Button
             type="button"
@@ -191,7 +182,7 @@ export function ResearchIntelligencePanel({
             variant="ghost"
             className="size-7"
             onClick={onClose}
-            aria-label="Close intelligence panel"
+            aria-label="Close Research Reviewer"
           >
             <X className="size-3.5" />
           </Button>
@@ -202,11 +193,11 @@ export function ResearchIntelligencePanel({
         {primary ? (
           <SupportingCiteCard
             evidence={primary}
-            citationLabel={`Citation [#${primary.id}]`}
+            citationLabel={`Citation [${primary.id}]`}
           />
         ) : (
           <p className="rounded-md border border-dashed border-border px-3 py-4 text-[12px] text-muted-foreground">
-            Click a citation chip in the manuscript to inspect supporting evidence, confidence, and
+            Click a citation in the manuscript to review supporting evidence, confidence, and
             source.
           </p>
         )}
@@ -241,7 +232,7 @@ export function ResearchIntelligencePanel({
         {documentId != null ? (
           <section className="space-y-1.5">
             <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Reviewer
+              Findings
             </h3>
             <ResearchReviewerPanel
               documentId={documentId}
@@ -251,25 +242,9 @@ export function ResearchIntelligencePanel({
           </section>
         ) : null}
 
-        <section className="space-y-1.5 border-t border-border pt-3">
-          <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Coming in Dhund
-          </h3>
-          <ul className="space-y-1">
-            {RESERVED.map((r) => (
-              <li
-                key={r.id}
-                className="rounded-md border border-dashed border-border/80 px-2.5 py-1.5 text-[12px] text-muted-foreground"
-              >
-                {r.label}
-              </li>
-            ))}
-          </ul>
-        </section>
-
         <details className="rounded-md border border-border">
           <summary className="cursor-pointer px-2.5 py-2 text-[12px] font-medium text-muted-foreground">
-            Full evidence inspector
+            Advanced evidence tools
           </summary>
           <div id="writing-evidence-rail" className="border-t border-border p-1">
             <EvidenceInspectorPanel

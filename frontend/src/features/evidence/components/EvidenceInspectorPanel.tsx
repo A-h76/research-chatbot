@@ -160,13 +160,13 @@ export function EvidenceInspectorPanel({
   return (
     <aside
       className="flex w-full flex-col gap-3 border-l border-border bg-surface-panel p-3 lg:sticky lg:top-14 lg:max-h-[calc(100vh-4rem)] lg:max-w-sm lg:overflow-y-auto"
-      aria-label="Evidence inspector"
+      aria-label="Research Reviewer evidence tools"
       data-density="high"
     >
       <div className="flex items-baseline justify-between gap-2 border-b border-border pb-2">
         <div>
           <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-            Inspect
+            Research Reviewer
           </p>
           <h2 className="text-sm font-semibold tracking-tight">Evidence</h2>
         </div>

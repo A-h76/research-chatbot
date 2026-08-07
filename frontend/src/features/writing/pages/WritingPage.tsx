@@ -2,25 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Wand2, Loader2, Copy, Download, RefreshCw,
-  BookOpen, GraduationCap, Minimize2, Maximize2,
-  AlignLeft, FileText, MessageSquare, StickyNote, AlertTriangle,
+  Loader2, Download, RefreshCw,
+  BookOpen, FileText, MessageSquare, StickyNote,
   Quote, Plus,
 } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { WritingDeskSkeleton } from "@/components/common/ResearchSkeletons";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { useFiles } from "@/features/files/useFiles";
 import { useNotes } from "@/features/notes/useNotes";
 import { useConversations } from "@/features/chat/hooks/useConversation";
 import { useUI } from "@/context/UIContext";
-import { useClipboard } from "@/hooks/useClipboard";
 import { writingApi } from "../api";
 import { toast } from "@/components/common/Toast";
 import { cn } from "@/lib/utils";
-import type { WritingAction } from "@/types/api";
 import { trackWritingEvent } from "../utils/telemetry";
 import {
   classifyAutosaveFailure,
@@ -44,10 +40,21 @@ import {
   removeEvidenceMarker,
   selectedEvidenceMarkerId,
 } from "@/features/writing/utils/citeDraftHelpers";
+import {
+  applyBulletList,
+  applyHeadingToLine,
+  applyLink,
+  applyNumberedList,
+  applyTextColor,
+  detectHeadingLevel,
+  toggleInlineMark,
+  type HeadingLevel,
+} from "@/features/writing/utils/writingFormatHelpers";
 import { ResearchProgressStage } from "@/features/writing/components/ResearchProgressStage";
 import { WritingStudioTabs, type WritingStudioTabId } from "@/features/writing/components/WritingStudioTabs";
 import { WritingStudioFooter } from "@/features/writing/components/WritingStudioFooter";
 import { WritingManuscriptEditor } from "@/features/writing/components/WritingManuscriptEditor";
+import { WritingManuscriptToolbar } from "@/features/writing/components/WritingManuscriptToolbar";
 import { WritingNotesTab } from "@/features/writing/components/WritingNotesTab";
 import { WritingOutlineTab } from "@/features/writing/components/WritingOutlineTab";
 import { ResearchIntelligencePanel } from "@/features/writing/components/ResearchIntelligencePanel";
@@ -58,16 +65,6 @@ import {
   saveGroundedExportSnapshot,
   canExportGroundedLitReview,
 } from "@/features/writing/utils/groundedMarkdownExport";
-
-const ACTIONS: { key: WritingAction; label: string; icon: React.ReactNode; desc: string }[] = [
-  { key: "rewrite_academic", label: "Academic", icon: <GraduationCap className="size-3.5" />, desc: "Formal academic register" },
-  { key: "improve_grammar", label: "Grammar", icon: <AlignLeft className="size-3.5" />, desc: "Correct errors" },
-  { key: "improve_clarity", label: "Clarity", icon: <BookOpen className="size-3.5" />, desc: "Clearer prose" },
-  { key: "expand", label: "Expand", icon: <Maximize2 className="size-3.5" />, desc: "Add detail" },
-  { key: "shorten", label: "Shorten", icon: <Minimize2 className="size-3.5" />, desc: "Cut filler" },
-  { key: "generate_abstract", label: "Abstract", icon: <FileText className="size-3.5" />, desc: "Structured abstract" },
-  { key: "improve_conclusion", label: "Conclusion", icon: <Wand2 className="size-3.5" />, desc: "Strengthen ending" },
-];
 
 function FlaskConicalIcon() {
   // Local inline icon to avoid depending on lucide version for FlaskConical
@@ -109,14 +106,9 @@ function buildAutosaveKey(
 function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
   const { currentProjectId } = useUI();
   const qc = useQueryClient();
-  const { copy } = useClipboard();
   const [activeId, setActiveId] = useState<number | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [input, setInput] = useState("");
-  const [result, setResult] = useState("");
-  const [warning, setWarning] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [activeAction, setActiveAction] = useState<WritingAction | null>(null);
   const [saveState, setSaveState] = useState<WritingSaveState>("idle");
   const [version, setVersion] = useState<number>(1);
   const [lifecycleView, setLifecycleView] = useState<"active" | "archived" | "deleted">("active");
@@ -133,6 +125,7 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
   const [confirmDeleteDoc, setConfirmDeleteDoc] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(true);
   const [selectedCiteId, setSelectedCiteId] = useState<number | null>(null);
+  const [headingLevel, setHeadingLevel] = useState<HeadingLevel>("p");
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const litReviewBtnRef = useRef<HTMLButtonElement | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -370,23 +363,24 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
     onError: () => toast.error("Could not restore version"),
   });
 
-  async function run(action: WritingAction) {
-    if (!input.trim()) {
-      toast.error("Paste some text first.");
-      return;
-    }
-    setLoading(true);
-    setActiveAction(action);
-    try {
-      const data = await writingApi.transform(action, input);
-      setResult(data.result);
-      setWarning(data.warning || "");
-    } catch (e: unknown) {
-      toast.error(mapWritingError(e) || (e instanceof Error ? e.message : "Writing assistant failed"));
-    } finally {
-      setLoading(false);
-      setActiveAction(null);
-    }
+  function applyFormat(
+    fn: (
+      content: string,
+      start: number,
+      end: number,
+    ) => { content: string; selectionStart: number; selectionEnd: number },
+  ) {
+    const el = editorRef.current;
+    if (!el || activeDoc?.status === "deleted") return;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const next = fn(input, start, end);
+    setInput(next.content);
+    window.requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(next.selectionStart, next.selectionEnd);
+      setHeadingLevel(detectHeadingLevel(next.content, next.selectionStart));
+    });
   }
 
   function runGroundedGenerate() {
@@ -890,7 +884,7 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
               size="sm"
               variant="ghost"
               className="h-8 text-[11px]"
-              title="Open Research Intelligence for selection"
+              title="Open Research Reviewer for selection"
               onClick={() => {
                 const el = editorRef.current;
                 if (el) {
@@ -930,42 +924,7 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
             </span>
           </div>
 
-          <details className="shrink-0 rounded-md border border-border bg-card/50 px-3 py-1.5">
-            <summary className="cursor-pointer text-[12px] font-medium text-muted-foreground">
-              Style transforms (not evidence-backed)
-            </summary>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Style-only edits do not cite EvidenceObjects. Use Write grounded draft for
-              research-backed prose.
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5 pb-1">
-              {ACTIONS.map(({ key, label, icon, desc }) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => run(key)}
-                  disabled={loading}
-                  title={`${desc} (not evidence-backed)`}
-                  className={cn(
-                    "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
-                    loading && activeAction === key
-                      ? "border-primary bg-accent-soft text-primary"
-                      : "border-border bg-card text-foreground hover:bg-muted/50",
-                    loading && activeAction !== key && "opacity-50",
-                  )}
-                >
-                  {loading && activeAction === key ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <span className="text-muted-foreground">{icon}</span>
-                  )}
-                  {label}
-                </button>
-              ))}
-            </div>
-          </details>
-
-          {/* Desk: manuscript + Research Intelligence */}
+          {/* Desk: manuscript + Research Reviewer */}
           <div className="flex min-h-0 flex-1 gap-0 overflow-hidden rounded-md border border-border">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
@@ -976,6 +935,22 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
                   placeholder="Manuscript title"
                 />
               </div>
+
+              <WritingManuscriptToolbar
+                heading={headingLevel}
+                disabled={activeDoc?.status === "deleted"}
+                onHeading={(level) => {
+                  setHeadingLevel(level);
+                  applyFormat((c, s, e) => applyHeadingToLine(c, s, e, level));
+                }}
+                onBold={() => applyFormat((c, s, e) => toggleInlineMark(c, s, e, "**"))}
+                onItalic={() => applyFormat((c, s, e) => toggleInlineMark(c, s, e, "*"))}
+                onBullet={() => applyFormat(applyBulletList)}
+                onNumbered={() => applyFormat(applyNumberedList)}
+                onLink={() => applyFormat(applyLink)}
+                onColor={(color) => applyFormat((c, s, e) => applyTextColor(c, s, e, color))}
+                onMore={() => setCitePickerOpen(true)}
+              />
 
               {grounded.isPending ? (
                 <ResearchProgressStage
@@ -1028,6 +1003,10 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
                     setEvidenceOpen(true);
                     setEvidenceRefresh((n) => n + 1);
                   }}
+                  onSelectionChange={(s, e) => {
+                    setHeadingLevel(detectHeadingLevel(input, s));
+                    if (e > s) setSelectedText(input.slice(s, e));
+                  }}
                   onChange={(next) => {
                     setInput(next);
                     if (groundedBaseline != null) {
@@ -1046,64 +1025,6 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
                   }}
                 />
               </div>
-
-              {warning && (
-                <div className="mx-3 mb-2 flex shrink-0 items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[12px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {warning}
-                </div>
-              )}
-
-              {loading ? (
-                <div
-                  role="status"
-                  aria-busy="true"
-                  aria-label="Applying style transform"
-                  className="mx-3 mb-2 shrink-0 space-y-2 rounded-lg border border-border p-3"
-                >
-                  <Skeleton className="h-3 w-24" />
-                  <Skeleton className="h-3.5 w-full" />
-                  <Skeleton className="h-3.5 w-[92%]" />
-                </div>
-              ) : result ? (
-                <div className="mx-3 mb-2 shrink-0 rounded-lg border border-border bg-card p-2">
-                  <div className="mb-1 flex items-center justify-between">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-amber-800 dark:text-amber-200">
-                      Style output · not evidence-backed
-                    </p>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 gap-1 text-[11px]"
-                        onClick={() => {
-                          setInput(result);
-                          setResult("");
-                          toast.success("Moved to manuscript");
-                        }}
-                      >
-                        Use
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 gap-1 text-[11px]"
-                        onClick={() => {
-                          void copy(result);
-                          toast.success("Copied");
-                        }}
-                      >
-                        <Copy className="size-3" /> Copy
-                      </Button>
-                    </div>
-                  </div>
-                  <textarea
-                    value={result}
-                    onChange={(e) => setResult(e.target.value)}
-                    rows={6}
-                    className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-[13px] leading-relaxed outline-none focus:border-ring"
-                  />
-                </div>
-              ) : null}
 
               {grounded.last && grounded.last.status === "ok" ? (
                 <div className="mx-3 mb-2 shrink-0 rounded-lg border border-border p-3 text-[12px]">
