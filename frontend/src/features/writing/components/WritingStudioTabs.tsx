@@ -13,15 +13,20 @@ export function WritingStudioTabs({
   onChange,
   showExport,
   onExport,
+  className,
 }: {
   active: WritingStudioTabId;
   onChange: (tab: WritingStudioTabId) => void;
   showExport?: boolean;
   onExport?: () => void;
+  className?: string;
 }) {
   return (
     <div
-      className="flex shrink-0 items-center gap-0.5 border-b border-border/50 px-0.5"
+      className={cn(
+        "flex shrink-0 items-center gap-0.5 border-b border-border/40 px-3",
+        className,
+      )}
       role="tablist"
       aria-label="Writing workspace"
     >

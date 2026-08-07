@@ -313,7 +313,13 @@
     @apply font-sans antialiased bg-background text-foreground;
   }
   ::selection {
-    background: var(--accent-soft);
+    /* Translucent teal wash — not an opaque fill block */
+    background: color-mix(in oklab, var(--primary) 22%, transparent);
+    color: inherit;
+  }
+  ::-moz-selection {
+    background: color-mix(in oklab, var(--primary) 22%, transparent);
+    color: inherit;
   }
 }
 
@@ -748,7 +754,23 @@
 .writing-studio-topbar {
   backdrop-filter: saturate(1.1);
 }
+/* One continuous workspace surface under the orange baseline */
+.writing-studio #main-content {
+  background: var(--background);
+}
 .writing-studio-nav {
   /* Slightly cooler mute so the manuscript plane reads as the hero */
   background: color-mix(in oklab, var(--muted) 55%, var(--background));
+}
+/* Manuscript textarea is text-transparent; selection must stay translucent
+   so the overlay glyphs remain readable through the highlight. */
+.writing-studio .manuscript-surface textarea::selection,
+.manuscript-surface textarea::selection {
+  background: color-mix(in oklab, var(--primary) 28%, transparent);
+  color: transparent;
+}
+.writing-studio .manuscript-surface textarea::-moz-selection,
+.manuscript-surface textarea::-moz-selection {
+  background: color-mix(in oklab, var(--primary) 28%, transparent);
+  color: transparent;
 }

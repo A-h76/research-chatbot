@@ -134,11 +134,11 @@ export function TopBar({
 
   if (writingStudio && currentProjectId != null) {
     return (
-      <header className="writing-studio-topbar flex h-11 shrink-0 items-center gap-4 border-b border-border/60 px-4">
+      <header className="writing-studio-topbar flex h-12 shrink-0 items-center gap-3 border-b border-border/50 px-3">
         <Button
           variant="ghost"
           size="icon"
-          className="md:hidden"
+          className="size-8 md:hidden"
           onClick={onOpenMobileDrawer}
           aria-label="Open navigation"
         >
@@ -147,17 +147,17 @@ export function TopBar({
 
         <WritingStudioBreadcrumb projectId={currentProjectId} />
 
-        <div className="mx-auto flex min-w-0 max-w-lg flex-1 justify-center px-4">
+        <div className="mx-auto flex min-w-0 max-w-md flex-1 justify-center px-2">
           <button
             type="button"
             onClick={() => window.dispatchEvent(new CustomEvent("soro:command-palette"))}
-            className="flex h-8 w-full max-w-md items-center gap-2 rounded-full border border-border/70 bg-muted/30 px-3.5 text-left text-[12px] text-muted-foreground transition-colors hover:bg-muted/50"
+            className="flex h-7 w-full max-w-sm items-center gap-2 rounded-full border border-border/60 bg-muted/25 px-3 text-left text-[12px] text-muted-foreground transition-colors hover:bg-muted/45"
             title="Command palette (⌘K)"
             aria-label="Open command palette"
           >
             <Search className="size-3.5 shrink-0 opacity-70" />
             <span className="min-w-0 flex-1 truncate">Search papers, evidence, notes...</span>
-            <kbd className="hidden rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/80 sm:inline">
+            <kbd className="hidden rounded border border-border/50 bg-background/80 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/70 sm:inline">
               ⌘K
             </kbd>
           </button>

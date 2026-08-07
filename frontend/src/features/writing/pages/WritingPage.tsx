@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -6,7 +6,6 @@ import {
   BookOpen, FileText, MessageSquare, StickyNote,
   Quote, Plus,
 } from "lucide-react";
-import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
 import { WritingDeskSkeleton } from "@/components/common/ResearchSkeletons";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
@@ -80,7 +79,14 @@ function buildAutosaveKey(
   return `doc-${docId}-v${version}-${hash}`;
 }
 
-function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
+function DraftTab({
+  studioTab,
+  studioTabs,
+}: {
+  studioTab: WritingStudioTabId;
+  /** Rendered at the same baseline as the assistant panel (orange line). */
+  studioTabs?: ReactNode;
+}) {
   const { currentProjectId } = useUI();
   const qc = useQueryClient();
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -647,7 +653,7 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
   ]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-1" data-density="low">
+    <div className="flex min-h-0 flex-1 flex-col" data-density="low">
       {studioTab === "notes" ? (
         <WritingNotesTab projectId={currentProjectId} />
       ) : null}
@@ -660,7 +666,10 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
         />
       ) : null}
       {studioTab === "manuscript" ? (
-        <>
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {studioTabs}
+            <div className="flex min-h-0 flex-1 flex-col gap-0 px-3 pb-1 pt-1">
       {currentProjectId == null && (
         <div className="shrink-0 rounded-md border border-border bg-card p-3 text-[12px] text-muted-foreground">
           Select a project to open the writing desk. Documents are always project-scoped.
@@ -728,7 +737,7 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
           )}
 
           {/* Slim action strip — manuscript is the hero */}
-          <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-1 pb-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-0 pb-1.5">
             <select
               aria-label="Select writing document"
               className="h-7 max-w-[11rem] rounded-md border-0 bg-transparent px-1 text-[12px] font-medium text-foreground outline-none hover:bg-muted/50"
@@ -857,10 +866,9 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
             </details>
           </div>
 
-          {/* Desk: manuscript + Research Reviewer */}
-          <div className="flex min-h-0 flex-1 gap-0 overflow-hidden">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="px-6 pt-3 sm:px-10">
+          {/* Manuscript column */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="px-3 pt-2 sm:px-8">
                 <input
                   value={draftTitle}
                   onChange={(e) => setDraftTitle(e.target.value)}
@@ -927,7 +935,7 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
               ) : null}
 
               <div
-                className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background px-4 pb-2 pt-1 sm:px-10"
+                className="manuscript-surface relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background px-3 pb-2 pt-1 sm:px-8"
                 data-density="low"
               >
                 <WritingManuscriptEditor
@@ -1011,7 +1019,11 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
               ) : null}
 
               <WritingStudioFooter content={input} saveState={saveState} />
-            </div>
+          </div>
+        </>
+      )}
+          </div>
+        </div>
 
             {evidenceOpen ? (
               <ResearchIntelligencePanel
@@ -1051,9 +1063,6 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
                 }}
               />
             ) : null}
-          </div>
-        </>
-      )}
 
       <ConfirmDialog
         open={confirmDeleteDoc}
@@ -1070,7 +1079,7 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
           await updateStatus.mutateAsync({ id: activeDoc.id, status: "deleted" });
         }}
       />
-        </>
+        </div>
       ) : null}
     </div>
   );
@@ -1413,23 +1422,33 @@ export function WritingPage() {
     setSearchParams(next, { replace: true });
   }
 
+  const tabsEl = (
+    <WritingStudioTabs
+      active={tab === "export" ? "export" : tab}
+      onChange={(t) => selectTab(t)}
+      showExport
+      onExport={() => selectTab("export")}
+    />
+  );
+
   return (
-    <PageContainer dense maxWidth="full" fill>
-      <WritingStudioTabs
-        active={tab === "export" ? "export" : tab}
-        onChange={(t) => selectTab(t)}
-        showExport
-        onExport={() => selectTab("export")}
-      />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
-        {tab === "export" ? (
-          <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
-            <ExportTab />
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      {tab === "manuscript" ? (
+        <DraftTab studioTab={tab} studioTabs={tabsEl} />
+      ) : (
+        <>
+          {tabsEl}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-2 pt-1">
+            {tab === "export" ? (
+              <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+                <ExportTab />
+              </div>
+            ) : (
+              <DraftTab studioTab={tab} />
+            )}
           </div>
-        ) : (
-          <DraftTab studioTab={tab} />
-        )}
-      </div>
-    </PageContainer>
+        </>
+      )}
+    </div>
   );
 }

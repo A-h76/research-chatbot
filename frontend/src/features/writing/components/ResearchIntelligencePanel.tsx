@@ -388,7 +388,7 @@ export function ResearchIntelligencePanel({
       data-testid="research-reviewer-panel"
       data-mode={mode}
     >
-      <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-1 pt-3.5">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/40 px-4 pb-2 pt-2.5">
         <h2 className="text-[13px] font-semibold tracking-tight text-foreground">
           {modeTitle(mode)}
         </h2>
