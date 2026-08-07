@@ -75,7 +75,6 @@ function researchSignals(
     aid === "graph_ready" ||
     aid === "chat_ready";
   if (evidence) out.push("Evidence ready");
-  else if (r === "research_ready" || aid === "chat_ready") out.push("Chat ready");
 
   if (
     r === "metadata_only" ||

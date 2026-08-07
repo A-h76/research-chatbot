@@ -177,11 +177,11 @@ export function SidebarContents({
   me,
   onNavigate,
   showLabel,
-  density = "labels",
 }: {
   me: Me;
   onNavigate?: () => void;
   showLabel: boolean;
+  /** Reserved for future rich meta density; accepted for API compatibility. */
   density?: SidebarDensity;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
