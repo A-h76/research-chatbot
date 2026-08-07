@@ -126,6 +126,7 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
   const [evidenceOpen, setEvidenceOpen] = useState(true);
   const [selectedCiteId, setSelectedCiteId] = useState<number | null>(null);
   const [headingLevel, setHeadingLevel] = useState<HeadingLevel>("p");
+  const [textColor, setTextColor] = useState("#0f6e6a");
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const litReviewBtnRef = useRef<HTMLButtonElement | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -924,6 +925,7 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
 
               <WritingManuscriptToolbar
                 heading={headingLevel}
+                textColor={textColor}
                 disabled={activeDoc?.status === "deleted"}
                 onHeading={(level) => {
                   setHeadingLevel(level);
@@ -934,7 +936,10 @@ function DraftTab({ studioTab }: { studioTab: WritingStudioTabId }) {
                 onBullet={() => applyFormat(applyBulletList)}
                 onNumbered={() => applyFormat(applyNumberedList)}
                 onLink={() => applyFormat(applyLink)}
-                onColor={(color) => applyFormat((c, s, e) => applyTextColor(c, s, e, color))}
+                onColor={(color) => {
+                  setTextColor(color);
+                  applyFormat((c, s, e) => applyTextColor(c, s, e, color));
+                }}
                 onMore={() => setCitePickerOpen(true)}
               />
 

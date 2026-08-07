@@ -6,8 +6,9 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * Overlay must render the same characters as the textarea (including markdown
- * markers and [#id] cites) so caret/selection stay aligned.
+ * Overlay must keep the same glyph metrics as the textarea (identical font,
+ * size, weight, letter-spacing, wrapping) so caret/selection stay aligned.
+ * Visual polish that changes width (extra padding, larger headings) is avoided.
  */
 function renderLine(
   line: string,
@@ -19,12 +20,8 @@ function renderLine(
   const isH2 = /^##\s+/.test(line) && !/^###\s+/.test(line);
   const isH3 = /^###\s+/.test(line);
 
-  const lineClass = cn(
-    "whitespace-pre-wrap break-words",
-    isH1 && "text-[1.35em] font-semibold tracking-tight",
-    isH2 && "text-[1.15em] font-semibold tracking-tight",
-    isH3 && "text-[1.05em] font-semibold",
-  );
+  // Keep metrics identical to the textarea — no size/weight changes on the line.
+  const lineClass = "whitespace-pre-wrap break-words";
 
   const nodes: React.ReactNode[] = [];
   const re = new RegExp(EVIDENCE_MARKER_RE.source, "g");
@@ -32,19 +29,25 @@ function renderLine(
   let m: RegExpExecArray | null;
   let i = 0;
 
-  const pushText = (chunk: string) => {
+  const pushText = (chunk: string, color?: string) => {
     if (!chunk) return;
-    // Inline bold/italic while keeping markers visible (faint) for caret sync.
     const parts = chunk.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
     for (const p of parts) {
       if (!p) continue;
       const bold = /^\*\*([^*]+)\*\*$/.exec(p);
       if (bold) {
         nodes.push(
-          <span key={`${lineKey}-b-${i++}`}>
-            <span className="text-transparent">**</span>
-            <strong className="font-semibold text-foreground">{bold[1]}</strong>
-            <span className="text-transparent">**</span>
+          <span key={`${lineKey}-b-${i++}`} style={color ? { color } : undefined}>
+            <span className="opacity-0">**</span>
+            <span
+              style={{
+                // Fake bold without changing glyph advance (keeps caret synced).
+                textShadow: "0.35px 0 0 currentColor, -0.35px 0 0 currentColor",
+              }}
+            >
+              {bold[1]}
+            </span>
+            <span className="opacity-0">**</span>
           </span>,
         );
         continue;
@@ -52,64 +55,73 @@ function renderLine(
       const ital = /^\*([^*]+)\*$/.exec(p);
       if (ital) {
         nodes.push(
-          <span key={`${lineKey}-i-${i++}`}>
-            <span className="text-transparent">*</span>
-            <em className="italic text-foreground">{ital[1]}</em>
-            <span className="text-transparent">*</span>
+          <span key={`${lineKey}-i-${i++}`} style={color ? { color } : undefined}>
+            <span className="opacity-0">*</span>
+            <span className="italic [font-synthesis:none]">
+              {ital[1]}
+            </span>
+            <span className="opacity-0">*</span>
           </span>,
         );
         continue;
       }
-      // Heading markers: keep width, fade visually
-      if (isH1 || isH2 || isH3) {
+      if ((isH1 || isH2 || isH3) && last === 0 && nodes.length === 0) {
         const hm = /^(#{1,3}\s+)([\s\S]*)$/.exec(p);
-        if (hm && last === 0 && nodes.length === 0) {
+        if (hm) {
           nodes.push(
             <span key={`${lineKey}-h-${i++}`}>
-              <span className="text-transparent">{hm[1]}</span>
-              <span>{hm[2]}</span>
+              <span className="opacity-0">{hm[1]}</span>
+              <span style={color ? { color } : undefined}>{hm[2]}</span>
             </span>,
           );
           continue;
         }
       }
-      // Color spans: show inner text colored, hide tags
-      const withColor = p.split(/(<span style="color:[^"]+">|<\/span>)/g);
-      for (const piece of withColor) {
-        if (!piece) continue;
-        const open = /^<span style="color:([^"]+)">$/.exec(piece);
-        if (open) {
-          nodes.push(
-            <span key={`${lineKey}-co-${i++}`} className="text-transparent">
-              {piece}
-            </span>,
-          );
-          // following text until close handled as normal; we just hide tags
-          continue;
-        }
-        if (piece === "</span>") {
-          nodes.push(
-            <span key={`${lineKey}-cc-${i++}`} className="text-transparent">
-              {piece}
-            </span>,
-          );
-          continue;
-        }
-        nodes.push(<span key={`${lineKey}-t-${i++}`}>{piece}</span>);
-      }
+      nodes.push(
+        <span key={`${lineKey}-t-${i++}`} style={color ? { color } : undefined}>
+          {p}
+        </span>,
+      );
     }
   };
 
+  /** Parse inline color spans while preserving tag character widths. */
+  const pushColored = (chunk: string) => {
+    const reColor =
+      /<span style="color:([^"]+)">([\s\S]*?)<\/span>/g;
+    let cLast = 0;
+    let cm: RegExpExecArray | null;
+    while ((cm = reColor.exec(chunk)) != null) {
+      if (cm.index > cLast) pushText(chunk.slice(cLast, cm.index));
+      const open = `<span style="color:${cm[1]}">`;
+      const close = "</span>";
+      nodes.push(
+        <span key={`${lineKey}-co-${i++}`} className="opacity-0">
+          {open}
+        </span>,
+      );
+      pushText(cm[2], cm[1]);
+      nodes.push(
+        <span key={`${lineKey}-cc-${i++}`} className="opacity-0">
+          {close}
+        </span>,
+      );
+      cLast = cm.index + cm[0].length;
+    }
+    if (cLast < chunk.length) pushText(chunk.slice(cLast));
+  };
+
   while ((m = re.exec(line)) != null) {
-    if (m.index > last) pushText(line.slice(last, m.index));
+    if (m.index > last) pushColored(line.slice(last, m.index));
     const id = Number(m[1]);
+    // No extra padding — padding shifts caret vs textarea glyphs.
     nodes.push(
       <button
         key={`${lineKey}-cite-${i++}`}
         type="button"
         tabIndex={-1}
         className={cn(
-          "pointer-events-auto inline rounded-sm px-0.5 font-medium",
+          "pointer-events-auto inline rounded-sm font-medium",
           selectedCiteId === id
             ? "bg-primary text-primary-foreground ring-1 ring-primary/40"
             : "bg-primary/90 text-primary-foreground",
@@ -124,14 +136,15 @@ function renderLine(
     );
     last = m.index + m[0].length;
   }
-  if (last < line.length) pushText(line.slice(last));
+  if (last < line.length) pushColored(line.slice(last));
   if (nodes.length === 0) nodes.push(<span key={`${lineKey}-empty`}>{"\u00a0"}</span>);
 
   return <div className={lineClass}>{nodes}</div>;
 }
 
+/** Shared metrics for overlay + textarea — must stay identical. */
 const EDITOR_TYPE =
-  "mx-auto h-full min-h-0 w-full max-w-[65ch] px-1 py-2 text-[15px] leading-[1.65] tracking-[-0.011em]";
+  "box-border h-full min-h-0 w-full px-1 py-2 text-[15px] leading-[1.65] tracking-[-0.011em] whitespace-pre-wrap break-words";
 
 export function WritingManuscriptEditor({
   value,
@@ -155,12 +168,13 @@ export function WritingManuscriptEditor({
   className?: string;
 }) {
   const localRef = useRef<HTMLTextAreaElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const ref = editorRef ?? localRef;
   const lines = useMemo(() => (value.length ? value.split("\n") : [""]), [value]);
 
   function syncScroll() {
     const ta = ref.current;
-    const overlay = ta?.previousElementSibling as HTMLElement | null;
+    const overlay = overlayRef.current;
     if (ta && overlay) {
       overlay.scrollTop = ta.scrollTop;
       overlay.scrollLeft = ta.scrollLeft;
@@ -177,9 +191,19 @@ export function WritingManuscriptEditor({
   }
 
   return (
-    <div className={cn("relative mx-auto min-h-0 w-full max-w-[65ch] flex-1", className)}>
+    <div
+      className={cn(
+        "relative mx-auto min-h-0 w-full max-w-[65ch] flex-1",
+        className,
+      )}
+    >
+      {/* Both layers absolute inset-0 so boxes match exactly (fixes caret drift). */}
       <div
-        className={cn(EDITOR_TYPE, "pointer-events-none absolute inset-0 overflow-auto text-foreground")}
+        ref={overlayRef}
+        className={cn(
+          EDITOR_TYPE,
+          "pointer-events-none absolute inset-0 overflow-auto text-foreground",
+        )}
         aria-hidden
       >
         {value.length === 0 ? (
@@ -206,12 +230,13 @@ export function WritingManuscriptEditor({
         disabled={disabled}
         placeholder=""
         aria-label="Manuscript editor"
+        // Spellcheck underlines on transparent text look like floating glitches.
+        spellCheck={false}
         className={cn(
           EDITOR_TYPE,
-          "relative z-[1] h-full min-h-[16rem] resize-none border-0 bg-transparent caret-foreground outline-none focus:ring-0",
-          "whitespace-pre-wrap break-words text-transparent",
+          "absolute inset-0 z-[1] min-h-[16rem] resize-none border-0 bg-transparent caret-foreground outline-none focus:ring-0",
+          "text-transparent",
         )}
-        spellCheck
       />
     </div>
   );
