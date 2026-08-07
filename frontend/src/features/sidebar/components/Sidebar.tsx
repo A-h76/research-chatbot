@@ -36,7 +36,7 @@ const RESEARCH_LIST_LIMIT = 5;
 export type SidebarDensity = "labels" | "rich";
 
 export function sidebarDensity(width: number): SidebarDensity {
-  return width >= 340 ? "rich" : "labels";
+  return width >= 240 ? "rich" : "labels";
 }
 
 type ResearchStatus = "ready" | "review" | "idle";
@@ -119,14 +119,21 @@ function PlaceItem({
       onClick={onClick}
       title={label}
       className={cn(
-        "group relative flex w-full items-center gap-2.5 rounded-md py-1.5 pr-2.5 text-left text-[13px] transition-colors duration-200",
+        "group relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] transition-colors duration-200",
         ICON_INSET,
         active
           ? "bg-sidebar-accent font-medium text-sidebar-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
-          : "font-normal text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+          : "font-normal text-muted-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
       )}
     >
-      <span className="flex size-[22px] shrink-0 items-center justify-center text-muted-foreground [&_svg]:size-[18px]">
+      <span
+        className={cn(
+          "flex size-4 shrink-0 items-center justify-center [&_svg]:size-4",
+          active
+            ? "text-primary"
+            : "text-muted-foreground/45 group-hover:text-muted-foreground/70",
+        )}
+      >
         {icon}
       </span>
       <FadeLabel show={showLabel} className="flex-1 truncate">
@@ -260,10 +267,10 @@ export function SidebarContents({
 
   return (
     <div className="flex h-full min-h-0 flex-col" onClickCapture={onNavigate}>
-      <div className={cn("flex shrink-0 items-center gap-2.5 pt-5 pb-3 pr-10", ICON_INSET)}>
-        <div className="flex min-w-0 items-center gap-2.5">
+      <div className={cn("flex shrink-0 items-center gap-2 pt-4 pb-2.5 pr-9", ICON_INSET)}>
+        <div className="flex min-w-0 items-center gap-2">
           <div
-            className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors duration-200"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors duration-200"
             title="Dhund — Research Operating System"
             aria-hidden
           >
@@ -271,36 +278,36 @@ export function SidebarContents({
           </div>
           <FadeLabel show={showLabel}>
             <div className="min-w-0">
-              <h1 className="truncate text-[14px] font-semibold tracking-tight text-sidebar-foreground">
+              <h1 className="truncate text-[13px] font-semibold tracking-tight text-sidebar-foreground">
                 Dhund
               </h1>
-              <p className="truncate text-[10px] text-muted-foreground">
-                Research Operating System
+              <p className="truncate text-[10px] text-muted-foreground/80">
+                Research OS
               </p>
             </div>
           </FadeLabel>
         </div>
       </div>
 
-      <nav className="lab-sidebar-scroll min-h-0 flex-1 space-y-5 overflow-y-auto px-1.5 pb-3">
+      <nav className="lab-sidebar-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-1.5 pb-3">
         <div className="relative" data-create-menu>
           <button
             type="button"
             onClick={() => setCreateOpen((o) => !o)}
             title="Create"
             className={cn(
-              "flex w-full items-center gap-2.5 rounded-md py-1.5 pr-2.5 text-sidebar-foreground transition-colors duration-200 hover:bg-sidebar-accent",
+              "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-sidebar-foreground transition-colors duration-200 hover:bg-sidebar-accent",
               ICON_INSET,
             )}
             aria-expanded={createOpen}
             aria-haspopup="menu"
           >
-            <Plus className="size-[18px] shrink-0 text-muted-foreground" />
+            <Plus className="size-4 shrink-0 text-muted-foreground/50" />
             <FadeLabel show={showLabel} className="flex-1 text-[13px] font-medium">
               Create
             </FadeLabel>
             {showLabel && (
-              <kbd className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/80">
+              <kbd className="rounded px-1 py-0.5 text-[10px] text-muted-foreground/70">
                 ⌘N
               </kbd>
             )}
@@ -395,11 +402,11 @@ export function SidebarContents({
                 title="Start research"
                 onClick={() => go("projects", "/projects?new=1")}
                 className={cn(
-                  "flex w-full items-center gap-2.5 rounded-md py-1.5 pr-2.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                  "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] text-muted-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
                   ICON_INSET,
                 )}
               >
-                <Plus className="size-4 shrink-0" />
+                <Plus className="size-4 shrink-0 text-muted-foreground/45" />
                 <FadeLabel show={showLabel}>Start research</FadeLabel>
               </button>
             ) : (
@@ -426,13 +433,14 @@ export function SidebarContents({
                         ICON_INSET,
                         active
                           ? "bg-sidebar-accent font-medium text-sidebar-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
-                          : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+                          : "text-muted-foreground/75 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
                       )}
                     >
                       <span
                         className={cn(
                           "size-1.5 shrink-0 rounded-full",
                           STATUS_DOT[status],
+                          !active && "opacity-70",
                         )}
                         aria-hidden
                       />
@@ -467,11 +475,11 @@ export function SidebarContents({
                 }
                 onClick={() => go("projects", "/projects")}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-md py-1.5 pr-2.5 text-left text-[12px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                  "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[12px] text-muted-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
                   ICON_INSET,
                 )}
               >
-                <FolderKanban className="size-3.5 shrink-0 opacity-70" />
+                <FolderKanban className="size-4 shrink-0 text-muted-foreground/45" />
                 <FadeLabel show={showLabel}>
                   {projects.length > RESEARCH_LIST_LIMIT
                     ? "View all research…"

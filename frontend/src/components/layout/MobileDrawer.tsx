@@ -15,7 +15,7 @@ export function MobileDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="left"
-        className="dhund-sidebar w-[280px] border-sidebar-border p-0 text-sidebar-foreground"
+        className="dhund-sidebar w-[10.5rem] border-sidebar-border p-0 text-sidebar-foreground"
       >
         <SheetTitle className="sr-only">Navigation</SheetTitle>
         <SidebarContents

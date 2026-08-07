@@ -4,15 +4,15 @@ import type { SearchMode } from "@/types/api";
 type ActiveView = "chat" | "library" | "projects" | "citations" | "memory" | "settings" | "paper";
 
 /** Icon rail when collapsed (VS Code / Cursor style). */
-export const SIDEBAR_COLLAPSED_WIDTH = 72;
-/** Expanded resize floor. */
-export const SIDEBAR_WIDTH_MIN = 240;
-export const SIDEBAR_WIDTH_DEFAULT = 280;
-export const SIDEBAR_WIDTH_MAX = 380;
+export const SIDEBAR_COLLAPSED_WIDTH = 64;
+/** Expanded resize floor — 10.5rem. */
+export const SIDEBAR_WIDTH_MIN = 168;
+export const SIDEBAR_WIDTH_DEFAULT = 168;
+export const SIDEBAR_WIDTH_MAX = 280;
 /** Dragging below this snaps to the collapsed rail. */
-export const SIDEBAR_SNAP_COLLAPSE = 120;
+export const SIDEBAR_SNAP_COLLAPSE = 112;
 
-const SIDEBAR_WIDTH_KEY = "dhund.sidebarWidth";
+const SIDEBAR_WIDTH_KEY = "dhund.sidebarWidth.v2";
 const SIDEBAR_COLLAPSED_KEY = "dhund.sidebarCollapsed";
 const CURRENT_PROJECT_KEY = "dhund.currentProjectId";
 
@@ -54,7 +54,7 @@ function readStoredProjectId(): number | null {
 interface UIContextValue {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (v: boolean) => void;
-  /** Last expanded width (240–380). Not the collapsed rail width. */
+  /** Last expanded width (168–280). Not the collapsed rail width. */
   sidebarWidth: number;
   setSidebarWidth: (w: number) => void;
   /** Layout width currently shown in the shell. */
