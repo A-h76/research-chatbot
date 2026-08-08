@@ -1,23 +1,19 @@
 /**
- * Home Research Mentor — supervisor-style guide + normal conversational AI.
- * First visit: one-question profile intake. After: contextual briefing + chat.
+ * Home Research Mentor UI — renders Assistant Engine decisions (ADR-0018).
+ * Frontend looks; backend thinks.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, Check, Loader2, Square } from "lucide-react";
 import { useUI } from "@/context/UIContext";
 import { useMe } from "@/features/profile/useMe";
-import { useProjects } from "@/features/projects/useProjects";
 import {
   useConversation,
   useCreateConversation,
 } from "@/features/chat/hooks/useConversation";
 import { useChatStream } from "@/features/chat/hooks/useChatStream";
 import { appendUserMessage } from "@/features/chat/lib/optimistic";
-import { useRiCorpusMetrics } from "@/features/analysis/hooks/useRiCorpusMetrics";
-import { writingApi } from "@/features/writing/api";
-import { useDashboard } from "../useDashboard";
 import { api } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
 import {
@@ -25,18 +21,31 @@ import {
   MENTOR_FIELDS,
   MENTOR_GOALS,
   MENTOR_ROLES,
-  buildMentorRecommendation,
-  buildProgressChecks,
-  greetingHour,
-  mentorPlaceholder,
-  normalizeExperience,
-  stagesCompleted,
-  type MentorCorpusSnapshot,
-  type MentorExperience,
 } from "../mentorProfile";
+import {
+  assistantApi,
+  type AssistantAction,
+  type AssistantTurnResponse,
+} from "../assistantApi";
 
 const STORAGE_KEY = "dhund:home-assistant-conversation";
-const COACH_TIP_KEY = "dhund:mentor-coach-tip-dismissed";
+
+type LocalTurn =
+  | {
+      id: string;
+      role: "user";
+      text: string;
+      meta?: { label: string; title: string; detail?: string | null };
+    }
+  | {
+      id: string;
+      role: "assistant";
+      lines: string[];
+      actionCard?: { title: string; actions: AssistantAction[] } | null;
+      profileQuestions?: NonNullable<
+        NonNullable<AssistantTurnResponse["local_reply"]>["profile_questions"]
+      >;
+    };
 
 function readStoredId(projectId: number | null): number | null {
   try {
@@ -62,6 +71,10 @@ function storeId(id: number, projectId: number | null) {
   }
 }
 
+function uid() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function ChoiceList({
   options,
   onPick,
@@ -74,7 +87,7 @@ function ChoiceList({
   selected?: string[];
 }) {
   return (
-    <ul className="mt-3 space-y-1.5">
+    <ul className="mt-2.5 space-y-1.5">
       {options.map((o) => {
         const active = selected?.includes(o.id);
         return (
@@ -85,15 +98,17 @@ function ChoiceList({
               className={cn(
                 "flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left text-[13px] transition-colors",
                 active
-                  ? "border-primary/40 bg-primary/5 font-medium text-foreground"
+                  ? "border-primary/45 bg-primary/8 font-medium text-foreground"
                   : "border-border/70 bg-background text-foreground/90 hover:bg-muted/50",
               )}
             >
               <span
                 className={cn(
-                  "flex size-3.5 shrink-0 items-center justify-center rounded-full border",
+                  "flex size-3.5 shrink-0 items-center justify-center border",
                   multi ? "rounded-sm" : "rounded-full",
-                  active ? "border-primary bg-primary text-primary-foreground" : "border-border",
+                  active
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border",
                 )}
                 aria-hidden
               >
@@ -105,6 +120,61 @@ function ChoiceList({
         );
       })}
     </ul>
+  );
+}
+
+function IntentCard({
+  meta,
+  text,
+}: {
+  meta?: { label: string; title: string; detail?: string | null };
+  text: string;
+}) {
+  const label = meta?.label || "Research";
+  const title = meta?.title || text;
+  return (
+    <div className="rounded-lg border border-primary/35 bg-primary/[0.09] px-2.5 py-2 text-left shadow-[inset_3px_0_0_0_var(--primary)]">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">{label}</p>
+      <p className="mt-0.5 text-[13px] font-medium leading-snug text-foreground">{title}</p>
+      {meta?.detail ? (
+        <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+          Topic: {meta.detail}
+        </p>
+      ) : text !== title ? (
+        <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{text}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function ActionCard({
+  card,
+  onPick,
+}: {
+  card: { title: string; actions: AssistantAction[] };
+  onPick: (a: AssistantAction) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-primary/30 bg-primary/[0.06] px-2.5 py-2.5">
+      <p className="text-[12px] font-semibold text-foreground">{card.title}</p>
+      <ul className="mt-2 space-y-1">
+        {card.actions.map((a) => (
+          <li key={a.id}>
+            <button
+              type="button"
+              onClick={() => onPick(a)}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-foreground/90 transition-colors hover:bg-primary/10"
+            >
+              <span
+                className="flex size-3 shrink-0 rounded-full border border-primary/50"
+                aria-hidden
+              />
+              {a.label}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -160,7 +230,6 @@ function MentorOnboarding({ onDone }: { onDone: () => void }) {
             </button>
           </div>
         ) : null}
-
         {step === 1 ? (
           <div>
             <p className="text-[13px] font-medium text-foreground">What best describes you?</p>
@@ -173,7 +242,6 @@ function MentorOnboarding({ onDone }: { onDone: () => void }) {
             />
           </div>
         ) : null}
-
         {step === 2 ? (
           <div>
             <p className="text-[13px] font-medium text-foreground">
@@ -188,7 +256,6 @@ function MentorOnboarding({ onDone }: { onDone: () => void }) {
             />
           </div>
         ) : null}
-
         {step === 3 ? (
           <div>
             <p className="text-[13px] font-medium text-foreground">What do you want to achieve?</p>
@@ -201,11 +268,9 @@ function MentorOnboarding({ onDone }: { onDone: () => void }) {
             />
           </div>
         ) : null}
-
         {step === 4 ? (
           <div>
             <p className="text-[13px] font-medium text-foreground">What field are you working in?</p>
-            <p className="mt-1 text-[12px] text-muted-foreground">Pick one or more.</p>
             <ChoiceList
               multi
               selected={fields}
@@ -227,7 +292,6 @@ function MentorOnboarding({ onDone }: { onDone: () => void }) {
             </button>
           </div>
         ) : null}
-
         {error ? <p className="text-[12px] text-destructive">{error}</p> : null}
       </div>
       <div className="shrink-0 border-t border-border/40 px-4 py-2">
@@ -258,121 +322,63 @@ function MentorOnboarding({ onDone }: { onDone: () => void }) {
   );
 }
 
-function MentorBriefing({
-  firstName,
-  experience,
-  goal,
-  projectName,
-  snap,
-  showCoachTip,
-  onDismissCoach,
+function ComposerBar({
+  draft,
+  setDraft,
+  placeholder,
+  busy,
+  streaming,
+  onSend,
+  onStop,
+  inputRef,
 }: {
-  firstName: string;
-  experience: MentorExperience;
-  goal?: string;
-  projectName: string | null;
-  snap: MentorCorpusSnapshot;
-  showCoachTip: boolean;
-  onDismissCoach: () => void;
+  draft: string;
+  setDraft: (v: string) => void;
+  placeholder: string;
+  busy: boolean;
+  streaming?: boolean;
+  onSend: () => void;
+  onStop?: () => void;
+  inputRef?: React.RefObject<HTMLTextAreaElement | null>;
 }) {
-  const rec = buildMentorRecommendation(snap, experience);
-  const checks = buildProgressChecks(snap);
-  const stages = stagesCompleted(snap);
-  const sparse = experience === "advanced" || experience === "expert";
-
   return (
-    <div className="space-y-3 border-b border-border/40 px-4 py-3">
-      <div className="space-y-1.5 text-[13px] leading-relaxed">
-        <p className="text-foreground">
-          {greetingHour()}
-          {firstName ? `, ${firstName}` : ""}.
-        </p>
-        {projectName ? (
-          sparse ? (
-            <p className="text-muted-foreground">
-              {snap.papers} papers
-              {snap.coverage != null ? ` · ${Math.round(snap.coverage * 100)}% coverage` : ""}
-              {snap.contradictions > 0 ? ` · ${snap.contradictions} contradictions` : ""}
-            </p>
-          ) : (
-            <>
-              <p className="text-muted-foreground">
-                You&apos;re working on <span className="text-foreground">{projectName}</span>.
-              </p>
-              <p className="text-[12px] text-muted-foreground">
-                {stages.done} of {stages.total} research stages underway.
-              </p>
-            </>
-          )
+    <div className="shrink-0 border-t border-border/40 px-3 py-2.5">
+      <div className="flex items-end gap-1.5 rounded-lg border border-border/70 bg-background px-2 py-1.5 focus-within:border-border">
+        <textarea
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onSend();
+            }
+          }}
+          rows={2}
+          placeholder={placeholder}
+          disabled={busy || streaming}
+          className="max-h-28 min-h-[2.5rem] flex-1 resize-none bg-transparent py-1 text-[13px] outline-none placeholder:text-muted-foreground disabled:opacity-60"
+        />
+        {streaming ? (
+          <button
+            type="button"
+            onClick={onStop}
+            className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+            aria-label="Stop"
+          >
+            <Square className="size-3.5" />
+          </button>
         ) : (
-          <p className="text-muted-foreground">
-            {experience === "beginner"
-              ? "Today we can import papers, extract evidence, and review themes — I'll explain each step."
-              : "Open or create a project to get tailored recommendations."}
-          </p>
+          <button
+            type="button"
+            onClick={onSend}
+            disabled={!draft.trim() || busy}
+            className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
+            aria-label="Send"
+          >
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowUp className="size-3.5" />}
+          </button>
         )}
-      </div>
-
-      {!sparse && projectName ? (
-        <ul className="space-y-1">
-          {checks.map((c) => (
-            <li
-              key={c.label}
-              className={cn(
-                "flex items-center gap-1.5 text-[12px]",
-                c.done ? "text-foreground/85" : "text-muted-foreground",
-              )}
-            >
-              <span aria-hidden>{c.done ? "✓" : "○"}</span>
-              {c.label}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
-      {showCoachTip && experience === "beginner" && (goal === "lit_review" || goal === "thesis") ? (
-        <div className="rounded-md border border-border/70 bg-background px-2.5 py-2 text-[12px] leading-relaxed text-muted-foreground">
-          <p>
-            I noticed this may be your first{" "}
-            {goal === "lit_review" ? "literature review" : "thesis"}. Want a short explainer before
-            we begin?
-          </p>
-          <div className="mt-2 flex gap-2">
-            <Link
-              to="/research/compare"
-              className="font-medium text-primary hover:underline"
-              onClick={onDismissCoach}
-            >
-              Yes
-            </Link>
-            <button
-              type="button"
-              onClick={onDismissCoach}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              Skip
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="rounded-md border border-primary/20 bg-primary/[0.04] px-2.5 py-2">
-        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          {sparse ? "Next" : "Recommendation"}
-        </p>
-        <p className="mt-0.5 text-[13px] font-medium text-foreground">{rec.title}</p>
-        {!sparse ? (
-          <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{rec.body}</p>
-        ) : null}
-        {rec.estimate && !sparse ? (
-          <p className="mt-1 text-[11px] text-muted-foreground">Estimated · {rec.estimate}</p>
-        ) : null}
-        <Link
-          to={rec.href}
-          className="mt-2 inline-flex text-[12px] font-medium text-primary hover:underline"
-        >
-          {rec.actionLabel} →
-        </Link>
       </div>
     </div>
   );
@@ -380,21 +386,21 @@ function MentorBriefing({
 
 function Thread({
   conversationId,
-  firstName,
   pendingText,
+  pendingMode,
   onConsumedPending,
   placeholder,
-  briefing,
+  onLocalHandled,
 }: {
   conversationId: number;
-  firstName: string;
   pendingText: string | null;
+  pendingMode?: string | null;
   onConsumedPending: () => void;
   placeholder: string;
-  briefing: React.ReactNode;
+  onLocalHandled: (text: string) => void;
 }) {
   const qc = useQueryClient();
-  const { defaultModel, defaultSearchMode } = useUI();
+  const { defaultModel, defaultSearchMode, currentProjectId } = useUI();
   const { data: me } = useMe();
   const { data: conv } = useConversation(conversationId);
   const stream = useChatStream(conversationId);
@@ -403,18 +409,18 @@ function Thread({
   const pendingSent = useRef(false);
   const model = defaultModel || me?.default_model || "gpt-4o-mini";
   const messages = conv?.messages ?? [];
-  const chatting = messages.length > 0 || stream.isStreaming || Boolean(stream.streamingText);
 
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages.length, stream.streamingText, stream.status]);
+  }, [messages.length, stream.streamingText]);
 
   useEffect(() => {
     if (!pendingText || pendingSent.current || stream.isStreaming) return;
     pendingSent.current = true;
     const text = pendingText;
+    const mode = pendingMode || undefined;
     onConsumedPending();
     appendUserMessage(qc, conversationId, text, []);
     void stream.send({
@@ -423,6 +429,7 @@ function Thread({
       model,
       search: defaultSearchMode || "auto",
       skill: "ask",
+      assistant_mode: mode,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingText, conversationId]);
@@ -431,6 +438,30 @@ function Thread({
     const text = draft.trim();
     if (!text || stream.isStreaming) return;
     setDraft("");
+    try {
+      const decision = await assistantApi.turn({
+        message: text,
+        project_id: currentProjectId,
+        surface: "home",
+        conversation_id: conversationId,
+      });
+      if (decision.outcome !== "start_job") {
+        onLocalHandled(text);
+        return;
+      }
+      appendUserMessage(qc, conversationId, text, []);
+      await stream.send({
+        conversation_id: conversationId,
+        message: text,
+        model,
+        search: defaultSearchMode || "auto",
+        skill: "ask",
+        assistant_mode: decision.start_job?.mode,
+      });
+      return;
+    } catch {
+      /* fall through to stream */
+    }
     appendUserMessage(qc, conversationId, text, []);
     await stream.send({
       conversation_id: conversationId,
@@ -443,230 +474,151 @@ function Thread({
 
   return (
     <>
-      {!chatting ? briefing : null}
       <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
-        {chatting
-          ? messages.map((m) => (
-              <div
-                key={m.id}
-                className={cn(
-                  "rounded-lg px-2.5 py-2 text-[13px] leading-relaxed",
-                  m.role === "user"
-                    ? "bg-muted/60 text-foreground"
-                    : "text-foreground/90",
-                )}
-              >
-                {m.content}
-              </div>
-            ))
-          : null}
+        {messages.map((m) =>
+          m.role === "user" ? (
+            <IntentCard key={m.id} text={m.content} />
+          ) : (
+            <div
+              key={m.id}
+              className="px-1 py-1 text-[13px] leading-relaxed text-foreground/90 whitespace-pre-wrap"
+            >
+              {m.content}
+            </div>
+          ),
+        )}
         {stream.isStreaming || stream.streamingText ? (
-          <div className="rounded-lg px-2.5 py-2 text-[13px] leading-relaxed text-foreground/90">
+          <div className="px-1 py-1 text-[13px] leading-relaxed whitespace-pre-wrap">
             {stream.streamingText || (
               <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                 <Loader2 className="size-3.5 animate-spin" />
-                {stream.status || "Thinking…"}
+                Working…
               </span>
             )}
           </div>
         ) : null}
-        {stream.error ? (
-          <p className="px-1 text-[12px] text-destructive">{stream.error}</p>
-        ) : null}
-        {!chatting ? (
-          <p className="text-[12px] text-muted-foreground">
-            Ask anything — research questions, explanations, or just chat.
-          </p>
-        ) : null}
+        {stream.error ? <p className="text-[12px] text-destructive">{stream.error}</p> : null}
       </div>
-
-      <div className="shrink-0 border-t border-border/40 px-3 py-2.5">
-        <div className="flex items-end gap-1.5 rounded-lg border border-border/70 bg-background px-2 py-1.5 focus-within:border-border">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-            rows={2}
-            placeholder={placeholder}
-            disabled={stream.isStreaming}
-            className="max-h-28 min-h-[2.5rem] flex-1 resize-none bg-transparent py-1 text-[13px] outline-none placeholder:text-muted-foreground disabled:opacity-60"
-          />
-          {stream.isStreaming ? (
-            <button
-              type="button"
-              onClick={() => stream.stop()}
-              className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Stop"
-            >
-              <Square className="size-3.5" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void send()}
-              disabled={!draft.trim()}
-              className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
-              aria-label="Send"
-            >
-              <ArrowUp className="size-3.5" />
-            </button>
-          )}
-        </div>
-        <p className="mt-1.5 px-0.5 text-[11px] text-muted-foreground">
-          <Link to={`/c/${conversationId}`} className="hover:text-foreground hover:underline">
-            Open full chat
-          </Link>
-          {firstName ? null : null}
-        </p>
-      </div>
-    </>
-  );
-}
-
-function BootstrapComposer({
-  briefing,
-  placeholder,
-  busy,
-  onSubmit,
-}: {
-  briefing: React.ReactNode;
-  placeholder: string;
-  busy: boolean;
-  onSubmit: (text: string) => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  function submit() {
-    const text = draft.trim();
-    if (!text || busy) return;
-    setDraft("");
-    onSubmit(text);
-  }
-
-  return (
-    <>
-      {briefing}
-      <div className="min-h-0 flex-1 px-4 py-3">
-        <p className="text-[12px] text-muted-foreground">
-          Ask anything — research questions, explanations, or just chat.
-        </p>
-      </div>
-      <div className="shrink-0 border-t border-border/40 px-3 py-2.5">
-        <div className="flex items-end gap-1.5 rounded-lg border border-border/70 bg-background px-2 py-1.5 focus-within:border-border">
-          <textarea
-            ref={inputRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            rows={2}
-            placeholder={placeholder}
-            disabled={busy}
-            className="max-h-28 min-h-[2.5rem] flex-1 resize-none bg-transparent py-1 text-[13px] outline-none placeholder:text-muted-foreground disabled:opacity-60"
-          />
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!draft.trim() || busy}
-            className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
-            aria-label="Send"
-          >
-            {busy ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <ArrowUp className="size-3.5" />
-            )}
-          </button>
-        </div>
-      </div>
+      <ComposerBar
+        draft={draft}
+        setDraft={setDraft}
+        placeholder={placeholder}
+        busy={false}
+        streaming={stream.isStreaming}
+        onSend={() => void send()}
+        onStop={() => stream.stop()}
+      />
+      <p className="px-3 pb-2 text-[11px] text-muted-foreground">
+        <Link to={`/c/${conversationId}`} className="hover:underline">
+          Open full chat
+        </Link>
+      </p>
     </>
   );
 }
 
 export function HomeAssistantPanel({ firstName }: { firstName: string }) {
+  const navigate = useNavigate();
   const { currentProjectId, defaultModel } = useUI();
   const { data: me, refetch: refetchMe } = useMe();
-  const { data: projects = [] } = useProjects();
-  const { data: dash } = useDashboard();
-  const metrics = useRiCorpusMetrics(currentProjectId);
   const createConversation = useCreateConversation();
   const [conversationId, setConversationId] = useState<number | null>(() =>
     readStoredId(currentProjectId),
   );
   const [pendingText, setPendingText] = useState<string | null>(null);
+  const [pendingMode, setPendingMode] = useState<string | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
-  const [coachDismissed, setCoachDismissed] = useState(() => {
-    try {
-      return localStorage.getItem(COACH_TIP_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
+  const [localTurns, setLocalTurns] = useState<LocalTurn[]>([]);
+  const [draft, setDraft] = useState("");
+  const [turnBusy, setTurnBusy] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const scopedProject = useRef(currentProjectId);
+  const seeded = useRef(false);
 
-  const writingProjectId = currentProjectId ?? dash?.projects[0]?.id ?? null;
-  const { data: writingList } = useQuery({
-    queryKey: ["launchpad", "writing", writingProjectId],
-    queryFn: () => writingApi.listDocuments(writingProjectId as number),
-    enabled: writingProjectId != null,
-    staleTime: 60_000,
-  });
-
-  const project = useMemo(
-    () => (currentProjectId != null ? projects.find((p) => p.id === currentProjectId) : null),
-    [projects, currentProjectId],
-  );
-
-  const experience = normalizeExperience(me?.onboarding?.experience_level);
-  const goal = me?.onboarding?.research_goal || me?.onboarding?.goal || "";
-
-  const snap = useMemo(
-    () => ({
-      projectName: project?.name ?? null,
-      papers: metrics.papers || 0,
-      evidence: metrics.evidence,
-      themes: metrics.themes,
-      gaps: metrics.gaps,
-      coverage: metrics.coverage,
-      contradictions: metrics.contradictions,
-      unread: dash?.library.unread ?? 0,
-      hasWriting: (writingList?.items?.length ?? 0) > 0,
-    }),
-    [project, metrics, dash, writingList],
-  );
-
-  const placeholder = mentorPlaceholder({
-    experience,
-    goal,
-    projectName: snap.projectName,
-    papers: snap.papers,
-  });
+  const needsOnboarding = me != null && !me.onboarding_completed;
+  const placeholder = "What would you like to work on?";
 
   useEffect(() => {
     if (scopedProject.current === currentProjectId) return;
     scopedProject.current = currentProjectId;
     setConversationId(readStoredId(currentProjectId));
     setPendingText(null);
+    setPendingMode(null);
     setBootError(null);
+    setLocalTurns([]);
+    seeded.current = false;
   }, [currentProjectId]);
 
-  const needsOnboarding = me != null && !me.onboarding_completed;
+  useEffect(() => {
+    if (needsOnboarding || conversationId != null || seeded.current || me == null) return;
+    seeded.current = true;
+    void (async () => {
+      try {
+        const session = await assistantApi.session(currentProjectId);
+        const lr = session.local_reply;
+        // Home left column owns the primary CTA — mentor is companion, not a second dashboard.
+        const lines = (lr?.lines ?? []).filter(
+          (line) =>
+            !/what are you trying to accomplish/i.test(line) &&
+            !/before we continue/i.test(line),
+        );
+        setLocalTurns([
+          {
+            id: uid(),
+            role: "assistant",
+            lines:
+              lines.length > 0
+                ? lines.slice(0, 3)
+                : [
+                    `Good to see you${firstName ? `, ${firstName}` : ""}.`,
+                    "Ask about your research anytime.",
+                  ],
+            // No actionCard on open — Invisible Intelligence / one recommendation on Home.
+            actionCard: null,
+          },
+        ]);
+      } catch {
+        setLocalTurns([
+          {
+            id: uid(),
+            role: "assistant",
+            lines: [
+              `Good to see you${firstName ? `, ${firstName}` : ""}.`,
+              "Ask about your research anytime.",
+            ],
+          },
+        ]);
+      }
+    })();
+  }, [needsOnboarding, me, conversationId, currentProjectId, firstName]);
 
-  async function startWithMessage(text: string) {
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [localTurns]);
+
+  function applyLocalDecision(text: string, decision: AssistantTurnResponse) {
+    setLocalTurns((prev) => [
+      ...prev,
+      {
+        id: uid(),
+        role: "user",
+        text,
+        meta: decision.intent_meta,
+      },
+      {
+        id: uid(),
+        role: "assistant",
+        lines: decision.local_reply?.lines ?? [],
+        actionCard: decision.local_reply?.action_card,
+        profileQuestions: decision.local_reply?.profile_questions,
+      },
+    ]);
+  }
+
+  async function startResearchChat(text: string, mode?: string) {
     setBootError(null);
     try {
       const model = defaultModel || me?.default_model || "gpt-4o-mini";
@@ -675,33 +627,153 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
         project_id: currentProjectId ?? null,
       });
       storeId(conv.id, currentProjectId);
+      setPendingMode(mode || null);
       setPendingText(text);
       setConversationId(conv.id);
+      setLocalTurns([]);
     } catch {
-      setBootError("Could not start chat. Try again.");
+      setBootError("Could not start that task. Try again.");
     }
   }
 
-  function dismissCoach() {
-    setCoachDismissed(true);
+  async function handleSubmit() {
+    const text = draft.trim();
+    if (!text || turnBusy) return;
+    setDraft("");
+    setTurnBusy(true);
     try {
-      localStorage.setItem(COACH_TIP_KEY, "1");
+      const decision = await assistantApi.turn({
+        message: text,
+        project_id: currentProjectId,
+        surface: "home",
+      });
+      if (decision.outcome === "start_job") {
+        setLocalTurns((prev) => [
+          ...prev,
+          {
+            id: uid(),
+            role: "user",
+            text,
+            meta: decision.intent_meta,
+          },
+        ]);
+        await startResearchChat(
+          decision.start_job?.message || text,
+          decision.start_job?.mode || decision.mode,
+        );
+        return;
+      }
+      applyLocalDecision(text, decision);
     } catch {
-      /* ignore */
+      setBootError("Assistant unavailable. Try again.");
+    } finally {
+      setTurnBusy(false);
     }
   }
 
-  const briefing = (
-    <MentorBriefing
-      firstName={firstName}
-      experience={experience}
-      goal={goal}
-      projectName={snap.projectName}
-      snap={snap}
-      showCoachTip={!coachDismissed}
-      onDismissCoach={dismissCoach}
-    />
-  );
+  function handleAction(action: AssistantAction) {
+    setLocalTurns((prev) => [
+      ...prev,
+      {
+        id: uid(),
+        role: "user",
+        text: action.label,
+        meta: { label: "Workflow task", title: action.label },
+      },
+    ]);
+    if (action.focus_composer) {
+      setLocalTurns((prev) => [
+        ...prev,
+        {
+          id: uid(),
+          role: "assistant",
+          lines: ["What research question do you want to explore?"],
+        },
+      ]);
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return;
+    }
+    if (action.href) {
+      setLocalTurns((prev) => [
+        ...prev,
+        {
+          id: uid(),
+          role: "assistant",
+          lines: [`Opening ${action.label.toLowerCase()}…`],
+        },
+      ]);
+      navigate(action.href);
+    }
+  }
+
+  async function handleProfilePick(questionId: string, optionId: string, optionLabel: string) {
+    // Persist experience when answered; second question continues via another turn.
+    if (questionId === "experience") {
+      try {
+        await api.post("/api/onboarding/complete", {
+          experience_level: optionId === "expert" ? "advanced" : optionId,
+          research_goal: me?.onboarding?.research_goal || "explore",
+        });
+        await refetchMe();
+      } catch {
+        /* non-fatal */
+      }
+    }
+    setLocalTurns((prev) => [
+      ...prev,
+      {
+        id: uid(),
+        role: "user",
+        text: optionLabel,
+        meta: { label: "Profile", title: optionLabel },
+      },
+    ]);
+    if (questionId === "experience") {
+      setLocalTurns((prev) => [
+        ...prev,
+        {
+          id: uid(),
+          role: "assistant",
+          lines: ["What are you working on?"],
+          profileQuestions: [
+            {
+              id: "focus",
+              prompt: "What are you working on?",
+              options: [
+                { id: "assignment", label: "Assignment" },
+                { id: "lit_review", label: "Literature Review" },
+                { id: "thesis", label: "Thesis" },
+                { id: "conference", label: "Conference Paper" },
+                { id: "journal", label: "Journal Paper" },
+              ],
+            },
+          ],
+        },
+      ]);
+      return;
+    }
+    // focus answered → ask backend for workflow coach reply
+    void (async () => {
+      try {
+        const decision = await assistantApi.turn({
+          message: "What should I do next?",
+          project_id: currentProjectId,
+          surface: "home",
+        });
+        setLocalTurns((prev) => [
+          ...prev,
+          {
+            id: uid(),
+            role: "assistant",
+            lines: decision.local_reply?.lines ?? [],
+            actionCard: decision.local_reply?.action_card,
+          },
+        ]);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }
 
   return (
     <aside
@@ -715,34 +787,84 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
         <p className="mt-0.5 text-[11px] text-muted-foreground">
           {needsOnboarding
             ? "Getting to know you"
-            : currentProjectId != null
-              ? "Guiding your current project"
-              : "Your research companion"}
+            : "Ask about your research"}
         </p>
       </div>
 
       {needsOnboarding ? (
-        <MentorOnboarding
-          onDone={() => {
-            void refetchMe();
-          }}
-        />
+        <MentorOnboarding onDone={() => void refetchMe()} />
       ) : conversationId != null ? (
         <Thread
           conversationId={conversationId}
-          firstName={firstName}
           pendingText={pendingText}
-          onConsumedPending={() => setPendingText(null)}
+          pendingMode={pendingMode}
+          onConsumedPending={() => {
+            setPendingText(null);
+            setPendingMode(null);
+          }}
           placeholder={placeholder}
-          briefing={briefing}
+          onLocalHandled={(text) => {
+            setConversationId(null);
+            setPendingText(null);
+            setPendingMode(null);
+            void (async () => {
+              try {
+                const decision = await assistantApi.turn({
+                  message: text,
+                  project_id: currentProjectId,
+                  surface: "home",
+                });
+                applyLocalDecision(text, decision);
+              } catch {
+                /* ignore */
+              }
+            })();
+          }}
         />
       ) : (
-        <BootstrapComposer
-          briefing={briefing}
-          placeholder={placeholder}
-          busy={createConversation.isPending}
-          onSubmit={(text) => void startWithMessage(text)}
-        />
+        <>
+          <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+            {localTurns.map((t) =>
+              t.role === "user" ? (
+                <IntentCard key={t.id} meta={t.meta} text={t.text} />
+              ) : (
+                <div key={t.id} className="space-y-2.5">
+                  <div className="space-y-1.5 text-[13px] leading-relaxed text-foreground/90">
+                    {t.lines.map((line, i) => (
+                      <p key={i}>{line}</p>
+                    ))}
+                  </div>
+                  {t.profileQuestions?.map((q) => (
+                    <div
+                      key={q.id}
+                      className="rounded-lg border border-border/70 bg-background px-2.5 py-2.5"
+                    >
+                      <p className="text-[13px] font-medium text-foreground">{q.prompt}</p>
+                      <ChoiceList
+                        options={q.options}
+                        onPick={(id) => {
+                          const opt = q.options.find((o) => o.id === id);
+                          if (opt) void handleProfilePick(q.id, id, opt.label);
+                        }}
+                      />
+                    </div>
+                  ))}
+                  {t.actionCard ? (
+                    <ActionCard card={t.actionCard} onPick={handleAction} />
+                  ) : null}
+                </div>
+              ),
+            )}
+          </div>
+          <ComposerBar
+            draft={draft}
+            setDraft={setDraft}
+            placeholder={placeholder}
+            busy={turnBusy || createConversation.isPending}
+            onSend={() => void handleSubmit()}
+            inputRef={inputRef}
+          />
+        </>
       )}
 
       {bootError ? (

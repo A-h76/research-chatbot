@@ -13,6 +13,10 @@ endgame, AI Gateway discipline, and the 80/20 debt model. Living pictures:
 and [`ARCHITECTURE-HEALTH.md`](ARCHITECTURE-HEALTH.md) (scored KPIs). These do **not**
 replace this document; they direct *how* we renovate without rewriting.
 
+**Companion (2026-08-08):** [`PRODUCT-CONSTITUTION-v1.md`](PRODUCT-CONSTITUTION-v1.md) —
+Researcher First, Invisible Intelligence, workflow-over-features, one purpose per screen.
+Binding for UI/product; does **not** replace engineering principles here.
+
 **Frozen research-OS doctrines** (Engineering Constitution §0.5 — Bite 16):
 
 ```text
@@ -20,6 +24,21 @@ One Research Journey  →  One Canonical Pipeline  →  Many Entry Points
 One Business Rule     →  One Implementation      →  Many APIs
 ```
 
+**Assistant vs execution (ADR-0018):**
+
+```text
+Assistant Engine decides *what* help the researcher needs.
+Capability Router decides *how* to execute that help.
+
+LLMs generate language.  Dhund generates decisions.
+Research State is computed from system signals — never guessed by an LLM.
+Frontend decides how Dhund looks.  Backend decides how Dhund thinks.
+
+The system may know everything.  The UI shows only what helps the current task.
+Research State is internal.  Pages get one status + one recommendation + one context — not a dashboard.
+```
+
+Contract: [`docs/contracts/assistant-engine-contract.md`](contracts/assistant-engine-contract.md).  
 Workflow contracts: [`docs/contracts/WF-v1.0-COMPLETE-FREEZE.md`](contracts/WF-v1.0-COMPLETE-FREEZE.md).
 
 This document is truthful about where the codebase stands *today*

@@ -3,7 +3,7 @@
  * Modes: assist (idle) | citation | selection | review
  */
 import { useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ExternalLink, Loader2, PenLine, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { useEvidenceReason } from "@/features/evidence/hooks/useEvidenceReason";
 import { evidenceApi } from "@/features/evidence/api";
 import type { EvidenceObjectDTO, ExplainResponse } from "@/features/evidence/types";
 import { countCitationMarkers, countWords } from "@/features/projects/projectWorkspaceNav";
+import { assistantApi } from "@/features/assistant/api";
 import { cn } from "@/lib/utils";
 
 export type ReviewerPanelMode = "assist" | "citation" | "selection" | "review";
@@ -139,6 +140,37 @@ function AssistMode({
   });
   const topGaps = (gapsQ.data?.gaps ?? []).slice(0, 3);
 
+  const stateQ = useQuery({
+    queryKey: ["assistant", "research-state", projectId],
+    queryFn: () => assistantApi.researchState(projectId),
+    enabled: projectId != null,
+    staleTime: 60_000,
+  });
+  const next = stateQ.data?.workflow?.nextAction;
+
+  const coachStrip =
+    next != null ? (
+      <div className="mb-3 rounded-md border border-primary/25 bg-primary/[0.05] px-2.5 py-2">
+        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          Dhund recommends
+        </p>
+        <p className="mt-0.5 text-[12.5px] font-medium text-foreground">{next.label}</p>
+        {stateQ.data?.workflow?.label ? (
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            Stage · {stateQ.data.workflow.label}
+          </p>
+        ) : null}
+        {next.href ? (
+          <Link
+            to={next.href}
+            className="mt-1.5 inline-flex text-[12px] font-medium text-primary hover:underline"
+          >
+            Continue →
+          </Link>
+        ) : null}
+      </div>
+    ) : null;
+
   const openRi = (
     <button
       type="button"
@@ -188,6 +220,7 @@ function AssistMode({
   if (empty) {
     return (
       <div className="flex flex-col gap-4">
+        {coachStrip}
         <div>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
             Your draft is empty. Choose how to begin.
@@ -245,6 +278,7 @@ function AssistMode({
 
   return (
     <div className="flex h-full flex-col gap-5">
+      {coachStrip}
       <div>
         <p className="text-[13px] leading-relaxed text-muted-foreground">
           {established

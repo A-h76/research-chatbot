@@ -562,3 +562,50 @@ def test_build_rejects_foreign_project_context_when_user_id_set(env):
     db.commit()
     result = env["builder"].build("q", "ask", project_id=foreign.id, user_id=1)
     assert result.project_context == ""
+
+
+def test_build_chat_instructions_assistant_mode_layers(env):
+    """ADR-0018 — mode + Research State append; flat parity body preserved."""
+    state = {
+        "user": {"experience": "intermediate", "goals": ["thesis"], "fields": ["cs"]},
+        "project": {"id": 3, "title": "Federated Learning"},
+        "corpus": {
+            "papers": 4,
+            "evidence": 20,
+            "themes": 2,
+            "gaps": 1,
+            "contradictions": 0,
+            "coverage": 0.5,
+        },
+        "workflow": {
+            "stage": "synthesis",
+            "label": "Synthesis",
+            "nextAction": {
+                "id": "review_gaps",
+                "label": "Review research gaps",
+                "href": "/gaps",
+            },
+            "blockers": [],
+        },
+        "writing": {"hasManuscript": False, "reviewComplete": False},
+    }
+    result = env["builder"].build_chat_instructions(
+        user_id=1,
+        user_name="Ada",
+        memory_enabled=False,
+        assistant_mode="teacher",
+        research_state=state,
+        assistant_intent="learning_task",
+    )
+    assert "Mode: Teacher" in result.final
+    assert "Federated Learning" in result.final
+    assert result.task == "assistant_mode:teacher"
+    assert "The user's name is Ada." in result.final
+
+
+def test_build_chat_instructions_without_assistant_mode_no_layers(env):
+    result = env["builder"].build_chat_instructions(
+        user_id=1, user_name="Ada", memory_enabled=False
+    )
+    assert result.task == ""
+    assert "Dhund Assistant (decision context)" not in result.final

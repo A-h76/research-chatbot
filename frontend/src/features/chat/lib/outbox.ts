@@ -9,6 +9,7 @@ export interface OutboxItem {
   attachmentIds: number[];
   searchMode: SearchMode;
   skill?: ResearchSkillId;
+  assistant_mode?: string;
 }
 
 const outbox = new Map<number, OutboxItem>();

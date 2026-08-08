@@ -126,6 +126,9 @@ class PromptBuilder:
         project_id: Optional[int] = None,
         memory_enabled: bool = True,
         now: Optional[datetime] = None,
+        assistant_mode: Optional[str] = None,
+        research_state: Optional[dict] = None,
+        assistant_intent: Optional[str] = None,
     ) -> AssembledPrompt:
         """Flat chat system prompt — behavioral parity with legacy
         server.build_system_prompt().
@@ -136,6 +139,9 @@ class PromptBuilder:
         - All global + project memories when memory_enabled (not top-5).
         - Project included only if it exists and ``project.user_id == user_id``.
         - No RAG / domain / task template body in the flat string.
+        - Optional Assistant Engine layers (ADR-0018): when ``assistant_mode``
+          and/or ``research_state`` are provided, append mode-composed
+          decision context after the flat parity body.
         """
         opening, prompt_version_id = self._chat_system_opening()
         when = now or datetime.now()
@@ -180,6 +186,19 @@ class PromptBuilder:
                         else research_mem_block
                     )
 
+        assistant_task = ""
+        if assistant_mode or research_state is not None:
+            from backend.assistant.prompt_layers import compose_assistant_layers
+
+            layers = compose_assistant_layers(
+                mode=assistant_mode,
+                research_state=research_state,
+                intent=assistant_intent,
+            )
+            if layers:
+                parts.append(layers)
+                assistant_task = f"assistant_mode:{(assistant_mode or 'research_partner')}"
+
         flat = "\n\n".join(parts)
         return AssembledPrompt(
             system=opening,
@@ -187,7 +206,7 @@ class PromptBuilder:
             project_context=project_context,
             memory=memory_text,
             rag="",
-            task="",
+            task=assistant_task,
             output_schema="",
             final=flat,
             prompt_version_id=prompt_version_id,

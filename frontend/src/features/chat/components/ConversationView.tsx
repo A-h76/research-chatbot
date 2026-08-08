@@ -11,6 +11,7 @@ import { useChatStream } from "../hooks/useChatStream";
 import { useUI } from "@/context/UIContext";
 import { chatOutbox } from "../lib/outbox";
 import { appendUserMessage, removeLastAssistant } from "../lib/optimistic";
+import { resolveAssistantMode } from "@/features/assistant/api";
 import type { ChatSettings, PendingFile, SendPayload } from "../types";
 import type { Attachment, SearchMode } from "@/types/api";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
@@ -44,6 +45,7 @@ export function ConversationView({ conversationId }: { conversationId: number })
         search: item.searchMode,
         skill: item.skill ?? "ask",
         attachments: item.attachmentIds,
+        assistant_mode: item.assistant_mode,
       });
       setSearchMode(item.searchMode);
       if (item.skill) setSkill(item.skill);
@@ -89,13 +91,19 @@ export function ConversationView({ conversationId }: { conversationId: number })
     if (Object.keys(body).length) updateConv.mutate({ id: conversationId, body });
   };
 
-  const onSend = (text: string, files: PendingFile[]) => {
+  const onSend = async (text: string, files: PendingFile[]) => {
     const attachments: Attachment[] = files.map((f) => ({
       id: f.id,
       name: f.name,
       kind: f.kind,
       mime: "",
     }));
+    const assistant_mode = await resolveAssistantMode({
+      message: text,
+      projectId,
+      surface: fileId != null ? "paper_chat" : "chat",
+      conversationId,
+    });
     appendUserMessage(qc, conversationId, text, attachments);
     buildAndSend({
       conversation_id: conversationId,
@@ -104,6 +112,7 @@ export function ConversationView({ conversationId }: { conversationId: number })
       search: searchMode,
       skill,
       attachments: files.map((f) => f.id),
+      assistant_mode,
     });
   };
 

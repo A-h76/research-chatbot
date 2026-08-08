@@ -3838,31 +3838,80 @@ def _load_paper_phase1_context(db, file_id: int) -> str:
         return ""
 
 
-def build_paper_chat_system_prompt(user, paper, now=None, phase1_context: str = ""):
+def build_paper_chat_system_prompt(
+    user,
+    paper,
+    now=None,
+    phase1_context: str = "",
+    *,
+    user_message=None,
+    assistant_mode=None,
+    project=None,
+):
     """Paper chat system instructions via PromptBuilder (legacy text parity).
 
     Returns ``(system_prompt, phase1_for_developer_message)``. Phase 1 is never
     folded into the system string so Stage 1 shadow hashes stay comparable.
+
+    ADR-0018: optional Assistant Engine layers appended after legacy paper text
+    (does not alter Stage 1 hash of the base paper prompt — layers are suffix).
     """
     if not _paper_chat_use_prompt_builder():
-        return build_paper_chat_prompt(user, paper, now=now), (phase1_context or "").strip()
+        base = build_paper_chat_prompt(user, paper, now=now)
+    else:
+        db = SessionLocal()
+        try:
+            builder = get_prompt_builder(db)
+            assembled = builder.build_paper_chat_instructions(
+                user_name=user.name or "",
+                paper_title=paper.title or paper.name or "",
+                authors=paper.authors,
+                year=paper.year,
+                venue=paper.venue,
+                phase1_context=phase1_context or "",
+                now=now,
+            )
+            base = assembled.final
+            phase1_context = (assembled.rag or "").strip() or phase1_context
+        finally:
+            db.close()
 
-    db = SessionLocal()
-    try:
-        builder = get_prompt_builder(db)
-        assembled = builder.build_paper_chat_instructions(
-            user_name=user.name or "",
-            paper_title=paper.title or paper.name or "",
-            authors=paper.authors,
-            year=paper.year,
-            venue=paper.venue,
-            phase1_context=phase1_context or "",
-            now=now,
-        )
-        return assembled.final, (assembled.rag or "").strip()
-    finally:
-        db.close()
+    mode = (assistant_mode or "").strip().lower() or None
+    intent_kind = None
+    state_dict = None
+    if user_message or mode:
+        try:
+            from backend.assistant.intent import classify_intent, select_mode
+            from backend.assistant.prompt_layers import compose_assistant_layers
+            from backend.assistant.research_state import research_state_to_dict
 
+            if user_message and not mode:
+                intent = classify_intent(user_message)
+                intent_kind = intent.kind
+                mode = select_mode(intent)
+            elif user_message:
+                intent_kind = classify_intent(user_message).kind
+            # Prefer reviewer/teacher defaults for paper Q&A when still unset
+            if not mode:
+                mode = "research_partner"
+            engine = globals().get("assistant_engine")
+            if engine is not None:
+                pid = getattr(project, "id", None) if project is not None else getattr(paper, "project_id", None)
+                state = engine.research_state(user.id, pid)
+                state_dict = research_state_to_dict(state)
+            layers = compose_assistant_layers(
+                mode=mode,
+                research_state=state_dict,
+                intent=intent_kind,
+            )
+            if layers:
+                base = f"{base}\n\n{layers}"
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "paper_chat_assistant_layers_failed; continuing without layers"
+            )
+
+    return base, (phase1_context or "").strip()
 
 # Static opening sentence only — everything else build_system_prompt()
 # assembles below (user name, date, custom instructions, project,
@@ -3942,10 +3991,49 @@ def _build_system_prompt_legacy(user, project, memory_enabled=True, now=None):
     return "\n\n".join(parts)
 
 
-def build_system_prompt(user, project, memory_enabled=True):
-    """Normal-chat system instructions. Default path: PromptBuilder chat parity."""
+def build_system_prompt(
+    user,
+    project,
+    memory_enabled=True,
+    *,
+    user_message=None,
+    assistant_mode=None,
+):
+    """Normal-chat system instructions. Default path: PromptBuilder chat parity.
+
+    When ``user_message`` and/or ``assistant_mode`` is provided, appends
+    Assistant Engine mode-composed layers + computed Research State (ADR-0018).
+    """
     if not _chat_use_prompt_builder():
         return _build_system_prompt_legacy(user, project, memory_enabled=memory_enabled)
+
+    mode = (assistant_mode or "").strip().lower() or None
+    intent_kind = None
+    state_dict = None
+
+    if user_message or mode:
+        try:
+            from backend.assistant.intent import classify_intent, select_mode
+            from backend.assistant.research_state import research_state_to_dict
+
+            if user_message:
+                intent = classify_intent(user_message)
+                intent_kind = intent.kind
+                if not mode:
+                    mode = select_mode(intent)
+            engine = globals().get("assistant_engine")
+            if engine is not None:
+                state = engine.research_state(
+                    user.id, project.id if project is not None else None
+                )
+                state_dict = research_state_to_dict(state)
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "assistant_prompt_compose_failed; continuing without layers"
+            )
+            mode = mode or None
+            intent_kind = None
+            state_dict = None
 
     db = SessionLocal()
     try:
@@ -3956,6 +4044,9 @@ def build_system_prompt(user, project, memory_enabled=True):
             custom_instructions=user.custom_instructions or "",
             project_id=project.id if project else None,
             memory_enabled=memory_enabled,
+            assistant_mode=mode,
+            research_state=state_dict,
+            assistant_intent=intent_kind,
         )
         return assembled.final
     finally:
@@ -4926,6 +5017,28 @@ app.register_blueprint(
     )
 )
 
+from backend.assistant.routes import create_assistant_blueprint
+from backend.assistant.state_service import create_research_state_service
+from backend.assistant.engine import create_assistant_engine
+
+_assistant_get_state = create_research_state_service(
+    SessionLocal=SessionLocal,
+    User=User,
+    Project=Project,
+    UserFile=UserFile,
+    EvidenceObject=EvidenceObject,
+    WritingDocument=WritingDocument,
+    select=select,
+)
+assistant_engine = create_assistant_engine(_assistant_get_state)
+app.register_blueprint(
+    create_assistant_blueprint(
+        assistant_engine=assistant_engine,
+        login_required=login_required,
+        limiter=limiter,
+    )
+)
+
 try:
     from backend.workflow.bridge import register_workflow_bridges
 
@@ -5460,6 +5573,7 @@ def chat():
     regenerate = bool(data.get("regenerate"))
     search_mode = data.get("search", "auto")
     research_skill_raw = data.get("skill") or data.get("research_skill") or "ask"
+    assistant_mode_raw = (data.get("assistant_mode") or data.get("mode_assistant") or "").strip() or None
     user_id = session["user_id"]
 
     # Phase 3 / F4.1 — hard cap before token estimates / model calls.
@@ -5601,7 +5715,12 @@ def chat():
                     from backend.ai_core.paper_chat import resolve_paper_chat_system_prompt
 
                     legacy_base, paper_phase1_context = build_paper_chat_system_prompt(
-                        user, paper, phase1_context=paper_phase1_context
+                        user,
+                        paper,
+                        phase1_context=paper_phase1_context,
+                        user_message=user_message,
+                        assistant_mode=assistant_mode_raw,
+                        project=project,
                     )
                     system_prompt, paper_plan, paper_pipeline_mode = resolve_paper_chat_system_prompt(
                         user_name=user.name,
@@ -5619,15 +5738,32 @@ def chat():
                         "paper_chat_stage1_plan_failed; falling back to legacy"
                     )
                     system_prompt, paper_phase1_context = build_paper_chat_system_prompt(
-                        user, paper, phase1_context=paper_phase1_context
+                        user,
+                        paper,
+                        phase1_context=paper_phase1_context,
+                        user_message=user_message,
+                        assistant_mode=assistant_mode_raw,
+                        project=project,
                     )
                     paper_plan = None
                     paper_pipeline_mode = "false"
             else:
                 paper_file_id = None  # safety: invalid file, fall back
-                system_prompt = build_system_prompt(user, project, memory_enabled)
+                system_prompt = build_system_prompt(
+                    user,
+                    project,
+                    memory_enabled,
+                    user_message=user_message,
+                    assistant_mode=assistant_mode_raw,
+                )
         else:
-            system_prompt = build_system_prompt(user, project, memory_enabled)
+            system_prompt = build_system_prompt(
+                user,
+                project,
+                memory_enabled,
+                user_message=user_message,
+                assistant_mode=assistant_mode_raw,
+            )
 
         convo_id = convo.id
         needs_title = not convo.title_generated
@@ -5659,6 +5795,77 @@ def chat():
         stage1_started = time.perf_counter() if paper_executor is not None else None
         try:
             last_query = user_message or (history[-1]["content"] if history else "")
+
+            # Assistant Engine — local short-circuit (ADR-0018 slice 5).
+            # Every surface that posts to /api/chat shares this decision brain:
+            # greetings / "I don't know" / workflow never burn LLM tokens.
+            if last_query and not regenerate:
+                try:
+                    from backend.assistant.chat_bridge import (
+                        format_local_reply_text,
+                        should_short_circuit_chat,
+                    )
+
+                    engine = globals().get("assistant_engine")
+                    if engine is not None:
+                        decision = engine.turn(
+                            user_id=user_id,
+                            message=last_query,
+                            project_id=project_id,
+                            surface="paper_chat" if paper_file_id else "chat",
+                            conversation_id=convo_id,
+                        )
+                        if should_short_circuit_chat(decision):
+                            full_text = format_local_reply_text(decision)
+                            if full_text:
+                                yield sse("status", {"text": "Research mentor…"})
+                                chunk_size = 48
+                                for i in range(0, len(full_text), chunk_size):
+                                    yield sse("delta", {"text": full_text[i : i + chunk_size]})
+                                dbi = SessionLocal()
+                                try:
+                                    dbi.add(
+                                        Message(
+                                            conversation_id=convo_id,
+                                            role="assistant",
+                                            content=full_text,
+                                            sources=json.dumps(
+                                                {
+                                                    "assistant_engine": True,
+                                                    "intent": decision.get("intent"),
+                                                    "mode": decision.get("mode"),
+                                                    "outcome": decision.get("outcome"),
+                                                }
+                                            ),
+                                        )
+                                    )
+                                    c2 = dbi.get(Conversation, convo_id)
+                                    if c2:
+                                        c2.updated_at = datetime.now(timezone.utc)
+                                    dbi.commit()
+                                finally:
+                                    dbi.close()
+                                yield sse(
+                                    "done",
+                                    {
+                                        "sources": [],
+                                        "references": [],
+                                        "scope": None,
+                                        "confidence": None,
+                                        "warnings": [],
+                                        "skill": research_skill_for_scope or "ask",
+                                        "assistant": {
+                                            "intent": decision.get("intent"),
+                                            "mode": decision.get("mode"),
+                                            "outcome": decision.get("outcome"),
+                                        },
+                                    },
+                                )
+                                return
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "assistant_engine_chat_short_circuit_failed; continuing to LLM"
+                    )
 
             # Prompt Gateway — Research Scope (ADR-0017). Soft redirect/clarify
             # without calling the LLM for asks that don't advance research.

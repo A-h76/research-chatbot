@@ -53,6 +53,8 @@ export interface SendPayload {
   model: string;
   search: SearchMode;
   skill?: ResearchSkillId;
+  /** Assistant Engine mode (ADR-0018) — optional; server classifies if omitted */
+  assistant_mode?: string;
   attachments?: number[];
   regenerate?: boolean;
 }

@@ -3,7 +3,7 @@
 **Status:** **Frozen** — binding for all backend evolution after this date.  
 **Date:** 2026-08-05  
 **Type:** Architecture governance (not a rewrite plan)  
-**Companions:** [`00-constitution.md`](00-constitution.md) · [`DHUND-DESIGN-LANGUAGE-v1.md`](DHUND-DESIGN-LANGUAGE-v1.md) · [`ENGINEERING-EVOLUTION-TRACKER.md`](ENGINEERING-EVOLUTION-TRACKER.md) · [`ARCHITECTURE-HEALTH.md`](ARCHITECTURE-HEALTH.md) · [`adr/`](adr/) · [`audit/03-TECHNICAL-DEBT-REPORT.md`](audit/03-TECHNICAL-DEBT-REPORT.md)
+**Companions:** [`00-constitution.md`](00-constitution.md) · [`PRODUCT-CONSTITUTION-v1.md`](PRODUCT-CONSTITUTION-v1.md) · [`DHUND-DESIGN-LANGUAGE-v1.md`](DHUND-DESIGN-LANGUAGE-v1.md) · [`ENGINEERING-EVOLUTION-TRACKER.md`](ENGINEERING-EVOLUTION-TRACKER.md) · [`ARCHITECTURE-HEALTH.md`](ARCHITECTURE-HEALTH.md) · [`adr/`](adr/) · [`audit/03-TECHNICAL-DEBT-REPORT.md`](audit/03-TECHNICAL-DEBT-REPORT.md)
 
 **Intent:** Make Dhund feel like an **engineering platform** — every package answers *“Which business capability owns this?”* — without demolishing a working Research OS.
 
@@ -31,6 +31,29 @@ Demolish the house
 ## 0.5 Frozen research-OS doctrines (Bite 16)
 
 These two diagrams are **binding**. They are stronger than “don’t duplicate code.”
+
+### Assistant Engine vs Capability Router (ADR-0018)
+
+```text
+Four permanent cores (not transient “slices”):
+
+  Assistant Engine   →  intent, mode, policy — what help is needed
+  Research State     →  computed truth, progress, workflow stage
+  Capability Router  →  models, tools, execution — how to run help
+  Workflow Engine    →  extraction, writing, compare, review, publish
+
+LLMs generate language.  Dhund generates decisions.
+Research State is computed — never LLM-guessed.
+```
+
+Public surface: `/api/assistant/*` — not `/mentor/*`. “Mentor” is behavior, not the package name.
+
+**Post–Slice 5 priority:** Phase 2 = **frontend UX**. Perfect Home → Projects → Library →
+Paper → RI → Writing → Review → mobile → polish. Do **not** start Journey Engine /
+Skill Registry / Research Memory / Mentor Analytics until real researcher friction demands them.
+
+**UI rule:** Research State stays internal. Each page gets at most one status, one
+recommendation, one context — never a Research State dump. Dhund must not become Jira.
 
 ### One Research Journey
 

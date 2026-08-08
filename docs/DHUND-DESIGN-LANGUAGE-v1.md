@@ -6,7 +6,9 @@
 **Sources (Phase 1):** Apple · Linear · Vercel · Notion · Together AI · Airtable  
 **Sources (Phase 2):** Stripe · Framer · Superhuman · Cursor  
 **Sources (Phase 3):** Tesla · SpaceX · Replicate · Mintlify · Figma  
-**Companions:** [`DESIGN-SYSTEM.md`](../DESIGN-SYSTEM.md) · [`docs/DESIGN-SYSTEM-v2.md`](DESIGN-SYSTEM-v2.md) · [`docs/Interaction-Guidelines.md`](Interaction-Guidelines.md)
+**Companions:** [`PRODUCT-CONSTITUTION-v1.md`](PRODUCT-CONSTITUTION-v1.md) · [`DESIGN-SYSTEM.md`](../DESIGN-SYSTEM.md) · [`docs/DESIGN-SYSTEM-v2.md`](DESIGN-SYSTEM-v2.md) · [`docs/Interaction-Guidelines.md`](Interaction-Guidelines.md)
+
+**Product filter:** Before adding UI chrome, apply [`PRODUCT-CONSTITUTION-v1.md`](PRODUCT-CONSTITUTION-v1.md) — especially Invisible Intelligence and One Purpose Per Screen. Visual language never overrides those.
 
 **Intent:** A maintainable **design governance document** — ownership by surface, density, borders, confidence, and cognitive load — so Dhund stays visually consistent for years.
 

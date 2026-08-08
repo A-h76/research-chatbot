@@ -12,6 +12,7 @@ import { useModels } from "@/features/models/useModels";
 import { useProjects } from "@/features/projects/useProjects";
 import { chatOutbox } from "../lib/outbox";
 import { appendUserMessage } from "../lib/optimistic";
+import { resolveAssistantMode } from "@/features/assistant/api";
 import type { ChatSettings, PendingFile } from "../types";
 import type { Attachment, Me } from "@/types/api";
 
@@ -41,6 +42,11 @@ export function WelcomeView({ me }: { me: Me }) {
     setSettings((s) => ({ ...s, ...partial }));
 
   const onSend = async (text: string, files: PendingFile[]) => {
+    const assistant_mode = await resolveAssistantMode({
+      message: text,
+      projectId: currentProjectId,
+      surface: "chat",
+    });
     const conv = await createConversation.mutateAsync({
       model: settings.model,
       project_id: currentProjectId,
@@ -60,6 +66,7 @@ export function WelcomeView({ me }: { me: Me }) {
       attachmentIds: files.map((f) => f.id),
       searchMode: settings.searchMode,
       skill: settings.skill,
+      assistant_mode,
     });
     navigate(`/c/${conv.id}`);
   };

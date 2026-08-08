@@ -59,7 +59,7 @@ export function Composer({
 }: {
   settings: ChatSettings;
   onSettingsChange: (partial: Partial<ChatSettings>) => void;
-  onSend: (text: string, attachments: PendingFile[]) => void;
+  onSend: (text: string, attachments: PendingFile[]) => void | Promise<void>;
   streaming: boolean;
   onStop: () => void;
   conversationId?: number | null;

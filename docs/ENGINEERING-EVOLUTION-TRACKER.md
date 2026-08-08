@@ -28,14 +28,23 @@ Debt lists *what hurts*. Roadmaps *what users get*. **Evolution** tracks *archit
 
 ```text
 Research Job → Capability Router → Gateway → AI Ledger → Artifact
+         ↑
+Assistant Engine (what) + Research State (truth) — ADR-0018
 ```
 
-Highest-leverage work is now **research workflow convergence** — especially acquisition, import, upload, UFTR, and evidence generation — so every provider is a thin entry into the same spine.
+Highest-leverage work after Assistant Engine Slice 5: **Phase 2 frontend UX**
+(Home → Projects → Library → Paper → RI → Writing → Review → mobile → polish).
+Governed by [`PRODUCT-CONSTITUTION-v1.md`](PRODUCT-CONSTITUTION-v1.md) (Invisible Intelligence,
+one purpose per screen). Backend cores are a **stable platform**. Research State stays
+**internal**; UI gets thin hints (one status + one recommendation + one context).
 
-**Do not start:** CQRS · Kafka · microservices · event sourcing · Kubernetes · graph DBs.
+Still important: research workflow spine (acquisition → import → UFTR → evidence).
 
-See [`ARCHITECTURE-HEALTH.md`](ARCHITECTURE-HEALTH.md) § Strategic pivot + Dimension 8 (Workflow Completeness).
+**Do not start:** CQRS · Kafka · microservices · Journey Engine · Skill Registry ·
+Research Memory · Mentor Analytics · a fifth mega-agent — until FE + real researchers demand them.
 
+See [`ARCHITECTURE-HEALTH.md`](ARCHITECTURE-HEALTH.md) § Strategic pivot + Dimension 8.
+See [`adr/0018-assistant-engine-research-state.md`](adr/0018-assistant-engine-research-state.md) — four permanent cores.
 ---
 
 ## Evolution board
@@ -48,6 +57,7 @@ See [`ARCHITECTURE-HEALTH.md`](ARCHITECTURE-HEALTH.md) § Strategic pivot + Dime
 | **Domain events** | In-process bus (Bite 14) — `PaperImported`, `EvidenceAccepted`, `WritingGenerated`, `ResearchDecisionRecorded`, `AIExecutionCompleted` | Maintain; add names only for new business facts | **Medium** | Phase B done 2026-08-05 — **not** Kafka |
 | **Workflow contracts** | WF v1.0 freeze (Bite 16) — Import / Evidence / Writing / Review / Publication | Maintain; additive fields only | **Low** (freeze) | Phase E done 2026-08-05 |
 | **Workflow engine** | Research Workflow Engine (Bite 15) — Import→UFTR→SUE→Evidence→Writing→Review | Maintain; WF contracts frozen | **Low** (maintain) | Phase D done 2026-08-05 — not agents |
+| **Assistant Engine** | **FROZEN platform** — four cores + Slice 5; State internal | Phase 2 FE: one status / one CTA / one context per page | **High (product UX)** | No Slices 6–10 until researcher friction; never dump Research State in UI |
 | **AI Invocation** | Bites 1–10 on ACR + Gateway | Maintain; shim list only | **Low** (freeze) | Do not chase purity |
 | **Cost Ledger** | `record_platform_execution` façade (Bite 11) | Maintain projection path | **Low** (freeze) | Legacy `responses_text` OK |
 | **Writing** | WI composer + assistant on Gateway | Maintain; no second compose path | **Low** (maintain) | |

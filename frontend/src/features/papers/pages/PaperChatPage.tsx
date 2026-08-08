@@ -21,6 +21,7 @@ import { useUI } from "@/context/UIContext";
 import { usePipeline, PipelineStatusPanel, isPipelineProcessing } from "@/features/pipeline";
 import { chatOutbox } from "@/features/chat/lib/outbox";
 import { appendUserMessage, removeLastAssistant } from "@/features/chat/lib/optimistic";
+import { resolveAssistantMode } from "@/features/assistant/api";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/common/Toast";
 import type { ChatSettings, PendingFile } from "@/features/chat/types";
@@ -237,6 +238,7 @@ export function PaperChatPage() {
         search: "off",
         skill: item.skill ?? settings.skill,
         attachments: item.attachmentIds,
+        assistant_mode: item.assistant_mode ?? "research_partner",
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -246,15 +248,22 @@ export function PaperChatPage() {
   function handleStarterClick(e: React.MouseEvent) {
     const starter = (e.target as HTMLElement).closest("[data-starter]")?.getAttribute("data-starter");
     if (starter && activeConvId) {
-      handleSend(starter, []);
+      void handleSend(starter, []);
     }
   }
 
-  function handleSend(text: string, files: PendingFile[]) {
+  async function handleSend(text: string, files: PendingFile[]) {
     if (!activeConvId) return;
     const attachments: Attachment[] = files.map((f) => ({
       id: f.id, name: f.name, kind: f.kind, mime: "",
     }));
+    const assistant_mode =
+      (await resolveAssistantMode({
+        message: text,
+        projectId: currentProjectId,
+        surface: "paper_chat",
+        conversationId: activeConvId,
+      })) || "research_partner";
     appendUserMessage(qc, activeConvId, text, attachments);
     stream.send({
       conversation_id: activeConvId,
@@ -263,6 +272,7 @@ export function PaperChatPage() {
       search: "off",
       skill: settings.skill,
       attachments: files.map((f) => f.id),
+      assistant_mode,
     });
   }
 
