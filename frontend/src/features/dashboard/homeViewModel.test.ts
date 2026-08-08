@@ -33,6 +33,8 @@ describe("buildHomeViewModel", () => {
     expect(view.projectTitle).toBe("AI in Healthcare");
     expect(view.lede).toContain("extracting evidence");
     expect(view.lede).toContain("9 papers");
+    expect(view.milestoneAccent).toBe("Extracting Evidence");
+    expect(view.milestoneRest).toContain("9 papers");
     expect(view.detail.toLowerCase()).toContain("themes");
     expect(view.detail.toLowerCase()).toContain("gaps");
     expect(view.href).toContain("extract");

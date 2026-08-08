@@ -48,6 +48,16 @@
   --accent: #0f6e6a;
   --accent-foreground: #ffffff;
   --accent-soft: #d8f0ee;
+
+  /*
+   * Typography color system — hierarchy, not decoration.
+   * ~90% neutral · ~8% accent · ~2% semantic (Evidence / RI / Review only).
+   */
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-tertiary: #9ca3af;
+  --text-accent: var(--primary);
+
   --destructive: #b42318;
   --destructive-foreground: #ffffff;
   --border: #E2E7EE;
@@ -82,6 +92,10 @@
   --sem-error: #B42318;
   --sem-warn: #B54708;
   --sem-info: #175CD3;
+  --text-success: var(--sem-ready);
+  --text-warning: var(--sem-warn);
+  --text-danger: var(--sem-error);
+  --text-info: var(--sem-info);
   --signal-900: #083B39;
   --signal-800: #0e3030;
   --signal-600: #0F6E6A;
@@ -134,6 +148,16 @@
   --accent: #14a39c;
   --accent-foreground: #041413;
   --accent-soft: #0d2f2d;
+
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #71717a;
+  --text-accent: var(--primary);
+  --text-success: #3f9a6a;
+  --text-warning: #e3a008;
+  --text-danger: #f04438;
+  --text-info: #3b82f6;
+
   --destructive: #f04438;
   --destructive-foreground: #2a0a0a;
   --border: #3f3f46;
@@ -217,6 +241,16 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent-soft: var(--accent-soft);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-accent: var(--text-accent);
+  --color-text-success: var(--text-success);
+  --color-text-warning: var(--text-warning);
+  --color-text-danger: var(--text-danger);
+  --color-text-info: var(--text-info);
+
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);

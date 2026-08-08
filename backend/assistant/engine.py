@@ -92,30 +92,45 @@ def _goal_line(state: ResearchState) -> str:
     return f"Today's goal is {phrase}."
 
 
-def _invite_line(state: ResearchState) -> str:
-    if state.user.experience == "beginner" and state.corpus.papers == 0:
-        return "Ask me anything about planning, finding literature, or getting started."
-    return "Ask me anything about planning, finding literature, or writing."
-
-
 def _opening_lines(state: ResearchState, *, returning: bool = True) -> list[str]:
-    """Greeting → project context → situation → goal → invitation. Never invent a different project."""
-    del returning  # kept for call-site compatibility; opening always restores context
+    """Conversational supervisor opening — same Research State as Home, never a status dump."""
+    del returning
     first = _first_name(state)
-    sparse = is_sparse_experience(state.user.experience)
+    papers = state.corpus.papers
 
     lines = [f"{_greeting_hour()}{', ' + first if first else ''}."]
     if state.project.title:
-        lines.append(f"You're working on {state.project.title}.")
+        lines.append(f"You're currently building your {state.project.title}.")
     elif state.user.experience == "beginner":
-        lines.append("You're just getting started — I'll guide each step.")
+        lines.append("You're just getting started — we can shape the research together.")
     else:
         lines.append("You don't have an active project yet.")
 
-    lines.append(_situation_line(state))
-    if not sparse:
-        lines.append(_goal_line(state))
-    lines.append(_invite_line(state))
+    lines.append(_goal_line(state).replace("Today's goal is", "Today's recommendation is"))
+    if papers > 0 and state.workflow.next_action.id == "extract_evidence":
+        # Prefer warmer phrasing when papers are known
+        count = papers
+        words = {
+            1: "one",
+            2: "two",
+            3: "three",
+            4: "four",
+            5: "five",
+            6: "six",
+            7: "seven",
+            8: "eight",
+            9: "nine",
+            10: "ten",
+            11: "eleven",
+            12: "twelve",
+        }.get(count, str(count))
+        lines[-1] = (
+            f"Today's recommendation is extracting evidence from your {words} imported papers."
+        )
+
+    lines.append(
+        "Need help planning your review, finding literature, or understanding a paper?"
+    )
     return lines
 
 

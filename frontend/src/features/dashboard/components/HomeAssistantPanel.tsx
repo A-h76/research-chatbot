@@ -27,6 +27,7 @@ import {
   type AssistantAction,
   type AssistantTurnResponse,
 } from "../assistantApi";
+import { buildMentorOpening } from "../mentorOpening";
 
 const STORAGE_KEY = "dhund:home-assistant-conversation";
 
@@ -520,10 +521,16 @@ function Thread({
 export function HomeAssistantPanel({
   firstName,
   projectId,
+  projectTitle = null,
+  papers = 0,
+  nextActionId = null,
 }: {
   firstName: string;
   /** Same project Home uses — must match Research State (never a second reality). */
   projectId?: number | null;
+  projectTitle?: string | null;
+  papers?: number;
+  nextActionId?: string | null;
 }) {
   const navigate = useNavigate();
   const { currentProjectId, defaultModel } = useUI();
@@ -542,7 +549,6 @@ export function HomeAssistantPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const scopedProject = useRef(scopedProjectId);
-  const seeded = useRef(false);
 
   const needsOnboarding = me != null && !me.onboarding_completed;
   const placeholder = "Ask anything about your research…";
@@ -555,46 +561,35 @@ export function HomeAssistantPanel({
     setPendingMode(null);
     setBootError(null);
     setLocalTurns([]);
-    seeded.current = false;
   }, [scopedProjectId]);
 
   useEffect(() => {
-    if (needsOnboarding || conversationId != null || seeded.current || me == null) return;
-    seeded.current = true;
-    void (async () => {
-      try {
-        const session = await assistantApi.session(scopedProjectId);
-        const lr = session.local_reply;
-        const lines = (lr?.lines ?? []).filter(Boolean).slice(0, 5);
-        setLocalTurns([
-          {
-            id: uid(),
-            role: "assistant",
-            lines:
-              lines.length > 0
-                ? lines
-                : [
-                    `Good to see you${firstName ? `, ${firstName}` : ""}.`,
-                    "Ask me anything about planning, finding literature, or writing.",
-                  ],
-            // Home left column owns the primary CTA — mentor restores context.
-            actionCard: null,
-          },
-        ]);
-      } catch {
-        setLocalTurns([
-          {
-            id: uid(),
-            role: "assistant",
-            lines: [
-              `Good to see you${firstName ? `, ${firstName}` : ""}.`,
-              "Ask me anything about planning, finding literature, or writing.",
-            ],
-          },
-        ]);
+    if (needsOnboarding || conversationId != null || me == null) return;
+    const lines = buildMentorOpening({
+      firstName,
+      projectTitle,
+      papers,
+      nextActionId,
+    });
+    setLocalTurns((prev) => {
+      const onlyOpening =
+        prev.length === 0 ||
+        (prev.length === 1 && prev[0].role === "assistant" && !prev[0].actionCard);
+      if (!onlyOpening) return prev;
+      if (prev.length === 1 && prev[0].role === "assistant") {
+        return [{ ...prev[0], lines }];
       }
-    })();
-  }, [needsOnboarding, me, conversationId, scopedProjectId, firstName]);
+      return [{ id: uid(), role: "assistant", lines, actionCard: null }];
+    });
+  }, [
+    needsOnboarding,
+    me,
+    conversationId,
+    firstName,
+    projectTitle,
+    papers,
+    nextActionId,
+  ]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -792,14 +787,14 @@ export function HomeAssistantPanel({
       <div className="px-5 pb-3 pt-5">
         <div className="flex items-center gap-2">
           <span
-            className="size-1.5 shrink-0 rounded-full bg-primary/80"
+            className="size-1.5 shrink-0 rounded-full bg-text-accent"
             aria-hidden
           />
-          <p className="text-[13px] font-semibold tracking-tight text-foreground">
+          <p className="text-[13px] font-semibold tracking-tight text-text-primary">
             Research Mentor
           </p>
         </div>
-        <p className="mt-1 pl-3.5 text-[11px] leading-snug text-muted-foreground">
+        <p className="mt-1 pl-3.5 text-[11px] leading-snug text-text-secondary">
           {needsOnboarding
             ? "Getting to know you"
             : "A quiet companion for this research session"}
@@ -844,9 +839,14 @@ export function HomeAssistantPanel({
                 <IntentCard key={t.id} meta={t.meta} text={t.text} />
               ) : (
                 <div key={t.id} className="space-y-2.5">
-                  <div className="space-y-1.5 text-[13px] leading-relaxed text-foreground/90">
+                  <div className="space-y-1.5 text-[13px] leading-relaxed">
                     {t.lines.map((line, i) => (
-                      <p key={i}>{line}</p>
+                      <p
+                        key={i}
+                        className={i === 0 ? "font-medium text-text-primary" : "text-text-secondary"}
+                      >
+                        {line}
+                      </p>
                     ))}
                   </div>
                   {t.profileQuestions?.map((q) => (

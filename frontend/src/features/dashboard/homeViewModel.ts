@@ -22,6 +22,10 @@ export type HomeViewModel = {
   projectTitle: string | null;
   /** Soft prose bridge under the greeting */
   lede: string | null;
+  /** Actionable concept for accent in the lede (e.g. "Extracting Evidence") */
+  milestoneAccent: string | null;
+  /** Optional gray rest after the accent (e.g. "from your 6 papers") */
+  milestoneRest: string | null;
   href: string;
 };
 
@@ -90,6 +94,30 @@ function ledeFor(actionId: string, label: string, papers: number): string {
   }
 }
 
+/** Title-cased actionable concept for teal accent in the milestone sentence. */
+function milestoneAccentFor(actionId: string, label: string): string {
+  const map: Record<string, string> = {
+    extract_evidence: "Extracting Evidence",
+    import_papers: "Importing Papers",
+    review_gaps: "Reviewing Research Gaps",
+    inspect_contradictions: "Inspecting Contradictions",
+    start_writing: "Starting a Draft",
+    unread_papers: "Catching Up on Unread Papers",
+    compare_papers: "Comparing Papers",
+  };
+  if (map[actionId]) return map[actionId];
+  return titleCaseAction(label);
+}
+
+function milestoneRestFor(actionId: string, papers: number): string | null {
+  if (actionId === "extract_evidence" && papers > 0) {
+    return `from your ${paperPhrase(papers)}`;
+  }
+  if (actionId === "import_papers") return "into your library";
+  if (actionId === "compare_papers") return "side by side";
+  return null;
+}
+
 function titleCaseAction(label: string): string {
   return label
     .trim()
@@ -127,6 +155,8 @@ export function buildHomeViewModel(
       context,
       projectTitle: project,
       lede: ledeFor(na.id, na.label, papers),
+      milestoneAccent: milestoneAccentFor(na.id, na.label),
+      milestoneRest: milestoneRestFor(na.id, papers),
       href: na.href || "/library",
     };
   }
@@ -139,6 +169,8 @@ export function buildHomeViewModel(
       context: unreadPhrase(fallback!.unread!),
       projectTitle: fallback?.projectTitle ?? null,
       lede: "catching up on unread papers",
+      milestoneAccent: "Catching Up on Unread Papers",
+      milestoneRest: null,
       href: "/library?reading_status=unread",
     };
   }
@@ -151,6 +183,8 @@ export function buildHomeViewModel(
       context: null,
       projectTitle: fallback?.projectTitle ?? null,
       lede: "continuing your project",
+      milestoneAccent: "Continuing Your Project",
+      milestoneRest: null,
       href: "/projects",
     };
   }
@@ -163,6 +197,8 @@ export function buildHomeViewModel(
     context: null,
     projectTitle: null,
     lede: "importing papers into your library",
+    milestoneAccent: "Importing Papers",
+    milestoneRest: "into your library",
     href: "/library?upload=1#import",
   };
 }
