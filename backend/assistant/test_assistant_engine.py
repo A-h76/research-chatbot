@@ -100,8 +100,30 @@ def test_engine_greeting_does_not_start_job():
     out = engine.turn(user_id=1, message="Hi", project_id=1)
     assert out["outcome"] == "local_reply"
     assert out["mode"] == "companion"
-    assert "AI in Healthcare" in " ".join(out["local_reply"]["lines"])
+    text = " ".join(out["local_reply"]["lines"])
+    assert "AI in Healthcare" in text
+    assert "Evidence hasn't been extracted" in text
+    assert "Ask me anything" in text
+    assert "Good to see you again" not in text
     assert out["local_reply"]["action_card"] is not None
+    # Single next step — not a capability menu
+    assert len(out["local_reply"]["action_card"]["actions"]) == 1
+
+
+def test_open_session_restores_context_without_cta_card():
+    state = build_research_state(
+        user=UserSignals(experience="intermediate", display_name="Ahmad"),
+        project=ProjectSignals(id=1, title="Artificial Intelligence in Healthcare"),
+        corpus=CorpusSignals(papers=9, evidence=0),
+        writing=WritingSignals(),
+    )
+    engine = AssistantEngine(lambda *_a, **_k: state)
+    out = engine.open_session(user_id=1, project_id=1)
+    text = " ".join(out["local_reply"]["lines"])
+    assert "Artificial Intelligence in Healthcare" in text
+    assert "Evidence hasn't been extracted" in text
+    assert "Ask me anything about your research" in text
+    assert out["local_reply"]["action_card"] is None
 
 
 def test_engine_research_question_starts_job():

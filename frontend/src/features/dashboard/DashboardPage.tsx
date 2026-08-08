@@ -1,7 +1,7 @@
 /**
  * Home — Product Constitution: one question.
  * "What should I do next?"
- * One status · one recommendation · one context. Not a launchpad dashboard.
+ * Greeting → context → recommendation. Not a launchpad dashboard.
  */
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -47,6 +47,9 @@ export function DashboardPage() {
       ? data?.projects.find((p) => p.id === currentProjectId)
       : data?.projects[0];
 
+  const projectTitle =
+    view.projectTitle || currentProject?.name || null;
+
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-background">
       <div className="scrollbar-thin min-h-0 min-w-0 flex-1 overflow-y-auto">
@@ -57,15 +60,29 @@ export function DashboardPage() {
             <p className="text-sm text-muted-foreground">Could not load home.</p>
           ) : (
             <div className="space-y-10" data-density="low">
-              <header className="space-y-2">
+              <header className="space-y-3">
                 <h1 className="text-[26px] font-semibold tracking-tight text-foreground sm:text-[28px]">
                   {greetingHour()}
                   {firstName ? `, ${firstName}` : ""}
+                  .
                 </h1>
-                <p className="text-[15px] text-muted-foreground">What should you do next?</p>
+                {projectTitle ? (
+                  <p className="text-[15px] leading-relaxed text-muted-foreground">
+                    You&apos;re working on{" "}
+                    <span className="font-medium text-foreground">{projectTitle}</span>.
+                  </p>
+                ) : (
+                  <p className="text-[15px] leading-relaxed text-muted-foreground">
+                    You&apos;re just getting started — let&apos;s build momentum.
+                  </p>
+                )}
+                {view.lede ? (
+                  <p className="text-[15px] leading-relaxed text-muted-foreground">
+                    Today&apos;s next step is {view.lede}.
+                  </p>
+                ) : null}
               </header>
 
-              {/* One status · one recommendation · one context */}
               <section aria-label="Next step" className="space-y-4">
                 <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
                   {view.status}
@@ -95,22 +112,26 @@ export function DashboardPage() {
                 </button>
               </section>
 
-              {/* Quiet escape hatches — not a second dashboard */}
               <footer className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-muted-foreground">
                 {currentProject ? (
                   <button
                     type="button"
-                    className="hover:text-foreground"
+                    className="inline-flex items-center gap-1 font-medium text-foreground/80 hover:text-foreground"
                     onClick={() => {
                       setCurrentProjectId(currentProject.id);
                       navigate(`/projects/${currentProject.id}`);
                     }}
                   >
-                    Open {currentProject.name}
+                    Continue project
+                    <ArrowRight className="size-3 opacity-70" aria-hidden />
                   </button>
                 ) : (
-                  <Link to="/projects?new=1" className="hover:text-foreground">
-                    New project
+                  <Link
+                    to="/projects?new=1"
+                    className="inline-flex items-center gap-1 font-medium text-foreground/80 hover:text-foreground"
+                  >
+                    Start a project
+                    <ArrowRight className="size-3 opacity-70" aria-hidden />
                   </Link>
                 )}
                 <span className="text-border" aria-hidden>

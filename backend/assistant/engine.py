@@ -13,44 +13,6 @@ from backend.assistant.research_state import (
 )
 
 
-TODAY_ACTIONS = (
-    {
-        "id": "continue_lit_review",
-        "label": "Continue my literature review",
-        "href": "/research/compare",
-    },
-    {
-        "id": "find_papers",
-        "label": "Find more papers",
-        "href": "/library?upload=1#import",
-    },
-    {
-        "id": "understand_paper",
-        "label": "Understand a paper",
-        "href": "/library",
-    },
-    {
-        "id": "extract_evidence",
-        "label": "Extract evidence",
-        "href": "/research/compare?tab=extract",
-    },
-    {
-        "id": "discover_gaps",
-        "label": "Discover research gaps",
-        "href": "/research/compare?tab=gaps",
-    },
-    {
-        "id": "continue_writing",
-        "label": "Continue writing",
-        "href": "/writing",
-    },
-    {
-        "id": "ask_question",
-        "label": "Ask a research question",
-        "focus_composer": True,
-    },
-)
-
 PROFILE_QUESTIONS = {
     "experience": {
         "id": "experience",
@@ -91,35 +53,53 @@ def _first_name(state: ResearchState) -> str:
     return name.split()[0]
 
 
+def _situation_line(state: ResearchState) -> str:
+    """One calm line: where the researcher is in the journey — not a metric dump."""
+    papers = state.corpus.papers
+    if not state.project.id and papers <= 0:
+        return "No project yet — start by naming what you're researching."
+    if papers <= 0:
+        return "No papers in the library yet."
+    if state.corpus.evidence <= 0:
+        return "Evidence hasn't been extracted yet."
+    if state.corpus.gaps > 0:
+        n = state.corpus.gaps
+        return f"{n} research gap{'s' if n != 1 else ''} ready to review."
+    if state.corpus.contradictions > 0:
+        n = state.corpus.contradictions
+        return f"{n} contradiction{'s' if n != 1 else ''} need a closer look."
+    if not state.writing.has_manuscript:
+        return "Your corpus is ready enough to start writing."
+    return f"Next: {state.workflow.next_action.label}."
+
+
 def _opening_lines(state: ResearchState, *, returning: bool = True) -> list[str]:
+    """Greeting → project context → situation → invitation. Never a capability dump."""
+    del returning  # kept for call-site compatibility; opening always restores context
     first = _first_name(state)
     sparse = is_sparse_experience(state.user.experience)
+
     if sparse:
-        lines = [f"Welcome back{', ' + first if first else ''}."]
+        lines = [f"{_greeting_hour()}{', ' + first if first else ''}."]
         if state.project.title:
-            bits = [
-                f"{state.corpus.papers} papers",
-                f"{state.corpus.evidence} evidence",
-            ]
-            if state.corpus.contradictions:
-                bits.append(f"{state.corpus.contradictions} contradictions")
-            lines.append("Your corpus: " + " · ".join(bits))
-        lines.append(f"Next: {state.workflow.next_action.label}.")
+            lines.append(f"You're working on {state.project.title}.")
+        lines.append(_situation_line(state))
+        lines.append("Ask me anything about your research.")
         return lines
 
-    lines = [
-        f"{_greeting_hour()}{', ' + first if first else ''}.",
-    ]
-    if returning:
-        lines.append("Good to see you again.")
+    lines = [f"{_greeting_hour()}{', ' + first if first else ''}."]
     if state.project.title:
-        lines.append(f"You're currently working on {state.project.title}.")
+        lines.append(f"You're working on {state.project.title}.")
     elif state.user.experience == "beginner":
         lines.append("You're just getting started — I'll guide each step.")
+    else:
+        lines.append("You don't have an active project yet.")
+
+    lines.append(_situation_line(state))
     if state.user.experience == "beginner" and state.corpus.papers == 0:
         lines.append("Today's goal: import papers. I'll explain everything along the way.")
     else:
-        lines.append("Before we continue — what are you trying to accomplish today?")
+        lines.append("Ask me anything about your research.")
     return lines
 
 
@@ -127,40 +107,29 @@ def _workflow_lines(state: ResearchState) -> list[str]:
     na = state.workflow.next_action
     sparse = is_sparse_experience(state.user.experience)
     if sparse:
-        return [
-            (
-                f"{state.corpus.papers} papers · {state.corpus.evidence} evidence"
-                if state.project.id
-                else "No active project yet."
-            ),
-            f"Next: {na.label}.",
-        ]
+        lines = []
+        if state.project.title:
+            lines.append(f"You're working on {state.project.title}.")
+        lines.append(_situation_line(state))
+        lines.append(f"Next: {na.label}.")
+        return lines
     lines = []
     if state.project.title:
-        lines.append(
-            f"Looking at {state.project.title}: "
-            f"{state.corpus.papers} papers, {state.corpus.evidence} evidence, "
-            f"{state.corpus.themes} themes, {state.corpus.gaps} gaps."
-        )
+        lines.append(f"You're working on {state.project.title}.")
     else:
         lines.append("You don't have an active project yet — start by importing papers.")
+    lines.append(_situation_line(state))
     lines.append(f"Highest-impact next step: {na.label}.")
-    if na.estimate:
-        lines.append(f"Estimated time: {na.estimate}.")
     lines.append("Would you like to start?")
     return lines
 
 
 def _action_card(state: ResearchState) -> dict[str, Any] | None:
-    if is_sparse_experience(state.user.experience):
-        na = state.workflow.next_action
-        return {
-            "title": "Next",
-            "actions": [{"id": na.id, "label": na.label, "href": na.href}],
-        }
+    """Single next milestone — never a capability menu."""
+    na = state.workflow.next_action
     return {
-        "title": "What would you like to do today?",
-        "actions": [dict(a) for a in TODAY_ACTIONS],
+        "title": "Next step",
+        "actions": [{"id": na.id, "label": na.label, "href": na.href}],
     }
 
 
@@ -222,8 +191,9 @@ class AssistantEngine:
             "research_state": research_state_to_dict(state),
             "outcome": "local_reply",
             "local_reply": {
+                # Home left column owns the primary CTA; mentor restores context only.
                 "lines": _opening_lines(state, returning=True),
-                "action_card": _action_card(state),
+                "action_card": None,
             },
         }
 

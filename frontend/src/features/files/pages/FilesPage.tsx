@@ -336,7 +336,7 @@ export function FilesPage() {
     }
     return {
       label: "Continue research",
-      run: () => navigate("/home"),
+      run: () => navigate("/"),
     };
   })();
 

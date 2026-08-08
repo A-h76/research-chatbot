@@ -75,7 +75,7 @@ export function LibraryHealthStrip({
         needingReview > 0
           ? () => {
               if (data.need_pdf > 0) onFilterNeedsReview?.();
-              else navigate("/home");
+              else navigate("/");
             }
           : undefined,
     },

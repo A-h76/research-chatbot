@@ -117,11 +117,12 @@ export function TopBar({
   const writingStudio =
     currentProjectId != null && isWritingStudioPath(path);
 
-  const isHome = path === "/" || path === "/projects";
+  const isHome = path === "/" || path === "/home";
+  const isProjectsList = path === "/projects" || path === "/projects/";
   const staticTitle = isHome
-    ? "Research"
-    : path === "/home"
-      ? "Home"
+    ? "Home"
+    : isProjectsList
+      ? "Projects"
       : path.startsWith("/c/")
         ? "Ask Dhund"
         : STATIC_TITLES.find((t) => path.startsWith(t.prefix))?.label;
@@ -238,7 +239,7 @@ export function TopBar({
           aria-label="Open command palette"
         >
           <Search className="size-3.5" />
-          <span className="text-[12px]">Search papers, projects, notes...</span>
+          <span className="text-[12px]">Search papers, evidence, notes...</span>
           <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] text-muted-foreground">
             ⌘K
           </kbd>

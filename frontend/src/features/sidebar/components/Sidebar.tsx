@@ -169,7 +169,7 @@ export function SidebarContents({
 
   const activeResearchId = routeProjectId ?? currentProjectId;
 
-  const isHome = path === "/home";
+  const isHome = path === "/" || path === "/home";
   const isLibrary =
     path.startsWith("/library") ||
     path.startsWith("/files") ||
@@ -320,7 +320,7 @@ export function SidebarContents({
               <button
                 type="button"
                 title="Back to Home"
-                onClick={() => go("library", "/home")}
+                onClick={() => go("library", "/")}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[12px] text-muted-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
                   ICON_INSET,
@@ -394,7 +394,7 @@ export function SidebarContents({
                 icon={<Home />}
                 label="Home"
                 active={isHome}
-                onClick={() => go("library", "/home")}
+                onClick={() => go("library", "/")}
               />
               <PlaceItem
                 showLabel={showLabel}

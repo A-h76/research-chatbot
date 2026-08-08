@@ -537,7 +537,7 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
   const seeded = useRef(false);
 
   const needsOnboarding = me != null && !me.onboarding_completed;
-  const placeholder = "What would you like to work on?";
+  const placeholder = "Ask anything about your research…";
 
   useEffect(() => {
     if (scopedProject.current === currentProjectId) return;
@@ -557,24 +557,19 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
       try {
         const session = await assistantApi.session(currentProjectId);
         const lr = session.local_reply;
-        // Home left column owns the primary CTA — mentor is companion, not a second dashboard.
-        const lines = (lr?.lines ?? []).filter(
-          (line) =>
-            !/what are you trying to accomplish/i.test(line) &&
-            !/before we continue/i.test(line),
-        );
+        const lines = (lr?.lines ?? []).filter(Boolean).slice(0, 4);
         setLocalTurns([
           {
             id: uid(),
             role: "assistant",
             lines:
               lines.length > 0
-                ? lines.slice(0, 3)
+                ? lines
                 : [
                     `Good to see you${firstName ? `, ${firstName}` : ""}.`,
-                    "Ask about your research anytime.",
+                    "Ask me anything about your research.",
                   ],
-            // No actionCard on open — Invisible Intelligence / one recommendation on Home.
+            // Home left column owns the primary CTA — mentor restores context.
             actionCard: null,
           },
         ]);
@@ -585,7 +580,7 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
             role: "assistant",
             lines: [
               `Good to see you${firstName ? `, ${firstName}` : ""}.`,
-              "Ask about your research anytime.",
+              "Ask me anything about your research.",
             ],
           },
         ]);
@@ -787,7 +782,7 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
         <p className="mt-0.5 text-[11px] text-muted-foreground">
           {needsOnboarding
             ? "Getting to know you"
-            : "Ask about your research"}
+            : "Ask anything about your research"}
         </p>
       </div>
 
