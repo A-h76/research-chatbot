@@ -109,7 +109,7 @@ export function ProjectsPage() {
         isError
           ? "Couldn’t load your research projects."
           : isEmpty
-            ? "Create your first research workspace."
+            ? "Every publication starts with a research workspace."
             : "Continue your active research or start a new one."
       }
       actions={

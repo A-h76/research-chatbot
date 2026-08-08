@@ -1,4 +1,5 @@
 import { Check, FileText, Plus } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/features/profile/useMe";
@@ -14,7 +15,7 @@ function ResearchWorkflowIllustration() {
       viewBox="0 0 320 72"
       className="mx-auto h-16 w-full max-w-[320px] text-muted-foreground"
       role="img"
-      aria-label="Papers flow into evidence, writing, then export"
+      aria-label="Papers flow into evidence, writing, then publish"
     >
       {/* Papers */}
       <g transform="translate(8, 14)">
@@ -189,7 +190,7 @@ function ResearchWorkflowIllustration() {
         opacity="0.45"
       />
 
-      {/* Export — tray / share out */}
+      {/* Publish — document rising / out */}
       <g transform="translate(258, 16)">
         <rect
           x="0"
@@ -235,7 +236,7 @@ function ResearchWorkflowIllustration() {
         style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.04em" }}
         opacity="0.7"
       >
-        Export
+        Publish
       </text>
     </svg>
   );
@@ -266,50 +267,55 @@ export function ProjectsEmptyState({
         <ResearchWorkflowIllustration />
       </div>
 
-      <h2 className="text-lg font-semibold tracking-tight text-foreground">
+      <h2 className="text-lg font-semibold tracking-tight text-text-primary">
         No projects yet
       </h2>
-      <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
+      <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-text-secondary">
         {focus
-          ? `Continue “${focus}” — gather papers, extract evidence, write with citations, and export when you’re ready.`
-          : "Start a research effort — gather papers, extract evidence, write with citations, and export when you’re ready."}
+          ? `Continue “${focus}” — gather papers, extract evidence, write with citations, and publish when you’re ready.`
+          : "Start a research effort — gather papers, extract evidence, write with citations, and publish when you’re ready."}
       </p>
 
       {hasPapers && (
         <div className="mt-7 w-full text-left">
-          <p className="mb-2 text-center text-[12px] text-muted-foreground">
-            You already imported {papers.length === 1 ? "a paper" : `${papers.length} papers`}.
-            {selectedCount > 0
-              ? ` Start research with ${selectedCount === 1 ? "it" : "them"}.`
-              : " Select papers to include, or start empty."}
+          <p className="mb-1 text-center text-[12px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
+            Imported papers
           </p>
-          <ul className="overflow-hidden rounded-xl border border-border bg-card">
+          <p className="mb-3 text-center text-[12px] text-text-secondary">
+            You already imported{" "}
+            {papers.length === 1 ? "a paper" : `${papers.length} papers`}. Use{" "}
+            {papers.length === 1 ? "it" : "these"} to start your first research.
+          </p>
+          <ul className="divide-y divide-border border-y border-border">
             {papers.map((p) => {
               const selected = selectedIds.has(p.id);
               const title = p.title || p.name;
               return (
-                <li key={p.id} className="border-b border-border last:border-b-0">
+                <li key={p.id}>
                   <button
                     type="button"
                     onClick={() => onToggle(p.id)}
                     className={cn(
-                      "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
-                      selected ? "bg-primary/5" : "hover:bg-muted/40",
+                      "group flex w-full items-center gap-3 px-1 py-2.5 text-left transition-colors hover:bg-muted/25",
+                      selected ? "opacity-100" : "opacity-70 hover:opacity-100",
                     )}
                     aria-pressed={selected}
+                    title={
+                      selected
+                        ? "Included — click to leave out"
+                        : "Click to include in your first research"
+                    }
                   >
-                    <span
+                    <Check
                       className={cn(
-                        "flex size-5 shrink-0 items-center justify-center rounded-md border",
-                        selected
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-background text-transparent",
+                        "size-3.5 shrink-0 transition-opacity",
+                        selected ? "text-text-accent opacity-100" : "text-text-tertiary opacity-40",
                       )}
-                    >
-                      <Check className="size-3" strokeWidth={3} />
-                    </span>
-                    <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+                      strokeWidth={2.5}
+                      aria-hidden
+                    />
+                    <FileText className="size-3.5 shrink-0 text-text-tertiary" />
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-text-primary">
                       {title}
                     </span>
                   </button>
@@ -317,6 +323,11 @@ export function ProjectsEmptyState({
               );
             })}
           </ul>
+          {selectedCount === 0 ? (
+            <p className="mt-2 text-center text-[11px] text-text-tertiary">
+              No papers selected — you can still start empty.
+            </p>
+          ) : null}
         </div>
       )}
 
@@ -326,6 +337,13 @@ export function ProjectsEmptyState({
           ? "Start research"
           : "Start your first research"}
       </Button>
+
+      <Link
+        to="/"
+        className="mt-5 text-[12px] text-text-secondary transition-colors hover:text-text-accent"
+      >
+        Need help choosing a topic? Ask Research Mentor →
+      </Link>
     </div>
   );
 }

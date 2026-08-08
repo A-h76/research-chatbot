@@ -115,7 +115,15 @@ Dhund’s signature lives where researchers *work*:
 
 **Freeze (2026-08-08):** Home is **frozen** for craftsmanship polish. Touch Home only for real usability bugs or Research State contradictions — not for another week of visual refinement.
 
-**Freeze (2026-08-08):** Projects is **frozen**. Changes require measurable usability evidence, a Research State contradiction, or platform-wide design-system evolution — not another week of visual refinement.
+**Projects Surface — Frozen (2026-08-08):**
+
+| | |
+|--|--|
+| **Purpose** | Help researchers continue or start research. |
+| **Primary question** | *Which research should I advance?* |
+| **Primary action** | Continue active project — or **Start research** when empty. |
+| **Empty state** | Journey start (workflow + imported papers + Mentor handoff) — not “no data.” |
+| **Change bar** | Validated usability evidence, Research State contradiction, or platform-wide design evolution. Not another week of visual refinement. |
 
 **Phase 2 investment order:** Home ✓ · Projects ✓ · **Library** → Paper → Research Intelligence → Writing → Review.
 
