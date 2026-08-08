@@ -10,17 +10,17 @@
 import type { AssistantTurnResponse } from "@/features/assistant/api";
 
 export type HomeViewModel = {
-  /** Section label above the recommendation (e.g. "Next step") */
+  /** Section label above the recommendation (e.g. "Next milestone") */
   status: string;
   /** Primary recommendation title (CTA label) */
   recommendation: string;
   /** Why this matters — outcome-focused */
   detail: string;
-  /** Single context chip (e.g. "9 papers") */
+  /** Single context chip (e.g. "9 papers" or "21 unread papers") */
   context: string | null;
   /** Project title for greeting context, if any */
   projectTitle: string | null;
-  /** Soft prose bridge under the greeting (e.g. "extracting evidence from your 9 papers") */
+  /** Soft prose bridge under the greeting */
   lede: string | null;
   href: string;
 };
@@ -29,6 +29,10 @@ type ResearchState = AssistantTurnResponse["research_state"];
 
 function paperPhrase(n: number): string {
   return n === 1 ? "1 paper" : `${n} papers`;
+}
+
+function unreadPhrase(n: number): string {
+  return n === 1 ? "1 unread paper" : `${n} unread papers`;
 }
 
 /** Outcome copy — why the action matters, not just what to click. */
@@ -43,7 +47,7 @@ function outcomeDetail(
         ? `Unlock themes, research gaps, and evidence-backed writing from your ${paperPhrase(papers)}.`
         : "Unlock themes, research gaps, and evidence-backed writing from your imported papers.";
     case "import_papers":
-      return "Bring papers into Dhund so the next steps are grounded in your corpus.";
+      return "Import papers to build your research corpus. This unlocks evidence extraction, Research Intelligence, and evidence-backed writing.";
     case "review_gaps":
       return "See where the literature is thin — and where your contribution can land.";
     case "inspect_contradictions":
@@ -57,15 +61,11 @@ function outcomeDetail(
     default:
       return project
         ? `Continue the research journey on ${project}.`
-        : "Highest-impact next step for your research.";
+        : "Highest-impact next milestone for your research.";
   }
 }
 
-function ledeFor(
-  actionId: string,
-  label: string,
-  papers: number,
-): string {
+function ledeFor(actionId: string, label: string, papers: number): string {
   switch (actionId) {
     case "extract_evidence":
       return papers > 0
@@ -80,9 +80,7 @@ function ledeFor(
     case "start_writing":
       return "starting a draft from your evidence";
     case "unread_papers":
-      return papers > 0
-        ? `catching up on unread papers`
-        : "catching up on unread papers";
+      return "catching up on unread papers";
     case "compare_papers":
       return "comparing papers side by side";
     default: {
@@ -92,26 +90,39 @@ function ledeFor(
   }
 }
 
+function titleCaseAction(label: string): string {
+  return label
+    .trim()
+    .split(/\s+/)
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
 /** Prefer Assistant Engine nextAction; fall back for empty/offline. */
 export function buildHomeViewModel(
   state: ResearchState | null | undefined,
-  fallback?: { unread?: number; hasProject?: boolean },
+  fallback?: { unread?: number; hasProject?: boolean; projectTitle?: string | null },
 ): HomeViewModel {
   if (state?.workflow?.nextAction) {
     const na = state.workflow.nextAction;
     const papers = state.corpus?.papers ?? 0;
-    const project = state.project?.title ?? null;
+    const project = state.project?.title ?? fallback?.projectTitle ?? null;
+    const unread = fallback?.unread ?? 0;
 
     let context: string | null = null;
-    if (project != null || papers > 0) {
+    if (na.id === "import_papers" && unread > 0) {
+      context = unreadPhrase(unread);
+    } else if (na.id === "unread_papers" && unread > 0) {
+      context = unreadPhrase(unread);
+    } else if (project != null || papers > 0) {
       context = paperPhrase(papers);
-    } else if ((fallback?.unread ?? 0) > 0) {
-      context = `${fallback!.unread} unread`;
+    } else if (unread > 0) {
+      context = unreadPhrase(unread);
     }
 
     return {
-      status: "Next step",
-      recommendation: na.label,
+      status: "Next milestone",
+      recommendation: titleCaseAction(na.label),
       detail: outcomeDetail(na.id, papers, project),
       context,
       projectTitle: project,
@@ -122,11 +133,11 @@ export function buildHomeViewModel(
 
   if ((fallback?.unread ?? 0) > 0) {
     return {
-      status: "Next step",
-      recommendation: "Catch up on unread papers",
+      status: "Next milestone",
+      recommendation: "Catch Up On Unread Papers",
       detail: "Catch up so new findings feed the next evidence pass.",
-      context: `${fallback!.unread} unread`,
-      projectTitle: null,
+      context: unreadPhrase(fallback!.unread!),
+      projectTitle: fallback?.projectTitle ?? null,
       lede: "catching up on unread papers",
       href: "/library?reading_status=unread",
     };
@@ -134,20 +145,21 @@ export function buildHomeViewModel(
 
   if (fallback?.hasProject) {
     return {
-      status: "Next step",
-      recommendation: "Continue your project",
+      status: "Next milestone",
+      recommendation: "Continue Your Project",
       detail: "Pick up where you left off and keep momentum.",
       context: null,
-      projectTitle: null,
+      projectTitle: fallback?.projectTitle ?? null,
       lede: "continuing your project",
       href: "/projects",
     };
   }
 
   return {
-    status: "Next step",
-    recommendation: "Import papers",
-    detail: "Bring papers into Dhund so the next steps are grounded in your corpus.",
+    status: "Next milestone",
+    recommendation: "Import Papers",
+    detail:
+      "Import papers to build your research corpus. This unlocks evidence extraction, Research Intelligence, and evidence-backed writing.",
     context: null,
     projectTitle: null,
     lede: "importing papers into your library",

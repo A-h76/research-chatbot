@@ -133,7 +133,7 @@ function IntentCard({
   const label = meta?.label || "Research";
   const title = meta?.title || text;
   return (
-    <div className="rounded-lg border border-primary/35 bg-primary/[0.09] px-2.5 py-2 text-left shadow-[inset_3px_0_0_0_var(--primary)]">
+    <div className="rounded-xl border border-primary/25 bg-primary/[0.06] px-2.5 py-2 text-left shadow-[inset_2px_0_0_0_var(--primary)]">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">{label}</p>
       <p className="mt-0.5 text-[13px] font-medium leading-snug text-foreground">{title}</p>
       {meta?.detail ? (
@@ -342,8 +342,8 @@ function ComposerBar({
   inputRef?: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   return (
-    <div className="shrink-0 border-t border-border/40 px-3 py-2.5">
-      <div className="flex items-end gap-1.5 rounded-lg border border-border/70 bg-background px-2 py-1.5 focus-within:border-border">
+    <div className="shrink-0 px-4 pb-4 pt-2">
+      <div className="flex items-end gap-1.5 rounded-2xl border border-border/50 bg-background/90 px-2.5 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-[border-color,box-shadow] duration-200 focus-within:border-primary/25 focus-within:shadow-[0_0_0_3px_color-mix(in_oklab,var(--primary)_10%,transparent)]">
         <textarea
           ref={inputRef}
           value={draft}
@@ -363,7 +363,7 @@ function ComposerBar({
           <button
             type="button"
             onClick={onStop}
-            className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+            className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted"
             aria-label="Stop"
           >
             <Square className="size-3.5" />
@@ -373,7 +373,7 @@ function ComposerBar({
             type="button"
             onClick={onSend}
             disabled={!draft.trim() || busy}
-            className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
+            className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-[opacity,transform] duration-150 hover:scale-[1.03] disabled:opacity-40"
             aria-label="Send"
           >
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowUp className="size-3.5" />}
@@ -474,7 +474,7 @@ function Thread({
 
   return (
     <>
-      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-3">
         {messages.map((m) =>
           m.role === "user" ? (
             <IntentCard key={m.id} text={m.content} />
@@ -508,8 +508,8 @@ function Thread({
         onSend={() => void send()}
         onStop={() => stream.stop()}
       />
-      <p className="px-3 pb-2 text-[11px] text-muted-foreground">
-        <Link to={`/c/${conversationId}`} className="hover:underline">
+      <p className="px-5 pb-3 text-[11px] text-muted-foreground">
+        <Link to={`/c/${conversationId}`} className="transition-colors hover:text-foreground hover:underline">
           Open full chat
         </Link>
       </p>
@@ -517,13 +517,21 @@ function Thread({
   );
 }
 
-export function HomeAssistantPanel({ firstName }: { firstName: string }) {
+export function HomeAssistantPanel({
+  firstName,
+  projectId,
+}: {
+  firstName: string;
+  /** Same project Home uses — must match Research State (never a second reality). */
+  projectId?: number | null;
+}) {
   const navigate = useNavigate();
   const { currentProjectId, defaultModel } = useUI();
+  const scopedProjectId = projectId !== undefined ? projectId : currentProjectId;
   const { data: me, refetch: refetchMe } = useMe();
   const createConversation = useCreateConversation();
   const [conversationId, setConversationId] = useState<number | null>(() =>
-    readStoredId(currentProjectId),
+    readStoredId(scopedProjectId),
   );
   const [pendingText, setPendingText] = useState<string | null>(null);
   const [pendingMode, setPendingMode] = useState<string | null>(null);
@@ -533,31 +541,31 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
   const [turnBusy, setTurnBusy] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const scopedProject = useRef(currentProjectId);
+  const scopedProject = useRef(scopedProjectId);
   const seeded = useRef(false);
 
   const needsOnboarding = me != null && !me.onboarding_completed;
   const placeholder = "Ask anything about your research…";
 
   useEffect(() => {
-    if (scopedProject.current === currentProjectId) return;
-    scopedProject.current = currentProjectId;
-    setConversationId(readStoredId(currentProjectId));
+    if (scopedProject.current === scopedProjectId) return;
+    scopedProject.current = scopedProjectId;
+    setConversationId(readStoredId(scopedProjectId));
     setPendingText(null);
     setPendingMode(null);
     setBootError(null);
     setLocalTurns([]);
     seeded.current = false;
-  }, [currentProjectId]);
+  }, [scopedProjectId]);
 
   useEffect(() => {
     if (needsOnboarding || conversationId != null || seeded.current || me == null) return;
     seeded.current = true;
     void (async () => {
       try {
-        const session = await assistantApi.session(currentProjectId);
+        const session = await assistantApi.session(scopedProjectId);
         const lr = session.local_reply;
-        const lines = (lr?.lines ?? []).filter(Boolean).slice(0, 4);
+        const lines = (lr?.lines ?? []).filter(Boolean).slice(0, 5);
         setLocalTurns([
           {
             id: uid(),
@@ -567,7 +575,7 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
                 ? lines
                 : [
                     `Good to see you${firstName ? `, ${firstName}` : ""}.`,
-                    "Ask me anything about your research.",
+                    "Ask me anything about planning, finding literature, or writing.",
                   ],
             // Home left column owns the primary CTA — mentor restores context.
             actionCard: null,
@@ -580,13 +588,13 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
             role: "assistant",
             lines: [
               `Good to see you${firstName ? `, ${firstName}` : ""}.`,
-              "Ask me anything about your research.",
+              "Ask me anything about planning, finding literature, or writing.",
             ],
           },
         ]);
       }
     })();
-  }, [needsOnboarding, me, conversationId, currentProjectId, firstName]);
+  }, [needsOnboarding, me, conversationId, scopedProjectId, firstName]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -619,9 +627,9 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
       const model = defaultModel || me?.default_model || "gpt-4o-mini";
       const conv = await createConversation.mutateAsync({
         model,
-        project_id: currentProjectId ?? null,
+        project_id: scopedProjectId ?? null,
       });
-      storeId(conv.id, currentProjectId);
+      storeId(conv.id, scopedProjectId);
       setPendingMode(mode || null);
       setPendingText(text);
       setConversationId(conv.id);
@@ -639,7 +647,7 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
     try {
       const decision = await assistantApi.turn({
         message: text,
-        project_id: currentProjectId,
+        project_id: scopedProjectId,
         surface: "home",
       });
       if (decision.outcome === "start_job") {
@@ -752,7 +760,7 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
       try {
         const decision = await assistantApi.turn({
           message: "What should I do next?",
-          project_id: currentProjectId,
+          project_id: scopedProjectId,
           surface: "home",
         });
         setLocalTurns((prev) => [
@@ -772,17 +780,29 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
 
   return (
     <aside
-      className="flex h-full min-h-0 w-full shrink-0 flex-col border-l border-border/50 bg-muted/15 lg:w-[300px]"
+      className="relative flex h-full min-h-0 w-full shrink-0 flex-col bg-[linear-gradient(180deg,color-mix(in_oklab,var(--primary)_4%,var(--background))_0%,var(--background)_28%)] lg:w-[320px]"
       aria-label="Research Mentor"
     >
-      <div className="border-b border-border/40 px-4 py-3">
-        <p className="text-[13px] font-semibold tracking-tight text-foreground">
-          Research Mentor
-        </p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
+      {/* Soft companion edge — not a hard SaaS sidebar rule */}
+      <div
+        className="pointer-events-none absolute inset-y-6 left-0 hidden w-px bg-gradient-to-b from-transparent via-border/70 to-transparent lg:block"
+        aria-hidden
+      />
+
+      <div className="px-5 pb-3 pt-5">
+        <div className="flex items-center gap-2">
+          <span
+            className="size-1.5 shrink-0 rounded-full bg-primary/80"
+            aria-hidden
+          />
+          <p className="text-[13px] font-semibold tracking-tight text-foreground">
+            Research Mentor
+          </p>
+        </div>
+        <p className="mt-1 pl-3.5 text-[11px] leading-snug text-muted-foreground">
           {needsOnboarding
             ? "Getting to know you"
-            : "Ask anything about your research"}
+            : "A quiet companion for this research session"}
         </p>
       </div>
 
@@ -806,7 +826,7 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
               try {
                 const decision = await assistantApi.turn({
                   message: text,
-                  project_id: currentProjectId,
+                  project_id: scopedProjectId,
                   surface: "home",
                 });
                 applyLocalDecision(text, decision);
@@ -818,7 +838,7 @@ export function HomeAssistantPanel({ firstName }: { firstName: string }) {
         />
       ) : (
         <>
-          <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+          <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-2">
             {localTurns.map((t) =>
               t.role === "user" ? (
                 <IntentCard key={t.id} meta={t.meta} text={t.text} />

@@ -3,6 +3,7 @@
  * "What should I do next?"
  * Greeting → context → recommendation. Not a launchpad dashboard.
  */
+import { useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
@@ -10,6 +11,7 @@ import { HomeResearchSkeleton } from "@/components/common/ResearchSkeletons";
 import { useUI } from "@/context/UIContext";
 import { assistantApi } from "@/features/assistant/api";
 import { useMe } from "@/features/profile/useMe";
+import { cn } from "@/lib/utils";
 import { useDashboard } from "./useDashboard";
 import { buildHomeViewModel } from "./homeViewModel";
 import { HomeAssistantPanel } from "./components/HomeAssistantPanel";
@@ -29,26 +31,33 @@ export function DashboardPage() {
 
   const firstName = (me?.name || "").trim().split(/\s+/)[0] || "";
 
+  // One project identity for Home + Mentor — never invent different realities.
+  const homeProjectId = currentProjectId ?? data?.projects[0]?.id ?? null;
+  const homeProject =
+    homeProjectId != null
+      ? data?.projects.find((p) => p.id === homeProjectId) ?? null
+      : null;
+
+  useEffect(() => {
+    if (currentProjectId == null && homeProjectId != null) {
+      setCurrentProjectId(homeProjectId);
+    }
+  }, [currentProjectId, homeProjectId, setCurrentProjectId]);
+
   const stateQ = useQuery({
-    queryKey: ["assistant", "research-state", "home", currentProjectId],
-    queryFn: () => assistantApi.researchState(currentProjectId),
+    queryKey: ["assistant", "research-state", "home", homeProjectId],
+    queryFn: () => assistantApi.researchState(homeProjectId),
     staleTime: 45_000,
     enabled: me != null,
   });
 
-  // Still show Home while state loads; fall back to dashboard signals.
   const view = buildHomeViewModel(stateQ.data, {
     unread: data?.library.unread ?? 0,
     hasProject: (data?.projects.length ?? 0) > 0,
+    projectTitle: homeProject?.name ?? null,
   });
 
-  const currentProject =
-    currentProjectId != null
-      ? data?.projects.find((p) => p.id === currentProjectId)
-      : data?.projects[0];
-
-  const projectTitle =
-    view.projectTitle || currentProject?.name || null;
+  const projectTitle = view.projectTitle || homeProject?.name || null;
 
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-background">
@@ -60,7 +69,7 @@ export function DashboardPage() {
             <p className="text-sm text-muted-foreground">Could not load home.</p>
           ) : (
             <div className="space-y-10" data-density="low">
-              <header className="space-y-3">
+              <header className="space-y-3 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-500">
                 <h1 className="text-[26px] font-semibold tracking-tight text-foreground sm:text-[28px]">
                   {greetingHour()}
                   {firstName ? `, ${firstName}` : ""}
@@ -78,12 +87,15 @@ export function DashboardPage() {
                 )}
                 {view.lede ? (
                   <p className="text-[15px] leading-relaxed text-muted-foreground">
-                    Today&apos;s next step is {view.lede}.
+                    Today&apos;s next milestone is {view.lede}.
                   </p>
                 ) : null}
               </header>
 
-              <section aria-label="Next step" className="space-y-4">
+              <section
+                aria-label="Next milestone"
+                className="space-y-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-500 motion-safe:delay-75"
+              >
                 <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
                   {view.status}
                 </p>
@@ -91,10 +103,24 @@ export function DashboardPage() {
                 <button
                   type="button"
                   onClick={() => navigate(view.href)}
-                  className="group w-full rounded-xl border border-primary/25 bg-primary/[0.04] px-5 py-5 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.07]"
+                  className={cn(
+                    "group relative w-full overflow-hidden rounded-2xl border border-primary/20",
+                    "bg-[linear-gradient(180deg,color-mix(in_oklab,var(--primary)_7%,white)_0%,color-mix(in_oklab,var(--primary)_3%,white)_100%)]",
+                    "px-5 py-6 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(15,110,106,0.28)]",
+                    "transition-[transform,box-shadow,border-color] duration-200 ease-out",
+                    "hover:-translate-y-0.5 hover:border-primary/35",
+                    "hover:shadow-[0_2px_4px_rgba(15,23,42,0.05),0_16px_32px_-14px_rgba(15,110,106,0.35)]",
+                    "active:translate-y-0 active:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_20px_-12px_rgba(15,110,106,0.22)]",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                    "dark:bg-[linear-gradient(180deg,color-mix(in_oklab,var(--primary)_16%,transparent)_0%,color-mix(in_oklab,var(--primary)_6%,transparent)_100%)]",
+                  )}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 space-y-1.5">
+                  <div
+                    className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/35 to-transparent"
+                    aria-hidden
+                  />
+                  <div className="relative flex items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-2">
                       <p className="text-[17px] font-semibold tracking-tight text-foreground">
                         {view.recommendation}
                       </p>
@@ -102,48 +128,56 @@ export function DashboardPage() {
                         {view.detail}
                       </p>
                       {view.context ? (
-                        <p className="pt-1 text-[12px] tabular-nums text-muted-foreground/90">
+                        <p className="pt-0.5 text-[12px] tabular-nums text-muted-foreground/90">
                           {view.context}
                         </p>
                       ) : null}
                     </div>
-                    <ArrowRight className="mt-1 size-4 shrink-0 text-primary transition-transform group-hover:translate-x-0.5" />
+                    <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors duration-200 group-hover:bg-primary/15">
+                      <ArrowRight className="size-4 transition-transform duration-200 ease-out group-hover:translate-x-1" />
+                    </span>
                   </div>
                 </button>
               </section>
 
-              <footer className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-muted-foreground">
-                {currentProject ? (
+              <footer className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-muted-foreground motion-safe:animate-in motion-safe:fade-in motion-safe:duration-500 motion-safe:delay-150">
+                {homeProject ? (
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 font-medium text-foreground/80 hover:text-foreground"
+                    className="group inline-flex max-w-full items-center gap-1.5 font-medium text-foreground/90 transition-colors hover:text-foreground"
                     onClick={() => {
-                      setCurrentProjectId(currentProject.id);
-                      navigate(`/projects/${currentProject.id}`);
+                      setCurrentProjectId(homeProject.id);
+                      navigate(`/projects/${homeProject.id}`);
                     }}
                   >
-                    Continue project
-                    <ArrowRight className="size-3 opacity-70" aria-hidden />
+                    <span className="truncate">Continue {homeProject.name}</span>
+                    <ArrowRight
+                      className="size-3 shrink-0 opacity-60 transition-transform duration-200 ease-out group-hover:translate-x-1 group-hover:opacity-100"
+                      aria-hidden
+                    />
                   </button>
                 ) : (
                   <Link
                     to="/projects?new=1"
-                    className="inline-flex items-center gap-1 font-medium text-foreground/80 hover:text-foreground"
+                    className="group inline-flex items-center gap-1.5 font-medium text-foreground/90 transition-colors hover:text-foreground"
                   >
                     Start a project
-                    <ArrowRight className="size-3 opacity-70" aria-hidden />
+                    <ArrowRight
+                      className="size-3 opacity-60 transition-transform duration-200 ease-out group-hover:translate-x-1 group-hover:opacity-100"
+                      aria-hidden
+                    />
                   </Link>
                 )}
                 <span className="text-border" aria-hidden>
                   ·
                 </span>
-                <Link to="/library" className="hover:text-foreground">
+                <Link to="/library" className="transition-colors hover:text-foreground">
                   Library
                 </Link>
                 <span className="text-border" aria-hidden>
                   ·
                 </span>
-                <Link to="/projects" className="hover:text-foreground">
+                <Link to="/projects" className="transition-colors hover:text-foreground">
                   All projects
                 </Link>
               </footer>
@@ -153,7 +187,7 @@ export function DashboardPage() {
       </div>
 
       <div className="hidden lg:flex">
-        <HomeAssistantPanel firstName={firstName} />
+        <HomeAssistantPanel firstName={firstName} projectId={homeProjectId} />
       </div>
     </div>
   );

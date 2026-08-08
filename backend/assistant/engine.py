@@ -73,19 +73,36 @@ def _situation_line(state: ResearchState) -> str:
     return f"Next: {state.workflow.next_action.label}."
 
 
+def _goal_line(state: ResearchState) -> str:
+    """Milestone phrasing aligned with Home — same nextAction, never a second reality."""
+    aid = state.workflow.next_action.id
+    goals = {
+        "import_papers": "importing papers",
+        "extract_evidence": "extracting evidence",
+        "review_gaps": "reviewing research gaps",
+        "inspect_contradictions": "inspecting contradictions",
+        "start_writing": "starting a draft from your evidence",
+        "unread_papers": "catching up on unread papers",
+        "compare_papers": "comparing papers",
+    }
+    phrase = goals.get(aid)
+    if phrase is None:
+        label = (state.workflow.next_action.label or "").strip().rstrip(".")
+        phrase = (label[0].lower() + label[1:]) if label else "continuing your research"
+    return f"Today's goal is {phrase}."
+
+
+def _invite_line(state: ResearchState) -> str:
+    if state.user.experience == "beginner" and state.corpus.papers == 0:
+        return "Ask me anything about planning, finding literature, or getting started."
+    return "Ask me anything about planning, finding literature, or writing."
+
+
 def _opening_lines(state: ResearchState, *, returning: bool = True) -> list[str]:
-    """Greeting → project context → situation → invitation. Never a capability dump."""
+    """Greeting → project context → situation → goal → invitation. Never invent a different project."""
     del returning  # kept for call-site compatibility; opening always restores context
     first = _first_name(state)
     sparse = is_sparse_experience(state.user.experience)
-
-    if sparse:
-        lines = [f"{_greeting_hour()}{', ' + first if first else ''}."]
-        if state.project.title:
-            lines.append(f"You're working on {state.project.title}.")
-        lines.append(_situation_line(state))
-        lines.append("Ask me anything about your research.")
-        return lines
 
     lines = [f"{_greeting_hour()}{', ' + first if first else ''}."]
     if state.project.title:
@@ -96,10 +113,9 @@ def _opening_lines(state: ResearchState, *, returning: bool = True) -> list[str]
         lines.append("You don't have an active project yet.")
 
     lines.append(_situation_line(state))
-    if state.user.experience == "beginner" and state.corpus.papers == 0:
-        lines.append("Today's goal: import papers. I'll explain everything along the way.")
-    else:
-        lines.append("Ask me anything about your research.")
+    if not sparse:
+        lines.append(_goal_line(state))
+    lines.append(_invite_line(state))
     return lines
 
 

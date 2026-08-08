@@ -81,19 +81,37 @@ Experts get density *inside* the task (RI, Reviewer), not a KPI wall on Home.
 
 ### 7. One Purpose Per Screen
 
-Every screen answers exactly one primary question.
+Every screen answers exactly one primary question — and owns one emotional outcome.
 
-| Screen | Question |
-|--------|----------|
-| Home | What should I do next? |
-| Projects | Which research should I continue? |
-| Library | Which papers matter? |
-| Paper | What does this paper say? |
-| Research Intelligence | What does the corpus say? |
-| Writing | How do I write from evidence? |
-| Review | What should I improve before publishing? |
+| Screen | Question | Emotional outcome |
+|--------|----------|-------------------|
+| Home | What should I do next? | Orientation (calm, invisible) |
+| Projects | Which research should I continue? | Continuity |
+| Library | Which papers matter? | Effortless control |
+| Paper | What does this paper say? | Understanding |
+| Research Intelligence | What does the corpus say? | Insight (signature / “magical”) |
+| Writing | How do I write from evidence? | Flow |
+| Review | What should I improve before publishing? | Confidence |
 
 If a screen answers multiple unrelated questions, split the responsibility.
+
+---
+
+### 8. Home Invisible · Intelligence Magical ⭐
+
+> **Home should feel invisible. Research Intelligence should feel magical.**
+
+Home’s job is **orientation** — restore context and create one next milestone. It must not carry brand spectacle, signature visualizations, or feature theater.
+
+Dhund’s signature lives where researchers *work*:
+
+- Evidence Inspector
+- Provenance visualization
+- Research Intelligence
+- Evidence-backed Writing
+- Review workflow
+
+**Freeze (2026-08-08):** Home is **frozen** for craftsmanship polish. Touch Home only for real usability bugs or Research State contradictions — not for another week of visual refinement. Next Phase 2 investment order: **Projects → Library → Research Intelligence → Writing → Review**.
 
 ---
 
@@ -137,6 +155,8 @@ They should think:
 
 | Frozen platform cores | Product phase |
 |----------------------|---------------|
-| Assistant Engine · Research State · Capability Router · Workflow Engine | Phase 2 = frontend UX: Home → Projects → Library → Paper → RI → Writing → Review → mobile → polish |
+| Assistant Engine · Research State · Capability Router · Workflow Engine | Phase 2 = frontend UX: **Home ✓ frozen** → Projects → Library → Paper → RI → Writing → Review → mobile → polish |
 
 Deferred until friction demands: Journey Engine, Skill Registry, Research Memory, Mentor Analytics (see ADR-0018).
+
+**Craftsmanship note:** Prefer craftsmanship (presence, motion, companion feel) over feature accretion once a screen answers its one question. Do not reopen a frozen surface for 1% polish while a higher-impact surface is unsolved.

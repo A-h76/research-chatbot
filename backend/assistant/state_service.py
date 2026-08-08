@@ -153,9 +153,23 @@ def create_research_state_service(
             corpus = CorpusSignals()
             writing = WritingSignals()
 
-            if project_id is not None:
+            # When no project is scoped, use the researcher's latest project so
+            # Home + Mentor share one Research State (never invent different realities).
+            resolved_id = int(project_id) if project_id is not None else None
+            if resolved_id is None:
+                order_col = getattr(Project, "created_at", Project.id)
+                latest = db.execute(
+                    select(Project)
+                    .where(Project.user_id == user_id)
+                    .order_by(order_col.desc())
+                    .limit(1)
+                ).scalar_one_or_none()
+                if latest is not None:
+                    resolved_id = int(latest.id)
+
+            if resolved_id is not None:
                 proj = db.execute(
-                    select(Project).where(Project.id == int(project_id), Project.user_id == user_id)
+                    select(Project).where(Project.id == resolved_id, Project.user_id == user_id)
                 ).scalar_one_or_none()
                 if proj is None:
                     raise LookupError("project_not_found")
@@ -164,14 +178,14 @@ def create_research_state_service(
                     title=(getattr(proj, "name", None) or "").strip() or None,
                     discipline=None,
                 )
-                papers = _count_papers(db, user_id, int(project_id))
-                evidence = _count_evidence(db, user_id, int(project_id))
-                pwe = _papers_with_evidence(db, user_id, int(project_id))
+                papers = _count_papers(db, user_id, resolved_id)
+                evidence = _count_evidence(db, user_id, resolved_id)
+                pwe = _papers_with_evidence(db, user_id, resolved_id)
                 coverage = round(pwe / papers, 4) if papers > 0 else None
-                contradictions = _count_contradiction_rows(db, user_id, int(project_id))
+                contradictions = _count_contradiction_rows(db, user_id, resolved_id)
                 themes, gaps = (0, 0)
                 if evidence > 0:
-                    themes, gaps = _ri_theme_gap_counts(db, user_id, int(project_id))
+                    themes, gaps = _ri_theme_gap_counts(db, user_id, resolved_id)
                 corpus = CorpusSignals(
                     papers=papers,
                     evidence=evidence,
@@ -181,7 +195,7 @@ def create_research_state_service(
                     coverage=coverage,
                     unread=0,
                 )
-                writing = _writing_signals(db, user_id, int(project_id))
+                writing = _writing_signals(db, user_id, resolved_id)
 
             return build_research_state(
                 user=user_signals_from_orm(user),

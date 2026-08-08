@@ -8,7 +8,20 @@
 **Sources (Phase 3):** Tesla · SpaceX · Replicate · Mintlify · Figma  
 **Companions:** [`PRODUCT-CONSTITUTION-v1.md`](PRODUCT-CONSTITUTION-v1.md) · [`DESIGN-SYSTEM.md`](../DESIGN-SYSTEM.md) · [`docs/DESIGN-SYSTEM-v2.md`](DESIGN-SYSTEM-v2.md) · [`docs/Interaction-Guidelines.md`](Interaction-Guidelines.md)
 
-**Product filter:** Before adding UI chrome, apply [`PRODUCT-CONSTITUTION-v1.md`](PRODUCT-CONSTITUTION-v1.md) — especially Invisible Intelligence and One Purpose Per Screen. Visual language never overrides those.
+**Product filter:** Before adding UI chrome, apply [`PRODUCT-CONSTITUTION-v1.md`](PRODUCT-CONSTITUTION-v1.md) — especially Invisible Intelligence, One Purpose Per Screen, and **Home Invisible · Intelligence Magical**. Visual language never overrides those.
+
+**Surface emotional ownership (frozen)**
+
+| Surface | Feel |
+|---------|------|
+| Home | Invisible orientation — calm desk, one milestone. **Frozen** for polish (2026-08-08). |
+| Projects | Continuity — pick up the right research. |
+| Library | Effortless control of papers. |
+| Research Intelligence | Magical insight — Dhund’s signature. |
+| Writing | Flow from evidence. |
+| Review | Publication confidence. |
+
+Do **not** put brand spectacle on Home. Signature craft (Evidence Inspector, provenance, RI lenses) belongs in the workflow screens.
 
 **Intent:** A maintainable **design governance document** — ownership by surface, density, borders, confidence, and cognitive load — so Dhund stays visually consistent for years.
 

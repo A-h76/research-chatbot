@@ -103,7 +103,7 @@ def test_engine_greeting_does_not_start_job():
     text = " ".join(out["local_reply"]["lines"])
     assert "AI in Healthcare" in text
     assert "Evidence hasn't been extracted" in text
-    assert "Ask me anything" in text
+    assert "Ask me anything about planning" in text
     assert "Good to see you again" not in text
     assert out["local_reply"]["action_card"] is not None
     # Single next step — not a capability menu
@@ -122,7 +122,8 @@ def test_open_session_restores_context_without_cta_card():
     text = " ".join(out["local_reply"]["lines"])
     assert "Artificial Intelligence in Healthcare" in text
     assert "Evidence hasn't been extracted" in text
-    assert "Ask me anything about your research" in text
+    assert "Today's goal is extracting evidence" in text
+    assert "Ask me anything about planning" in text
     assert out["local_reply"]["action_card"] is None
 
 
