@@ -109,24 +109,25 @@ export function ProjectsPage() {
         isError
           ? "Couldn’t load your research projects."
           : isEmpty
-            ? "Start a literature review, synthesis, or writing effort."
+            ? "Create your first research workspace."
             : "Continue your active research or start a new one."
       }
       actions={
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={openCreate}
-          disabled={isError}
-          className="text-text-secondary hover:text-text-primary"
-        >
-          <Plus className="size-3.5" /> New research
-        </Button>
+        !isEmpty && !isError ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openCreate}
+            className="text-text-secondary hover:text-text-primary"
+          >
+            <Plus className="size-3.5" /> New research
+          </Button>
+        ) : undefined
       }
     >
       {isLoading ? (
-        <div className="max-w-3xl space-y-4" aria-busy="true" data-density="high">
-          <Skeleton className="h-28 w-full rounded-2xl" />
+        <div className="max-w-3xl space-y-3" aria-busy="true" data-density="high">
+          <Skeleton className="h-24 w-full rounded-xl" />
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="flex items-start gap-3 py-3">
               <Skeleton className="size-9 rounded-md" />
@@ -170,12 +171,9 @@ export function ProjectsPage() {
           onCreate={openCreate}
         />
       ) : (
-        <div className="mx-auto max-w-3xl space-y-8" data-density="high">
+        <div className="mx-auto max-w-3xl space-y-5" data-density="high">
           {view.continueRow ? (
-            <section aria-label="Continue research" className="space-y-3">
-              <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
-                Continue
-              </p>
+            <section aria-label="Continue research">
               <ProjectCard
                 row={view.continueRow}
                 featured
@@ -191,8 +189,8 @@ export function ProjectsPage() {
           ) : null}
 
           {view.otherRows.length > 0 ? (
-            <section aria-label="Other projects" className="space-y-1">
-              <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
+            <section aria-label="Other projects">
+              <p className="mb-1.5 text-[12px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
                 Other projects
               </p>
               <div>
@@ -210,17 +208,6 @@ export function ProjectsPage() {
               </div>
             </section>
           ) : null}
-
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={openCreate}
-              className="inline-flex items-center gap-1.5 text-[12px] font-medium text-text-secondary transition-colors hover:text-text-accent"
-            >
-              <Plus className="size-3.5" />
-              New research
-            </button>
-          </div>
         </div>
       )}
       <ProjectDialog

@@ -15,7 +15,7 @@
 | Surface | Feel |
 |---------|------|
 | Home | Invisible orientation — calm desk, one milestone. **Frozen** for polish (2026-08-08). |
-| Projects | Continuity — pick up the right research. |
+| Projects | Continuity — continue-first bookshelf, one primary create. **Frozen** (2026-08-08). |
 | Library | Effortless control of papers. |
 | Research Intelligence | Magical insight — Dhund’s signature. |
 | Writing | Flow from evidence. |

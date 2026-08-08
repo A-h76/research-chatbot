@@ -73,10 +73,10 @@ function unlocksHintFrom(state: ResearchState | null | undefined): string | null
   const stage = state?.workflow?.stage;
   const actionId = state?.workflow?.nextAction?.id;
   if (stage === "evidence_extraction" || actionId === "extract_evidence") {
-    return "Unlocks themes · Research Intelligence · writing";
+    return "After extraction you’ll unlock themes · Research Intelligence · writing";
   }
   if (stage === "library" || actionId === "import_papers") {
-    return "Unlocks evidence extraction and Research Intelligence";
+    return "Completing this unlocks evidence extraction and Research Intelligence";
   }
   return null;
 }

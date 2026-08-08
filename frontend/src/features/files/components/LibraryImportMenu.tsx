@@ -54,7 +54,7 @@ export function LibraryImportMenu({
       <DropdownMenuTrigger
         className={cn(
           "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-[12px] font-medium",
-          "text-foreground transition-colors hover:bg-muted",
+          "text-text-secondary transition-colors hover:bg-muted hover:text-text-primary",
         )}
       >
         Import

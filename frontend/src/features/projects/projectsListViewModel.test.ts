@@ -138,6 +138,7 @@ describe("buildProjectsListView", () => {
     expect(view.continueRow?.statusLabel).toBe("Evidence extraction");
     expect(view.continueRow?.nextLabel).toBe("Extract evidence");
     expect(view.continueRow?.unlocksHint).toContain("Research Intelligence");
+    expect(view.continueRow?.unlocksHint?.toLowerCase()).toContain("after extraction");
     expect(view.continueRow?.papers).toBe(6);
     expect(view.otherRows).toHaveLength(1);
     expect(view.otherRows[0].statusLabel).toBe("Ready for writing");

@@ -95,6 +95,8 @@ Every screen answers exactly one primary question — and owns one emotional out
 
 If a screen answers multiple unrelated questions, split the responsibility.
 
+**One primary action:** Each screen should have exactly one primary action. Every other action must visually defer to it. Duplicate CTAs that do the same thing are a hierarchy bug.
+
 ---
 
 ### 8. Home Invisible · Intelligence Magical ⭐
@@ -111,7 +113,11 @@ Dhund’s signature lives where researchers *work*:
 - Evidence-backed Writing
 - Review workflow
 
-**Freeze (2026-08-08):** Home is **frozen** for craftsmanship polish. Touch Home only for real usability bugs or Research State contradictions — not for another week of visual refinement. Next Phase 2 investment order: **Projects → Library → Research Intelligence → Writing → Review**.
+**Freeze (2026-08-08):** Home is **frozen** for craftsmanship polish. Touch Home only for real usability bugs or Research State contradictions — not for another week of visual refinement.
+
+**Freeze (2026-08-08):** Projects is **frozen**. Changes require measurable usability evidence, a Research State contradiction, or platform-wide design-system evolution — not another week of visual refinement.
+
+**Phase 2 investment order:** Home ✓ · Projects ✓ · **Library** → Paper → Research Intelligence → Writing → Review.
 
 ---
 
@@ -155,7 +161,7 @@ They should think:
 
 | Frozen platform cores | Product phase |
 |----------------------|---------------|
-| Assistant Engine · Research State · Capability Router · Workflow Engine | Phase 2 = frontend UX: **Home ✓ frozen** → **Projects (in progress)** → Library → Paper → RI → Writing → Review → mobile → polish |
+| Assistant Engine · Research State · Capability Router · Workflow Engine | Phase 2 = frontend UX: **Home ✓ frozen** → **Projects ✓ frozen** → Library → Paper → RI → Writing → Review → mobile → polish |
 
 Deferred until friction demands: Journey Engine, Skill Registry, Research Memory, Mentor Analytics (see ADR-0018).
 

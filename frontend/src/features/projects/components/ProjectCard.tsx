@@ -1,10 +1,9 @@
 /**
  * Project row — bookshelf bookmark: what · where you stopped · what’s next.
- * Featured = Continue Research; others = quieter Open.
- * Outcome-oriented copy — no stage-machine jargon dump.
+ * Featured = Continue (one primary action); others defer with a quiet chevron.
  */
 import { motion } from "framer-motion";
-import { ArrowRight, Pencil } from "lucide-react";
+import { ArrowRight, ChevronRight, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProjectListRow } from "../projectsListViewModel";
 import { papersPhrase } from "../projectsListViewModel";
@@ -21,7 +20,6 @@ export function ProjectCard({
   onEdit: () => void;
 }) {
   const { project, papers, statusLabel, nextLabel, unlocksHint } = row;
-  const cta = featured ? "Continue" : "Open";
 
   return (
     <motion.div
@@ -39,10 +37,10 @@ export function ProjectCard({
         }
       }}
       className={cn(
-        "group relative flex cursor-pointer items-start gap-3 px-1 py-4 text-left transition-[background-color,transform] duration-200",
+        "group relative flex cursor-pointer items-start gap-3 text-left transition-[background-color,box-shadow,border-color] duration-200",
         featured
-          ? "rounded-2xl border border-primary/20 bg-[linear-gradient(180deg,color-mix(in_oklab,var(--primary)_5%,white)_0%,transparent_100%)] px-4 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_8px_20px_-14px_rgba(15,110,106,0.22)] hover:-translate-y-0.5 dark:bg-[linear-gradient(180deg,color-mix(in_oklab,var(--primary)_12%,transparent)_0%,transparent_100%)]"
-          : "border-b border-border last:border-b-0 hover:bg-muted/25",
+          ? "rounded-xl border border-primary/15 bg-primary/[0.03] px-3.5 py-3.5 hover:border-primary/25 hover:bg-primary/[0.045] dark:bg-primary/[0.06]"
+          : "border-b border-border px-1 py-3 last:border-b-0 hover:bg-muted/25",
       )}
       data-density="high"
     >
@@ -52,7 +50,12 @@ export function ProjectCard({
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
-          <h3 className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-snug tracking-tight text-text-primary">
+          <h3
+            className={cn(
+              "min-w-0 flex-1 truncate leading-snug tracking-tight text-text-primary",
+              featured ? "text-[14px] font-semibold" : "text-[13px] font-medium",
+            )}
+          >
             {project.name}
           </h3>
           <button
@@ -75,12 +78,12 @@ export function ProjectCard({
               <span className="font-medium text-text-accent">{nextLabel}</span>
             </>
           ) : (
-            <span className="text-text-primary/90">{statusLabel}</span>
+            <span>{statusLabel}</span>
           )}
         </p>
 
         {featured && unlocksHint ? (
-          <p className="mt-1 text-[11px] text-text-tertiary">{unlocksHint}</p>
+          <p className="mt-1 text-[11px] leading-snug text-text-tertiary">{unlocksHint}</p>
         ) : null}
 
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-text-secondary">
@@ -88,10 +91,19 @@ export function ProjectCard({
           {featured ? (
             <span className="text-text-tertiary">{statusLabel}</span>
           ) : null}
-          <span className="ml-auto inline-flex items-center gap-1 font-medium text-text-accent transition-transform duration-200 group-hover:translate-x-0.5">
-            {cta}
-            <ArrowRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-1" />
-          </span>
+          {featured ? (
+            <span className="ml-auto inline-flex items-center gap-1 font-medium text-text-accent transition-transform duration-200 group-hover:translate-x-0.5">
+              Continue
+              <ArrowRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-1" />
+            </span>
+          ) : (
+            <span
+              className="ml-auto inline-flex items-center text-text-tertiary transition-colors group-hover:text-text-secondary"
+              aria-hidden
+            >
+              <ChevronRight className="size-4" />
+            </span>
+          )}
         </div>
       </div>
     </motion.div>

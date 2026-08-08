@@ -52,53 +52,26 @@ function relativeAdded(iso: string | null | undefined): string | null {
   return null;
 }
 
-/** Tiny status chips — scannable, not prose weight. */
-type StatusChip = {
-  id: string;
-  label: string;
-  tone: "ready" | "warn" | "muted";
-};
-
-function researchChips(
+/** One human status — never Profile / Evidence / Chat engineering chips. */
+function humanStatus(
   file: UserFile,
-  aiState?: AiStateResolved,
-): StatusChip[] {
-  const r = file.research_readiness;
-  const aid = aiState?.id;
-  const out: StatusChip[] = [];
+): { label: string; tone: "ready" | "warn" | "muted" } | null {
+  const rs = (file.reading_status ?? "unread") as "unread" | "reading" | "read";
+  const metadataOnly =
+    file.kind === "document" &&
+    (file.research_readiness === "metadata_only" ||
+      file.has_pdf === false ||
+      (!file.research_readiness && (file.size === 0 || !file.size)));
 
-  if (
-    r === "analysed" ||
-    r === "indexed" ||
-    r === "research_ready" ||
-    (file.meta_status === "done" && r !== "metadata_only" && r !== "pdf_attached")
-  ) {
-    out.push({ id: "profile", label: "Profile", tone: "ready" });
+  if (file.meta_status === "failed") return { label: "Import failed", tone: "warn" };
+  if (file.meta_status === "pending" || file.meta_status === "running") {
+    return { label: "Processing", tone: "muted" };
   }
-
-  if (
-    r === "indexed" ||
-    r === "research_ready" ||
-    aid === "evidence_ready" ||
-    aid === "graph_ready" ||
-    aid === "chat_ready"
-  ) {
-    out.push({ id: "evidence", label: "Evidence", tone: "ready" });
-  }
-
-  if (r === "research_ready" || aid === "chat_ready") {
-    out.push({ id: "chat", label: "Chat", tone: "ready" });
-  }
-
-  if (
-    r === "metadata_only" ||
-    file.has_pdf === false ||
-    (!r && (file.size === 0 || !file.size))
-  ) {
-    out.push({ id: "fulltext", label: "Needs PDF", tone: "warn" });
-  }
-
-  return out;
+  if (metadataOnly) return { label: "Needs PDF", tone: "warn" };
+  if (rs === "reading") return { label: "Reading", tone: "muted" };
+  if (rs === "unread") return { label: "Unread", tone: "muted" };
+  if (rs === "read") return { label: "Read", tone: "muted" };
+  return null;
 }
 
 /**
@@ -108,7 +81,7 @@ export function FileCard({
   file,
   project,
   onDelete,
-  aiState,
+  aiState: _aiState,
   selected = false,
   onToggleSelect,
   showProject = true,
@@ -125,7 +98,6 @@ export function FileCard({
   const navigate = useNavigate();
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const rs = (file.reading_status ?? "unread") as "unread" | "reading" | "read";
   const isPaper = file.kind === "document";
   const readiness = file.research_readiness;
   const metadataOnly =
@@ -136,7 +108,7 @@ export function FileCard({
   const displayTitle = file.title || file.name;
   const authors = file.authors?.split(";")[0]?.trim();
   const study = studyTypeLabel(file);
-  const chips = isPaper ? researchChips(file, aiState) : [];
+  const status = isPaper ? humanStatus(file) : null;
   const added = relativeAdded(file.created_at);
 
   const metaParts = [
@@ -219,12 +191,12 @@ export function FileCard({
         className="min-w-0 flex-1 text-left focus-visible:outline-none"
       >
         <p
-          className="line-clamp-2 text-[14px] font-semibold leading-snug tracking-tight text-foreground"
+          className="line-clamp-2 text-[14px] font-semibold leading-snug tracking-tight text-text-primary"
           title={displayTitle}
         >
           {displayTitle}
         </p>
-        <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
+        <p className="mt-0.5 truncate text-[12px] text-text-secondary">
           {metaParts.length
             ? metaParts.join(" · ")
             : file.title && file.title !== file.name
@@ -232,40 +204,20 @@ export function FileCard({
               : "No metadata yet"}
         </p>
 
-        {(chips.length > 0 || added || rs === "unread" || rs === "reading") && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {chips.map((c) => (
+        {(status || added) && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {status ? (
               <span
-                key={c.id}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-1.5 py-px text-[10px] font-medium",
-                  c.tone === "ready" &&
-                    "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-                  c.tone === "warn" &&
-                    "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-400",
-                  c.tone === "muted" &&
-                    "border-border bg-muted/50 text-muted-foreground",
+                  "text-[11px] font-medium",
+                  status.tone === "warn" ? "text-amber-800 dark:text-amber-400" : "text-text-tertiary",
                 )}
               >
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    c.tone === "ready" && "bg-emerald-500",
-                    c.tone === "warn" && "bg-amber-500",
-                    c.tone === "muted" && "bg-muted-foreground/50",
-                  )}
-                  aria-hidden
-                />
-                {c.label}
+                {status.label}
               </span>
-            ))}
-            {rs === "unread" ? (
-              <span className="text-[11px] font-medium text-muted-foreground">Unread</span>
-            ) : rs === "reading" ? (
-              <span className="text-[11px] font-medium text-sem-warn">Reading</span>
             ) : null}
             {added ? (
-              <span className="text-[11px] text-muted-foreground/80">{added}</span>
+              <span className="text-[11px] text-text-tertiary">{added}</span>
             ) : null}
           </div>
         )}
@@ -273,14 +225,12 @@ export function FileCard({
 
       <div className="flex shrink-0 flex-col items-end gap-1.5 pt-0.5">
         {isPaper && (
-          <button
-            type="button"
-            onClick={open}
-            className="inline-flex items-center gap-1 text-[12px] font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          <span
+            className="inline-flex items-center text-text-tertiary opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+            aria-hidden
           >
-            Continue
             <ArrowRight className="size-3.5" />
-          </button>
+          </span>
         )}
 
         {metadataOnly && (

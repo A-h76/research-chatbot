@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, X, ArrowRight } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LibraryPapersSkeleton } from "@/components/common/ResearchSkeletons";
@@ -16,6 +16,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { FileCard } from "../components/FileCard";
+import { ContinueReadingCard } from "../components/ContinueReadingCard";
+import { LibraryAttentionList } from "../components/LibraryAttentionList";
 import { CollectionToolbar } from "../components/CollectionToolbar";
 import { LibrarySearchFilters, type LibraryFilterState } from "../components/LibrarySearchFilters";
 import { LibraryUploadQueue } from "../components/LibraryUploadQueue";
@@ -24,15 +26,14 @@ import {
   type ConnectLibraryPanelHandle,
 } from "../components/ConnectLibraryPanel";
 import { CollectionsPanel } from "../components/CollectionsPanel";
-import { LibraryHealthStrip } from "../components/LibraryHealthStrip";
 import { LibraryDuplicatesPanel } from "../components/LibraryDuplicatesPanel";
 import { UploadPapersDialog } from "../components/UploadPapersDialog";
 import { LibraryImportMenu } from "../components/LibraryImportMenu";
+import { buildLibraryListView, type LibraryAttentionRow } from "../libraryListViewModel";
 import { useLibraryUpload } from "../hooks/useLibraryUpload";
 import { useLibraryCollections } from "../hooks/useLibraryCollections";
 import { useDeleteFile, useFiles, useLibraryStats, useLibraryTags } from "../useFiles";
 import { useLibraryFacets } from "../useLibraryFacets";
-import { libraryBridgeApi } from "../libraryBridgeApi";
 import { collectionsApi, removePapersFromCollection } from "../collectionsApi";
 import { useProjects } from "@/features/projects/useProjects";
 import { usePipelines } from "@/features/pipeline";
@@ -79,76 +80,7 @@ function writeFiltersToUrl(sp: URLSearchParams, filters: LibraryFilterState) {
   for (const t of filters.tag ?? []) sp.append("tag", t);
 }
 
-function relativeCorpusUpdate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return null;
-  const days = Math.floor((Date.now() - t) / 86_400_000);
-  if (days <= 0) return "Updated today";
-  if (days === 1) return "Updated yesterday";
-  if (days < 7) return `Updated ${days}d ago`;
-  return null;
-}
-
-function CorpusHeader({
-  paperCount,
-  lastUpdatedAt,
-  onContinue,
-  continueLabel,
-}: {
-  paperCount: number;
-  lastUpdatedAt?: string | null;
-  onContinue?: () => void;
-  continueLabel?: string;
-}) {
-  const { currentProjectId } = useUI();
-  const { data: projects = [] } = useProjects();
-  const proj = currentProjectId
-    ? projects.find((p) => p.id === currentProjectId)
-    : null;
-
-  const updated = relativeCorpusUpdate(lastUpdatedAt);
-  const contextLine = [
-    paperCount > 0
-      ? `${paperCount.toLocaleString()} paper${paperCount === 1 ? "" : "s"}`
-      : null,
-    updated,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  return (
-    <header className="flex flex-wrap items-end justify-between gap-3">
-      <div className="min-w-0 space-y-0.5">
-        <h1 className="text-[18px] font-semibold tracking-tight text-foreground">
-          {proj ? (
-            <>
-              <span className="mr-1.5 text-base leading-none">{proj.emoji}</span>
-              {proj.name}
-            </>
-          ) : (
-            "Library"
-          )}
-        </h1>
-        <p className="text-[13px] tabular-nums text-muted-foreground">
-          {contextLine || "Your research corpus"}
-        </p>
-      </div>
-      {onContinue && paperCount > 0 ? (
-        <button
-          type="button"
-          onClick={onContinue}
-          className="inline-flex shrink-0 items-center gap-1 text-[13px] font-medium text-primary transition-colors hover:text-primary/80"
-        >
-          {continueLabel ?? "Continue research"}
-          <ArrowRight className="size-3.5" />
-        </button>
-      ) : null}
-    </header>
-  );
-}
-
-/** Library — corpus first, progress second (workspace, not dashboard). */
+/** Library — Constitution: Which papers matter? Continue → attention → list. */
 export function FilesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -159,10 +91,6 @@ export function FilesPage() {
   const { data: tagList = [] } = useLibraryTags(currentProjectId);
   const { data: facets } = useLibraryFacets(currentProjectId);
   const { data: collections = [] } = useLibraryCollections();
-  const { data: health } = useQuery({
-    queryKey: ["library", "health", currentProjectId ?? null],
-    queryFn: () => libraryBridgeApi.health(currentProjectId),
-  });
   const deleteFile = useDeleteFile();
   const { items: uploadItems, isUploading, upload, clearFinished, recentUploaded } =
     useLibraryUpload();
@@ -263,6 +191,17 @@ export function FilesPage() {
   const fileItems = files ?? [];
   const total = listData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // Continue / attention ignore search filters (Projects-style spotlight).
+  const { data: spotlightData } = useFiles({
+    project_id: currentProjectId,
+    kind: "document",
+    sort: "reading_status",
+    limit: 40,
+    offset: 0,
+  });
+  const spotlightItems = spotlightData?.items ?? [];
+
   const paperIds = useMemo(
     () => (files ?? []).filter((f) => f.kind === "document").map((f) => f.id),
     [files],
@@ -304,41 +243,11 @@ export function FilesPage() {
   const hasLibrary = (stats?.total_papers ?? 0) > 0 || total > 0;
   const paperCount = stats?.total_papers ?? total;
   const unreadCount = facets?.reading_status?.unread ?? stats?.unread ?? 0;
-  const lastUpdatedAt =
-    fileItems.reduce<string | null>((best, f) => {
-      if (!f.created_at) return best;
-      if (!best || f.created_at > best) return f.created_at;
-      return best;
-    }, null) ?? health?.generated_at ?? null;
 
-  const continueTarget = (() => {
-    const reading = fileItems.find((f) => f.reading_status === "reading");
-    if (reading) {
-      return {
-        label: "Resume reading",
-        run: () => navigate(`/papers/${reading.id}`),
-      };
-    }
-    const unread = fileItems.find(
-      (f) => f.reading_status === "unread" || !f.reading_status,
-    );
-    if (unread) {
-      return {
-        label: "Resume reading",
-        run: () => navigate(`/papers/${unread.id}`),
-      };
-    }
-    if (currentProjectId != null) {
-      return {
-        label: "Open Research Intelligence",
-        run: () => navigate("/research/compare"),
-      };
-    }
-    return {
-      label: "Continue research",
-      run: () => navigate("/"),
-    };
-  })();
+  const libraryView = useMemo(
+    () => buildLibraryListView(spotlightItems),
+    [spotlightItems],
+  );
 
   const STATUS_TABS: { key: StatusFilter; label: string; count?: number }[] = [
     { key: "all", label: "All", count: facets?.total ?? stats?.total_papers },
@@ -349,6 +258,14 @@ export function FilesPage() {
   const recentSession = recentUploaded.slice(0, 8);
   const rangeStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const rangeEnd = Math.min((page + 1) * PAGE_SIZE, total);
+
+  function onAttentionOpen(row: LibraryAttentionRow) {
+    if (row.kind === "needs_pdf") {
+      navigate(`/papers/${row.file.id}`);
+      return;
+    }
+    navigate(`/papers/${row.file.id}`);
+  }
 
   function onImported(pid?: number | null) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.files });
@@ -390,115 +307,133 @@ export function FilesPage() {
     }
   }
 
-  return (
-    <PageContainer dense maxWidth="6xl">
-      <div className="space-y-3" data-density="high">
-        <CorpusHeader
-          paperCount={paperCount}
-          lastUpdatedAt={lastUpdatedAt}
-          onContinue={hasLibrary ? continueTarget.run : undefined}
-          continueLabel={continueTarget.label}
-        />
+  const importMenu = (
+    <LibraryImportMenu
+      onUpload={() => setUploadOpen(true)}
+      onBibtex={() => sourcesRef.current?.openBibtex()}
+      onZoteroImport={() => sourcesRef.current?.openZoteroImport()}
+      onMendeleyImport={() => sourcesRef.current?.openMendeleyImport()}
+      onGoogleDriveImport={() => sourcesRef.current?.openGoogleDriveImport()}
+      onDropboxImport={() => sourcesRef.current?.openDropboxImport()}
+      onOneDriveImport={() => sourcesRef.current?.openOneDriveImport()}
+    />
+  );
 
-        {hasLibrary && (
-          <CollectionToolbar
-            q={q}
-            onQChange={(v) => {
-              setQ(v);
-              setPage(0);
-            }}
-            showFilters={showFilters}
-            onToggleFilters={() => setShowFilters((v) => !v)}
-            isUploading={isUploading}
-            onUpload={() => setUploadOpen(true)}
-            onBibtex={() => sourcesRef.current?.openBibtex()}
-            onZoteroImport={() => sourcesRef.current?.openZoteroImport()}
-            onMendeleyImport={() => sourcesRef.current?.openMendeleyImport()}
-            onGoogleDriveImport={() => sourcesRef.current?.openGoogleDriveImport()}
-            onDropboxImport={() => sourcesRef.current?.openDropboxImport()}
-            onOneDriveImport={() => sourcesRef.current?.openOneDriveImport()}
-            selectedCount={selectedIds.size}
-            onClearSelection={() => setSelectedIds(new Set())}
-            needPdfFilter={needPdf}
-            onClearNeedPdf={() => {
-              setNeedPdf(false);
-              setPage(0);
-            }}
-            onBulkAsk={() => {
-              const first = selectedList[0];
-              if (first) navigate(`/papers/${first}/chat`);
-              else navigate("/chat");
-            }}
-            onBulkCompare={() => {
-              if (selectedList.length < 2) return;
-              try {
-                sessionStorage.setItem(
-                  "dhund:compare-ids",
-                  JSON.stringify(selectedList),
-                );
-              } catch {
-                /* ignore */
-              }
-              navigate(
-                `/research/compare?tab=compare&ids=${selectedList.join(",")}`,
-              );
-            }}
-            onBulkAddToCollection={() => setAddToCollectionIds(selectedList)}
-            onBulkRemoveFromCollection={
-              collectionId != null
-                ? async () => {
-                    try {
-                      const res = await removePapersFromCollection(
-                        collectionId,
-                        selectedList,
-                      );
-                      toast.success(
-                        `Removed ${res.removed} paper${res.removed === 1 ? "" : "s"} from collection`,
-                      );
-                      setSelectedIds(new Set());
-                      void queryClient.invalidateQueries({ queryKey: ["library"] });
-                      void queryClient.invalidateQueries({ queryKey: ["files"] });
-                    } catch (e) {
-                      toast.error(
-                        e instanceof Error ? e.message : "Could not remove from collection",
-                      );
-                    }
-                  }
-                : undefined
-            }
+  return (
+    <PageContainer
+      dense
+      maxWidth="6xl"
+      title="Library"
+      description={
+        hasLibrary
+          ? "Papers that matter for your research."
+          : "Import papers to build the corpus your research draws from."
+      }
+      actions={hasLibrary ? importMenu : undefined}
+    >
+      <div className="space-y-4" data-density="high">
+        {/* Keep import panel mounted for menu handlers; not a visible CTA. */}
+        <div className="hidden">
+          <ConnectLibraryPanel
+            ref={sourcesRef}
+            projectId={currentProjectId}
+            onImported={onImported}
           />
-        )}
-        <ConnectLibraryPanel
-          ref={sourcesRef}
-          projectId={currentProjectId}
-          onImported={onImported}
-        />
+        </div>
+
+        {hasLibrary && libraryView.continuePaper ? (
+          <ContinueReadingCard
+            paper={libraryView.continuePaper}
+            onContinue={() => navigate(`/papers/${libraryView.continuePaper!.id}`)}
+          />
+        ) : null}
+
+        {hasLibrary ? (
+          <LibraryAttentionList
+            rows={libraryView.attentionRows}
+            total={libraryView.attentionTotal}
+            onOpen={onAttentionOpen}
+            onShowAllNeedsPdf={() => {
+              setNeedPdf(true);
+              setStatus("all");
+              setPage(0);
+            }}
+          />
+        ) : null}
 
         {!hasLibrary && !isLoading ? (
           <div className="mx-auto max-w-md py-16 text-center">
-            <p className="text-[18px] font-semibold tracking-tight text-foreground">
-              Your research library is empty
+            <p className="text-[18px] font-semibold tracking-tight text-text-primary">
+              Your library is empty
             </p>
-            <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">
-              Upload PDFs to build the corpus your research sessions draw from.
+            <p className="mt-2 text-[14px] leading-relaxed text-text-secondary">
+              Import PDFs or connect a reference manager to start.
             </p>
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-              <Button disabled={isUploading} onClick={() => setUploadOpen(true)}>
-                Upload papers
-              </Button>
-              <LibraryImportMenu
-                onUpload={() => setUploadOpen(true)}
-                onBibtex={() => sourcesRef.current?.openBibtex()}
-                onZoteroImport={() => sourcesRef.current?.openZoteroImport()}
-                onMendeleyImport={() => sourcesRef.current?.openMendeleyImport()}
-                onGoogleDriveImport={() => sourcesRef.current?.openGoogleDriveImport()}
-            onDropboxImport={() => sourcesRef.current?.openDropboxImport()}
-                onOneDriveImport={() => sourcesRef.current?.openOneDriveImport()}
-              />
-            </div>
+            <div className="mt-6 flex justify-center">{importMenu}</div>
           </div>
         ) : (
           <div className="min-w-0 space-y-4">
+            <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
+              All papers
+            </p>
+            <CollectionToolbar
+              q={q}
+              onQChange={(v) => {
+                setQ(v);
+                setPage(0);
+              }}
+              showFilters={showFilters}
+              onToggleFilters={() => setShowFilters((v) => !v)}
+              selectedCount={selectedIds.size}
+              onClearSelection={() => setSelectedIds(new Set())}
+              needPdfFilter={needPdf}
+              onClearNeedPdf={() => {
+                setNeedPdf(false);
+                setPage(0);
+              }}
+              onBulkAsk={() => {
+                const first = selectedList[0];
+                if (first) navigate(`/papers/${first}/chat`);
+                else navigate("/chat");
+              }}
+              onBulkCompare={() => {
+                if (selectedList.length < 2) return;
+                try {
+                  sessionStorage.setItem(
+                    "dhund:compare-ids",
+                    JSON.stringify(selectedList),
+                  );
+                } catch {
+                  /* ignore */
+                }
+                navigate(
+                  `/research/compare?tab=compare&ids=${selectedList.join(",")}`,
+                );
+              }}
+              onBulkAddToCollection={() => setAddToCollectionIds(selectedList)}
+              onBulkRemoveFromCollection={
+                collectionId != null
+                  ? async () => {
+                      try {
+                        const res = await removePapersFromCollection(
+                          collectionId,
+                          selectedList,
+                        );
+                        toast.success(
+                          `Removed ${res.removed} paper${res.removed === 1 ? "" : "s"} from collection`,
+                        );
+                        setSelectedIds(new Set());
+                        void queryClient.invalidateQueries({ queryKey: ["library"] });
+                        void queryClient.invalidateQueries({ queryKey: ["files"] });
+                      } catch (e) {
+                        toast.error(
+                          e instanceof Error ? e.message : "Could not remove from collection",
+                        );
+                      }
+                    }
+                  : undefined
+              }
+            />
               {uploadItems.length > 0 && (
                 <LibraryUploadQueue items={uploadItems} onClearFinished={clearFinished} />
               )}
@@ -545,8 +480,8 @@ export function FilesPage() {
                       className={cn(
                         "relative flex items-center gap-1.5 px-2.5 py-2 text-[13px] font-medium transition-colors",
                         status === key
-                          ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
-                          : "text-muted-foreground hover:text-foreground",
+                          ? "text-text-primary after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
+                          : "text-text-tertiary hover:text-text-secondary",
                       )}
                     >
                       {label}
@@ -669,15 +604,6 @@ export function FilesPage() {
                 </>
               )}
 
-              <LibraryHealthStrip
-                projectId={currentProjectId}
-                unreadCount={facets?.reading_status?.unread ?? stats?.unread}
-                onFilterNeedsReview={() => {
-                  setNeedPdf(true);
-                  setStatus("all");
-                  setPage(0);
-                }}
-              />
               <LibraryDuplicatesPanel projectId={currentProjectId} />
             </div>
         )}
