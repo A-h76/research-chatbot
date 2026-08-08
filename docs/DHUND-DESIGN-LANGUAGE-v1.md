@@ -31,7 +31,7 @@ Do **not** put brand spectacle on Home. Signature craft (Evidence Inspector, pro
 | `text.primary` | `--text-primary` / `text-text-primary` | Headlines, titles, project name |
 | `text.secondary` | `--text-secondary` / `text-text-secondary` | Body, supporting context |
 | `text.tertiary` | `--text-tertiary` / `text-text-tertiary` | Labels, metadata (`NEXT MILESTONE`) |
-| `text.accent` | `--text-accent` / `text-text-accent` | Links, active nav, actionable concepts only |
+| `text.accent` | `--text-accent` / `text-text-accent` | Links, actionable concepts, research CTAs — **not** sidebar active nav |
 | `text.success` / `warning` / `danger` / `info` | semantic | Evidence / RI / Review — never Home chrome |
 
 **Ratio:** ~90% neutral · ~8% teal accent · ~2% semantic. Color carries meaning, never decoration.
