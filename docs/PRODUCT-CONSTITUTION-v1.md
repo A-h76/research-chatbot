@@ -155,7 +155,7 @@ They should think:
 
 | Frozen platform cores | Product phase |
 |----------------------|---------------|
-| Assistant Engine · Research State · Capability Router · Workflow Engine | Phase 2 = frontend UX: **Home ✓ frozen** → Projects → Library → Paper → RI → Writing → Review → mobile → polish |
+| Assistant Engine · Research State · Capability Router · Workflow Engine | Phase 2 = frontend UX: **Home ✓ frozen** → **Projects (in progress)** → Library → Paper → RI → Writing → Review → mobile → polish |
 
 Deferred until friction demands: Journey Engine, Skill Registry, Research Memory, Mentor Analytics (see ADR-0018).
 

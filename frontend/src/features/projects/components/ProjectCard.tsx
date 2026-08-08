@@ -1,30 +1,27 @@
-import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import {
-  MessagesSquare, FileText, Brain, Pencil,
-  ArrowRight,
-} from "lucide-react";
-import type { Project } from "@/types/api";
-
 /**
- * Dense project row — answers “What am I working on?” (Design Language).
- * Hairlines only; no card elevation (Border Doctrine).
+ * Project row — bookshelf bookmark: what · where you stopped · what’s next.
+ * Featured = Continue Research; others = quieter Open.
+ * Outcome-oriented copy — no stage-machine jargon dump.
  */
+import { motion } from "framer-motion";
+import { ArrowRight, Pencil } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { ProjectListRow } from "../projectsListViewModel";
+import { papersPhrase } from "../projectsListViewModel";
+
 export function ProjectCard({
-  project,
-  chatCount,
-  fileCount,
-  memoryCount,
+  row,
+  featured = false,
+  onOpen,
   onEdit,
 }: {
-  project: Project;
-  chatCount: number;
-  fileCount: number;
-  memoryCount: number;
+  row: ProjectListRow;
+  featured?: boolean;
   onOpen: () => void;
   onEdit: () => void;
 }) {
-  const navigate = useNavigate();
+  const { project, papers, statusLabel, nextLabel, unlocksHint } = row;
+  const cta = featured ? "Continue" : "Open";
 
   return (
     <motion.div
@@ -32,17 +29,30 @@ export function ProjectCard({
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.15 }}
-      className="group relative flex cursor-pointer items-start gap-3 border-b border-border px-1 py-3 transition-colors last:border-b-0 hover:bg-muted/30"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className={cn(
+        "group relative flex cursor-pointer items-start gap-3 px-1 py-4 text-left transition-[background-color,transform] duration-200",
+        featured
+          ? "rounded-2xl border border-primary/20 bg-[linear-gradient(180deg,color-mix(in_oklab,var(--primary)_5%,white)_0%,transparent_100%)] px-4 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_8px_20px_-14px_rgba(15,110,106,0.22)] hover:-translate-y-0.5 dark:bg-[linear-gradient(180deg,color-mix(in_oklab,var(--primary)_12%,transparent)_0%,transparent_100%)]"
+          : "border-b border-border last:border-b-0 hover:bg-muted/25",
+      )}
       data-density="high"
-      onClick={() => navigate(`/projects/${project.id}`)}
     >
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40 text-lg">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background text-lg">
         {project.emoji}
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
-          <h3 className="min-w-0 flex-1 truncate text-[13px] font-medium leading-snug tracking-tight">
+          <h3 className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-snug tracking-tight text-text-primary">
             {project.name}
           </h3>
           <button
@@ -51,36 +61,36 @@ export function ProjectCard({
               e.stopPropagation();
               onEdit();
             }}
-            className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+            className="rounded-md p-1 text-text-tertiary opacity-0 transition-opacity hover:bg-muted hover:text-text-primary group-hover:opacity-100 focus-visible:opacity-100"
             title="Edit project"
           >
             <Pencil className="size-3.5" />
           </button>
         </div>
-        {project.description ? (
-          <p className="mt-0.5 line-clamp-1 text-[12px] text-muted-foreground">
-            {project.description}
-          </p>
-        ) : project.instructions ? (
-          <p className="mt-0.5 line-clamp-1 text-[12px] italic text-muted-foreground">
-            {project.instructions}
-          </p>
+
+        <p className="mt-1 text-[12px] leading-relaxed text-text-secondary">
+          {featured && nextLabel ? (
+            <>
+              Next milestone{" "}
+              <span className="font-medium text-text-accent">{nextLabel}</span>
+            </>
+          ) : (
+            <span className="text-text-primary/90">{statusLabel}</span>
+          )}
+        </p>
+
+        {featured && unlocksHint ? (
+          <p className="mt-1 text-[11px] text-text-tertiary">{unlocksHint}</p>
         ) : null}
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tabular-nums text-muted-foreground">
-          <span className="inline-flex items-center gap-1" title="Chats">
-            <MessagesSquare className="size-3" /> {chatCount}
-          </span>
-          <span className="inline-flex items-center gap-1" title="Papers">
-            <FileText className="size-3" /> {fileCount}
-          </span>
-          {memoryCount > 0 && (
-            <span className="inline-flex items-center gap-1 text-primary" title="Memories">
-              <Brain className="size-3" /> {memoryCount}
-            </span>
-          )}
-          <span className="ml-auto inline-flex items-center gap-1 text-primary opacity-0 transition-opacity group-hover:opacity-100">
-            Open <ArrowRight className="size-3" />
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-text-secondary">
+          <span className="tabular-nums">{papersPhrase(papers)}</span>
+          {featured ? (
+            <span className="text-text-tertiary">{statusLabel}</span>
+          ) : null}
+          <span className="ml-auto inline-flex items-center gap-1 font-medium text-text-accent transition-transform duration-200 group-hover:translate-x-0.5">
+            {cta}
+            <ArrowRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-1" />
           </span>
         </div>
       </div>

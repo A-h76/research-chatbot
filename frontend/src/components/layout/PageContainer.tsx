@@ -53,12 +53,14 @@ export function PageContainer({
           >
             <div>
               {title && (
-                <h1 className="text-[20px] font-semibold tracking-tight">{title}</h1>
+                <h1 className="text-[20px] font-semibold tracking-tight text-text-primary">
+                  {title}
+                </h1>
               )}
               {description && (
                 <p
                   className={cn(
-                    "text-[13px] text-muted-foreground",
+                    "text-[13px] text-text-secondary",
                     title ? "mt-1" : undefined,
                   )}
                 >
