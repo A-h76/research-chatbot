@@ -1,24 +1,21 @@
 /**
- * Featured Continue reading card — Library primary continuation.
+ * Featured Library spotlight — Continue reading or Recommended.
  */
 import { ArrowRight } from "lucide-react";
-import type { UserFile } from "@/types/api";
-import {
-  paperAuthorsShort,
-  paperStatusLabel,
-  paperTitle,
-} from "../libraryListViewModel";
+import type { LibrarySpotlight } from "../libraryListViewModel";
+import { paperContextLine, paperTitle } from "../libraryListViewModel";
 
 export function ContinueReadingCard({
-  paper,
+  spotlight,
   onContinue,
 }: {
-  paper: UserFile;
+  spotlight: LibrarySpotlight;
   onContinue: () => void;
 }) {
-  const authors = paperAuthorsShort(paper);
-  const year = paper.year?.trim() || null;
-  const meta = [authors, year].filter(Boolean).join(" · ");
+  const { paper, mode, reason, ctaLabel } = spotlight;
+  const meta = paperContextLine(paper);
+  const eyebrow =
+    mode === "continue" ? "Continue reading" : "Recommended reading";
 
   return (
     <button
@@ -28,7 +25,7 @@ export function ContinueReadingCard({
     >
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-text-tertiary">
-          Continue reading
+          {eyebrow}
         </p>
         <p className="line-clamp-2 text-[14px] font-semibold leading-snug tracking-tight text-text-primary">
           {paperTitle(paper)}
@@ -36,10 +33,10 @@ export function ContinueReadingCard({
         {meta ? (
           <p className="truncate text-[12px] text-text-secondary">{meta}</p>
         ) : null}
-        <p className="pt-0.5 text-[12px] text-text-tertiary">{paperStatusLabel(paper)}</p>
+        <p className="pt-0.5 text-[12px] text-text-tertiary">{reason}</p>
       </div>
       <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-text-accent transition-transform duration-200 group-hover:translate-x-0.5">
-        Continue
+        {ctaLabel}
         <ArrowRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-1" />
       </span>
     </button>

@@ -110,28 +110,28 @@ function PlaceItem({
       onClick={onClick}
       title={title ?? label}
       className={cn(
-        "group relative flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] transition-colors duration-200",
+        "group flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] transition-colors duration-200",
         ICON_INSET,
         active
-          ? "bg-sidebar-accent font-medium text-sidebar-foreground before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
+          ? "bg-sidebar-accent/90 font-medium text-sidebar-foreground"
           : emphasis
-            ? "font-medium text-sidebar-foreground/90 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
-            : "font-normal text-muted-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+            ? "font-medium text-sidebar-foreground/85 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+            : "font-normal text-sidebar-foreground/55 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/85",
       )}
     >
       <span
         className={cn(
           "flex size-4 shrink-0 items-center justify-center [&_svg]:size-4",
-          active || emphasis
-            ? "text-primary"
-            : "text-muted-foreground/45 group-hover:text-muted-foreground/70",
+          active
+            ? "text-sidebar-foreground/70"
+            : "text-sidebar-foreground/40 group-hover:text-sidebar-foreground/55",
         )}
       >
         {icon}
       </span>
       <FadeLabel
         show={showLabel}
-        className={cn("flex-1 truncate", emphasis && "font-semibold tracking-tight")}
+        className={cn("flex-1 truncate", emphasis && !active && "tracking-tight")}
       >
         {label}
       </FadeLabel>
@@ -220,21 +220,21 @@ export function SidebarContents({
 
   return (
     <div className="flex h-full min-h-0 flex-col" onClickCapture={onNavigate}>
-      <div className={cn("flex shrink-0 items-center gap-2 pt-4 pb-2.5 pr-9", ICON_INSET)}>
-        <div className="flex min-w-0 items-center gap-2">
+      <div className={cn("flex shrink-0 items-center gap-2.5 pt-4 pb-3 pr-9", ICON_INSET)}>
+        <div className="flex min-w-0 items-center gap-2.5">
           <div
-            className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors duration-200"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md bg-sidebar-foreground/[0.06] text-sidebar-foreground/70 ring-1 ring-sidebar-foreground/[0.08]"
             title="Dhund — Research Operating System"
             aria-hidden
           >
-            <span className="text-[10px] font-bold tracking-tight">Dh</span>
+            <span className="text-[9px] font-semibold tracking-tight">Dh</span>
           </div>
           <FadeLabel show={showLabel}>
             <div className="min-w-0">
-              <h1 className="truncate text-[13px] font-semibold tracking-tight text-sidebar-foreground">
+              <h1 className="truncate text-[13px] font-medium tracking-tight text-sidebar-foreground/90">
                 Dhund
               </h1>
-              <p className="truncate text-[10px] text-muted-foreground/80">
+              <p className="truncate text-[10px] text-sidebar-foreground/40">
                 Research OS
               </p>
             </div>
@@ -242,27 +242,25 @@ export function SidebarContents({
         </div>
       </div>
 
-      <nav className="lab-sidebar-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-1.5 pb-3">
+      <nav className="lab-sidebar-scroll min-h-0 flex-1 space-y-5 overflow-y-auto px-1.5 pb-3">
         <div className="relative" data-create-menu>
           <button
             type="button"
             onClick={() => setCreateOpen((o) => !o)}
             title="Create"
             className={cn(
-              "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-sidebar-foreground transition-colors duration-200 hover:bg-sidebar-accent",
+              "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-sidebar-foreground/70 transition-colors duration-200 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/90",
               ICON_INSET,
             )}
             aria-expanded={createOpen}
             aria-haspopup="menu"
           >
-            <Plus className="size-4 shrink-0 text-muted-foreground/50" />
-            <FadeLabel show={showLabel} className="flex-1 text-[13px] font-medium">
+            <Plus className="size-4 shrink-0 text-sidebar-foreground/40" strokeWidth={1.5} />
+            <FadeLabel show={showLabel} className="flex-1 text-[13px] font-normal">
               Create
             </FadeLabel>
             {showLabel && (
-              <kbd className="rounded px-1 py-0.5 text-[10px] text-muted-foreground/70">
-                ⌘N
-              </kbd>
+              <kbd className="text-[10px] text-sidebar-foreground/30">⌘N</kbd>
             )}
           </button>
           {createOpen && showLabel && (
@@ -322,18 +320,18 @@ export function SidebarContents({
                 title="Back to Home"
                 onClick={() => go("library", "/")}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[12px] text-muted-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                  "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[12px] text-sidebar-foreground/45 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/75",
                   ICON_INSET,
                 )}
               >
-                <ArrowLeft className="size-3.5 shrink-0 text-muted-foreground/50" />
+                <ArrowLeft className="size-3.5 shrink-0 text-sidebar-foreground/35" strokeWidth={1.5} />
                 <FadeLabel show={showLabel}>Home</FadeLabel>
               </button>
             </div>
 
             <div>
               <FadeLabel show={showLabel}>
-                <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                <p className="mb-1 px-3 text-[10px] font-medium uppercase tracking-widest text-sidebar-foreground/30">
                   Project
                 </p>
               </FadeLabel>
@@ -391,21 +389,21 @@ export function SidebarContents({
             <div className="space-y-0.5">
               <PlaceItem
                 showLabel={showLabel}
-                icon={<Home />}
+                icon={<Home strokeWidth={1.5} />}
                 label="Home"
                 active={isHome}
                 onClick={() => go("library", "/")}
               />
               <PlaceItem
                 showLabel={showLabel}
-                icon={<FolderKanban />}
+                icon={<FolderKanban strokeWidth={1.5} />}
                 label="Projects"
                 active={isProjectsList}
                 onClick={() => go("projects", "/projects")}
               />
               <PlaceItem
                 showLabel={showLabel}
-                icon={<Library />}
+                icon={<Library strokeWidth={1.5} />}
                 label="Library"
                 active={isLibrary}
                 onClick={() => {
@@ -415,13 +413,11 @@ export function SidebarContents({
               />
               <PlaceItem
                 showLabel={showLabel}
-                icon={<Search />}
+                icon={<Search strokeWidth={1.5} />}
                 label="Search"
                 onClick={openPalette}
                 trailing={
-                  <kbd className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground/80">
-                    ⌘K
-                  </kbd>
+                  <kbd className="text-[10px] text-sidebar-foreground/30">⌘K</kbd>
                 }
               />
             </div>
@@ -429,10 +425,10 @@ export function SidebarContents({
         )}
       </nav>
 
-      <div className="mt-auto shrink-0 space-y-0.5 border-t border-sidebar-border/60 p-1.5 pt-2">
+      <div className="mt-auto shrink-0 space-y-0.5 px-1.5 pt-6 pb-2">
         <PlaceItem
           showLabel={showLabel}
-          icon={<Settings />}
+          icon={<Settings strokeWidth={1.5} />}
           label="Settings"
           active={isSettings}
           onClick={() => go("settings", "/settings")}
@@ -568,7 +564,7 @@ export function Sidebar({ me }: { me: Me }) {
       }
     >
       <div
-        className="dhund-sidebar absolute inset-y-0 left-0 flex min-h-0 flex-col overflow-hidden border-r border-sidebar-border"
+        className="dhund-sidebar absolute inset-y-0 left-0 flex min-h-0 flex-col overflow-hidden border-r border-sidebar-border/40"
         style={{ width: sidebarRailWidth }}
       >
         {/* Fixed left layout; rail clips from the right when collapsing. */}
@@ -581,7 +577,7 @@ export function Sidebar({ me }: { me: Me }) {
             type="button"
             onClick={() => setSidebarCollapsed(true)}
             title="Collapse sidebar (⌘B)"
-            className="absolute top-3 right-1.5 z-10 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="absolute top-3 right-1.5 z-10 rounded-md p-1.5 text-sidebar-foreground/35 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground/70"
           >
             <PanelLeftClose className="size-4" />
           </button>

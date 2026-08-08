@@ -16,7 +16,8 @@
 |---------|------|
 | Home | Invisible orientation — calm desk, one milestone. **Frozen** for polish (2026-08-08). |
 | Projects | Continuity — continue-first bookshelf; empty state starts the research journey (Publish vocabulary). **Frozen** (2026-08-08). |
-| Library | Effortless control of papers. |
+| Sidebar | Quiet infrastructure — soft active pill, no teal rail. **Frozen** (2026-08-08). Discover via ⌘K. |
+| Library | Effortless control — which paper to read next (Continue \| Recommended), not a paper database. |
 | Research Intelligence | Magical insight — Dhund’s signature. |
 | Writing | Flow from evidence. |
 | Review | Publication confidence. |

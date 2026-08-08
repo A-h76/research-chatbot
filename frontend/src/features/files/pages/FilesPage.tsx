@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { FileCard } from "../components/FileCard";
 import { ContinueReadingCard } from "../components/ContinueReadingCard";
-import { LibraryAttentionList } from "../components/LibraryAttentionList";
+import { LibraryMaintenanceSection } from "../components/LibraryMaintenanceSection";
 import { CollectionToolbar } from "../components/CollectionToolbar";
 import { LibrarySearchFilters, type LibraryFilterState } from "../components/LibrarySearchFilters";
 import { LibraryUploadQueue } from "../components/LibraryUploadQueue";
@@ -26,7 +26,6 @@ import {
   type ConnectLibraryPanelHandle,
 } from "../components/ConnectLibraryPanel";
 import { CollectionsPanel } from "../components/CollectionsPanel";
-import { LibraryDuplicatesPanel } from "../components/LibraryDuplicatesPanel";
 import { UploadPapersDialog } from "../components/UploadPapersDialog";
 import { LibraryImportMenu } from "../components/LibraryImportMenu";
 import { buildLibraryListView, type LibraryAttentionRow } from "../libraryListViewModel";
@@ -37,6 +36,7 @@ import { useLibraryFacets } from "../useLibraryFacets";
 import { collectionsApi, removePapersFromCollection } from "../collectionsApi";
 import { useProjects } from "@/features/projects/useProjects";
 import { usePipelines } from "@/features/pipeline";
+import { assistantApi } from "@/features/assistant/api";
 import { useUI } from "@/context/UIContext";
 import { toast } from "@/components/common/Toast";
 import { cn } from "@/lib/utils";
@@ -80,7 +80,7 @@ function writeFiltersToUrl(sp: URLSearchParams, filters: LibraryFilterState) {
   for (const t of filters.tag ?? []) sp.append("tag", t);
 }
 
-/** Library — Constitution: Which papers matter? Continue → attention → list. */
+/** Library — Constitution: Which paper should I read next? */
 export function FilesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -91,9 +91,13 @@ export function FilesPage() {
   const { data: tagList = [] } = useLibraryTags(currentProjectId);
   const { data: facets } = useLibraryFacets(currentProjectId);
   const { data: collections = [] } = useLibraryCollections();
+  const { data: researchState } = useQuery({
+    queryKey: ["assistant", "research-state", "library", currentProjectId ?? null],
+    queryFn: () => assistantApi.researchState(currentProjectId),
+    staleTime: 60_000,
+  });
   const deleteFile = useDeleteFile();
-  const { items: uploadItems, isUploading, upload, clearFinished, recentUploaded } =
-    useLibraryUpload();
+  const { items: uploadItems, isUploading, upload, clearFinished } = useLibraryUpload();
   const sourcesRef = useRef<ConnectLibraryPanelHandle>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [q, setQ] = useState(() => searchParams.get("q") ?? "");
@@ -241,12 +245,17 @@ export function FilesPage() {
       (filters.tag?.length ?? 0) > 0,
   );
   const hasLibrary = (stats?.total_papers ?? 0) > 0 || total > 0;
-  const paperCount = stats?.total_papers ?? total;
   const unreadCount = facets?.reading_status?.unread ?? stats?.unread ?? 0;
 
   const libraryView = useMemo(
-    () => buildLibraryListView(spotlightItems),
-    [spotlightItems],
+    () =>
+      buildLibraryListView(spotlightItems, {
+        spotlightContext: {
+          workflowStage: researchState?.workflow?.stage,
+          workflowLabel: researchState?.workflow?.label,
+        },
+      }),
+    [spotlightItems, researchState?.workflow?.stage, researchState?.workflow?.label],
   );
 
   const STATUS_TABS: { key: StatusFilter; label: string; count?: number }[] = [
@@ -255,7 +264,6 @@ export function FilesPage() {
     { key: "reading", label: "Reading", count: facets?.reading_status?.reading ?? stats?.reading },
     { key: "read", label: "Read", count: facets?.reading_status?.read ?? stats?.read },
   ];
-  const recentSession = recentUploaded.slice(0, 8);
   const rangeStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const rangeEnd = Math.min((page + 1) * PAGE_SIZE, total);
 
@@ -319,6 +327,45 @@ export function FilesPage() {
     />
   );
 
+  const filtersExtra = (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <CollectionsPanel
+          activeId={collectionId}
+          totalPapers={stats?.total_papers ?? total}
+          onSelect={(id) => {
+            setCollectionId(id);
+            setPage(0);
+            setSelectedIds(new Set());
+          }}
+        />
+        <label className="flex items-center gap-2 text-[12px] text-text-tertiary">
+          Sort
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            className="rounded-md border border-border bg-background px-2 py-1 text-[12px] text-text-secondary outline-none"
+            aria-label="Sort papers"
+          >
+            <option value="recent">Recently added</option>
+            <option value="title">Title</option>
+            <option value="authors">Author</option>
+            <option value="year">Year</option>
+            <option value="reading_status">Reading status</option>
+          </select>
+        </label>
+      </div>
+      <LibrarySearchFilters
+        filters={filters}
+        onChange={patchFilters}
+        facets={facets}
+        tagList={tagList}
+        onClear={clearFilters}
+        className="border-0 bg-transparent p-0"
+      />
+    </>
+  );
+
   return (
     <PageContainer
       dense
@@ -326,13 +373,12 @@ export function FilesPage() {
       title="Library"
       description={
         hasLibrary
-          ? "Papers that matter for your research."
+          ? "Which paper should you read next?"
           : "Import papers to build the corpus your research draws from."
       }
       actions={hasLibrary ? importMenu : undefined}
     >
-      <div className="space-y-4" data-density="high">
-        {/* Keep import panel mounted for menu handlers; not a visible CTA. */}
+      <div className="space-y-5" data-density="high">
         <div className="hidden">
           <ConnectLibraryPanel
             ref={sourcesRef}
@@ -341,23 +387,12 @@ export function FilesPage() {
           />
         </div>
 
-        {hasLibrary && libraryView.continuePaper ? (
+        {hasLibrary && libraryView.spotlight ? (
           <ContinueReadingCard
-            paper={libraryView.continuePaper}
-            onContinue={() => navigate(`/papers/${libraryView.continuePaper!.id}`)}
-          />
-        ) : null}
-
-        {hasLibrary ? (
-          <LibraryAttentionList
-            rows={libraryView.attentionRows}
-            total={libraryView.attentionTotal}
-            onOpen={onAttentionOpen}
-            onShowAllNeedsPdf={() => {
-              setNeedPdf(true);
-              setStatus("all");
-              setPage(0);
-            }}
+            spotlight={libraryView.spotlight}
+            onContinue={() =>
+              navigate(`/papers/${libraryView.spotlight!.paper.id}`)
+            }
           />
         ) : null}
 
@@ -373,9 +408,10 @@ export function FilesPage() {
           </div>
         ) : (
           <div className="min-w-0 space-y-4">
-            <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
-              All papers
-            </p>
+            {uploadItems.length > 0 && (
+              <LibraryUploadQueue items={uploadItems} onClearFinished={clearFinished} />
+            )}
+
             <CollectionToolbar
               q={q}
               onQChange={(v) => {
@@ -384,6 +420,7 @@ export function FilesPage() {
               }}
               showFilters={showFilters}
               onToggleFilters={() => setShowFilters((v) => !v)}
+              filtersExtra={filtersExtra}
               selectedCount={selectedIds.size}
               onClearSelection={() => setSelectedIds(new Set())}
               needPdfFilter={needPdf}
@@ -434,178 +471,134 @@ export function FilesPage() {
                   : undefined
               }
             />
-              {uploadItems.length > 0 && (
-                <LibraryUploadQueue items={uploadItems} onClearFinished={clearFinished} />
-              )}
-              {recentSession.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {recentSession.map((item) => (
-                    <Badge
-                      key={item.key}
-                      variant="secondary"
-                      className={cn(
-                        "max-w-[200px] truncate font-normal",
-                        item.fileId != null && "cursor-pointer hover:bg-accent-soft",
-                      )}
-                      title={item.filename}
-                      onClick={() => {
-                        if (item.fileId != null) navigate(`/papers/${item.fileId}`);
-                      }}
-                    >
-                      {item.filename}
-                    </Badge>
-                  ))}
-                </div>
-              )}
 
-              <div className="flex flex-wrap items-center gap-2 border-b border-border/70">
-                <CollectionsPanel
-                  activeId={collectionId}
-                  totalPapers={paperCount}
-                  onSelect={(id) => {
-                    setCollectionId(id);
-                    setPage(0);
-                    setSelectedIds(new Set());
-                  }}
-                />
-                <div className="flex min-w-0 flex-1 items-center gap-1">
-                  {STATUS_TABS.map(({ key, label, count }) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => {
-                        setStatus(key);
-                        setPage(0);
-                      }}
-                      className={cn(
-                        "relative flex items-center gap-1.5 px-2.5 py-2 text-[13px] font-medium transition-colors",
-                        status === key
-                          ? "text-text-primary after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
-                          : "text-text-tertiary hover:text-text-secondary",
-                      )}
-                    >
-                      {label}
-                      {count !== undefined && (
-                        <span className="tabular-nums text-[11px] text-muted-foreground">
-                          {count}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2 pb-1 text-xs text-muted-foreground">
-                  <select
-                    value={sort}
-                    onChange={(e) => setSort(e.target.value as SortKey)}
-                    className="bg-transparent py-1 text-xs outline-none"
-                    aria-label="Sort papers"
+            {(filters.tag?.length ?? 0) > 0 && !showFilters && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-text-tertiary">Tags:</span>
+                {filters.tag!.map((t) => (
+                  <Badge
+                    key={t}
+                    variant="secondary"
+                    className="cursor-pointer gap-1 text-xs"
+                    onClick={() =>
+                      patchFilters({
+                        tag: filters.tag!.filter((x) => x !== t).length
+                          ? filters.tag!.filter((x) => x !== t)
+                          : undefined,
+                      })
+                    }
                   >
-                    <option value="recent">Recently added</option>
-                    <option value="title">Title</option>
-                    <option value="authors">Author</option>
-                    <option value="year">Year</option>
-                    <option value="reading_status">Reading status</option>
-                  </select>
-                </div>
+                    {t} <X className="size-2.5" />
+                  </Badge>
+                ))}
               </div>
+            )}
 
-              {showFilters && (
-                <LibrarySearchFilters
-                  filters={filters}
-                  onChange={patchFilters}
-                  facets={facets}
-                  tagList={tagList}
-                  onClear={clearFilters}
-                />
-              )}
-              {(filters.tag?.length ?? 0) > 0 && !showFilters && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Tags:</span>
-                  {filters.tag!.map((t) => (
-                    <Badge
-                      key={t}
-                      variant="secondary"
-                      className="cursor-pointer gap-1 text-xs"
-                      onClick={() =>
-                        patchFilters({
-                          tag: filters.tag!.filter((x) => x !== t).length
-                            ? filters.tag!.filter((x) => x !== t)
-                            : undefined,
-                        })
-                      }
-                    >
-                      {t} <X className="size-2.5" />
-                    </Badge>
+            <div className="flex flex-wrap items-center gap-1 border-b border-border/70">
+              {STATUS_TABS.map(({ key, label, count }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    setStatus(key);
+                    setPage(0);
+                  }}
+                  className={cn(
+                    "relative flex items-center gap-1.5 px-2.5 py-2 text-[13px] font-medium transition-colors",
+                    status === key
+                      ? "text-text-primary after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
+                      : "text-text-tertiary hover:text-text-secondary",
+                  )}
+                >
+                  {label}
+                  {count !== undefined && (
+                    <span className="tabular-nums text-[11px] text-text-tertiary">
+                      {count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {isLoading ? (
+              <LibraryPapersSkeleton />
+            ) : fileItems.length === 0 ? (
+              <EmptyState
+                title="No papers match"
+                description="Try different keywords or clear filters."
+                action={
+                  <Button variant="outline" size="sm" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                }
+              />
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[12px] tabular-nums text-text-tertiary">
+                    {rangeStart}–{rangeEnd} of {total.toLocaleString()}
+                    {hasFilters ? " matching" : ""}
+                  </p>
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2"
+                        disabled={page <= 0}
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                      >
+                        <ChevronLeft className="size-4" />
+                      </Button>
+                      <span className="px-2 text-xs tabular-nums text-text-tertiary">
+                        {page + 1} / {totalPages}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2"
+                        disabled={page >= totalPages - 1}
+                        onClick={() =>
+                          setPage((p) => Math.min(totalPages - 1, p + 1))
+                        }
+                      >
+                        <ChevronRight className="size-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  {fileItems.map((f) => (
+                    <FileCard
+                      key={f.id}
+                      file={f}
+                      project={projects.find((p) => p.id === f.project_id)}
+                      showProject={currentProjectId == null}
+                      onDelete={() => setToDelete(f)}
+                      aiState={pipelineById.get(f.id)?.aiState}
+                      selected={selectedIds.has(f.id)}
+                      onToggleSelect={toggleSelect}
+                    />
                   ))}
                 </div>
-              )}
+              </>
+            )}
 
-              {isLoading ? (
-                <LibraryPapersSkeleton />
-              ) : fileItems.length === 0 ? (
-                <EmptyState
-                  title="No papers match"
-                  description="Try different keywords or clear filters."
-                  action={
-                    <Button variant="outline" size="sm" onClick={clearFilters}>
-                      Clear filters
-                    </Button>
-                  }
-                />
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-[12px] text-muted-foreground tabular-nums">
-                      {rangeStart}–{rangeEnd} of {total.toLocaleString()}
-                      {hasFilters ? " matching" : ""}
-                    </p>
-                    {totalPages > 1 && (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2"
-                          disabled={page <= 0}
-                          onClick={() => setPage((p) => Math.max(0, p - 1))}
-                        >
-                          <ChevronLeft className="size-4" />
-                        </Button>
-                        <span className="px-2 text-xs tabular-nums text-muted-foreground">
-                          {page + 1} / {totalPages}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2"
-                          disabled={page >= totalPages - 1}
-                          onClick={() =>
-                            setPage((p) => Math.min(totalPages - 1, p + 1))
-                          }
-                        >
-                          <ChevronRight className="size-4" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    {fileItems.map((f) => (
-                      <FileCard
-                        key={f.id}
-                        file={f}
-                        project={projects.find((p) => p.id === f.project_id)}
-                        showProject={currentProjectId == null}
-                        onDelete={() => setToDelete(f)}
-                        aiState={pipelineById.get(f.id)?.aiState}
-                        selected={selectedIds.has(f.id)}
-                        onToggleSelect={toggleSelect}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
-
-              <LibraryDuplicatesPanel projectId={currentProjectId} />
-            </div>
+            {hasLibrary ? (
+              <LibraryMaintenanceSection
+                projectId={currentProjectId}
+                attentionRows={libraryView.attentionRows}
+                attentionTotal={libraryView.attentionTotal}
+                onOpenAttention={onAttentionOpen}
+                onShowAllNeedsPdf={() => {
+                  setNeedPdf(true);
+                  setStatus("all");
+                  setPage(0);
+                  setShowFilters(true);
+                }}
+              />
+            ) : null}
+          </div>
         )}
       </div>
 
@@ -634,7 +627,7 @@ export function FilesPage() {
           </DialogHeader>
           {collections.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Create a collection in the sidebar first.
+              Create a collection from Filters first.
             </p>
           ) : (
             <select

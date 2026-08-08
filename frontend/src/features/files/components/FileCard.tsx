@@ -14,68 +14,15 @@ import type { AiStateResolved } from "@/features/pipeline";
 import { toast } from "@/components/common/Toast";
 import type { Project, UserFile } from "@/types/api";
 import { libraryBridgeApi } from "../libraryBridgeApi";
-
-const STUDY_HINTS = [
-  "rct",
-  "randomized",
-  "randomised",
-  "cohort",
-  "case-control",
-  "case report",
-  "meta-analysis",
-  "systematic review",
-  "review",
-  "cross-sectional",
-  "qualitative",
-  "in vitro",
-  "in vivo",
-  "observational",
-];
-
-function studyTypeLabel(file: UserFile): string | null {
-  for (const t of file.tags ?? []) {
-    const low = t.toLowerCase();
-    if (STUDY_HINTS.some((h) => low.includes(h))) return t;
-  }
-  return null;
-}
-
-function relativeAdded(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return null;
-  const days = Math.floor((Date.now() - t) / 86_400_000);
-  if (days <= 0) return "Added today";
-  if (days === 1) return "Added yesterday";
-  if (days < 7) return `Added ${days}d ago`;
-  if (days < 30) return `Added ${Math.floor(days / 7)}w ago`;
-  return null;
-}
-
-/** One human status — never Profile / Evidence / Chat engineering chips. */
-function humanStatus(
-  file: UserFile,
-): { label: string; tone: "ready" | "warn" | "muted" } | null {
-  const rs = (file.reading_status ?? "unread") as "unread" | "reading" | "read";
-  const metadataOnly =
-    file.kind === "document" &&
-    (file.research_readiness === "metadata_only" ||
-      file.has_pdf === false ||
-      (!file.research_readiness && (file.size === 0 || !file.size)));
-
-  if (file.meta_status === "failed") return { label: "Import failed", tone: "warn" };
-  if (file.meta_status === "pending" || file.meta_status === "running") {
-    return { label: "Processing", tone: "muted" };
-  }
-  if (metadataOnly) return { label: "Needs PDF", tone: "warn" };
-  if (rs === "reading") return { label: "Reading", tone: "muted" };
-  if (rs === "unread") return { label: "Unread", tone: "muted" };
-  if (rs === "read") return { label: "Read", tone: "muted" };
-  return null;
-}
+import {
+  paperContextLine,
+  paperStatusLabel,
+  paperTitle,
+  isNeedsPdf,
+} from "../libraryListViewModel";
 
 /**
- * Library row — research object, not a database/admin record.
+ * Library row — Title · why it’s here · state. Not a Dropbox file row.
  */
 export function FileCard({
   file,
@@ -99,24 +46,13 @@ export function FileCard({
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isPaper = file.kind === "document";
-  const readiness = file.research_readiness;
-  const metadataOnly =
-    isPaper &&
-    (readiness === "metadata_only" ||
-      file.has_pdf === false ||
-      (!readiness && (file.size === 0 || !file.size)));
-  const displayTitle = file.title || file.name;
-  const authors = file.authors?.split(";")[0]?.trim();
-  const study = studyTypeLabel(file);
-  const status = isPaper ? humanStatus(file) : null;
-  const added = relativeAdded(file.created_at);
-
-  const metaParts = [
-    authors,
-    file.venue ? file.venue : null,
-    file.year,
-    study,
-    showProject && project ? `${project.emoji} ${project.name}` : null,
+  const metadataOnly = isPaper && isNeedsPdf(file);
+  const displayTitle = paperTitle(file);
+  const context = paperContextLine(file);
+  const status = isPaper ? paperStatusLabel(file) : null;
+  const whyParts = [
+    context,
+    showProject && project ? project.name : null,
   ].filter(Boolean);
 
   const attachPdf = async (pdf: File) => {
@@ -125,7 +61,9 @@ export function FileCard({
       if (res.queued) {
         toast.success("PDF attached — analysis queued");
       } else {
-        toast.success("PDF attached — open the paper to start analysis if it does not begin");
+        toast.success(
+          "PDF attached — open the paper to start analysis if it does not begin",
+        );
       }
       void qc.invalidateQueries({ queryKey: ["files"] });
       void qc.invalidateQueries({ queryKey: ["library"] });
@@ -168,12 +106,19 @@ export function FileCard({
     <div
       className={cn(
         "group relative flex w-full items-start gap-2.5 border-b border-border px-1 py-3 text-left transition-colors last:border-b-0",
-        selected ? "bg-primary/[0.04]" : "hover:bg-muted/40",
+        selected ? "bg-primary/[0.04]" : "hover:bg-muted/30",
       )}
       data-density="high"
     >
       {isPaper && onToggleSelect && (
-        <label className="mt-1 flex shrink-0 cursor-pointer items-center">
+        <label
+          className={cn(
+            "mt-1 flex shrink-0 cursor-pointer items-center transition-opacity",
+            selected
+              ? "opacity-100"
+              : "opacity-0 group-hover:opacity-100 focus-within:opacity-100",
+          )}
+        >
           <input
             type="checkbox"
             checked={selected}
@@ -197,30 +142,20 @@ export function FileCard({
           {displayTitle}
         </p>
         <p className="mt-0.5 truncate text-[12px] text-text-secondary">
-          {metaParts.length
-            ? metaParts.join(" · ")
-            : file.title && file.title !== file.name
-              ? file.name
-              : "No metadata yet"}
+          {whyParts.length ? whyParts.join(" · ") : "No metadata yet"}
         </p>
-
-        {(status || added) && (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {status ? (
-              <span
-                className={cn(
-                  "text-[11px] font-medium",
-                  status.tone === "warn" ? "text-amber-800 dark:text-amber-400" : "text-text-tertiary",
-                )}
-              >
-                {status.label}
-              </span>
-            ) : null}
-            {added ? (
-              <span className="text-[11px] text-text-tertiary">{added}</span>
-            ) : null}
-          </div>
-        )}
+        {status ? (
+          <p
+            className={cn(
+              "mt-1.5 text-[11px] font-medium",
+              status === "Needs PDF" || status === "Import failed"
+                ? "text-amber-800 dark:text-amber-400"
+                : "text-text-tertiary",
+            )}
+          >
+            {status}
+          </p>
+        ) : null}
       </button>
 
       <div className="flex shrink-0 flex-col items-end gap-1.5 pt-0.5">
@@ -253,7 +188,7 @@ export function FileCard({
                   e.stopPropagation();
                   void pullFromRefMgr();
                 }}
-                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                className="inline-flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-primary"
                 title={`Pull PDF from ${file.external_provider === "mendeley" ? "Mendeley" : "Zotero"}`}
               >
                 <Upload className="size-3" /> Pull
@@ -265,8 +200,8 @@ export function FileCard({
                 e.stopPropagation();
                 fileInputRef.current?.click();
               }}
-              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-              title="Attach full text (PDF) to analyse"
+              className="inline-flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-primary"
+              title="Attach full text (PDF)"
             >
               <Upload className="size-3" /> Full text
             </button>
@@ -344,7 +279,7 @@ function IconBtn({
         onClick();
       }}
       className={cn(
-        "rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground",
+        "rounded-md p-1.5 text-text-tertiary hover:bg-muted hover:text-text-primary",
         danger && "hover:text-destructive",
       )}
     >

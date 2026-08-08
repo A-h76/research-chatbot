@@ -86,8 +86,8 @@ Every screen answers exactly one primary question — and owns one emotional out
 | Screen | Question | Emotional outcome |
 |--------|----------|-------------------|
 | Home | What should I do next? | Orientation (calm, invisible) |
-| Projects | Which research should I continue? | Continuity |
-| Library | Which papers matter? | Effortless control |
+| Projects | Which research should I advance? | Continuity |
+| Library | Which paper should I read next? | Effortless control |
 | Paper | What does this paper say? | Understanding |
 | Research Intelligence | What does the corpus say? | Insight (signature / “magical”) |
 | Writing | How do I write from evidence? | Flow |
@@ -125,7 +125,17 @@ Dhund’s signature lives where researchers *work*:
 | **Empty state** | Journey start (workflow + imported papers + Mentor handoff) — not “no data.” |
 | **Change bar** | Validated usability evidence, Research State contradiction, or platform-wide design evolution. Not another week of visual refinement. |
 
-**Phase 2 investment order:** Home ✓ · Projects ✓ · **Library** → Paper → Research Intelligence → Writing → Review.
+**Sidebar (chrome) — Frozen (2026-08-08):**
+
+| | |
+|--|--|
+| **Role** | Infrastructure, not content. *Chrome recedes. Content speaks.* |
+| **IA** | Create · Home · Projects · Library · Search (+ Settings / profile). Discoverability lives in ⌘K — do not grow the sidebar. |
+| **Active** | Soft pill — “you are here,” not “look here.” No teal rail; icons near-neutral. |
+| **Teal** | Reserved for CTAs, research actions, evidence/RI meaning — not nav selection. |
+| **Change bar** | Real usability issues only (collapsed hierarchy, hit targets, a11y). Not visual refinement. |
+
+**Phase 2 investment order:** Home ✓ · Projects ✓ · Sidebar ✓ · **Library** → Paper → Research Intelligence → Writing → Review.
 
 ---
 

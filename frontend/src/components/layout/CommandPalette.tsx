@@ -1,5 +1,12 @@
+/**
+ * Research Command Center — ⌘K.
+ * Group by intention, not object type:
+ * Recommended → Continue → Research → Create → Import → Integrations → Navigate → Recent
+ * Prefix modes still work: / skills · @ mention · # entities · > commands
+ */
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import {
   Command,
   CommandDialog,
@@ -12,9 +19,11 @@ import {
 } from "@/components/ui/command";
 import {
   BookOpen,
+  Cloud,
   FileDown,
   FileText,
   FolderKanban,
+  FolderOpen,
   GitCompare,
   Home,
   Library,
@@ -35,25 +44,37 @@ import {
   Table2,
   ClipboardList,
   PenLine,
+  ArrowRight,
   Layers,
   Shield,
+  Sparkles,
 } from "lucide-react";
 import { useAllFiles } from "@/features/files/useFiles";
 import { useProjects } from "@/features/projects/useProjects";
 import {
   projectExportUrl,
+  projectHubUrl,
   projectReviewUrl,
   projectWritingUrl,
 } from "@/features/projects/projectWorkspaceNav";
 import { useConversations } from "@/features/chat/hooks/useConversation";
 import { useMe } from "@/features/profile/useMe";
+import { assistantApi } from "@/features/assistant/api";
 import { useUI } from "@/context/UIContext";
 import type { ConversationSummary, Project, UserFile } from "@/types/api";
 
-type ScopeKind = "paper" | "project" | "library" | "global";
+type Surface =
+  | "home"
+  | "library"
+  | "paper"
+  | "project"
+  | "writing"
+  | "ri"
+  | "search"
+  | "other";
 
 type Scope = {
-  kind: ScopeKind;
+  surface: Surface;
   label: string;
   paperId: number | null;
   projectId: number | null;
@@ -68,6 +89,8 @@ type Cmd = {
   keywords: string;
   icon: ComponentType<{ className?: string }>;
   show: boolean;
+  /** Boost when idle on matching surfaces */
+  surfaces?: Surface[];
   run: () => void;
 };
 
@@ -102,28 +125,62 @@ function parseRouteIds(pathname: string): {
 function resolveScope(pathname: string, currentProjectId: number | null): Scope {
   const { paperId, projectId: routeProjectId } = parseRouteIds(pathname);
   if (paperId != null) {
-    return { kind: "paper", label: "Paper", paperId, projectId: currentProjectId };
+    return { surface: "paper", label: "Paper", paperId, projectId: currentProjectId };
+  }
+  if (pathname.includes("/writing")) {
+    return {
+      surface: "writing",
+      label: "Writing",
+      paperId: null,
+      projectId: routeProjectId ?? currentProjectId,
+    };
+  }
+  if (pathname.startsWith("/research") || pathname.startsWith("/analysis")) {
+    return {
+      surface: "ri",
+      label: "Research Intelligence",
+      paperId: null,
+      projectId: currentProjectId,
+    };
   }
   if (routeProjectId != null) {
-    return { kind: "project", label: "Project", paperId: null, projectId: routeProjectId };
+    return {
+      surface: "project",
+      label: "Project",
+      paperId: null,
+      projectId: routeProjectId,
+    };
   }
   if (pathname.startsWith("/library") || pathname.startsWith("/files")) {
     return {
-      kind: "library",
+      surface: "library",
       label: currentProjectId ? "Library · project" : "Library",
       paperId: null,
       projectId: currentProjectId,
     };
   }
-  if (currentProjectId) {
+  if (pathname.startsWith("/search")) {
     return {
-      kind: "project",
-      label: "Project",
+      surface: "search",
+      label: "Search",
       paperId: null,
       projectId: currentProjectId,
     };
   }
-  return { kind: "global", label: "Workspace", paperId: null, projectId: null };
+  if (pathname === "/" || pathname.startsWith("/home")) {
+    return {
+      surface: "home",
+      label: "Home",
+      paperId: null,
+      projectId: currentProjectId,
+    };
+  }
+  return {
+    surface: "other",
+    label: currentProjectId ? "Project" : "Workspace",
+    paperId: null,
+    projectId: currentProjectId,
+  };
 }
 
 function chatPath(c: ConversationSummary): string {
@@ -135,6 +192,12 @@ function paperTitle(f: UserFile): string {
   return (f.title || f.name || "Untitled").trim();
 }
 
+function shortTitle(s: string, max = 42): string {
+  const t = s.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
+}
+
 function parsePrefix(raw: string): { mode: PrefixMode; q: string } {
   const t = raw.trimStart();
   if (t.startsWith(">")) return { mode: "command", q: t.slice(1).trim().toLowerCase() };
@@ -144,10 +207,17 @@ function parsePrefix(raw: string): { mode: PrefixMode; q: string } {
   return { mode: "none", q: t.trim().toLowerCase() };
 }
 
-function filterCmds(list: Cmd[], q: string): Cmd[] {
-  if (!q) return list.filter((c) => c.show);
-  return list
-    .filter((c) => c.show)
+function filterCmds(list: Cmd[], q: string, surface?: Surface): Cmd[] {
+  const visible = list.filter((c) => c.show);
+  if (!q) {
+    // Surface-aware ordering when idle
+    return [...visible].sort((a, b) => {
+      const aBoost = surface && a.surfaces?.includes(surface) ? 1 : 0;
+      const bBoost = surface && b.surfaces?.includes(surface) ? 1 : 0;
+      return bBoost - aBoost;
+    });
+  }
+  return visible
     .map((c) => ({
       cmd: c,
       score: scoreMatch(`${c.label} ${c.keywords} ${c.hint ?? ""}`, q),
@@ -157,9 +227,30 @@ function filterCmds(list: Cmd[], q: string): Cmd[] {
     .map((x) => x.cmd);
 }
 
+function isNeedsPdf(f: UserFile): boolean {
+  if (f.kind !== "document") return false;
+  if (f.has_pdf === false) return true;
+  if (f.research_readiness === "metadata_only") return true;
+  if (!f.research_readiness && (f.size === 0 || !f.size)) return true;
+  return false;
+}
+
+function pickContinuePaper(files: UserFile[], projectId: number | null): UserFile | null {
+  const docs = files.filter((f) => f.kind === "document" && !isNeedsPdf(f));
+  const scoped =
+    projectId != null ? docs.filter((f) => f.project_id === projectId) : docs;
+  const pool = scoped.length ? scoped : docs;
+  return (
+    pool.find((f) => f.reading_status === "reading") ??
+    pool.find((f) => f.reading_status === "unread" || !f.reading_status) ??
+    pool[0] ??
+    null
+  );
+}
+
 /**
  * Research Command Center — ⌘K / sidebar Search.
- * Places stay in the sidebar; this is actions + find across the Research OS.
+ * Intention-first: where do I want to go, or what do I want to do?
  */
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -172,6 +263,12 @@ export function CommandPalette() {
   const { data: projects = [] } = useProjects();
   const { data: conversations = [] } = useConversations();
   const { data: me } = useMe();
+  const { data: researchState } = useQuery({
+    queryKey: ["assistant", "research-state", "cmdk", currentProjectId ?? null],
+    queryFn: () => assistantApi.researchState(currentProjectId),
+    staleTime: 60_000,
+    enabled: open,
+  });
 
   const scope = useMemo(
     () => resolveScope(location.pathname, currentProjectId),
@@ -225,6 +322,17 @@ export function CommandPalette() {
     fn();
   }
 
+  const activeProject = useMemo(() => {
+    const id = scope.projectId ?? currentProjectId;
+    if (id == null) return null;
+    return projects.find((p) => p.id === id) ?? null;
+  }, [projects, scope.projectId, currentProjectId]);
+
+  const continuePaper = useMemo(
+    () => pickContinuePaper(files, scope.projectId),
+    [files, scope.projectId],
+  );
+
   const rankedPapers = useMemo(() => {
     const ranked: Ranked<UserFile>[] = [];
     for (const f of files) {
@@ -269,7 +377,7 @@ export function CommandPalette() {
   const rankedChats = useMemo(() => {
     const ranked: Ranked<ConversationSummary>[] = [];
     for (const c of conversations) {
-      const blob = `${c.title} chat conversation`;
+      const blob = `${c.title} chat conversation note`;
       let score = scoreMatch(blob, q);
       if (!q) {
         score = 10;
@@ -284,8 +392,95 @@ export function CommandPalette() {
     return ranked.slice(0, q ? 6 : 4).map((r) => r.item);
   }, [conversations, q, scope.paperId, scope.projectId]);
 
-  const quickActions: Cmd[] = useMemo(
+  const recommended: Cmd[] = useMemo(() => {
+    const na = researchState?.workflow?.nextAction;
+    if (!na?.label || !na.href) return [];
+    return [
+      {
+        id: "rs-next",
+        label: na.label,
+        hint: researchState?.workflow?.label || "Recommended",
+        keywords: `recommended next ${na.label} ${researchState?.workflow?.stage ?? ""}`,
+        icon: Sparkles,
+        show: true,
+        run: () => go(na.href.startsWith("/") ? na.href : `/${na.href}`),
+      },
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [researchState?.workflow?.nextAction, researchState?.workflow?.label, researchState?.workflow?.stage]);
+
+  const continueCmds: Cmd[] = useMemo(() => {
+    const cmds: Cmd[] = [];
+    if (activeProject) {
+      const next = researchState?.workflow?.nextAction?.label;
+      cmds.push({
+        id: "continue-project",
+        label: next
+          ? `Continue ${activeProject.name}`
+          : `Continue ${activeProject.name}`,
+        hint: next || "Project",
+        keywords: `continue project research ${activeProject.name}`,
+        icon: ArrowRight,
+        show: true,
+        surfaces: ["home", "project", "other"],
+        run: () => {
+          const href =
+            researchState?.workflow?.nextAction?.href ||
+            projectHubUrl(activeProject.id);
+          setCurrentProjectId(activeProject.id);
+          go(href.startsWith("/") ? href : `/${href}`);
+        },
+      });
+    }
+    if (continuePaper) {
+      const reading = continuePaper.reading_status === "reading";
+      cmds.push({
+        id: "continue-paper",
+        label: reading
+          ? `Continue reading “${shortTitle(paperTitle(continuePaper))}”`
+          : `Read “${shortTitle(paperTitle(continuePaper))}”`,
+        hint: reading ? "Reading" : "Recommended",
+        keywords: `continue reading paper ${paperTitle(continuePaper)}`,
+        icon: BookOpen,
+        show: true,
+        surfaces: ["library", "home", "paper"],
+        run: () => go(`/papers/${continuePaper.id}`),
+      });
+    }
+    if (activeProject || currentProjectId != null) {
+      const pid = activeProject?.id ?? currentProjectId!;
+      cmds.push({
+        id: "continue-writing",
+        label: "Continue writing",
+        hint: "Manuscript",
+        keywords: "continue writing manuscript chapter draft",
+        icon: PenLine,
+        show: true,
+        surfaces: ["writing", "project", "home"],
+        run: () => go(projectWritingUrl(pid)),
+      });
+    }
+    return cmds;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeProject,
+    continuePaper,
+    currentProjectId,
+    researchState?.workflow?.nextAction,
+  ]);
+
+  const researchCmds: Cmd[] = useMemo(
     () => [
+      {
+        id: "mentor",
+        label: "Ask Research Mentor",
+        hint: "Home",
+        keywords: "mentor ask help topic orient",
+        icon: MessageSquare,
+        show: true,
+        surfaces: ["home", "project"],
+        run: () => go("/"),
+      },
       {
         id: "ask",
         label: "Ask Dhund",
@@ -293,200 +488,37 @@ export function CommandPalette() {
         keywords: "ask chat agent conversation",
         icon: MessageSquare,
         show: true,
+        surfaces: ["paper", "writing", "ri"],
         run: () => go(paperId ? `/papers/${paperId}/chat` : "/chat"),
       },
       {
-        id: "new-project",
-        label: "Create project",
-        hint: "Create",
-        keywords: "new create project research",
-        icon: Plus,
+        id: "ri",
+        label: "Research Intelligence",
+        hint: "Corpus",
+        keywords: "research intelligence compare gaps themes matrix",
+        icon: GitCompare,
         show: true,
-        run: () => go("/projects?new=1"),
+        surfaces: ["ri", "project", "library"],
+        run: () => go("/research/compare"),
       },
       {
-        id: "create-writing",
-        label: "Create writing",
-        hint: "Create",
-        keywords: "write literature review manuscript draft",
-        icon: PenLine,
+        id: "search-lit",
+        label: "Search literature",
+        hint: "Discover",
+        keywords: "search literature discover pubmed openalex",
+        icon: Search,
         show: true,
-        run: () => go(writingPath({ action: "lit-review" })),
+        surfaces: ["search", "library", "home"],
+        run: () => go("/search"),
       },
       {
-        id: "upload",
-        label: "Upload paper",
-        hint: "Library",
-        keywords: "upload pdf paper document",
-        icon: Upload,
-        show: true,
-        run: () => go("/library?upload=1"),
-      },
-      {
-        id: "import-doi",
-        label: "Import DOI",
-        hint: "Library",
-        keywords: "import doi crossref discover",
-        icon: Link2,
-        show: true,
-        run: () => go("/search?mode=discover&q=10."),
-      },
-      {
-        id: "import-pmid",
-        label: "Import PMID",
-        hint: "Library",
-        keywords: "import pmid pubmed",
-        icon: Link2,
-        show: true,
-        run: () => go("/search?mode=discover&provider=pubmed"),
-      },
-      {
-        id: "import-arxiv",
-        label: "Import arXiv",
-        hint: "Library",
-        keywords: "import arxiv preprint",
-        icon: Link2,
-        show: true,
-        run: () => go("/search?mode=discover&provider=arxiv"),
-      },
-      {
-        id: "import-europe-pmc",
-        label: "Import Europe PMC",
-        hint: "Library",
-        keywords: "import europe pmc pmcid epmc",
-        icon: Link2,
-        show: true,
-        run: () => go("/search?mode=discover&provider=europe_pmc"),
-      },
-      {
-        id: "import-orcid",
-        label: "Import ORCID",
-        hint: "Library",
-        keywords: "import orcid researcher works",
-        icon: Link2,
-        show: true,
-        run: () => go("/search?mode=discover&provider=orcid"),
-      },
-      {
-        id: "new-collection",
-        label: "New collection",
-        hint: "Library",
-        keywords: "collection folder organize",
-        icon: Layers,
-        show: true,
-        run: () => go("/library?collections=1"),
-      },
-    ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [paperId],
-  );
-
-  const jumpTo: Cmd[] = useMemo(
-    () => [
-      {
-        id: "home",
-        label: "Home",
-        hint: "Jump",
-        keywords: "home launchpad dashboard continue",
-        icon: Home,
-        show: true,
-        run: () => go("/"),
-      },
-      {
-        id: "library",
-        label: "Library",
-        hint: "Jump",
-        keywords: "library papers files",
-        icon: Library,
-        show: true,
-        run: () => go("/library"),
-      },
-      {
-        id: "projects",
-        label: "Research",
-        hint: "Jump",
-        keywords: "projects research list all",
-        icon: FolderKanban,
-        show: true,
-        run: () => go("/projects"),
-      },
-      {
-        id: "writing-desk",
-        label: "Writing",
-        hint: "Jump",
-        keywords: "writing desk draft manuscript",
-        icon: Wand2,
-        show: true,
-        run: () => go(writingPath()),
-      },
-      {
-        id: "notes",
-        label: "Notes",
-        hint: "Jump",
-        keywords: "notes",
-        icon: StickyNote,
-        show: true,
-        run: () => go("/notes"),
-      },
-      {
-        id: "citations",
-        label: "Citations",
-        hint: "Jump",
-        keywords: "citations export apa bibtex",
-        icon: Quote,
-        show: true,
-        run: () => go("/citations"),
-      },
-      {
-        id: "settings",
-        label: "Settings",
-        hint: "Jump",
-        keywords: "settings account preferences",
-        icon: Settings,
-        show: true,
-        run: () => go("/settings"),
-      },
-      {
-        id: "admin",
-        label: "Admin",
-        hint: "Jump",
-        keywords: "admin ops kill switch invites beta metrics",
-        icon: Shield,
-        show: Boolean(me?.is_admin),
-        run: () => go("/admin"),
-      },
-      {
-        id: "integrations",
-        label: "Integrations",
-        hint: "Jump",
-        keywords: "integrations zotero mendeley connect oauth catalog",
-        icon: Settings,
-        show: true,
-        run: () => go("/settings/integrations"),
-      },
-    ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [me?.is_admin, currentProjectId],
-  );
-
-  const knowledge: Cmd[] = useMemo(
-    () => [
-      {
-        id: "paper-overview",
-        label: "Research profile",
-        hint: "Knowledge",
-        keywords: "research profile overview summary",
-        icon: FileText,
-        show: paperId != null,
-        run: () => go(`/papers/${paperId}`),
-      },
-      {
-        id: "writing-evidence",
-        label: "Evidence inspector",
-        hint: "Writing",
-        keywords: "evidence inspector verify passages cite",
+        id: "evidence",
+        label: "Review evidence",
+        hint: "Evidence",
+        keywords: "evidence inspector review passages",
         icon: FlaskConical,
         show: true,
+        surfaces: ["writing", "ri", "paper"],
         run: () =>
           go(
             paperId
@@ -495,90 +527,361 @@ export function CommandPalette() {
           ),
       },
       {
-        id: "paper-graph",
-        label: "Knowledge graph",
-        hint: "Knowledge",
-        keywords: "graph knowledge network",
-        icon: Network,
-        show: paperId != null,
-        run: () => go(`/papers/${paperId}?tab=graph`),
+        id: "matrix",
+        label: "Evidence matrix",
+        hint: "RI",
+        keywords: "matrix methods findings evidence",
+        icon: Table2,
+        show: true,
+        surfaces: ["ri"],
+        run: () => go("/research/compare?tab=matrix"),
       },
       {
-        id: "paper-entities",
-        label: "Entities",
-        hint: "Knowledge",
-        keywords: "entities concepts pico",
-        icon: Tags,
-        show: paperId != null,
-        run: () => go(`/papers/${paperId}?tab=entities`),
-      },
-      {
-        id: "paper-structure",
-        label: "Structure",
-        hint: "Knowledge",
-        keywords: "structure sections outline narrative",
-        icon: LayoutList,
-        show: paperId != null,
-        run: () => go(`/papers/${paperId}?tab=structure`),
-      },
-      {
-        id: "theme-discovery",
+        id: "themes",
         label: "Themes",
-        hint: "Knowledge",
-        keywords: "themes clusters discovery narrative",
+        hint: "RI",
+        keywords: "themes clusters narrative",
         icon: Tags,
         show: true,
+        surfaces: ["ri"],
         run: () => go("/research/compare?tab=themes"),
       },
       {
-        id: "memory",
-        label: "Memory",
-        hint: "Knowledge",
-        keywords: "memory preferences claims",
-        icon: Brain,
+        id: "gaps",
+        label: "Research gaps",
+        hint: "RI",
+        keywords: "gaps research missing",
+        icon: LayoutList,
         show: true,
-        run: () => go("/memory"),
+        surfaces: ["ri"],
+        run: () => go("/research/compare?tab=gaps"),
+      },
+      {
+        id: "graph",
+        label: "Knowledge graph",
+        hint: paperId ? "Paper" : "RI",
+        keywords: "graph knowledge network",
+        icon: Network,
+        show: true,
+        surfaces: ["ri", "paper"],
+        run: () =>
+          go(paperId ? `/papers/${paperId}?tab=graph` : "/research/compare?tab=graph"),
+      },
+      {
+        id: "extract",
+        label: "Extract evidence",
+        hint: "RI",
+        keywords: "extract pico structured evidence",
+        icon: ClipboardList,
+        show: true,
+        surfaces: ["ri", "library", "paper"],
+        run: () => go("/research/compare?tab=extract"),
+      },
+      {
+        id: "reviewer",
+        label: "Review before publish",
+        hint: "Review",
+        keywords: "review verify publish writing",
+        icon: Shield,
+        show: true,
+        surfaces: ["writing"],
+        run: () =>
+          go(
+            currentProjectId != null
+              ? projectReviewUrl(currentProjectId)
+              : writingPath({ focus: "review" }),
+          ),
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [paperId, currentProjectId],
   );
 
-  const skills: Cmd[] = useMemo(
+  const createCmds: Cmd[] = useMemo(
     () => [
       {
-        id: "skill-compare",
+        id: "new-research",
+        label: "New research",
+        hint: "Project",
+        keywords: "new create project research workspace",
+        icon: Plus,
+        show: true,
+        surfaces: ["home", "project"],
+        run: () => go("/projects?new=1"),
+      },
+      {
+        id: "new-manuscript",
+        label: "New manuscript",
+        hint: "Writing",
+        keywords: "write literature review manuscript draft",
+        icon: PenLine,
+        show: true,
+        surfaces: ["writing", "project"],
+        run: () => go(writingPath({ action: "lit-review" })),
+      },
+      {
+        id: "new-note",
+        label: "New note",
+        hint: "Notes",
+        keywords: "note sticky memo",
+        icon: StickyNote,
+        show: true,
+        run: () => go("/notes"),
+      },
+      {
+        id: "new-collection",
+        label: "New collection",
+        hint: "Library",
+        keywords: "collection folder organize",
+        icon: Layers,
+        show: true,
+        surfaces: ["library"],
+        run: () => go("/library?collections=1"),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentProjectId],
+  );
+
+  const importCmds: Cmd[] = useMemo(
+    () => [
+      {
+        id: "upload",
+        label: "Upload PDF",
+        hint: "Import",
+        keywords: "upload pdf paper document",
+        icon: Upload,
+        show: true,
+        surfaces: ["library", "home"],
+        run: () => go("/library?upload=1"),
+      },
+      {
+        id: "import-doi",
+        label: "Import DOI",
+        hint: "Import",
+        keywords: "import doi crossref discover",
+        icon: Link2,
+        show: true,
+        surfaces: ["library", "search"],
+        run: () => go("/search?mode=discover&q=10."),
+      },
+      {
+        id: "import-pmid",
+        label: "Import PMID",
+        hint: "Import",
+        keywords: "import pmid pubmed",
+        icon: Link2,
+        show: true,
+        surfaces: ["library", "search"],
+        run: () => go("/search?mode=discover&provider=pubmed"),
+      },
+      {
+        id: "import-bibtex",
+        label: "Import BibTeX / RIS",
+        hint: "Import",
+        keywords: "import bibtex ris reference",
+        icon: FileDown,
+        show: true,
+        surfaces: ["library"],
+        run: () => go("/library?provider=bibtex"),
+      },
+      {
+        id: "merge-dups",
+        label: "Merge duplicates",
+        hint: "Maintenance",
+        keywords: "merge duplicates library health",
+        icon: Layers,
+        show: true,
+        surfaces: ["library"],
+        run: () => go("/library"),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const integrationCmds: Cmd[] = useMemo(
+    () => [
+      {
+        id: "pubmed",
+        label: "PubMed",
+        hint: "Literature",
+        keywords: "pubmed medline integrate search",
+        icon: Search,
+        show: true,
+        run: () => go("/search?mode=discover&provider=pubmed"),
+      },
+      {
+        id: "scholar",
+        label: "Google Scholar",
+        hint: "Literature",
+        keywords: "google scholar search",
+        icon: Search,
+        show: true,
+        run: () => go("/search?mode=discover"),
+      },
+      {
+        id: "crossref",
+        label: "Crossref",
+        hint: "Literature",
+        keywords: "crossref doi",
+        icon: Link2,
+        show: true,
+        run: () => go("/search?mode=discover&q=10."),
+      },
+      {
+        id: "semantic",
+        label: "Semantic Scholar",
+        hint: "Literature",
+        keywords: "semantic scholar openalex",
+        icon: Search,
+        show: true,
+        run: () => go("/search?mode=discover"),
+      },
+      {
+        id: "arxiv",
+        label: "arXiv",
+        hint: "Literature",
+        keywords: "arxiv preprint",
+        icon: FileText,
+        show: true,
+        run: () => go("/search?mode=discover&provider=arxiv"),
+      },
+      {
+        id: "zotero",
+        label: "Zotero",
+        hint: "Reference manager",
+        keywords: "zotero import sync",
+        icon: FolderOpen,
+        show: true,
+        surfaces: ["library"],
+        run: () => go("/library?provider=zotero#import"),
+      },
+      {
+        id: "mendeley",
+        label: "Mendeley",
+        hint: "Reference manager",
+        keywords: "mendeley import sync",
+        icon: FolderOpen,
+        show: true,
+        surfaces: ["library"],
+        run: () => go("/library?provider=mendeley#import"),
+      },
+      {
+        id: "endnote",
+        label: "EndNote / RIS",
+        hint: "Reference manager",
+        keywords: "endnote ris import",
+        icon: FolderOpen,
+        show: true,
+        run: () => go("/library?provider=bibtex"),
+      },
+      {
+        id: "gdrive",
+        label: "Google Drive",
+        hint: "Cloud",
+        keywords: "google drive cloud import",
+        icon: Cloud,
+        show: true,
+        surfaces: ["library"],
+        run: () => go("/library?provider=google_drive#import"),
+      },
+      {
+        id: "dropbox",
+        label: "Dropbox",
+        hint: "Cloud",
+        keywords: "dropbox cloud import",
+        icon: Cloud,
+        show: true,
+        surfaces: ["library"],
+        run: () => go("/library?provider=dropbox#import"),
+      },
+      {
+        id: "onedrive",
+        label: "OneDrive",
+        hint: "Cloud",
+        keywords: "onedrive cloud import",
+        icon: Cloud,
+        show: true,
+        surfaces: ["library"],
+        run: () => go("/library?provider=onedrive#import"),
+      },
+      {
+        id: "integrations-settings",
+        label: "Manage integrations",
+        hint: "Settings",
+        keywords: "integrations settings connect oauth",
+        icon: Settings,
+        show: true,
+        run: () => go("/settings/integrations"),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const navigateCmds: Cmd[] = useMemo(
+    () => [
+      {
+        id: "nav-home",
+        label: "Home",
+        hint: "Navigate",
+        keywords: "home launchpad dashboard mentor",
+        icon: Home,
+        show: true,
+        run: () => go("/"),
+      },
+      {
+        id: "nav-projects",
+        label: "Projects",
+        hint: "Navigate",
+        keywords: "projects research list",
+        icon: FolderKanban,
+        show: true,
+        run: () => go("/projects"),
+      },
+      {
+        id: "nav-library",
+        label: "Library",
+        hint: "Navigate",
+        keywords: "library papers files",
+        icon: Library,
+        show: true,
+        run: () => go("/library"),
+      },
+      {
+        id: "nav-writing",
+        label: "Writing",
+        hint: "Navigate",
+        keywords: "writing desk draft manuscript",
+        icon: Wand2,
+        show: true,
+        run: () => go(writingPath()),
+      },
+      {
+        id: "nav-evidence",
+        label: "Evidence",
+        hint: "Navigate",
+        keywords: "evidence inspector",
+        icon: FlaskConical,
+        show: true,
+        run: () => go(writingPath({ focus: "evidence" })),
+      },
+      {
+        id: "nav-ri",
         label: "Research Intelligence",
-        hint: "Skill",
-        keywords: "compare papers gaps research intelligence matrix themes",
+        hint: "Navigate",
+        keywords: "research intelligence compare",
         icon: GitCompare,
         show: true,
         run: () => go("/research/compare"),
       },
       {
-        id: "skill-summarize",
-        label: "Summarize",
-        hint: "Skill",
-        keywords: "summarize overview profile",
-        icon: BookOpen,
-        show: true,
-        run: () => go(paperId ? `/papers/${paperId}` : "/library"),
-      },
-      {
-        id: "skill-extract",
-        label: "Extract",
-        hint: "Skill",
-        keywords: "extract pico structured",
-        icon: ClipboardList,
-        show: true,
-        run: () => go("/research/compare?tab=extract"),
-      },
-      {
-        id: "skill-review",
-        label: "Reviewer",
-        hint: "Skill",
-        keywords: "review verify evidence writing",
-        icon: FlaskConical,
+        id: "nav-review",
+        label: "Review",
+        hint: "Navigate",
+        keywords: "review publish",
+        icon: Shield,
         show: true,
         run: () =>
           go(
@@ -588,28 +891,55 @@ export function CommandPalette() {
           ),
       },
       {
-        id: "skill-write",
-        label: "Write",
-        hint: "Skill",
-        keywords: "write literature review",
-        icon: PenLine,
+        id: "nav-notes",
+        label: "Notes",
+        hint: "Navigate",
+        keywords: "notes",
+        icon: StickyNote,
         show: true,
-        run: () => go(writingPath({ action: "lit-review" })),
+        run: () => go("/notes"),
       },
       {
-        id: "skill-matrix",
-        label: "Evidence matrix",
-        hint: "Skill",
-        keywords: "matrix methods findings",
-        icon: Table2,
+        id: "nav-citations",
+        label: "Citations",
+        hint: "Navigate",
+        keywords: "citations export apa bibtex",
+        icon: Quote,
         show: true,
-        run: () => go("/research/compare?tab=matrix"),
+        run: () => go("/citations"),
       },
       {
-        id: "skill-export",
-        label: "Export",
-        hint: "Skill",
-        keywords: "export markdown download",
+        id: "nav-memory",
+        label: "Memory",
+        hint: "Navigate",
+        keywords: "memory preferences claims",
+        icon: Brain,
+        show: true,
+        run: () => go("/memory"),
+      },
+      {
+        id: "nav-settings",
+        label: "Settings",
+        hint: "Navigate",
+        keywords: "settings account preferences",
+        icon: Settings,
+        show: true,
+        run: () => go("/settings"),
+      },
+      {
+        id: "nav-admin",
+        label: "Admin",
+        hint: "Navigate",
+        keywords: "admin ops",
+        icon: Shield,
+        show: Boolean(me?.is_admin),
+        run: () => go("/admin"),
+      },
+      {
+        id: "nav-export",
+        label: "Publish / export",
+        hint: "Navigate",
+        keywords: "export publish markdown",
         icon: FileDown,
         show: true,
         run: () =>
@@ -621,50 +951,104 @@ export function CommandPalette() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [paperId, currentProjectId],
+    [me?.is_admin, currentProjectId],
   );
 
-  const directCommands: Cmd[] = useMemo(
+  const paperKnowledge: Cmd[] = useMemo(
     () => [
-      ...quickActions,
-      ...skills,
       {
-        id: "search-papers",
-        label: "Search papers page",
-        hint: "Command",
-        keywords: "search find library rag",
-        icon: Search,
-        show: true,
-        run: () => go("/search"),
+        id: "paper-overview",
+        label: "Research profile",
+        hint: "Paper",
+        keywords: "research profile overview summary",
+        icon: FileText,
+        show: paperId != null,
+        surfaces: ["paper"],
+        run: () => go(`/papers/${paperId}`),
       },
       {
-        id: "zotero",
-        label: "Connect Zotero",
-        hint: "Command",
-        keywords: "zotero import",
-        icon: Link2,
-        show: true,
-        run: () => go("/library?provider=zotero#import"),
+        id: "paper-entities",
+        label: "Entities",
+        hint: "Paper",
+        keywords: "entities concepts pico",
+        icon: Tags,
+        show: paperId != null,
+        surfaces: ["paper"],
+        run: () => go(`/papers/${paperId}?tab=entities`),
+      },
+      {
+        id: "paper-structure",
+        label: "Structure",
+        hint: "Paper",
+        keywords: "structure sections outline",
+        icon: LayoutList,
+        show: paperId != null,
+        surfaces: ["paper"],
+        run: () => go(`/papers/${paperId}?tab=structure`),
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [quickActions, skills],
+    [paperId],
+  );
+
+  const allActionCmds = useMemo(
+    () => [
+      ...recommended,
+      ...continueCmds,
+      ...researchCmds,
+      ...createCmds,
+      ...importCmds,
+      ...integrationCmds,
+      ...navigateCmds,
+      ...paperKnowledge,
+    ],
+    [
+      recommended,
+      continueCmds,
+      researchCmds,
+      createCmds,
+      importCmds,
+      integrationCmds,
+      navigateCmds,
+      paperKnowledge,
+    ],
   );
 
   const idle = mode === "none" && !q;
   const searching = mode === "none" && Boolean(q);
 
-  const shownQuick = filterCmds(quickActions, idle ? "" : q).slice(0, idle ? 7 : 8);
-  const shownJump = filterCmds(jumpTo, idle ? "" : q);
-  const shownKnowledge = filterCmds(knowledge, idle ? "" : q);
-  const shownSkills = filterCmds(skills, q);
-  const shownCommands = filterCmds(directCommands, q);
+  const shownRecommended = filterCmds(recommended, idle ? "" : q, scope.surface);
+  const shownContinue = filterCmds(continueCmds, idle ? "" : q, scope.surface);
+  const shownResearch = filterCmds(researchCmds, idle ? "" : q, scope.surface).slice(
+    0,
+    idle ? 6 : 8,
+  );
+  const shownCreate = filterCmds(createCmds, idle ? "" : q, scope.surface);
+  const shownImport = filterCmds(importCmds, idle ? "" : q, scope.surface);
+  const shownIntegrations = filterCmds(
+    integrationCmds,
+    idle ? "" : q,
+    scope.surface,
+  ).slice(0, idle ? 8 : 10);
+  const shownNavigate = filterCmds(navigateCmds, idle ? "" : q, scope.surface);
+  const shownPaper = filterCmds(paperKnowledge, idle ? "" : q, scope.surface);
+  const shownSkills = filterCmds(
+    [...researchCmds, ...createCmds, ...importCmds],
+    q,
+    scope.surface,
+  );
+  const shownCommands = filterCmds(allActionCmds, q, scope.surface);
 
   const showEmpty =
     !idle &&
-    shownQuick.length === 0 &&
-    shownJump.length === 0 &&
-    shownKnowledge.length === 0 &&
+    shownRecommended.length === 0 &&
+    shownContinue.length === 0 &&
+    shownResearch.length === 0 &&
+    shownCreate.length === 0 &&
+    shownImport.length === 0 &&
+    shownIntegrations.length === 0 &&
+    shownNavigate.length === 0 &&
+    shownPaper.length === 0 &&
     shownSkills.length === 0 &&
     shownCommands.length === 0 &&
     rankedPapers.length === 0 &&
@@ -684,21 +1068,26 @@ export function CommandPalette() {
     );
   }
 
+  function group(heading: string, cmds: Cmd[]) {
+    if (cmds.length === 0) return null;
+    return <CommandGroup heading={heading}>{cmds.map(renderCmd)}</CommandGroup>;
+  }
+
   return (
     <CommandDialog
       open={open}
       onOpenChange={setOpen}
       title="Search Dhund"
-      description="Research command center — find papers, projects, evidence, and run actions"
+      description="Where do you want to go, or what do you want to do?"
     >
       <Command shouldFilter={false} className="rounded-xl">
         <CommandInput
           value={query}
           onValueChange={setQuery}
-          placeholder="Search papers, evidence, notes..."
+          placeholder="Search papers, projects, evidence, notes…"
         />
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground">
-          <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+          <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
             {scope.label}
           </span>
           <span>
@@ -708,21 +1097,16 @@ export function CommandPalette() {
             <kbd className="opacity-70">&gt;</kbd> commands
           </span>
         </div>
-        <CommandList className="max-h-[min(420px,55vh)]">
+        <CommandList className="max-h-[min(460px,58vh)]">
           {showEmpty && <CommandEmpty>No matches.</CommandEmpty>}
 
-          {mode === "skill" && (
-            <CommandGroup heading="Skills">{shownSkills.map(renderCmd)}</CommandGroup>
-          )}
-
-          {mode === "command" && (
-            <CommandGroup heading="Commands">{shownCommands.map(renderCmd)}</CommandGroup>
-          )}
+          {mode === "skill" && group("Skills", shownSkills)}
+          {mode === "command" && group("Commands", shownCommands)}
 
           {mode === "entity" && (
             <CommandGroup heading="Entities & knowledge">
-              {shownKnowledge.length > 0 ? (
-                shownKnowledge.map(renderCmd)
+              {shownPaper.length > 0 ? (
+                shownPaper.map(renderCmd)
               ) : (
                 <CommandItem value="entity-hint" disabled>
                   <Tags className="size-4 text-muted-foreground" />
@@ -733,27 +1117,13 @@ export function CommandPalette() {
                   </span>
                 </CommandItem>
               )}
-              {paperId != null &&
-                rankedPapers
-                  .filter((f) => f.id === paperId)
-                  .map((f) => (
-                    <CommandItem
-                      key={`ent-paper-${f.id}`}
-                      value={`ent-paper-${f.id}`}
-                      onSelect={() => go(`/papers/${f.id}?tab=entities`)}
-                      className="gap-2"
-                    >
-                      <Tags className="size-4 text-muted-foreground" />
-                      <span className="truncate">{paperTitle(f)} · Entities</span>
-                    </CommandItem>
-                  ))}
             </CommandGroup>
           )}
 
           {mode === "mention" && (
             <>
               {rankedProjects.length > 0 && (
-                <CommandGroup heading="Research">
+                <CommandGroup heading="Projects">
                   {rankedProjects.map((p) => (
                     <CommandItem
                       key={`project-${p.id}`}
@@ -796,64 +1166,75 @@ export function CommandPalette() {
 
           {idle && (
             <>
-              {(rankedPapers.length > 0 || rankedProjects.length > 0 || rankedChats.length > 0) && (
-                <CommandGroup heading="Recent">
-                  {rankedProjects.slice(0, 3).map((p) => (
-                    <CommandItem
-                      key={`recent-p-${p.id}`}
-                      value={`recent-p-${p.id}`}
-                      onSelect={() =>
-                        run(() => {
-                          setCurrentProjectId(p.id);
-                          navigate(`/projects/${p.id}`);
-                        })
-                      }
-                      className="gap-2"
-                    >
-                      <span className="size-4 text-center text-sm leading-4">
-                        {p.emoji || "📁"}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                      <span className="text-[11px] text-muted-foreground">Project</span>
-                    </CommandItem>
-                  ))}
-                  {rankedPapers.slice(0, 4).map((f) => (
-                    <CommandItem
-                      key={`recent-f-${f.id}`}
-                      value={`recent-f-${f.id}`}
-                      onSelect={() => go(`/papers/${f.id}`)}
-                      className="gap-2"
-                    >
-                      <BookOpen className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate">{paperTitle(f)}</span>
-                      <span className="text-[11px] text-muted-foreground">Paper</span>
-                    </CommandItem>
-                  ))}
-                  {rankedChats.slice(0, 2).map((c) => (
-                    <CommandItem
-                      key={`recent-c-${c.id}`}
-                      value={`recent-c-${c.id}`}
-                      onSelect={() => go(chatPath(c))}
-                      className="gap-2"
-                    >
-                      <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate">
-                        {c.title || "Untitled chat"}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">Chat</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
+              {group("Recommended", shownRecommended)}
+              {shownRecommended.length > 0 && shownContinue.length > 0 ? (
+                <CommandSeparator />
+              ) : null}
+              {group("Continue", shownContinue)}
+              {(shownRecommended.length > 0 || shownContinue.length > 0) && (
+                <CommandSeparator />
               )}
-
+              {group("Research", shownResearch)}
               <CommandSeparator />
-              <CommandGroup heading="Quick actions">{shownQuick.map(renderCmd)}</CommandGroup>
+              {group("Create", shownCreate)}
               <CommandSeparator />
-              <CommandGroup heading="Jump to">{shownJump.map(renderCmd)}</CommandGroup>
-              {shownKnowledge.length > 0 && (
+              {group("Import", shownImport)}
+              <CommandSeparator />
+              {group("Integrations", shownIntegrations)}
+              <CommandSeparator />
+              {group("Navigate", shownNavigate)}
+              {(rankedPapers.length > 0 ||
+                rankedProjects.length > 0 ||
+                rankedChats.length > 0) && (
                 <>
                   <CommandSeparator />
-                  <CommandGroup heading="Knowledge">{shownKnowledge.map(renderCmd)}</CommandGroup>
+                  <CommandGroup heading="Recent">
+                    {rankedProjects.slice(0, 2).map((p) => (
+                      <CommandItem
+                        key={`recent-p-${p.id}`}
+                        value={`recent-p-${p.id}`}
+                        onSelect={() =>
+                          run(() => {
+                            setCurrentProjectId(p.id);
+                            navigate(`/projects/${p.id}`);
+                          })
+                        }
+                        className="gap-2"
+                      >
+                        <span className="size-4 text-center text-sm leading-4">
+                          {p.emoji || "📁"}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                        <span className="text-[11px] text-muted-foreground">Project</span>
+                      </CommandItem>
+                    ))}
+                    {rankedPapers.slice(0, 3).map((f) => (
+                      <CommandItem
+                        key={`recent-f-${f.id}`}
+                        value={`recent-f-${f.id}`}
+                        onSelect={() => go(`/papers/${f.id}`)}
+                        className="gap-2"
+                      >
+                        <BookOpen className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate">{paperTitle(f)}</span>
+                        <span className="text-[11px] text-muted-foreground">Paper</span>
+                      </CommandItem>
+                    ))}
+                    {rankedChats.slice(0, 2).map((c) => (
+                      <CommandItem
+                        key={`recent-c-${c.id}`}
+                        value={`recent-c-${c.id}`}
+                        onSelect={() => go(chatPath(c))}
+                        className="gap-2"
+                      >
+                        <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate">
+                          {c.title || "Untitled chat"}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">Chat</span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
                 </>
               )}
             </>
@@ -861,10 +1242,12 @@ export function CommandPalette() {
 
           {searching && (
             <>
-              {shownQuick.length > 0 && (
-                <CommandGroup heading="Actions">{shownQuick.map(renderCmd)}</CommandGroup>
-              )}
-              {rankedPapers.length > 0 && mode === "none" && (
+              {shownRecommended.length > 0 && group("Recommended", shownRecommended)}
+              {shownContinue.length > 0 && group("Continue", shownContinue)}
+              {shownResearch.length > 0 && group("Research", shownResearch)}
+              {shownCreate.length > 0 && group("Create", shownCreate)}
+              {shownImport.length > 0 && group("Import", shownImport)}
+              {rankedPapers.length > 0 && (
                 <CommandGroup heading="Papers">
                   {rankedPapers.map((f) => (
                     <CommandItem
@@ -882,8 +1265,8 @@ export function CommandPalette() {
                   ))}
                 </CommandGroup>
               )}
-              {rankedProjects.length > 0 && mode === "none" && (
-                <CommandGroup heading="Research">
+              {rankedProjects.length > 0 && (
+                <CommandGroup heading="Projects">
                   {rankedProjects.map((p) => (
                     <CommandItem
                       key={`hit-project-${p.id}`}
@@ -905,7 +1288,7 @@ export function CommandPalette() {
                 </CommandGroup>
               )}
               {rankedChats.length > 0 && (
-                <CommandGroup heading="Chats">
+                <CommandGroup heading="Chats & notes">
                   {rankedChats.map((c) => (
                     <CommandItem
                       key={`hit-chat-${c.id}`}
@@ -921,17 +1304,16 @@ export function CommandPalette() {
                   ))}
                 </CommandGroup>
               )}
-              {shownJump.length > 0 && (
-                <CommandGroup heading="Jump to">{shownJump.map(renderCmd)}</CommandGroup>
-              )}
-              {shownKnowledge.length > 0 && (
-                <CommandGroup heading="Knowledge">{shownKnowledge.map(renderCmd)}</CommandGroup>
-              )}
+              {shownIntegrations.length > 0 &&
+                group("Integrations", shownIntegrations.slice(0, 5))}
+              {shownNavigate.length > 0 && group("Navigate", shownNavigate.slice(0, 6))}
               {q && (
                 <CommandGroup heading="Library">
                   <CommandItem
                     value="find-library"
-                    onSelect={() => go(`/library?q=${encodeURIComponent(query.trim())}`)}
+                    onSelect={() =>
+                      go(`/library?q=${encodeURIComponent(query.trim())}`)
+                    }
                     className="gap-2"
                   >
                     <Library className="size-4 text-muted-foreground" />

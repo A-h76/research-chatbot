@@ -25,24 +25,26 @@ export function AccountMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          "flex w-full items-center gap-2.5 rounded-lg py-2 pl-3 text-left transition-colors hover:bg-sidebar-accent",
+          "flex w-full items-center gap-2.5 rounded-md py-2 pl-3 text-left transition-colors hover:bg-sidebar-accent/50",
           compact ? "pr-1" : "pr-2",
         )}
         title={me.name}
       >
-        <Avatar>
+        <Avatar className="opacity-90" size="sm">
           {me.picture && <AvatarImage src={me.picture} alt={me.name} />}
-          <AvatarFallback>{me.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+          <AvatarFallback className="bg-sidebar-foreground/10 text-sidebar-foreground/70">
+            {me.name.slice(0, 1).toUpperCase()}
+          </AvatarFallback>
         </Avatar>
         {!compact && (
           <>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-sidebar-foreground">
+              <p className="truncate text-[13px] font-normal text-sidebar-foreground/80">
                 {me.name}
               </p>
-              <p className="truncate text-xs text-muted-foreground">Free</p>
+              <p className="truncate text-[11px] text-sidebar-foreground/35">Free</p>
             </div>
-            <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
+            <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/30" />
           </>
         )}
       </DropdownMenuTrigger>
