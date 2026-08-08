@@ -1,5 +1,13 @@
 import { useNavigate } from "react-router-dom";
-import { Settings, LogOut, ChevronsUpDown, LifeBuoy, Plug, Shield, BookOpen } from "lucide-react";
+import {
+  Settings,
+  LogOut,
+  ChevronsUpDown,
+  LifeBuoy,
+  Plug,
+  Shield,
+  BookOpen,
+} from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -11,6 +19,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { Me } from "@/types/api";
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0]!.slice(0, 1).toUpperCase();
+  return `${parts[0]!.slice(0, 1)}${parts[parts.length - 1]!.slice(0, 1)}`.toUpperCase();
+}
 
 export function AccountMenu({
   me,
@@ -25,26 +40,32 @@ export function AccountMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          "flex w-full items-center gap-2.5 rounded-md py-2 pl-3 text-left transition-colors hover:bg-sidebar-accent/50",
+          "flex h-9 w-full items-center gap-2 rounded-[6px] pl-2.5 text-left transition-colors",
+          "hover:bg-sidebar-foreground/[0.04] focus-visible:bg-sidebar-foreground/[0.04] focus-visible:outline-none",
           compact ? "pr-1" : "pr-2",
         )}
         title={me.name}
       >
-        <Avatar className="opacity-90" size="sm">
-          {me.picture && <AvatarImage src={me.picture} alt={me.name} />}
-          <AvatarFallback className="bg-sidebar-foreground/10 text-sidebar-foreground/70">
-            {me.name.slice(0, 1).toUpperCase()}
+        <Avatar
+          size="sm"
+          className="after:border-sidebar-foreground/10 dark:after:mix-blend-normal"
+        >
+          {me.picture ? <AvatarImage src={me.picture} alt={me.name} /> : null}
+          <AvatarFallback className="bg-sidebar-foreground/[0.08] text-[10px] font-medium tracking-wide text-sidebar-foreground/55">
+            {initials(me.name)}
           </AvatarFallback>
         </Avatar>
         {!compact && (
           <>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-normal text-sidebar-foreground/80">
+              <p className="truncate text-[12.5px] font-normal leading-tight text-sidebar-foreground/70">
                 {me.name}
               </p>
-              <p className="truncate text-[11px] text-sidebar-foreground/35">Free</p>
+              <p className="mt-0.5 truncate text-[10px] font-normal leading-none text-sidebar-foreground/28">
+                Free
+              </p>
             </div>
-            <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/30" />
+            <ChevronsUpDown className="size-3 shrink-0 text-sidebar-foreground/25" strokeWidth={1.5} />
           </>
         )}
       </DropdownMenuTrigger>
